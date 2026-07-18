@@ -56,12 +56,23 @@ jobs:
           npx tsc -p ./tsconfig.test.json
           node --test 'test/*.test.js'
 
-      # Version is injected into the vsix manifest at package time; the
-      # package.json version in git stays frozen (no bot bump commits).
+      # Sync package.json/package-lock.json to the released version so the
+      # checked-in manifest matches the GitHub release / Marketplace version.
+      - name: Sync version
+        run: npm version ${{ needs.release.outputs.version }} --no-git-tag-version --allow-same-version
+
       - name: Package vsix
-        run: npx --yes @vscode/vsce package ${{ needs.release.outputs.version }} --no-dependencies --no-git-tag-version --no-update-package-json
+        run: npx --yes @vscode/vsce package --no-dependencies
 
       - name: Upload vsix to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "v${{ needs.release.outputs.version }}" "loopboard-todo-${{ needs.release.outputs.version }}.vsix"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): v${{ needs.release.outputs.version }} [skip ci]"
+          git push origin HEAD:main
