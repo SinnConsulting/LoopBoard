@@ -8,6 +8,9 @@
 
 *Write stories in plain markdown — agent loops groom, build, and deliver them while you keep the only two keys that matter: what gets started, and what gets accepted.*
 
+**⚠️ Beta:** still under active development — expect rough edges and breaking changes between
+versions.
+
 </div>
 
 ---
