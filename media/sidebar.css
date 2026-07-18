@@ -1,0 +1,65 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-foreground, #cccccc);
+  font-family: var(--vscode-font-family, -apple-system, "Segoe UI", sans-serif);
+  font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none !important; } }
+
+.sb { height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+.sb-section { padding: 8px; }
+.sb-attn-header { padding: 16px; border-bottom: 1px solid var(--vscode-widget-border, #454545); }
+.sb-attn-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.sb-attn-title.clear { color: var(--vscode-testing-iconPassed, #73c991); }
+.attn-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--vscode-inputValidation-warningBorder, #cca700); animation: pulse-dot 1.6s ease-in-out infinite; }
+
+.attn-list { border-bottom: 1px solid var(--vscode-widget-border, #454545); }
+.attn-row {
+  width: 100%; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+  background: transparent; border: none; border-radius: 4px; cursor: pointer; color: var(--vscode-foreground, #cccccc);
+}
+.attn-row:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
+.attn-row:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: -2px; }
+.attn-row .txt { flex: 1; font-size: 13px; text-align: left; }
+.attn-row .ico { font-size: 14px; flex-shrink: 0; }
+
+.sb-label { padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.sb-row { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 4px; }
+.sb-row:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
+.sb-row.click { cursor: pointer; background: none; border: none; width: 100%; color: var(--vscode-foreground, #cccccc); text-align: left; }
+.sb-row .label { flex: 1; font-size: 13px; }
+.count { font-size: 11px; background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #ffffff); border-radius: 4px; padding: 1px 6px; min-width: 18px; text-align: center; }
+.loop-hint {
+  font-size: 11px; font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.sb-row.loop .label { flex: initial; }
+.icon-btn {
+  width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--vscode-foreground, #cccccc); border-radius: 4px; cursor: pointer; padding: 0;
+}
+.icon-btn:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
+.icon-btn:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+.icon-btn[disabled] { cursor: not-allowed; opacity: 0.4; }
+.icon-btn[disabled]:hover { background: transparent; }
+.ico-svg { display: inline-flex; }
+.loop-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.loop-dot.on { background: var(--vscode-testing-iconPassed, #73c991); }
+.loop-dot.off { background: var(--vscode-disabledForeground, #656565); }
+.divider { height: 1px; background: var(--vscode-widget-border, #454545); margin: 4px 16px; }
+.spacer { flex: 1; }
+
+.setup-wrap { padding: 12px 16px; border-bottom: 1px solid var(--vscode-widget-border, #454545); }
+.setup-text { font-size: 13px; color: var(--vscode-descriptionForeground, #9d9d9d); margin-bottom: 8px; }
+.open-wrap { padding: 12px 16px; border-top: 1px solid var(--vscode-widget-border, #454545); }
+.btn-primary {
+  width: 100%; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #ffffff);
+  border: none; border-radius: 4px; font-size: 13px; cursor: pointer;
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }

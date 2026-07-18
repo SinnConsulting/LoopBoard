@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "out-test",
+    "rootDir": "src",
+    "sourceMap": false,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": [],
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/parser.ts", "src/writer.ts", "src/model.ts", "src/merge.ts", "src/gates.ts", "src/view.ts", "src/loop.ts"],
+  "exclude": ["node_modules"]
+}

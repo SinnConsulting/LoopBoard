@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    outputs:
+      published: ${{ steps.release.outputs.new_release_published }}
+      version: ${{ steps.release.outputs.new_release_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Semantic release
+        id: release
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  vsix:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dev dependencies
+        run: npm ci
+
+      - name: Build
+        run: npx tsc -p ./
+
+      - name: Test
+        run: |
+          npx tsc -p ./tsconfig.test.json
+          node --test 'test/*.test.js'
+
+      # Version is injected into the vsix manifest at package time; the
+      # package.json version in git stays frozen (no bot bump commits).
+      - name: Package vsix
+        run: npx --yes @vscode/vsce package ${{ needs.release.outputs.version }} --no-dependencies --no-git-tag-version --no-update-package-json
+
+      - name: Upload vsix to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "v${{ needs.release.outputs.version }}" "loopboard-todo-${{ needs.release.outputs.version }}.vsix"
