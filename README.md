@@ -45,21 +45,12 @@ patch the loops react to on their next pass. No work starts and nothing ships wi
 
 ## Sidebar
 
-![LoopBoard sidebar](media/screenshot-sidebar.png)
-
 The activity-bar sidebar is the at-a-glance summary — everything in it is read-only and click-
 through into the board:
 
-- **Attention banner** ("7 items need you") rolls up everything currently waiting on you across
-  the workspace, broken down into 👀 tasks sitting in **Review** and 🆕 groomed proposals sitting
-  in **New** ready to promote.
-- **Phases** lists every column (New, Backlog, In Progress, Feedback, Review, Done) with a live
-  task count, so you can see where work is piling up without opening the full board.
-- **Loops** shows one row per model (Opus, Sonnet, Fable) with its assigned role (`default` or a
-  specific `model:`), a status dot for whether its terminal is running, and three controls: ▶
-  spawn/resume its loop terminal, ↻ recycle it (kill and restart), and ⏹ stop it.
-- **Settings** opens the extension's configuration (permission mode, default model, loop
-  interval, auto-recycle).
+| | |
+|---|---|
+| ![LoopBoard sidebar](media/screenshot-sidebar.png) | **Attention banner** ("7 items need you") rolls up everything currently waiting on you across the workspace, broken down into 👀 tasks sitting in **Review** and 🆕 groomed proposals sitting in **New** ready to promote.<br><br>**Phases** lists every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count, so you can see where work is piling up without opening the full board.<br><br>**Loops** shows one row per model (Opus, Sonnet, Fable) with its assigned role (`default` or a specific `model:`), a status dot for whether its terminal is running, and three controls: ▶ spawn/resume its loop terminal, ↻ recycle it (kill and restart), and ⏹ stop it.<br><br>**Settings** opens the extension's configuration (permission mode, default model, loop interval, auto-recycle). |
 
 ## Quick start
 
