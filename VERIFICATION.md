@@ -95,3 +95,8 @@ tracker: `cp test/fixtures/v2-full.md TODO.md` (revert with git afterward).
   glyph) needs a visual check in both light and dark VS Code themes for contrast/legibility at
   24px — a headless loop cannot verify this. Also confirm the panel tab icon (same file, via
   `src/panel.ts`) renders correctly.
+- **DRAFT card readability (t-6d4c):** A DRAFT card in the New column should read like a normal
+  card — a "Draft" badge/label row on top, then the raw draft text as left-aligned body copy
+  (not one long italic centered blob), followed by the "Groom with" select and the added date.
+  Verify a long draft (e.g. the open-vsx one) wraps as readable body text and that clicking it
+  still opens the inline edit textarea.
