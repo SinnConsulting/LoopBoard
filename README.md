@@ -106,6 +106,24 @@ The ▶ buttons open a plain VSCode terminal named `Claude <Model>` in the works
 from `TODO.md`'s Automation section with `{MODEL}` substituted. ♻ disposes and respawns for a fresh
 context. Loops die with the VSCode window (restart is one click — all state lives in `TODO.md`).
 
+## Security model
+
+**Treat `TODO.md` and workspace settings as trusted input.** LoopBoard's core loop pastes
+`TODO.md`'s Automation block into an autonomous `claude` session that runs with the configured
+`loopBoard.permissionMode` — which may be `bypassPermissions`. Anything written into that block, or
+into `.vscode/settings.json`, therefore steers an agent that can run commands on your machine. This
+is inherent to what LoopBoard does, not a bug.
+
+Consequences:
+
+- A `TODO.md` from a source you don't control (a cloned repo, a shared workspace) is a
+  prompt-injection vector with arbitrary-command-execution reach.
+- **Review the Automation block of any `TODO.md` before starting a loop in a repo you didn't
+  author**, and set `loopBoard.permissionMode` no higher than you're comfortable running unattended.
+
+VSCode Workspace Trust gates activation, but trusting a repo to open it is not the same as vetting
+what its `TODO.md` will tell an agent to do.
+
 ## License
 
 MIT
