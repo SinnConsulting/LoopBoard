@@ -1,7 +1,7 @@
 // Wires store + terminals + panel + sidebar. Handles webview messages and refreshes.
 import * as vscode from 'vscode';
 import { Store } from './store';
-import { TerminalManager } from './terminals';
+import { TerminalManager, isKnownModel } from './terminals';
 import { BoardPanel } from './panel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
@@ -130,13 +130,13 @@ export class Controller {
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
       case 'spawnLoop':
-        this.terminals.spawn(msg.model as Model);
+        if (isKnownModel(msg.model)) this.terminals.spawn(msg.model);
         return;
       case 'recycleLoop':
-        this.terminals.recycle(msg.model as Model);
+        if (isKnownModel(msg.model)) this.terminals.recycle(msg.model);
         return;
       case 'stopLoop':
-        this.terminals.stop(msg.model as Model);
+        if (isKnownModel(msg.model)) this.terminals.stop(msg.model);
         return;
       case 'createFiles':
         return this.onCreateFiles();

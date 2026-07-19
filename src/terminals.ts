@@ -11,6 +11,13 @@ const MODELS: { id: Model; name: string }[] = [
   { id: 'fable', name: 'Fable' },
 ];
 
+// Runtime allowlist for untrusted (webview-supplied) model ids — kept next to MODELS so the two
+// can't drift. The webview values reach the loop terminal shell line, so the host validates them
+// rather than trusting a compile-time `as Model` cast.
+export function isKnownModel(x: unknown): x is Model {
+  return MODELS.some((m) => m.id === x);
+}
+
 function terminalName(model: Model): string {
   return 'Claude ' + model.charAt(0).toUpperCase() + model.slice(1);
 }
