@@ -1,0 +1,110 @@
+{
+  "name": "loopboard-todo",
+  "displayName": "LoopBoard TODO",
+  "description": "Renders the workspace TODO.md as an interactive board and spawns coding-agent loop terminals (Claude Code today).",
+  "version": "1.1.1",
+  "publisher": "SinnConsulting",
+  "preview": true,
+  "license": "MIT",
+  "icon": "media/loopboard-icon-128.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SinnConsulting/LoopBoard.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:TODO.md"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "loopboard",
+          "title": "LoopBoard",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "loopboard": [
+        {
+          "id": "loopBoard.sidebar",
+          "name": "LoopBoard",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "loopBoard.openBoard",
+        "title": "LoopBoard: Open Board"
+      },
+      {
+        "command": "loopBoard.refresh",
+        "title": "LoopBoard: Refresh"
+      },
+      {
+        "command": "loopBoard.spawnLoop",
+        "title": "LoopBoard: Start Loop"
+      }
+    ],
+    "configuration": {
+      "title": "LoopBoard",
+      "properties": {
+        "loopBoard.permissionMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "acceptEdits",
+            "bypassPermissions",
+            "dontAsk",
+            "default",
+            "plan"
+          ],
+          "default": "auto",
+          "description": "--permission-mode passed to the claude CLI when spawning a loop terminal."
+        },
+        "loopBoard.defaultModel": {
+          "type": "string",
+          "enum": [
+            "opus",
+            "sonnet",
+            "fable"
+          ],
+          "default": "opus",
+          "description": "The model that owns tasks with no explicit model: field."
+        },
+        "loopBoard.loopInterval": {
+          "type": "string",
+          "default": "1m",
+          "description": "Interval passed to /loop (e.g. 1m, 5m)."
+        },
+        "loopBoard.autoRecycle": {
+          "type": "boolean",
+          "default": false,
+          "description": "When a model finishes a task, restart its loop terminal (close it and open a new one) so the next task starts fresh. The heavier of the two fresh-context options. Off by default; restart manually with ♻."
+        },
+        "loopBoard.clearSessionAfterTask": {
+          "type": "boolean",
+          "default": false,
+          "description": "When a model finishes a task, send /clear to its loop terminal so the next task starts fresh. Same result as Auto Recycle but lighter: the terminal keeps running, only the conversation is cleared. Off by default. Ignored when Auto Recycle is on (a restart already clears everything)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node --test 'test/*.test.js'"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/vscode": "^1.90.0"
+  }
+}
