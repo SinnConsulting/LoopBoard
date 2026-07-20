@@ -71,13 +71,16 @@ prefix). `make check` must pass before any commit.
   Board via `getPhaseHeadings`/`getSectionExtras` helpers so they round-trip verbatim.
 - **Terminals:** plain VSCode terminals (`createTerminal`/`sendText`/`dispose`), one per model,
   named `Claude <Model>`. Output can never be read (VSCode API limitation under the claude
-  TUI). `/loop` is a slash command, so it must be submitted *inside* the REPL to invoke the
-  loop skill — passing it as the claude CLI's initial-prompt argv sends it as literal text.
-  So: launch `claude` bare, wait `BOOT_DELAY_MS` for the TUI, `sendText(prompt, false)` to
-  paste the single-line prompt (no newline), then a lone Enter after `SUBMIT_DELAY_MS` (past
-  the bracketed-paste detection window). The prompt is one line, so the newline-swallowing
-  caveat doesn't apply; no shell quoting is involved. tmux is the v2 path, isolated behind
-  `terminals.ts`.
+  TUI). The loop launches as ONE command line: the tiny bootstrap prompt (built by
+  `buildLoopCommand`, ~200 chars, points the worker at TODO.md's `## Automation` standing
+  instructions) rides as claude's initial-prompt argv, single-quoted (`claude
+  --permission-mode <mode> --model <model> '/loop ...'`). The CLI seeds the argv prompt into
+  the REPL input as a pasted-text chip but does NOT auto-submit, so a lone Enter follows after
+  `BOOT_DELAY_MS` (once the TUI has booted and its bracketed-paste detection window has
+  closed). The historical quoting breakage came from the old ~3,000-char prompt; the bootstrap
+  line is short and apostrophe-free (still `'\''`-escaped defensively). Pasting into an
+  already-running REPL (e.g. `/clear`) still uses paste + Enter after `SUBMIT_DELAY_MS`.
+  tmux is the v2 path, isolated behind `terminals.ts`.
 - **Packaging:** `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README
   (27 files). `vsce package` needs `--no-dependencies` (zero runtime deps).
 

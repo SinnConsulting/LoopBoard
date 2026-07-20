@@ -168,10 +168,11 @@ _(none)_
 ## Automation
 
 Loop workers watch this file, reconcile it, **and pick up work** every minute (from Claude Code
-sessions in the workspace root). The LoopBoard extension spawns one loop terminal per model and
-pastes only a tiny bootstrap prompt naming that terminal's model and the configured interval —
-`/loop 1m You are running as model opus. Open TODO.md, read the loop worker instructions in its
-## Automation section, and follow them exactly for this and every pass.` — so the fenced block
+sessions in the workspace root). The LoopBoard extension spawns one loop terminal per model with a
+single command line — the tiny bootstrap prompt naming that terminal's model and the configured
+interval rides as claude's initial-prompt argument: `claude --permission-mode auto --model opus
+'/loop 1m You are running as model opus. Open TODO.md, read the loop worker instructions in its
+## Automation section, and follow them exactly for this and every pass.'` — so the fenced block
 below IS the standing instructions every loop follows. Editing it changes every running loop's
 behavior on its next pass, no terminal restart needed (only the interval is fixed at spawn time).
 This block is executable instructions: treat TODO.md as trusted input.

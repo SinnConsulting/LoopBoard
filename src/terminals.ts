@@ -16,10 +16,12 @@ function terminalName(model: Model): string {
 }
 
 // `/loop` is a slash command, so it must be submitted inside the running REPL to invoke the loop
-// skill — passing it as claude's initial-prompt argv sends it as literal text. So: launch claude
-// bare, wait for the TUI to boot, paste the single-line prompt into the REPL input (no newline),
-// then send a lone Enter once the bracketed-paste detection window has closed (an Enter after that
-// window is not folded into the paste). Tune both via F5 if the host boots/pastes slower.
+// skill. The tiny bootstrap prompt rides as claude's initial-prompt argv in ONE command line
+// (`claude --permission-mode <mode> --model <model> '/loop ...'`, single-quoted): the CLI seeds
+// it into the REPL input as a pasted-text chip but does NOT auto-submit, so a lone Enter follows
+// after BOOT_DELAY_MS, once the TUI has booted and its paste-detection window has closed (an
+// Enter after that window is not folded into the paste). Tune via F5 if the host boots slower.
+// SUBMIT_DELAY_MS is the shorter window used when pasting into an already-running REPL.
 const BOOT_DELAY_MS = 3500;
 const SUBMIT_DELAY_MS = 1500;
 
@@ -71,21 +73,18 @@ export class TerminalManager {
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show();
     const base = `claude --permission-mode ${cfg.permissionMode} --model ${model}`;
-    // Launch claude bare so the /loop slash command can be submitted inside the REPL (see BOOT/
-    // SUBMIT delay note above); passing it as argv would send it as literal text, not run the skill.
-    terminal.sendText(base);
     if (cmd) {
+      // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
+      // delay note above). Single-quoted; the prompt is one short line built by buildLoopCommand.
+      terminal.sendText(`${base} '${cmd.replace(/'/g, `'\\''`)}'`);
+      // The CLI only seeds the argv prompt into the REPL input — submit it with a lone Enter
+      // once the TUI has booted and its paste-detection window has closed.
       setTimeout(() => {
         // Guard: the user may have closed or replaced the terminal during the delay.
-        if (this.find(model) !== terminal) return;
-        // Paste the single-line prompt into the REPL input without a newline...
-        terminal.sendText(cmd, false);
-        // ...then submit it with a lone Enter after the paste-detection window closes.
-        setTimeout(() => {
-          if (this.find(model) === terminal) terminal.sendText('', true);
-        }, SUBMIT_DELAY_MS);
+        if (this.find(model) === terminal) terminal.sendText('', true);
       }, BOOT_DELAY_MS);
     } else {
+      terminal.sendText(base);
       vscode.window.showWarningMessage('LoopBoard: no loop template found in TODO.md Automation section — starting claude without a loop.');
     }
     this.changeEmitter.fire();
