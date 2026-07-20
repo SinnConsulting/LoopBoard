@@ -189,7 +189,7 @@ test('migrated repo TODO.md parses with zero unknown lines and is a fixpoint', (
   const twice = serializeTodo(parseTodo(once));
   assert.equal(twice, once);
   // v2 additions are documented.
-  assert.ok(src.includes('{MODEL}'), 'loop template has {MODEL}');
+  assert.ok(!board.automation.includes('{MODEL}'), 'automation instructions are model-agnostic (bootstrap prompt names the model)');
   assert.ok(/Claim tasks by `model:`/.test(src), 'model routing rule present');
   assert.ok(/Honor `note:` lines/.test(src), 'note handling rule present');
 });
@@ -201,7 +201,7 @@ test('scaffold template (media/todo-template.md) parses empty, no unknown conten
   const once = serializeTodo(board);
   const twice = serializeTodo(parseTodo(once));
   assert.equal(twice, once);
-  assert.ok(src.includes('{MODEL}'), 'loop template has {MODEL}');
+  assert.ok(!src.includes('{MODEL}'), 'automation instructions are model-agnostic (bootstrap prompt names the model)');
   assert.ok(buildLoopCommand(parseTodo(src), 'opus', '1m'), 'automation block yields a loop command');
 });
 
@@ -265,13 +265,15 @@ test('toWebviewBoard marks dependency met when the dep id is in DONE', () => {
   assert.equal(bl.dependsOn[0].met, true);
 });
 
-test('buildLoopCommand substitutes {MODEL} and honors interval', () => {
+test('buildLoopCommand emits the bootstrap prompt naming model and interval', () => {
   const board = parseTodo(fs.readFileSync(path.join(process.cwd(), 'TODO.md'), 'utf8'));
   const cmd = buildLoopCommand(board, 'sonnet', '5m');
   assert.ok(cmd, 'a loop command was built');
-  assert.ok(!cmd.includes('{MODEL}'), 'placeholder substituted');
   assert.ok(cmd.includes('running as model sonnet'), 'model injected');
   assert.match(cmd, /^\/loop 5m /, 'interval honored');
+  assert.ok(cmd.includes('## Automation section'), 'points the worker at the Automation instructions');
+  assert.ok(cmd.length < 300, 'bootstrap prompt stays tiny');
+  assert.ok(!cmd.includes('\n'), 'single line for the TUI paste');
 });
 
 test('buildLoopCommand returns undefined when no fenced block', () => {
