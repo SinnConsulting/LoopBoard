@@ -179,8 +179,8 @@ test('applyPatch on unknown task id -> notfound', () => {
   assert.equal(r.status, 'notfound');
 });
 
-test('migrated repo TODO.md parses with zero unknown lines and is a fixpoint', () => {
-  const src = fs.readFileSync(path.join(process.cwd(), 'TODO.md'), 'utf8');
+test('scaffold template parses with zero unknown lines and is a fixpoint', () => {
+  const src = fs.readFileSync(path.join(process.cwd(), 'media', 'todo-template.md'), 'utf8');
   const board = parseTodo(src);
   for (const t of board.tasks) {
     assert.equal(t.unknownLines.length, 0, `unknown lines on ${t.id || t.title}`);
@@ -266,7 +266,7 @@ test('toWebviewBoard marks dependency met when the dep id is in DONE', () => {
 });
 
 test('buildLoopCommand emits the bootstrap prompt naming model and interval', () => {
-  const board = parseTodo(fs.readFileSync(path.join(process.cwd(), 'TODO.md'), 'utf8'));
+  const board = parseTodo(fs.readFileSync(path.join(process.cwd(), 'media', 'todo-template.md'), 'utf8'));
   const cmd = buildLoopCommand(board, 'sonnet', '5m');
   assert.ok(cmd, 'a loop command was built');
   assert.ok(cmd.includes('running as model sonnet'), 'model injected');

@@ -3,3 +3,5 @@ out/
 *.vsix
 .DS_Store
 out-test/
+TODO.md
+DONE.md
