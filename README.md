@@ -93,7 +93,6 @@ Zero runtime dependencies; the webview is vanilla HTML/CSS/JS with a CSP nonce o
 | `loopBoard.defaultModel` | `opus` | model that owns tasks with no `model:` field |
 | `loopBoard.loopInterval` | `1m` | interval used in the injected `/loop` line |
 | `loopBoard.autoRecycle` | `true` | recycle a model's terminal after it finishes a task |
-| `loopBoard.startupDelayMs` | `3000` | wait before injecting `/loop` into a fresh claude REPL |
 
 > Migrating from "Claude TODO Board" (≤ 0.1.1): the extension, command, and settings ids were
 > renamed from `claudeTodo.*` to `loopBoard.*` with no fallback — re-enter any custom
