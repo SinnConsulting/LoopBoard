@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard TODO",
   "description": "Renders the workspace TODO.md as an interactive board and spawns coding-agent loop terminals (Claude Code today).",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "publisher": "SinnConsulting",
   "preview": true,
   "license": "MIT",
