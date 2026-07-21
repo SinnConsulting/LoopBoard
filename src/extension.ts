@@ -21,7 +21,6 @@ export function activate(context: vscode.ExtensionContext): void {
       return {
         permissionMode: c.get<string>('permissionMode', 'auto'),
         interval: c.get<string>('loopInterval', '1m'),
-        startupDelayMs: c.get<number>('startupDelayMs', 3000),
         defaultModel: c.get<Model>('defaultModel', 'opus'),
       };
     }
