@@ -27,10 +27,6 @@ export class Controller {
     sidebar.onMessage((msg) => this.handleMessage(msg));
   }
 
-  getBoard(): Board | undefined {
-    return this.lastBoard;
-  }
-
   private config() {
     const c = vscode.workspace.getConfiguration('loopBoard');
     return {
