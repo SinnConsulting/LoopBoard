@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const store = new Store(folder);
   const terminals = new TerminalManager(
     () => folder.uri,
-    () => controller?.getBoard(),
+    () => store.loopText,
     () => {
       const c = vscode.workspace.getConfiguration('loopBoard');
       return {
@@ -34,7 +34,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewId, sidebar),
     vscode.commands.registerCommand('loopBoard.openBoard', () => controller.openBoard()),
     vscode.commands.registerCommand('loopBoard.refresh', () => controller.refresh()),
-    vscode.commands.registerCommand('loopBoard.spawnLoop', (model: Model) => terminals.spawn(model))
+    vscode.commands.registerCommand('loopBoard.spawnLoop', (model: Model) => terminals.spawn(model)),
+    vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles())
   );
 
   store.startWatching();

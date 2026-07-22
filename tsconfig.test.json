@@ -12,6 +12,6 @@
     "types": [],
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/parser.ts", "src/writer.ts", "src/model.ts", "src/merge.ts", "src/gates.ts", "src/view.ts", "src/loop.ts"],
+  "include": ["src/parser.ts", "src/writer.ts", "src/model.ts", "src/merge.ts", "src/gates.ts", "src/view.ts", "src/loop.ts", "src/taskfile.ts"],
   "exclude": ["node_modules"]
 }

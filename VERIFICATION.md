@@ -1,97 +1,84 @@
 # Verification
 
 All toolchain commands ran inside Docker (`node:22`) via `make`; nothing was installed on the
-host. Clean-checkout run from `make clean`:
+host. Latest run (v2.0.0 storage split):
 
 ```
-make install   -> added 2 packages (typescript, @types/vscode) — 0 vulnerabilities
 make build     -> tsc -> out/ (clean, no errors)
-make test      -> 26 tests, 26 pass, 0 fail
-make package   -> loopboard-0.1.1.vsix (27 files, 47.34 KB)
+make test      -> 47 tests, 47 pass, 0 fail
+make package   -> loopboard-todo-2.0.0.vsix (32 files, ~125 KB; templates ship, REFACTORING.md excluded)
 ```
 
 ## Automated (executed here, in Docker)
 
-### M1 — Parser + writer (round-trip / fixpoint)
-`make test` (`node --test`) covers, over three fixtures (`real-todo-v1.md`, `v2-full.md`,
-`unknown-lines.md`):
-- **Text idempotence:** `serialize(parse(serialize(parse(x)))) === serialize(parse(x))`.
-- **Board fixpoint:** parse→write→parse yields a deep-equal task list.
-- **Nothing lost on the real v1 file:** Rules text, the `/loop` block, and both HTML-comment
-  templates (which contain task-like `- [ ]` lines) survive verbatim.
-- **Unknown lines** preserved verbatim and flagged (`t-ff01`: 3 unknown sub-bullets).
-- **Two questions, one answered** parsed correctly; **ids assigned** to id-less tasks on write;
-  **DRAFT** tasks serialize to id + added only; **DONE.md** round-trips.
-- Regression: an HTML comment following a real task is not mis-parsed as a task.
+The pure layer is unit-tested per module; `make test` compiles `tsconfig.test.json` → `out-test/`
+and runs `node --test`.
 
-**MUST NOT FORGET:** `media/todo-template.md` (the file `onCreateFiles` in `src/controller.ts`
-writes as a fresh workspace's initial `TODO.md`) encodes the same grammar — Workflow, Task format,
-Rules, and the Automation `/loop` block — but with an empty `## Tasks` section. Any change to the
-task grammar/phase structure in `TODO.md`'s own docs (e.g. the v2→v3 move to a flat `## Tasks`
-section with a `phase:` field, replacing per-phase headings) must be mirrored here too, or new
-workspaces get scaffolded with a stale format. `test/parser.test.js` only checks the template
-parses to zero tasks and round-trips as a fixpoint — it does NOT check the template's prose is
-current, so this has to be done by hand on every structural change.
+### Index parser/writer — `test/parser.test.js` (grammar v4)
+Over `test/fixtures/index-full.md` (six entries incl. a DRAFT, a Feedback entry with two
+questions, an HTML-comment template) and `index-unknown.md`:
+- **Text idempotence** and **index fixpoint** (parse→write→parse deep-equal).
+- Canonical fixture round-trips **byte-for-byte**.
+- **Removed v4 keys** (owner/added/description/reviewer/…) land in `unknownLines`, preserved
+  verbatim; `completed:` is canonical in DONE.md only (an unknown line in the TODO index).
+- HTML-comment task-like lines are **not** parsed as entries; DRAFT serializes minimally (no
+  `phase:`); model+groomer round-trip on drafts; ids assigned on write; DONE.md round-trips.
 
-### M2 — Migration
-`TODO.md` was rewritten to v2 (Rules documenting id/description/note/model routing; Automation
-holding the `{MODEL}` fenced loop with note handling). Test asserts the migrated `TODO.md` parses
-with **zero unknown lines** and is a serialization fixpoint, and that `{MODEL}`, the model-routing
-rule, and the note-handling rule are present.
+### Task-file parser/writer — `test/taskfile.test.js` (§2.2)
+- Parses every canonical section; **fixpoint** and byte-for-byte round-trip of a full fixture.
+- Empty file → empty detail (serialize is just the H1); missing sections omitted on write; **H1
+  rewritten from the index title**; Meta keys emit in canonical order; unknown headings/keys
+  preserved + flagged (fixpoint holds); ⚠️ canonicalization (parser strips, writer re-adds once).
 
-### M4 — Gates + merge (pure logic)
-- `applyPatch`: applies a field with no conflict; **same-field conflict** (disk ≠ rendered base)
-  is rejected; answer patch targets the right question; unknown id → notfound.
-- **Concurrent-write survival:** a patch to task A leaves a loop's concurrent worklog change on
-  task B intact (because every save re-reads and re-parses disk before applying the one field).
-- `promote` moves New→Backlog with `promoted:` + worklog and resets the checkbox; `accept` cuts
-  the Review task and returns a completed `[x]` entry for DONE.md.
+### Merge routing + patches — `test/merge.test.js`
+- `patchTarget` routes title/model/groomer/answer → index, description/note/feedback → detail.
+- `applyPatch` (index) and `applyDetailPatch` (detail) keep disk-wins conflict semantics; answer
+  patch targets the right question; model `default (opus)` clears the field; unknown id → notfound.
+- `note` edits the whole `## Notes` section: newline-split, empties dropped → `notes: string[]`;
+  clearing empties the section.
 
-### M5 — Badge
-`computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; answering the last question
-drops the feedback contribution; `toWebviewBoard` marks a dependency met when its id is in DONE.
+### Gates — `test/gates.test.js`
+- `promoteIndex` (phase→backlog, uncheck), `promoteDetail` (`promoted:` + worklog, no dup),
+  `acceptDetail` (`completed:` + worklog), `acceptDoneEntry` (slim DONE entry, no questions).
 
-### M6 — Loop command
-`buildLoopCommand` extracts the Automation fenced block, substitutes `{MODEL}`, and rewrites the
-leading `/loop <interval>` to the configured interval; returns `undefined` when no fenced block.
+### View — `test/view.test.js`
+- `computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; dependency marked met when
+  its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `note` derives from `notes[]`;
+  DONE cards render from the slim IndexEntry (no composed detail).
 
-### Data-pipeline smoke (parse → webview payload)
-`parse(v2-full.md)` → `toWebviewBoard` produced: `new=2 inprogress=1 feedback=2… ` (correct after
-the comment-parsing fix: `feedback=1`), `badge={count:4,new:2,feedbackUnanswered:1,review:1}`,
-questions `[answered,unanswered]`, review DELIVERED + pending feedback, unmet dependency chip,
-and the DRAFT card — confirming the extension→webview contract is well-formed.
+### Loop command — `test/loop.test.js`
+- `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
+  `.loopboard/LOOP.md`, is a single apostrophe-free line < 300 chars.
+- Returns `undefined` with no `## Automation` section or no fence in it; an **earlier fence**
+  (before `## Automation`) is not mis-picked. `template-todo.md` scaffold parses to zero entries
+  and is a fixpoint.
 
 ## Manual — Extension Development Host (F5)
 
-**Not executed in this environment** (this is a headless agent session with no interactive VS Code
-GUI). The steps below are the intended walkthrough; run them in a desktop VS Code by opening this
-folder and pressing **F5**. To see a populated board, temporarily copy a fixture over the (empty)
-tracker: `cp test/fixtures/v2-full.md TODO.md` (revert with git afterward).
+**PENDING — not executed in this environment** (headless agent session, no interactive VS Code
+GUI). Run these in a desktop VS Code by opening a folder and pressing **F5**; a headless session
+cannot verify them, so they are not claimed done.
 
-- **M3 — Read-only render + live refresh:** Open the board (activity-bar clipboard → **Open
-  Board**, or `LoopBoard: Open Board`). Expect the left rail with all six phases + counts +
-  amber attention dots on New/Feedback/Review, the Loops section, and task cards per phase; the
-  Done phase renders read-only rows from `DONE.md`. Edit `TODO.md` in a text editor and save →
-  the board refreshes within ~1 s (changed cards flash).
-- **M4 — Edit + gates + merge:** Type an answer under a Feedback question and blur → it lands in
-  the file's `answer:` line (border flashes "saved"). Tick a **New** task → it moves to Backlog
-  with a `promoted:` date. Tick a **Review** task → inline "Accept and archive to DONE.md?" →
-  Accept → the task is cut from `TODO.md` and appended to `DONE.md`. To see the conflict toast:
-  start editing a description, change that same task's description in the file and save, then blur
-  → amber toast "task changed on disk … not applied" with a **Review** action that highlights the
-  card.
-- **M5 — Sidebar + badge:** The activity-bar badge shows the attention count; the sidebar lists
-  "N unanswered question(s) — Feedback", "N awaiting review", "N proposal(s) to approve", each
-  click revealing that phase in the board. Add an unanswered question in the file → badge
-  increments; answer it in the board → it clears.
-- **M6 — Loop terminals:** Click **Opus ▶** → a terminal `Claude Opus` opens in the workspace
-  root and runs `claude --model opus --permission-mode auto '<loop prompt>'` — the `/loop` line
-  (with `{MODEL}`→opus) is passed as the CLI's initial prompt argument and submitted by the REPL
-  itself (TUI keystroke injection proved unfixably flaky and was removed). A second ▶ focuses the
-  existing terminal instead of duplicating. **♻** disposes and respawns it, re-arming the loop.
-  With `autoRecycle` on, when a model's task leaves In Progress and it has no other In Progress
-  task, its terminal is recycled.
-- **Logo icon rendering (t-027d):** The activity-bar icon (`media/icon.svg`, now the LoopBoard
-  glyph) needs a visual check in both light and dark VS Code themes for contrast/legibility at
-  24px — a headless loop cannot verify this. Also confirm the panel tab icon (same file, via
-  `src/panel.ts`) renders correctly.
+New v2 checklist (from REFACTORING.md Phase 8):
+
+1. **Init:** fresh empty workspace → `LoopBoard: Initialize Workspace` scaffolds `.loopboard/`
+   (TODO.md + LOOP.md + empty `tasks/`, no DONE.md); the board opens empty. Running it again
+   refuses without overwriting.
+2. **Draft:** add a draft on the board → an index entry appears in `.loopboard/TODO.md`, no task
+   file yet, the card hints "No detail file yet".
+3. **First detail edit:** edit the description on a card → `.loopboard/tasks/<id>.md` is created
+   with only a `## Description` section (H1 from the index title).
+4. **Concurrency:** external edit to a task file while its card field is focused → refresh is
+   deferred (no clobber); a same-field concurrent edit → disk wins + amber toast.
+5. **Promote gate:** tick a New task → `phase: backlog` in the index, `promoted:` in the task
+   file's Meta.
+6. **Accept gate:** tick a Review task → entry gone from `TODO.md`, prepended to `DONE.md`,
+   `completed:` in the task file's Meta, and the task file still present under `tasks/`.
+7. **Loop terminal:** spawn a loop → the command references `.loopboard/LOOP.md`, the seeded
+   prompt submits after boot.
+8. **Legacy ignored:** a root-level `TODO.md` present → ignored entirely (activation keys off
+   `.loopboard/TODO.md`).
+
+Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
+loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
+and likewise cannot be verified headless.

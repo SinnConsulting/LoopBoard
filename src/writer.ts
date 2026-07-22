@@ -1,12 +1,10 @@
-// Board -> canonical markdown (strict). Pure — no vscode imports.
+// IndexDoc -> canonical markdown (strict), grammar v4. Pure — no vscode imports.
 // Assigns missing ids; preserves unknown lines and section extras verbatim.
 
-import { Board, Task } from './model';
+import { IndexDoc, IndexEntry } from './model';
 import { getTasksHeading, getTasksExtras } from './parser';
 
 const DEFAULT_TASKS_HEADING = '## Tasks';
-
-const usedIds = new Set<string>();
 
 export function assignId(existing: Set<string>): string {
   let id = '';
@@ -17,94 +15,76 @@ export function assignId(existing: Set<string>): string {
   return id;
 }
 
-function ensureIds(tasks: Task[]): void {
+function ensureIds(entries: IndexEntry[]): void {
   const ids = new Set<string>();
-  for (const t of tasks) if (t.id) ids.add(t.id);
-  for (const t of tasks) if (!t.id) t.id = assignId(ids);
+  for (const e of entries) if (e.id) ids.add(e.id);
+  for (const e of entries) if (!e.id) e.id = assignId(ids);
 }
 
-// Serialize one task block. `phase` controls which optional blocks are emitted.
-export function serializeTask(task: Task): string[] {
-  const box = task.checked ? '[x]' : '[ ]';
-  const out: string[] = [`- ${box} ${task.title}`];
+// Serialize one active index entry (TODO.md). Fixed key order per §2.1.
+export function serializeEntry(entry: IndexEntry): string[] {
+  const box = entry.checked ? '[x]' : '[ ]';
+  const out: string[] = [`- ${box} ${entry.title}`];
 
-  if (task.id) out.push(`  - id: ${task.id}`);
+  if (entry.id) out.push(`  - id: ${entry.id}`);
 
-  if (task.isDraft) {
-    if (task.model) out.push(`  - model: ${task.model}`);
-    if (task.groomer) out.push(`  - groomer: ${task.groomer}`);
-    if (task.added) out.push(`  - added: ${task.added}`);
-    for (const u of task.unknownLines) out.push(u);
+  if (entry.isDraft) {
+    // Drafts carry no phase line (implicitly new); only optional model/groomer.
+    if (entry.model) out.push(`  - model: ${entry.model}`);
+    if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+    for (const u of entry.unknownLines) out.push(u);
     return out;
   }
 
-  out.push(`  - phase: ${task.phase}`);
-  if (task.owner) out.push(`  - owner: ${task.owner}`);
-  if (task.model) out.push(`  - model: ${task.model}`);
-  if (task.groomer) out.push(`  - groomer: ${task.groomer}`);
-  if (task.added) out.push(`  - added: ${task.added}`);
-  if (task.started) out.push(`  - started: ${task.started}`);
-  if (task.promoted) out.push(`  - promoted: ${task.promoted}`);
-  if (task.completed) out.push(`  - completed: ${task.completed}`);
-  if (task.worklog.length) out.push(`  - worklog: ${task.worklog.join(', ')}`);
-  if (task.links.length) out.push(`  - link: ${task.links.join(', ')}`);
-  if (task.dependsOn.length) out.push(`  - depends on: ${task.dependsOn.join(', ')}`);
-  if (task.description) {
-    const [first, ...rest] = task.description.split('\n');
-    out.push(`  - description: ${first}`);
-    for (const line of rest) out.push(`    ${line}`);
-  }
-  if (task.note) out.push(`  - note: ${task.note}`);
-  for (const q of task.questions) {
+  out.push(`  - phase: ${entry.phase}`);
+  if (entry.model) out.push(`  - model: ${entry.model}`);
+  if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+  for (const q of entry.questions) {
     out.push(`  - question: ❓ ${q.text}`);
     out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));
   }
-  if (task.feedback) out.push(`  - feedback: ⚠️ ${task.feedback}`);
-  if (task.delivered) {
-    const [first, ...rest] = task.delivered.split('\n');
-    out.push(`  - DELIVERED: ${first}`);
-    for (const line of rest) out.push(`    ${line}`);
-  }
-  for (const u of task.unknownLines) out.push(u);
+  for (const u of entry.unknownLines) out.push(u);
   return out;
 }
 
-export function serializeTodo(board: Board): string {
-  ensureIds(board.tasks);
-  const heading = getTasksHeading(board) ?? DEFAULT_TASKS_HEADING;
-  const extras = getTasksExtras(board);
+// Serialize one accepted entry (DONE.md). Fixed key order per §2.3: id, model, groomer, completed.
+function serializeDoneEntry(entry: IndexEntry): string[] {
+  const out: string[] = [`- [x] ${entry.title}`];
+  if (entry.id) out.push(`  - id: ${entry.id}`);
+  if (entry.model) out.push(`  - model: ${entry.model}`);
+  if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+  if (entry.completed) out.push(`  - completed: ${entry.completed}`);
+  for (const u of entry.unknownLines) out.push(u);
+  return out;
+}
+
+export function serializeTodo(doc: IndexDoc): string {
+  ensureIds(doc.entries);
+  const heading = getTasksHeading(doc) ?? DEFAULT_TASKS_HEADING;
+  const extras = getTasksExtras(doc);
 
   const parts: string[] = [];
-  parts.push(board.preamble.replace(/\s+$/, ''));
+  parts.push(doc.preamble.replace(/\s+$/, ''));
 
-  // One flat section: every task in file order, each carrying its own `phase:` field.
   const section: string[] = [heading, ''];
-  if (board.tasks.length === 0) {
+  if (doc.entries.length === 0) {
     section.push('_(none)_');
   } else {
-    section.push(board.tasks.map((t) => serializeTask(t).join('\n')).join('\n\n'));
+    section.push(doc.entries.map((e) => serializeEntry(e).join('\n')).join('\n\n'));
   }
   if (extras) {
     section.push('');
     section.push(extras);
   }
   parts.push(section.join('\n'));
-  parts.push('---');
-
-  if (board.automation) {
-    parts.push(board.automation.replace(/\s+$/, ''));
-  }
 
   return parts.join('\n\n').replace(/\s+$/, '') + '\n';
 }
 
-export function serializeDone(tasks: Task[]): string {
+export function serializeDone(entries: IndexEntry[]): string {
   const ids = new Set<string>();
-  for (const t of tasks) if (t.id) ids.add(t.id);
-  for (const t of tasks) if (!t.id) t.id = assignId(ids);
-  const body = tasks.map((t) => serializeTask(t).join('\n')).join('\n\n');
-  return `# DONE\n\nAccepted tasks, newest first.\n\n${body}\n`;
+  for (const e of entries) if (e.id) ids.add(e.id);
+  for (const e of entries) if (!e.id) e.id = assignId(ids);
+  const body = entries.map((e) => serializeDoneEntry(e).join('\n')).join('\n\n');
+  return `# DONE\n\nAccepted tasks, newest first. Detail remains in tasks/<id>.md.\n\n## Tasks\n\n${body}\n`;
 }
-
-// silence unused warning for the shared id set helper
-void usedIds;

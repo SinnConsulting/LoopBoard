@@ -1,9 +1,14 @@
 // Pure field-patch application + conflict detection. No vscode imports.
 // Used by store.ts (the single IO owner) and exercised directly by unit tests.
+//
+// v2 routes patches by destination file: index fields patch `.loopboard/TODO.md`, detail fields
+// patch `.loopboard/tasks/<id>.md`. Both keep today's base/conflict semantics (disk wins).
 
-import { Board, Task, Model } from './model';
+import { IndexDoc, IndexEntry, TaskDetail, Model } from './model';
 
-export type PatchField = 'title' | 'model' | 'groomer' | 'description' | 'note' | 'answer' | 'feedback';
+export type IndexField = 'title' | 'model' | 'groomer' | 'answer';
+export type DetailField = 'description' | 'note' | 'feedback';
+export type PatchField = IndexField | DetailField;
 
 export interface FieldPatch {
   taskId: string;
@@ -15,10 +20,20 @@ export interface FieldPatch {
 
 export interface MergeResult {
   status: 'applied' | 'conflict' | 'notfound';
-  task?: Task;
+  entry?: IndexEntry;
+}
+
+export interface DetailMergeResult {
+  status: 'applied' | 'conflict';
 }
 
 const KNOWN_MODELS: Model[] = ['opus', 'sonnet', 'fable'];
+const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer'];
+
+// Which file a field patch targets.
+export function patchTarget(field: PatchField): 'index' | 'detail' {
+  return (INDEX_FIELDS as string[]).includes(field) ? 'index' : 'detail';
+}
 
 export function normalizeModel(value: string): Model | undefined {
   const v = value.trim();
@@ -26,67 +41,91 @@ export function normalizeModel(value: string): Model | undefined {
   return undefined; // '', 'default (opus)', 'default' -> no model field
 }
 
-// Current on-disk value of a field, as a plain string (matches what the webview renders).
-export function currentFieldValue(task: Task, field: PatchField, questionIndex?: number): string {
+// Current on-disk value of an index field, as a plain string (matches what the webview renders).
+export function currentFieldValue(entry: IndexEntry, field: IndexField, questionIndex?: number): string {
   switch (field) {
     case 'title':
-      return task.title;
+      return entry.title;
     case 'model':
-      return task.model ?? '';
+      return entry.model ?? '';
     case 'groomer':
-      return task.groomer ?? '';
-    case 'description':
-      return task.description ?? '';
-    case 'note':
-      return task.note ?? '';
-    case 'feedback':
-      return task.feedback ?? '';
+      return entry.groomer ?? '';
     case 'answer':
-      return questionIndex !== undefined && task.questions[questionIndex]
-        ? task.questions[questionIndex].answer
+      return questionIndex !== undefined && entry.questions[questionIndex]
+        ? entry.questions[questionIndex].answer
         : '';
   }
 }
 
-function setFieldValue(task: Task, field: PatchField, value: string, questionIndex?: number): void {
+function setFieldValue(entry: IndexEntry, field: IndexField, value: string, questionIndex?: number): void {
   switch (field) {
     case 'title':
-      task.title = value.trim();
+      entry.title = value.trim();
       break;
     case 'model':
-      task.model = normalizeModel(value);
+      entry.model = normalizeModel(value);
       break;
     case 'groomer':
-      task.groomer = normalizeModel(value);
-      break;
-    case 'description':
-      task.description = value.trim() ? value : undefined;
-      break;
-    case 'note':
-      task.note = value.trim() ? value.trim() : undefined;
-      break;
-    case 'feedback':
-      task.feedback = value.trim() ? value.trim() : undefined;
+      entry.groomer = normalizeModel(value);
       break;
     case 'answer':
-      if (questionIndex !== undefined && task.questions[questionIndex]) {
-        task.questions[questionIndex].answer = value;
+      if (questionIndex !== undefined && entry.questions[questionIndex]) {
+        entry.questions[questionIndex].answer = value;
       }
       break;
   }
 }
 
-// Apply a field patch to a freshly-parsed board (mutating it). Returns the outcome.
-// Conflict: the same field of the same task on disk differs from what the webview
-// rendered (base) — disk wins, patch rejected.
-export function applyPatch(board: Board, patch: FieldPatch): MergeResult {
-  const task = board.tasks.find((t) => t.id === patch.taskId);
-  if (!task) return { status: 'notfound' };
-
-  const current = currentFieldValue(task, patch.field, patch.questionIndex);
-  if (current !== patch.base && current !== patch.value) {
-    return { status: 'conflict', task };
+// Current on-disk value of a detail field. `note` edits the whole `## Notes` section as one value,
+// newline-separated (§ Phase 3).
+export function currentDetailFieldValue(detail: TaskDetail, field: DetailField): string {
+  switch (field) {
+    case 'description':
+      return detail.description ?? '';
+    case 'note':
+      return detail.notes.join('\n');
+    case 'feedback':
+      return detail.feedback ?? '';
   }
-  setFieldValue(task, patch.field, patch.value, patch.questionIndex);
-  return { status: 'applied', task };
+}
+
+function setDetailFieldValue(detail: TaskDetail, field: DetailField, value: string): void {
+  switch (field) {
+    case 'description':
+      detail.description = value.trim() ? value : undefined;
+      break;
+    case 'note':
+      // The board's note textarea edits the whole section: split on newlines, drop empty lines.
+      detail.notes = value
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      break;
+    case 'feedback':
+      detail.feedback = value.trim() ? value.trim() : undefined;
+      break;
+  }
+}
+
+// Apply an index field patch to a freshly-parsed index doc (mutating it). Disk wins on conflict.
+export function applyPatch(doc: IndexDoc, patch: FieldPatch): MergeResult {
+  const entry = doc.entries.find((e) => e.id === patch.taskId);
+  if (!entry) return { status: 'notfound' };
+
+  const current = currentFieldValue(entry, patch.field as IndexField, patch.questionIndex);
+  if (current !== patch.base && current !== patch.value) {
+    return { status: 'conflict', entry };
+  }
+  setFieldValue(entry, patch.field as IndexField, patch.value, patch.questionIndex);
+  return { status: 'applied', entry };
+}
+
+// Apply a detail field patch to a freshly-parsed task detail (mutating it). Disk wins on conflict.
+export function applyDetailPatch(detail: TaskDetail, patch: FieldPatch): DetailMergeResult {
+  const current = currentDetailFieldValue(detail, patch.field as DetailField);
+  if (current !== patch.base && current !== patch.value) {
+    return { status: 'conflict' };
+  }
+  setDetailFieldValue(detail, patch.field as DetailField, patch.value);
+  return { status: 'applied' };
 }

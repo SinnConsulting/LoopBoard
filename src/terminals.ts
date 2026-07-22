@@ -1,7 +1,7 @@
 // Loop terminals: plain VSCode terminals, one per model. Spawn/reuse/status/recycle
 // + /loop injection. No external deps (no tmux/node-pty); output is never read.
 import * as vscode from 'vscode';
-import { Board, Model } from './model';
+import { Model } from './model';
 import { LoopStatus } from './view';
 import { buildLoopCommand } from './loop';
 
@@ -39,7 +39,7 @@ export class TerminalManager {
 
   constructor(
     private getCwd: () => vscode.Uri,
-    private getBoard: () => Board | undefined,
+    private getLoopText: () => string,
     private getConfig: () => { permissionMode: string; interval: string; defaultModel: Model }
   ) {
     this.disposables.push(
@@ -75,8 +75,7 @@ export class TerminalManager {
       return;
     }
     const cfg = this.getConfig();
-    const board = this.getBoard();
-    const cmd = board ? buildLoopCommand(board, model, cfg.interval) : undefined;
+    const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show();
     const base = `claude --permission-mode ${cfg.permissionMode} --model ${model}`;
@@ -92,7 +91,7 @@ export class TerminalManager {
       }, BOOT_DELAY_MS);
     } else {
       terminal.sendText(base);
-      vscode.window.showWarningMessage('LoopBoard: no loop template found in TODO.md Automation section — starting claude without a loop.');
+      vscode.window.showWarningMessage('LoopBoard: no loop instructions found in .loopboard/LOOP.md Automation section — starting claude without a loop.');
     }
     this.changeEmitter.fire();
   }

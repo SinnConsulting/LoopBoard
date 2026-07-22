@@ -111,7 +111,7 @@
     const scrollTop = scrollPane ? scrollPane.scrollTop : 0;
     root.textContent = '';
     if (!board) {
-      root.append(h('div', { class: 'pane-inner muted' }, 'Loading TODO.md…'));
+      root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
       return;
     }
     root.append(renderTopbar(), renderPane(scrollTop), renderToasts());
@@ -156,10 +156,10 @@
     const pane = h('div', { class: 'pane' });
     const inner = h('div', { class: 'pane-inner' });
     if (board.todoMissing) {
-      inner.append(h('div', { class: 'pane-title' }, 'No TODO.md yet'));
-      inner.append(h('div', { class: 'pane-explainer' }, 'This workspace has no tracker. Create the initial TODO.md and DONE.md to get started.'));
+      inner.append(h('div', { class: 'pane-title' }, 'No LoopBoard workspace yet'));
+      inner.append(h('div', { class: 'pane-explainer' }, 'This workspace has no .loopboard/ tracker. Initialize it to scaffold TODO.md, LOOP.md and tasks/ and get started.'));
       inner.append(h('button', { class: 'btn-primary', type: 'button', style: { width: 'auto', padding: '0 16px' }, onclick: () => post({ type: 'createFiles' }) },
-        'Create TODO.md & DONE.md'));
+        'Initialize LoopBoard workspace'));
     } else if (composerOpen) {
       inner.append(renderComposer());
     } else {
@@ -367,6 +367,11 @@
 
     // chips
     card.append(renderChips(t));
+
+    // no detail file yet (task file is created lazily on the first detail edit / loop write)
+    if (!t.hasDetailFile) {
+      card.append(h('div', { class: 'muted-11', style: { marginTop: '6px' } }, 'No detail file yet — tasks/' + t.id + '.md is created on the first edit.'));
+    }
 
     // unparsed
     if (t.unparsedLines) {
