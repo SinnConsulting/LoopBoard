@@ -218,11 +218,11 @@ textarea { resize: vertical; }
   color: var(--vscode-inputValidation-warningBorder, #cca700); border: 1px solid var(--vscode-inputValidation-warningBorder, #cca700);
   border-radius: 4px; padding: 1px 6px;
 }
-.draft-text { font-size: 13px; font-style: italic; line-height: 1.5; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.draft-head-row { margin-bottom: 8px; }
+.draft-text { font-size: 13px; line-height: 1.6; text-align: left; color: var(--vscode-foreground, #cccccc); }
 .draft-text-btn { display: block; width: 100%; background: none; border: none; padding: 0; cursor: text; font-family: inherit; }
 .draft-text-btn:hover { color: var(--vscode-foreground, #cccccc); }
 .draft-text-btn:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
-.draft-edit { font-style: italic; }
 .muted { color: var(--vscode-descriptionForeground, #9d9d9d); }
 .muted-11 { font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); }
 
