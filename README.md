@@ -15,13 +15,34 @@ versions.
 
 ---
 
-LoopBoard is a VSCode extension that renders the open workspace's `TODO.md` as an interactive
-board: tick approval checkboxes, answer an AI worker's questions, review delivered work, and spawn
-per-model Claude Code loop terminals — without editing markdown by hand.
+LoopBoard is a VSCode extension that renders the open workspace's `.loopboard/` tracker as an
+interactive board: tick approval checkboxes, answer an AI worker's questions, review delivered
+work, and spawn per-model Claude Code loop terminals — without editing markdown by hand.
 
-The file stays the single source of truth. Every edit re-reads the disk, applies one field-level
+> **⚠️ v2.0.0 is breaking — re-initialize your workspace.** v2 moved storage from a single root
+> `TODO.md` into a `.loopboard/` directory (details below). There is **no migration**: the
+> extension only recognizes the new layout and ignores a root `TODO.md`. Run
+> **`LoopBoard: Initialize Workspace`** (or the board's empty-state button) to scaffold
+> `.loopboard/`, then port any old tasks by hand.
+
+Markdown stays the single source of truth. Every edit re-reads the disk, applies one field-level
 patch, and writes the whole file back canonically (atomic temp-file + rename), so humans, the
-board, and multiple agent loops can share it safely. Accepted work is archived to `DONE.md`.
+board, and multiple agent loops can share it safely — now per file. Accepted work is archived to
+`.loopboard/DONE.md`.
+
+## Storage layout
+
+```
+.loopboard/
+  TODO.md          slim task index — one entry per active task (id, phase, model, groomer, Q&A)
+  DONE.md          accepted tasks, newest first (created lazily on the first acceptance)
+  LOOP.md          workflow rules + the loop worker instructions the loops read every pass
+  tasks/<id>.md    per-task detail: meta, description, notes, worklog, feedback, delivered
+```
+
+The board composes each card from the slim index entry plus its `tasks/<id>.md`. A task file is
+created on the first detail edit (or the first loop write); on acceptance the index entry moves to
+`DONE.md` while the task file stays in `tasks/` as browsable history.
 
 ## How it works
 
@@ -55,8 +76,10 @@ through into the board:
 ## Quick start
 
 Open this folder in VSCode and press **F5** to start the Extension Development Host. The host
-opens against this repo, whose `TODO.md` drives the board. Click the LoopBoard icon in the
-activity bar for the sidebar summary, then **Open Board** (or run `LoopBoard: Open Board`).
+opens against this repo, whose `.loopboard/` tracker drives the board — if it has none yet, run
+`LoopBoard: Initialize Workspace` (or click the board's empty-state button) to scaffold it. Click
+the LoopBoard icon in the activity bar for the sidebar summary, then **Open Board** (or run
+`LoopBoard: Open Board`).
 
 ## Build (Docker only)
 
@@ -100,28 +123,29 @@ Zero runtime dependencies; the webview is vanilla HTML/CSS/JS with a CSP nonce o
 
 ## Loop terminals
 
-The ▶ buttons open a plain VSCode terminal named `Claude <Model>` in the workspace root, run
-`claude --model <m> --permission-mode <cfg>`, and after the startup delay inject the `/loop` block
-from `TODO.md`'s Automation section with `{MODEL}` substituted. ♻ disposes and respawns for a fresh
-context. Loops die with the VSCode window (restart is one click — all state lives in `TODO.md`).
+The ▶ buttons open a plain VSCode terminal named `Claude <Model>` in the workspace root and run
+`claude --model <m> --permission-mode <cfg>` with a tiny bootstrap prompt that points the loop at
+`.loopboard/LOOP.md`'s Automation section — the standing instructions each loop re-reads every
+pass. ♻ disposes and respawns for a fresh context. Loops die with the VSCode window (restart is one
+click — all state lives in `.loopboard/`).
 
 ## Security model
 
-**Treat `TODO.md` and workspace settings as trusted input.** LoopBoard's core loop pastes
-`TODO.md`'s Automation block into an autonomous `claude` session that runs with the configured
-`loopBoard.permissionMode` — which may be `bypassPermissions`. Anything written into that block, or
-into `.vscode/settings.json`, therefore steers an agent that can run commands on your machine. This
-is inherent to what LoopBoard does, not a bug.
+**Treat `.loopboard/` and workspace settings as trusted input.** LoopBoard's core loop points an
+autonomous `claude` session at `.loopboard/LOOP.md`'s Automation block, running with the configured
+`loopBoard.permissionMode` — which may be `bypassPermissions`. Anything written into `LOOP.md` (or
+the task files it tells the loop to open), or into `.vscode/settings.json`, therefore steers an
+agent that can run commands on your machine. This is inherent to what LoopBoard does, not a bug.
 
 Consequences:
 
-- A `TODO.md` from a source you don't control (a cloned repo, a shared workspace) is a
+- A `.loopboard/` from a source you don't control (a cloned repo, a shared workspace) is a
   prompt-injection vector with arbitrary-command-execution reach.
-- **Review the Automation block of any `TODO.md` before starting a loop in a repo you didn't
-  author**, and set `loopBoard.permissionMode` no higher than you're comfortable running unattended.
+- **Review `.loopboard/LOOP.md` before starting a loop in a repo you didn't author**, and set
+  `loopBoard.permissionMode` no higher than you're comfortable running unattended.
 
 VSCode Workspace Trust gates activation, but trusting a repo to open it is not the same as vetting
-what its `TODO.md` will tell an agent to do.
+what its `.loopboard/` will tell an agent to do.
 
 ## License
 

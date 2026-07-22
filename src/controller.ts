@@ -157,13 +157,18 @@ export class Controller {
     }
   }
 
-  private async onCreateFiles(): Promise<void> {
-    const tplUri = vscode.Uri.joinPath(this.extensionUri, 'media', 'todo-template.md');
-    const todoText = new TextDecoder().decode(await vscode.workspace.fs.readFile(tplUri));
-    const doneText = '# DONE\n\nAccepted tasks, newest first.\n';
-    const created = await this.store.createInitialFiles(todoText, doneText);
+  // Scaffold a fresh `.loopboard/` workspace (TODO.md + LOOP.md + tasks/). Wired to both the
+  // board's empty-state button (`createFiles` message) and the `loopboard.init` command.
+  async onCreateFiles(): Promise<void> {
+    const read = async (name: string) =>
+      new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.extensionUri, 'media', name)));
+    const todoText = await read('template-todo.md');
+    const loopText = await read('template-loop.md');
+    const created = await this.store.createInitialFiles(todoText, loopText);
     if (created) {
-      void vscode.window.showInformationMessage('LoopBoard: created TODO.md and DONE.md in the workspace root.');
+      void vscode.window.showInformationMessage('LoopBoard: initialized .loopboard/ (TODO.md, LOOP.md, tasks/).');
+    } else {
+      void vscode.window.showWarningMessage('LoopBoard: .loopboard/ already exists — nothing was overwritten.');
     }
     return this.refresh();
   }
