@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const store = new Store(folder);
   const terminals = new TerminalManager(
     () => folder.uri,
-    () => controller?.getBoard(),
+    () => store.loopText,
     () => {
       const c = vscode.workspace.getConfiguration('loopBoard');
       return {
