@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard TODO",
   "description": "Renders the workspace TODO.md as an interactive board and spawns coding-agent loop terminals (Claude Code today).",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "publisher": "SinnConsulting",
   "preview": true,
   "license": "MIT",
@@ -93,38 +93,98 @@
           "properties": {
             "opus": {
               "anyOf": [
-                { "type": "string", "description": "Custom --model string (shorthand)." },
-                { "type": "object", "additionalProperties": false, "properties": {
-                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
-                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'opus')." }
-                } }
+                {
+                  "type": "string",
+                  "description": "Custom --model string (shorthand)."
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Show this model in the Loops overview and selects."
+                    },
+                    "model": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Custom --model string (empty = default 'opus')."
+                    }
+                  }
+                }
               ]
             },
             "sonnet": {
               "anyOf": [
-                { "type": "string", "description": "Custom --model string (shorthand)." },
-                { "type": "object", "additionalProperties": false, "properties": {
-                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
-                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'sonnet')." }
-                } }
+                {
+                  "type": "string",
+                  "description": "Custom --model string (shorthand)."
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Show this model in the Loops overview and selects."
+                    },
+                    "model": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Custom --model string (empty = default 'sonnet')."
+                    }
+                  }
+                }
               ]
             },
             "fable": {
               "anyOf": [
-                { "type": "string", "description": "Custom --model string (shorthand)." },
-                { "type": "object", "additionalProperties": false, "properties": {
-                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
-                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'fable')." }
-                } }
+                {
+                  "type": "string",
+                  "description": "Custom --model string (shorthand)."
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Show this model in the Loops overview and selects."
+                    },
+                    "model": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Custom --model string (empty = default 'fable')."
+                    }
+                  }
+                }
               ]
             },
             "haiku": {
               "anyOf": [
-                { "type": "string", "description": "Custom --model string (shorthand)." },
-                { "type": "object", "additionalProperties": false, "properties": {
-                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
-                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'haiku')." }
-                } }
+                {
+                  "type": "string",
+                  "description": "Custom --model string (shorthand)."
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Show this model in the Loops overview and selects."
+                    },
+                    "model": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Custom --model string (empty = default 'haiku')."
+                    }
+                  }
+                }
               ]
             }
           }
