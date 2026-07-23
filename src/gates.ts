@@ -36,6 +36,7 @@ export function acceptDoneEntry(entry: IndexEntry, today: string): IndexEntry {
     model: entry.model,
     groomer: entry.groomer,
     questions: [],
+    notes: [], // notes are transient/unprocessed — dropped on accept
     completed: today,
     unknownLines: [],
     raw: '',

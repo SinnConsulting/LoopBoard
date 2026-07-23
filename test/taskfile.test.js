@@ -21,7 +21,6 @@ test('parses every canonical section', () => {
   assert.deepEqual(d.dependsOn, ['t-9c2e', 't-dd01']);
   assert.ok(d.description.startsWith('Retries for failed webhook deliveries.'));
   assert.ok(d.description.includes('Second paragraph'), 'multi-line description preserved');
-  assert.deepEqual(d.notes, ['Rebase on main before opening the PR.', 'Add a metric for retry count.']);
   assert.deepEqual(d.worklog, ['2026-07-08', '2026-07-09']);
   assert.equal(d.feedback, 'Please redact the auth token from the request log fields.');
   assert.ok(d.delivered.startsWith('Added exponential backoff'));
@@ -43,7 +42,6 @@ test('canonical fixture round-trips byte-for-byte', () => {
 test('empty file -> empty detail; serialize is just the H1', () => {
   const d = parseTaskFile('');
   assert.equal(d.description, undefined);
-  assert.deepEqual(d.notes, []);
   assert.deepEqual(d.worklog, []);
   assert.equal(serializeTaskFile(d, 'Fresh task', 't-0001'), '# Fresh task (t-0001)\n');
 });

@@ -11,7 +11,7 @@ const {
   applyPatch,
   applyDetailPatch,
   patchTarget,
-  currentDetailFieldValue,
+  currentFieldValue,
   normalizeModel,
 } = require('../out-test/merge.js');
 
@@ -21,8 +21,8 @@ function readFix(name) {
 }
 
 test('patchTarget routes fields to the right file', () => {
-  for (const f of ['title', 'model', 'groomer', 'answer']) assert.equal(patchTarget(f), 'index', f);
-  for (const f of ['description', 'note', 'feedback']) assert.equal(patchTarget(f), 'detail', f);
+  for (const f of ['title', 'model', 'groomer', 'answer', 'note']) assert.equal(patchTarget(f), 'index', f);
+  for (const f of ['description', 'feedback']) assert.equal(patchTarget(f), 'detail', f);
 });
 
 test('applyPatch applies an index field when no conflict', () => {
@@ -71,20 +71,23 @@ test('applyDetailPatch detects a same-field detail conflict', () => {
   assert.equal(r.status, 'conflict');
 });
 
-test('note edits the whole ## Notes section: split on newlines, drop empties', () => {
-  const detail = parseTaskFile(readFix('taskfile-full.md'));
+test('note is an index field: edits the whole set, split on newlines, drop empties', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const entry = doc.entries.find((e) => e.id === 't-bb01');
   // The webview joins notes with \n as the rendered base.
-  assert.equal(currentDetailFieldValue(detail, 'note'), 'Rebase on main before opening the PR.\nAdd a metric for retry count.');
-  const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'note', value: 'first\n\n  \nsecond\n', base: currentDetailFieldValue(detail, 'note') });
+  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count.';
+  assert.equal(currentFieldValue(entry, 'note'), base);
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: 'first\n\n  \nsecond\n', base });
   assert.equal(r.status, 'applied');
-  assert.deepEqual(detail.notes, ['first', 'second']);
+  assert.deepEqual(doc.entries.find((e) => e.id === 't-bb01').notes, ['first', 'second']);
 });
 
-test('clearing note via empty value empties the section', () => {
-  const detail = parseTaskFile(readFix('taskfile-full.md'));
-  const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'note', value: '', base: currentDetailFieldValue(detail, 'note') });
+test('clearing note via empty value empties the set', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count.';
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: '', base });
   assert.equal(r.status, 'applied');
-  assert.deepEqual(detail.notes, []);
+  assert.deepEqual(doc.entries.find((e) => e.id === 't-bb01').notes, []);
 });
 
 test('normalizeModel', () => {

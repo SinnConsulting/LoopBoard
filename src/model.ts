@@ -94,6 +94,7 @@ export interface IndexEntry {
   model?: Model;
   groomer?: Model; // which model grooms this task (absent = default model)
   questions: Question[];
+  notes: string[]; // unprocessed human worker-notes (Rule 16): applied then deleted, index-only
   completed?: string; // DONE.md entries only
   unknownLines: string[]; // preserved verbatim, flagged in UI
   raw: string; // original block text, for conflict detection
@@ -110,7 +111,6 @@ export interface TaskDetail {
   links: string[];
   dependsOn: string[];
   description?: string;
-  notes: string[]; // one bullet per note under `## Notes`
   feedback?: string;
   delivered?: string;
   unknownLines: string[]; // preserved verbatim, flagged in UI

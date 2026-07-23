@@ -17,7 +17,7 @@ task index, grammar v4), `DONE.md` (accepted, lazy), `LOOP.md` (rules + loop wor
 2. Zero runtime dependencies. devDependencies = exactly `typescript` + `@types/vscode`. No
    `@types/node`, no bundler, no frameworks; webview = vanilla HTML/CSS/JS.
 3. `.loopboard/` markdown = source of truth. The index (`TODO.md`, grammar v4) carries only
-   id/phase/model/groomer/questions per entry; every other field lives in `tasks/<id>.md`.
+   id/phase/model/groomer/questions/notes per entry; every other field lives in `tasks/<id>.md`.
    Parse tolerantly, write back canonical on every save, preserve unparseable lines verbatim
    (flagged in UI). Grammar + task-file format are documented in `LOOP.md` (Appendix A of
    `REFACTORING.md`).
