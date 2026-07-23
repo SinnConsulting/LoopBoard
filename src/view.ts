@@ -37,6 +37,7 @@ export interface WebBoard {
   todoMissing?: boolean; // set by the controller; offers the scaffold button in the UI
   workspaceName: string;
   defaultModel: Model;
+  models: Model[]; // enabled model slot ids, for the board/composer/draft model selects
   phases: Record<Phase, WebTask[]>;
   loops: LoopStatus[];
   badge: BadgeInfo;
@@ -126,7 +127,8 @@ export function toWebviewBoard(
   board: Board,
   workspaceName: string,
   defaultModel: Model,
-  loops: LoopStatus[]
+  loops: LoopStatus[],
+  models: Model[] = []
 ): WebBoard {
   const doneIds = doneIdSet(board);
   const phases: Record<Phase, WebTask[]> = {
@@ -145,6 +147,7 @@ export function toWebviewBoard(
   return {
     workspaceName,
     defaultModel,
+    models,
     phases,
     loops,
     badge: computeBadge(board),

@@ -5,7 +5,7 @@ import { TerminalManager, isKnownModel } from './terminals';
 import { BoardPanel } from './panel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
-import { Model, Board } from './model';
+import { Model, Board, ModelsConfig, ResolvedModel, resolveModels, BUILTIN_MODEL_IDS } from './model';
 import { FieldPatch } from './merge';
 
 function today(): string {
@@ -35,11 +35,14 @@ export class Controller {
       defaultModel: c.get<Model>('defaultModel', 'opus'),
       autoRecycle: c.get<boolean>('autoRecycle', false),
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
+      models: resolveModels(c.get<ModelsConfig>('models')),
     };
   }
 
   private buildWebBoard(board: Board): WebBoard {
-    const web = toWebviewBoard(board, this.store.workspaceName, this.config().defaultModel, this.terminals.status());
+    const cfg = this.config();
+    const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
+    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultModel, this.terminals.status(), enabledIds);
     web.todoMissing = this.store.todoMissing;
     return web;
   }
@@ -73,7 +76,7 @@ export class Controller {
     if (!prev || !this.config().autoRecycle) return;
     const inProgressBy = (b: Board, model: Model): number =>
       b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? this.config().defaultModel) === model).length;
-    for (const model of ['opus', 'sonnet', 'fable'] as Model[]) {
+    for (const model of BUILTIN_MODEL_IDS) {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {
@@ -91,7 +94,7 @@ export class Controller {
     if (!prev || !cfg.clearSessionAfterTask || cfg.autoRecycle) return;
     const inProgressBy = (b: Board, model: Model): number =>
       b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? cfg.defaultModel) === model).length;
-    for (const model of ['opus', 'sonnet', 'fable'] as Model[]) {
+    for (const model of BUILTIN_MODEL_IDS) {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {

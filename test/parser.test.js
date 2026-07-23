@@ -111,6 +111,15 @@ test('model + groomer serialize on drafts (model before groomer) and round-trip'
   assert.equal(serializeTodo(doc2), text, 'fixpoint');
 });
 
+test('haiku is accepted as a model:/groomer: value and round-trips', () => {
+  const src = ['# TODO', '', '## Tasks', '', '- [ ] Haiku task', '  - id: t-hk01', '  - phase: backlog', '  - model: haiku', '  - groomer: haiku'].join('\n');
+  const doc = parseTodo(src);
+  assert.equal(doc.entries[0].model, 'haiku');
+  assert.equal(doc.entries[0].groomer, 'haiku');
+  assert.equal(doc.entries[0].unknownLines.length, 0, 'not dropped to unknownLines');
+  assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
+});
+
 test('ids assigned to id-less entries on write', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] A task with no id', '  - phase: new'].join('\n');
   const doc = parseTodo(src);

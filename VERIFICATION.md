@@ -78,6 +78,13 @@ New v2 checklist (from REFACTORING.md Phase 8):
    prompt submits after boot.
 8. **Legacy ignored:** a root-level `TODO.md` present → ignored entirely (activation keys off
    `.loopboard/TODO.md`).
+9. **Configurable models (t-c1a7):** with defaults, the sidebar Loops overview lists four rows
+   (Opus, Sonnet, Fable, **Haiku**) and the board/composer/draft model selects offer all four.
+   Set `loopBoard.models.haiku.enabled: false` → Haiku disappears from the Loops overview and the
+   selects. Set `loopBoard.models.opus.model: "opus[1m]"` and spawn the Opus loop → the terminal
+   command reads `claude … --model opus[1m]` while the seeded prompt still says "running as model
+   opus" (so it claims `model: opus` tasks). Set an invalid override (e.g. `"opus; rm"`) → the loop
+   refuses to start with a warning and no shell line is emitted.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough

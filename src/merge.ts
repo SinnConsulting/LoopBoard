@@ -4,7 +4,7 @@
 // v2 routes patches by destination file: index fields patch `.loopboard/TODO.md`, detail fields
 // patch `.loopboard/tasks/<id>.md`. Both keep today's base/conflict semantics (disk wins).
 
-import { IndexDoc, IndexEntry, TaskDetail, Model } from './model';
+import { IndexDoc, IndexEntry, TaskDetail, Model, BUILTIN_MODEL_IDS } from './model';
 
 export type IndexField = 'title' | 'model' | 'groomer' | 'answer';
 export type DetailField = 'description' | 'note' | 'feedback';
@@ -27,7 +27,7 @@ export interface DetailMergeResult {
   status: 'applied' | 'conflict';
 }
 
-const KNOWN_MODELS: Model[] = ['opus', 'sonnet', 'fable'];
+const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
 const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer'];
 
 // Which file a field patch targets.

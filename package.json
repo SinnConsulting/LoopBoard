@@ -79,10 +79,51 @@
           "enum": [
             "opus",
             "sonnet",
-            "fable"
+            "fable",
+            "haiku"
           ],
           "default": "opus",
           "description": "The model that owns tasks with no explicit model: field."
+        },
+        "loopBoard.models": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": false,
+          "markdownDescription": "Per-model overrides. For each built-in model slot: set `enabled: false` to hide it from the Loops overview and the board's model selects, or set `model` to a custom `--model` string that replaces the default when non-empty (e.g. `opus[1m]` for the 1M-context window, or an org alias). Invalid `--model` strings are ignored.",
+          "properties": {
+            "opus": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'opus')." }
+              }
+            },
+            "sonnet": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'sonnet')." }
+              }
+            },
+            "fable": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'fable')." }
+              }
+            },
+            "haiku": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'haiku')." }
+              }
+            }
+          }
         },
         "loopBoard.loopInterval": {
           "type": "string",
