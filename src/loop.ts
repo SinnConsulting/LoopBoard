@@ -1,6 +1,15 @@
 // Pure loop-command builder. No vscode imports so it is unit-testable in Docker.
 import { Model } from './model';
 
+// Build the `claude …` invocation prefix (everything before the /loop prompt argv). The resolved
+// `--model` string is configurable and may contain shell glob metacharacters (`[` `]`, e.g.
+// `haiku[1m]`), so it MUST be single-quoted — otherwise zsh tries to glob-expand it and aborts with
+// "no matches found". The string is pre-validated (isValidModelString) to contain no single quote,
+// so a plain single-quote wrap is safe. permissionMode comes from a fixed enum, left unquoted.
+export function buildClaudeBase(permissionMode: string, modelString: string): string {
+  return `claude --permission-mode ${permissionMode} --model '${modelString}'`;
+}
+
 // Build the tiny bootstrap prompt pasted into a loop terminal: it only names the model and the
 // interval; the worker reads the full standing instructions from `.loopboard/LOOP.md`'s
 // ## Automation section on every pass (so editing that section retunes running loops).

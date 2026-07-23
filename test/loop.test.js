@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { buildLoopCommand } = require('../out-test/loop.js');
+const { buildLoopCommand, buildClaudeBase } = require('../out-test/loop.js');
 const { parseTodo } = require('../out-test/parser.js');
 const { serializeTodo } = require('../out-test/writer.js');
 
@@ -24,6 +24,15 @@ test('buildLoopCommand: bootstrap prompt names model + interval, points at .loop
   assert.ok(!cmd.includes("'"), 'no apostrophes (short-argv escaping constraint)');
   assert.ok(!cmd.includes('\n'), 'single line for the TUI paste');
   assert.ok(cmd.length < 300, 'bootstrap prompt stays tiny');
+});
+
+test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do not expand', () => {
+  assert.equal(
+    buildClaudeBase('auto', 'haiku[1m]'),
+    "claude --permission-mode auto --model 'haiku[1m]'"
+  );
+  // A plain id is quoted too — harmless, and keeps one code path.
+  assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus'");
 });
 
 test('buildLoopCommand: undefined when there is no ## Automation section', () => {

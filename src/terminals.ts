@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString } from './model';
 import { LoopStatus } from './view';
-import { buildLoopCommand } from './loop';
+import { buildLoopCommand, buildClaudeBase } from './loop';
 
 // Runtime allowlist for untrusted (webview-supplied) model ids — the logical slot ids. The webview
 // values reach the loop terminal shell line, so the host validates them rather than trusting a
@@ -87,7 +87,7 @@ export class TerminalManager {
     const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show();
-    const base = `claude --permission-mode ${cfg.permissionMode} --model ${modelString}`;
+    const base = buildClaudeBase(cfg.permissionMode, modelString);
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
       // delay note above). Single-quoted; the prompt is one short line built by buildLoopCommand.

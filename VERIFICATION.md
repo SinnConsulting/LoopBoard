@@ -84,7 +84,9 @@ New v2 checklist (from REFACTORING.md Phase 8):
    selects. Set `loopBoard.models.opus.model: "opus[1m]"` and spawn the Opus loop → the terminal
    command reads `claude … --model opus[1m]` while the seeded prompt still says "running as model
    opus" (so it claims `model: opus` tasks). Set an invalid override (e.g. `"opus; rm"`) → the loop
-   refuses to start with a warning and no shell line is emitted.
+   refuses to start with a warning and no shell line is emitted. Confirm a `[1m]` override actually
+   RUNS: the `--model` value is single-quoted, so zsh does not glob-expand `haiku[1m]` and abort with
+   "no matches found".
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
