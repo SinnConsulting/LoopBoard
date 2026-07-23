@@ -212,7 +212,7 @@
         saveBtn,
         h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; render(); } }, 'Cancel'),
         modelSelect('Groom with', composerGroomer, (v) => { composerGroomer = v; }),
-        modelSelect('Model', composerModel, (v) => { composerModel = v; }),
+        modelSelect('Work with', composerModel, (v) => { composerModel = v; }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
     );
   }
