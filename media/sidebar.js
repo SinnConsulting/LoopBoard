@@ -100,13 +100,11 @@
     }
     sb.append(loops);
 
-    const settings = h('div', { class: 'sb-section' });
-    settings.append(h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Open extension settings', title: 'Open LoopBoard settings', onclick: () => vscode.postMessage({ type: 'openSettings' }) },
-      icon(SVG.gear), h('span', { class: 'label' }, 'Settings')));
-    sb.append(settings);
-
     sb.append(h('div', { class: 'spacer' }));
-    sb.append(h('div', { class: 'open-wrap' }, h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new' }) }, 'New Story')));
+    sb.append(h('div', { class: 'open-wrap' },
+      h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Open extension settings', title: 'Open LoopBoard settings', onclick: () => vscode.postMessage({ type: 'openSettings' }) },
+        icon(SVG.gear), h('span', { class: 'label' }, 'Settings')),
+      h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new' }) }, 'New Story')));
     root.append(sb);
   }
 
