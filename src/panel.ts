@@ -31,13 +31,15 @@ export class BoardPanel {
     this.panel.webview.html = await renderHtml(this.panel.webview, this.extensionUri, 'board');
   }
 
-  static show(extensionUri: vscode.Uri): BoardPanel {
+  // `created` is true only when a fresh panel was constructed — its webview script hasn't loaded
+  // yet, so callers must NOT post into it immediately (wait for the webview's `ready` message).
+  static show(extensionUri: vscode.Uri): { panel: BoardPanel; created: boolean } {
     if (BoardPanel.current) {
       BoardPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      return BoardPanel.current;
+      return { panel: BoardPanel.current, created: false };
     }
     BoardPanel.current = new BoardPanel(extensionUri);
-    return BoardPanel.current;
+    return { panel: BoardPanel.current, created: true };
   }
 
   onMessage(handler: (msg: InboundMessage) => void): void {
