@@ -2,8 +2,7 @@
 
 VSCode extension: renders the workspace `.loopboard/` tracker as an interactive board, writes
 edits back to markdown, spawns model-specific Claude Code loop terminals. Design: `PLAN.md`;
-v2 storage-split spec: `REFACTORING.md`; decisions: `DECISIONS.md`; verification status:
-`VERIFICATION.md`.
+decisions: `DECISIONS.md`; verification status: `VERIFICATION.md`.
 
 Storage (v2.0.0, breaking, no migration): everything lives under `.loopboard/` — `TODO.md` (slim
 task index, grammar v4), `DONE.md` (accepted, lazy), `LOOP.md` (rules + loop worker instructions),
@@ -19,8 +18,7 @@ task index, grammar v4), `DONE.md` (accepted, lazy), `LOOP.md` (rules + loop wor
 3. `.loopboard/` markdown = source of truth. The index (`TODO.md`, grammar v4) carries only
    id/phase/model/groomer/questions/notes per entry; every other field lives in `tasks/<id>.md`.
    Parse tolerantly, write back canonical on every save, preserve unparseable lines verbatim
-   (flagged in UI). Grammar + task-file format are documented in `LOOP.md` (Appendix A of
-   `REFACTORING.md`).
+   (flagged in UI). Grammar + task-file format are documented in `LOOP.md`.
 4. ALL markdown IO goes through `src/store.ts` — the only module that knows `.loopboard/` paths;
    merge logic in exactly one place (`merge.ts`, `patchTarget` routes index vs detail). Saves are
    field-level patches on ONE file: re-read disk, re-parse, apply one field, serialize whole file,
@@ -99,6 +97,5 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
 - `DONE.md` may be absent until the first Review acceptance; the store treats missing as
   empty — keep it that way.
 - `media/template-todo.md` + `media/template-loop.md` (scaffold for fresh `.loopboard/`
-  workspaces) are shipped byte-for-byte from `REFACTORING.md` Appendices A/B; `template-loop.md`
-  must mirror `LOOP.md`'s grammar/format prose by hand — known drift hazard, no test catches prose
-  divergence.
+  workspaces); `template-loop.md` must mirror `LOOP.md`'s grammar/format prose by hand — known
+  drift hazard, no test catches prose divergence.
