@@ -1,12 +1,11 @@
 # CLAUDE.md — LoopBoard
 
 VSCode extension: renders the workspace `.loopboard/` tracker as an interactive board, writes
-edits back to markdown, spawns model-specific Claude Code loop terminals. Design: `PLAN.md`;
-decisions: `DECISIONS.md`; verification status: `VERIFICATION.md`.
+edits back to markdown, spawns model-specific Claude Code loop terminals. Decisions:
+`DECISIONS.md`; verification status: `VERIFICATION.md`.
 
-Storage (v2.0.0, breaking, no migration): everything lives under `.loopboard/` — `TODO.md` (slim
-task index, grammar v4), `DONE.md` (accepted, lazy), `LOOP.md` (rules + loop worker instructions),
-`tasks/<id>.md` (per-task detail). A root `TODO.md` is ignored.
+Storage: everything lives under `.loopboard/` — `TODO.md` (slim task index, grammar v4), `DONE.md`
+(accepted, lazy), `LOOP.md` (rules + loop worker instructions), `tasks/<id>.md` (per-task detail).
 
 ## Non-negotiable
 
@@ -78,9 +77,8 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   `.loopboard/LOOP.md`'s `## Automation`; slices that section out first since LOOP.md has several
   earlier fences) rides as single-quoted argv. The CLI seeds it into the REPL input but does NOT auto-submit
   → lone Enter after `BOOT_DELAY_MS` (post-TUI-boot, past bracketed-paste detection). Pasting
-  into a running REPL (e.g. `/clear`): paste + Enter after `SUBMIT_DELAY_MS`. Historical
-  quoting breakage came from the old ~3,000-char prompt; the short line is apostrophe-free
-  (still `'\''`-escaped). tmux = v2 path, isolated in `terminals.ts`.
+  into a running REPL (e.g. `/clear`): paste + Enter after `SUBMIT_DELAY_MS`. The short line is
+  apostrophe-free (still `'\''`-escaped).
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
 
