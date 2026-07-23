@@ -58,10 +58,12 @@ export class Controller {
     this.sidebar.setBadge(web.badge);
   }
 
-  openBoard(): void {
-    const panel = BoardPanel.show(this.extensionUri);
+  // Returns true if a fresh panel was created (its webview isn't ready to receive posts yet).
+  openBoard(): boolean {
+    const { panel, created } = BoardPanel.show(this.extensionUri);
     panel.onMessage((msg) => this.handleMessage(msg));
-    // The webview sends 'ready' once loaded; that handler posts the board.
+    // The webview sends 'ready' once loaded; that handler posts the board (and flushes any reveal).
+    return created;
   }
 
   private flushReveal(): void {
@@ -156,8 +158,11 @@ export class Controller {
         return;
       case 'reveal':
         this.pendingReveal = { taskId: msg.taskId, phase: msg.phase };
-        this.openBoard();
-        this.flushReveal();
+        // Flush inline only if the panel already existed (its webview is live). If openBoard just
+        // created the panel, the webview's message listener isn't attached yet — posting now would
+        // drop the reveal and the board would open on the default tab (the first-click bug). Leave
+        // pendingReveal for the webview's `ready` handler, which flushes it after the board is sent.
+        if (!this.openBoard()) this.flushReveal();
         return;
     }
   }
