@@ -40,6 +40,13 @@ test('a valid override REPLACES the default --model string; invalid is ignored',
   assert.equal(r.find((m) => m.id === 'sonnet').model, 'sonnet'); // invalid -> default
 });
 
+test('string shorthand sets the --model override (e.g. "haiku": "haiku[1m]")', () => {
+  const r = resolveModels({ haiku: 'haiku[1m]', opus: 'bad;rm' });
+  assert.equal(r.find((m) => m.id === 'haiku').model, 'haiku[1m]');
+  assert.equal(r.find((m) => m.id === 'haiku').enabled, true);
+  assert.equal(r.find((m) => m.id === 'opus').model, 'opus'); // invalid shorthand -> default
+});
+
 test('enabled: false drops a slot from enabledModels', () => {
   const en = enabledModels({ fable: { enabled: false } });
   assert.deepEqual(en.map((m) => m.id), ['opus', 'sonnet', 'haiku']);

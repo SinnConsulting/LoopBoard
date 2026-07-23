@@ -32,12 +32,21 @@ export function isValidModelString(s: string): boolean {
   return MODEL_STRING_RE.test(s);
 }
 
-// Per-slot user configuration, read from the `loopBoard.models` setting (keyed by slot id).
-export interface ModelConfigEntry {
+// Per-slot user configuration, read from the `loopBoard.models` setting (keyed by slot id). Two
+// accepted shapes: the object form `{ enabled, model }` for full control, or a bare string as a
+// shorthand for just the `--model` override (e.g. `"haiku": "haiku[1m]"`).
+export interface ModelConfigObject {
   enabled?: boolean; // default true; false hides the slot from the Loops overview + board selects
   model?: string; // custom `--model` string; empty/invalid => the built-in default (REPLACE when set)
 }
+export type ModelConfigEntry = string | ModelConfigObject;
 export type ModelsConfig = Record<string, ModelConfigEntry | undefined>;
+
+// Normalize either accepted shape to the object form.
+function asConfigObject(entry: ModelConfigEntry | undefined): ModelConfigObject {
+  if (typeof entry === 'string') return { model: entry };
+  return entry || {};
+}
 
 // A model slot after applying user config: the actual spawn string + whether it is active.
 export interface ResolvedModel {
@@ -52,7 +61,7 @@ export interface ResolvedModel {
 export function resolveModels(config?: ModelsConfig): ResolvedModel[] {
   const cfg = config || {};
   return BUILTIN_MODELS.map((m) => {
-    const c = cfg[m.id] || {};
+    const c = asConfigObject(cfg[m.id]);
     const override = typeof c.model === 'string' ? c.model.trim() : '';
     const model = override && isValidModelString(override) ? override : m.model;
     return { id: m.id, label: m.label, model, enabled: c.enabled !== false };
