@@ -121,10 +121,16 @@ export class Controller {
         return this.onPatch(msg.patch as FieldPatch);
       case 'gate':
         return this.onGate(msg.taskId, msg.action);
-      case 'createDraft':
-        await this.store.createDraft(String(msg.text ?? ''), today(), String(msg.groomer ?? ''), String(msg.model ?? ''));
+      case 'createDraft': {
+        // Ungroomed drafts carry explicit groomer/model (default when unspecified) so a loop
+        // knows unambiguously who grooms and works the story — never left to the implicit default.
+        const def = this.config().defaultModel;
+        const groomer = String(msg.groomer ?? '') || def;
+        const model = String(msg.model ?? '') || def;
+        await this.store.createDraft(String(msg.text ?? ''), today(), groomer, model);
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
+      }
       case 'spawnLoop':
         if (isKnownModel(msg.model)) this.terminals.spawn(msg.model);
         return;
