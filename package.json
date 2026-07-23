@@ -79,10 +79,55 @@
           "enum": [
             "opus",
             "sonnet",
-            "fable"
+            "fable",
+            "haiku"
           ],
           "default": "opus",
           "description": "The model that owns tasks with no explicit model: field."
+        },
+        "loopBoard.models": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": false,
+          "markdownDescription": "Per-model overrides. Each built-in slot (opus/sonnet/fable/haiku) accepts either a plain STRING — a shorthand for the `--model` string to spawn (e.g. `\"haiku\": \"haiku[1m]\"`) — or an OBJECT `{ \"enabled\": bool, \"model\": string }` for full control (set `enabled: false` to hide the slot from the Loops overview and the board's model selects). A custom `--model` replaces the default when non-empty; invalid `--model` strings are ignored.",
+          "properties": {
+            "opus": {
+              "anyOf": [
+                { "type": "string", "description": "Custom --model string (shorthand)." },
+                { "type": "object", "additionalProperties": false, "properties": {
+                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'opus')." }
+                } }
+              ]
+            },
+            "sonnet": {
+              "anyOf": [
+                { "type": "string", "description": "Custom --model string (shorthand)." },
+                { "type": "object", "additionalProperties": false, "properties": {
+                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'sonnet')." }
+                } }
+              ]
+            },
+            "fable": {
+              "anyOf": [
+                { "type": "string", "description": "Custom --model string (shorthand)." },
+                { "type": "object", "additionalProperties": false, "properties": {
+                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'fable')." }
+                } }
+              ]
+            },
+            "haiku": {
+              "anyOf": [
+                { "type": "string", "description": "Custom --model string (shorthand)." },
+                { "type": "object", "additionalProperties": false, "properties": {
+                  "enabled": { "type": "boolean", "default": true, "description": "Show this model in the Loops overview and selects." },
+                  "model": { "type": "string", "default": "", "description": "Custom --model string (empty = default 'haiku')." }
+                } }
+              ]
+            }
+          }
         },
         "loopBoard.loopInterval": {
           "type": "string",

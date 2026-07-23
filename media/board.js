@@ -98,6 +98,13 @@
     return false;
   }
 
+  // ---- model select options (data-driven from the board's enabled model list) ----
+  // The leading "default (<model>)" option maps to '' (no explicit model:); the rest are the
+  // enabled model slots the extension sends in board.models. Disabled slots simply don't appear.
+  function defaultModelOpt() { return 'default (' + ((board && board.defaultModel) || 'opus') + ')'; }
+  function modelOptions() { return [defaultModelOpt()].concat((board && board.models) || []); }
+  function normModelValue(v) { return v === defaultModelOpt() ? '' : v; }
+
   // ---- field patch helper ----
   function sendPatch(taskId, field, value, base, questionIndex) {
     if (value === base) return; // no-op
@@ -191,12 +198,12 @@
     // Groomer + worker model selectors ('' = default model), mirroring the card selects.
     const modelSelect = (label, value, onchange) => {
       const sel = h('select', { class: 'model-select', 'aria-label': label });
-      for (const opt of ['default (opus)', 'opus', 'sonnet', 'fable']) {
+      for (const opt of modelOptions()) {
         const o = h('option', { value: opt }, opt);
-        if (opt === (value || 'default (opus)')) o.selected = true;
+        if (opt === (value || defaultModelOpt())) o.selected = true;
         sel.append(o);
       }
-      sel.addEventListener('change', (e) => onchange(e.target.value === 'default (opus)' ? '' : e.target.value));
+      sel.addEventListener('change', (e) => onchange(normModelValue(e.target.value)));
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
@@ -291,15 +298,14 @@
         onclick: () => { u.editingDraft = true; u.draftText = t.title; render(); } }, t.title);
     }
     // "Groom with" selector: which model expands this draft into a story (absent = default).
-    const groomVal = t.groomer || 'default (opus)';
+    const groomVal = t.groomer || defaultModelOpt();
     const groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with' });
-    for (const opt of ['default (opus)', 'opus', 'sonnet', 'fable']) {
+    for (const opt of modelOptions()) {
       const o = h('option', { value: opt }, opt);
       if (opt === groomVal) o.selected = true;
       groomSel.append(o);
     }
-    const normGroom = (v) => (v === 'default (opus)' ? '' : v);
-    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normGroom(e.target.value), t.groomer || ''));
+    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value), t.groomer || ''));
 
     return h('div', { class: 'card draft', 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
@@ -344,17 +350,16 @@
     }
     head.append(titleWrap);
 
-    const modelVal = t.model || 'default (opus)';
+    const modelVal = t.model || defaultModelOpt();
     const sel = h('select', { class: 'model-select', 'aria-label': 'Model' });
-    for (const opt of ['default (opus)', 'opus', 'sonnet', 'fable']) {
+    for (const opt of modelOptions()) {
       const o = h('option', { value: opt }, opt);
       if (opt === modelVal) o.selected = true;
       sel.append(o);
     }
-    // Store represents "no model" as ''; map the display value 'default (opus)' to '' so
+    // Store represents "no model" as ''; map the display "default (<model>)" value to '' so
     // base matches the on-disk value and we don't trip a false conflict.
-    const normModel = (v) => (v === 'default (opus)' ? '' : v);
-    sel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModel(e.target.value), t.model || ''));
+    sel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value), t.model || ''));
     head.append(sel);
     if (variant === 'new') {
       head.append(h('button', {

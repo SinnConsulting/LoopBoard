@@ -1,21 +1,16 @@
 // Loop terminals: plain VSCode terminals, one per model. Spawn/reuse/status/recycle
 // + /loop injection. No external deps (no tmux/node-pty); output is never read.
 import * as vscode from 'vscode';
-import { Model } from './model';
+import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString } from './model';
 import { LoopStatus } from './view';
-import { buildLoopCommand } from './loop';
+import { buildLoopCommand, buildClaudeBase } from './loop';
 
-const MODELS: { id: Model; name: string }[] = [
-  { id: 'opus', name: 'Opus' },
-  { id: 'sonnet', name: 'Sonnet' },
-  { id: 'fable', name: 'Fable' },
-];
-
-// Runtime allowlist for untrusted (webview-supplied) model ids — kept next to MODELS so the two
-// can't drift. The webview values reach the loop terminal shell line, so the host validates them
-// rather than trusting a compile-time `as Model` cast.
+// Runtime allowlist for untrusted (webview-supplied) model ids — the logical slot ids. The webview
+// values reach the loop terminal shell line, so the host validates them rather than trusting a
+// compile-time `as Model` cast. (The configurable part is each slot's `--model` string, resolved
+// and separately validated in spawn(); the set of logical ids stays fixed.)
 export function isKnownModel(x: unknown): x is Model {
-  return MODELS.some((m) => m.id === x);
+  return typeof x === 'string' && (BUILTIN_MODEL_IDS as string[]).includes(x);
 }
 
 function terminalName(model: Model): string {
@@ -40,7 +35,7 @@ export class TerminalManager {
   constructor(
     private getCwd: () => vscode.Uri,
     private getLoopText: () => string,
-    private getConfig: () => { permissionMode: string; interval: string; defaultModel: Model }
+    private getConfig: () => { permissionMode: string; interval: string; defaultModel: Model; models: ResolvedModel[] }
   ) {
     this.disposables.push(
       vscode.window.onDidOpenTerminal(() => this.changeEmitter.fire()),
@@ -59,13 +54,17 @@ export class TerminalManager {
   }
 
   status(): LoopStatus[] {
-    const def = this.getConfig().defaultModel;
-    return MODELS.map((m) => ({
-      id: m.id,
-      name: m.name,
-      running: !!this.find(m.id),
-      hint: m.id === def ? 'default' : `model: ${m.id}`,
-    }));
+    const cfg = this.getConfig();
+    const def = cfg.defaultModel;
+    // Only enabled slots appear in the Loops overview.
+    return cfg.models
+      .filter((m) => m.enabled)
+      .map((m) => ({
+        id: m.id,
+        name: m.label,
+        running: !!this.find(m.id),
+        hint: m.id === def ? 'default' : `model: ${m.id}`,
+      }));
   }
 
   spawn(model: Model): void {
@@ -75,10 +74,20 @@ export class TerminalManager {
       return;
     }
     const cfg = this.getConfig();
+    // Resolve the actual `--model` string for this slot (custom override or built-in default), and
+    // validate it before it reaches the shell line — never splice an unvalidated config value.
+    const resolved = cfg.models.find((m) => m.id === model);
+    const modelString = resolved ? resolved.model : model;
+    if (!isValidModelString(modelString)) {
+      vscode.window.showWarningMessage(`LoopBoard: the configured --model for "${model}" is invalid — not starting the loop.`);
+      return;
+    }
+    // The bootstrap prompt names the LOGICAL slot (model), so the worker claims `model: <slot>`
+    // tasks; the terminal itself spawns with the resolved (possibly 1M-suffixed) --model string.
     const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show();
-    const base = `claude --permission-mode ${cfg.permissionMode} --model ${model}`;
+    const base = buildClaudeBase(cfg.permissionMode, modelString);
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
       // delay note above). Single-quoted; the prompt is one short line built by buildLoopCommand.

@@ -22,12 +22,12 @@
 //   `completed:` is canonical in DONE.md entries only.
 // ========================================================================================
 
-import { IndexDoc, IndexEntry, Phase, Question, Model } from './model';
+import { IndexDoc, IndexEntry, Phase, Question, Model, BUILTIN_MODEL_IDS } from './model';
 
 const TASKS_HEADING_RE = /^##\s+Tasks\b/i;
 const TASK_RE = /^- \[([ xX])\]\s?(.*)$/;
 
-const KNOWN_MODELS: Model[] = ['opus', 'sonnet', 'fable'];
+const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
 const KNOWN_PHASES: Phase[] = ['new', 'inprogress', 'feedback', 'backlog', 'review', 'done'];
 
 export const EDITABLE_PHASES: Phase[] = ['new', 'inprogress', 'feedback', 'backlog', 'review'];

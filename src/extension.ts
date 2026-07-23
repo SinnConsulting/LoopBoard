@@ -3,7 +3,7 @@ import { Store } from './store';
 import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
 import { Controller } from './controller';
-import { Model } from './model';
+import { Model, ModelsConfig, resolveModels } from './model';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -22,6 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
         permissionMode: c.get<string>('permissionMode', 'auto'),
         interval: c.get<string>('loopInterval', '1m'),
         defaultModel: c.get<Model>('defaultModel', 'opus'),
+        models: resolveModels(c.get<ModelsConfig>('models')),
       };
     }
   );

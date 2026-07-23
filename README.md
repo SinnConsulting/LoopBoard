@@ -116,6 +116,32 @@ Zero runtime dependencies; the webview is vanilla HTML/CSS/JS with a CSP nonce o
 | `loopBoard.defaultModel` | `opus` | model that owns tasks with no `model:` field |
 | `loopBoard.loopInterval` | `1m` | interval used in the injected `/loop` line |
 | `loopBoard.autoRecycle` | `true` | recycle a model's terminal after it finishes a task |
+| `loopBoard.models` | `{}` | per-model overrides — customize the `--model` string, or hide a model |
+
+### Configuring models (`loopBoard.models`)
+
+The four built-in model slots — `opus`, `sonnet`, `fable`, `haiku` — are what you assign to tasks
+(`model:` / `groomer:`) and what the sidebar **Loops** rows spawn. `loopBoard.models` lets you
+override, per slot, the actual string passed as `claude --model <string>`, and toggle a slot on or
+off. Each slot accepts either a **string** (shorthand for just the `--model` override) or an
+**object** `{ "enabled": bool, "model": string }`:
+
+```jsonc
+"loopBoard.models": {
+  // String shorthand: run the Haiku slot with the 1M-context window.
+  "haiku": "haiku[1m]",
+
+  // Object form: pin Opus to a dated snapshot and keep it enabled.
+  "opus": { "model": "claude-opus-4-8" },
+
+  // Hide a slot from the Loops overview and the board's model selects.
+  "fable": { "enabled": false }
+}
+```
+
+An empty or invalid `model` falls back to the slot's built-in default (the id itself). Overrides may
+include the `[1m]` suffix or org aliases; anything outside `[A-Za-z0-9._\[\]-]` is rejected before it
+reaches the terminal.
 
 > Migrating from "Claude TODO Board" (≤ 0.1.1): the extension, command, and settings ids were
 > renamed from `claudeTodo.*` to `loopBoard.*` with no fallback — re-enter any custom
