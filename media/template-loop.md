@@ -32,6 +32,7 @@ New → Backlog → In Progress → Review → Done (DONE.md)
 - **Review** — delivered; awaiting acceptance.
 - **Done** — accepted; index entry lives in `DONE.md`; task file stays in `tasks/`.
 
+<!-- loopboard:sync:task-index-format:begin -->
 ## Task index format (v4) — `.loopboard/TODO.md`
 
 Entry = checkbox line + `key: value` sub-bullets, one per line, fixed order below, and NOTHING
@@ -54,7 +55,9 @@ preserves unrecognized lines verbatim (flagged).
 
 Draft = `- [ ] DRAFT: <raw text>` + `id:` (+ optional `model:`/`groomer:`; no `phase:` line —
 drafts are implicitly new); the groomer expands it (Rule 14).
+<!-- loopboard:sync:task-index-format:end -->
 
+<!-- loopboard:sync:task-file-format:begin -->
 ## Task file format — `.loopboard/tasks/<id>.md`
 
 Fixed headings in the order below; every section optional; omit empty sections. `## Meta` is
@@ -85,13 +88,17 @@ the only `key: value` section (fixed key order as shown). The index owns title, 
 ## Delivered
 <free markdown; Review only>
 ```
+<!-- loopboard:sync:task-file-format:end -->
 
+<!-- loopboard:sync:done-index:begin -->
 ## Done index — `.loopboard/DONE.md`
 
 Newest-first `## Tasks` list of `- [x] <Title>` entries with `id:`, `model:`, `groomer:`,
 `completed:` sub-bullets only. Create the file (with `# DONE` heading + `## Tasks` section)
 on first use. Detail remains in `tasks/<id>.md`.
+<!-- loopboard:sync:done-index:end -->
 
+<!-- loopboard:sync:rules:begin -->
 ## Rules
 
 1. `[x]` belongs to the human only; a worker never ticks it. `[x]` on New = promote to
@@ -151,7 +158,9 @@ on first use. Detail remains in `tasks/<id>.md`.
     (treat as 0) on pre-existing trackers.
 
 Legend: `[ ]` awaiting the human's gate · `[x]` human approved.
+<!-- loopboard:sync:rules:end -->
 
+<!-- loopboard:sync:automation:begin -->
 ## Automation
 
 Loop workers (Claude Code sessions in the workspace root) re-read this file and the index,
@@ -174,3 +183,4 @@ Notes:
   human's `[x]`) and park uncertainty in Feedback. The extension's ▶ buttons start the
   per-model loops.
 - Stop a loop via its status line, or cancel the scheduled task in the session.
+<!-- loopboard:sync:automation:end -->

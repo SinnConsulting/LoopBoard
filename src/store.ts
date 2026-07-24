@@ -11,6 +11,7 @@ import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
 import { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } from './gates';
+import { syncMarkedSections, syncTodoPreamble, hasMarkers } from './sync';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
 
@@ -236,19 +237,67 @@ export class Store {
     return { status: 'applied' };
   }
 
-  // Scaffold `.loopboard/` (TODO.md + LOOP.md + tasks/). Refuses if `.loopboard/` already exists.
-  async createInitialFiles(todoText: string, loopText: string): Promise<boolean> {
+  // Scaffold `.loopboard/` (TODO.md + LOOP.md + tasks/). Refuses (created: false, no error) if
+  // `.loopboard/` already exists — the caller offers syncTemplates()/previewSync() instead.
+  async createInitialFiles(todoText: string, loopText: string): Promise<{ created: boolean; error?: string }> {
     try {
       await vscode.workspace.fs.stat(this.loopboardUri);
-      return false; // already exists — never overwrite
+      return { created: false };
     } catch {
       // does not exist — scaffold it
     }
-    await vscode.workspace.fs.createDirectory(this.loopboardUri);
-    await this.atomicWrite(this.todoUri, todoText);
-    await this.atomicWrite(this.loopUri, loopText);
-    await vscode.workspace.fs.createDirectory(this.tasksDir);
-    return true;
+    try {
+      await vscode.workspace.fs.createDirectory(this.loopboardUri);
+      await this.atomicWrite(this.todoUri, todoText);
+      await this.atomicWrite(this.loopUri, loopText);
+      await vscode.workspace.fs.createDirectory(this.tasksDir);
+      return { created: true };
+    } catch (err) {
+      return { created: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // Preview what `syncTemplates` would change, without writing anything: TODO.md's intro/heading
+  // scaffold vs. the shipped template, and LOOP.md's marker-fenced sections (or, for a legacy
+  // LOOP.md with no markers yet, the one-time full-file replacement).
+  async previewSync(todoTemplate: string, loopTemplate: string): Promise<{ summary: string[]; upToDate: boolean }> {
+    const todoText = (await this.readFile(this.todoUri)) ?? '';
+    const loopText = (await this.readFile(this.loopUri)) ?? '';
+    const { changed: todoChanged } = syncTodoPreamble(todoText, todoTemplate);
+    const loopLegacy = loopText.trim() !== '' && !hasMarkers(loopText);
+    const loopChangedIds = loopLegacy ? [] : syncMarkedSections(loopText, loopTemplate).changedIds;
+
+    const summary: string[] = [];
+    if (todoChanged) summary.push('TODO.md: intro out of date.');
+    if (loopLegacy) {
+      summary.push('LOOP.md predates the current format and will be fully replaced (a backup will be saved to LOOP.md.bkp).');
+    } else if (loopChangedIds.length) {
+      summary.push(`LOOP.md: ${loopChangedIds.length} section(s) out of date (${loopChangedIds.join(', ')}).`);
+    }
+    return { summary, upToDate: summary.length === 0 };
+  }
+
+  // Refresh the extension-owned scaffolding of TODO.md and LOOP.md from the shipped templates.
+  // Never touches task entries (TODO.md) or content outside the markers (LOOP.md), except for a
+  // legacy unmarked LOOP.md, which is backed up to LOOP.md.bkp and fully replaced exactly once.
+  async syncTemplates(todoTemplate: string, loopTemplate: string): Promise<SaveOutcome> {
+    try {
+      const todoText = (await this.readFile(this.todoUri)) ?? '';
+      const { text: newTodo, changed: todoChanged } = syncTodoPreamble(todoText, todoTemplate);
+      if (todoChanged) await this.atomicWrite(this.todoUri, newTodo);
+
+      const loopText = (await this.readFile(this.loopUri)) ?? '';
+      if (loopText.trim() !== '' && !hasMarkers(loopText)) {
+        await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), loopText);
+        await this.atomicWrite(this.loopUri, loopTemplate);
+      } else {
+        const { text: newLoop, changedIds } = syncMarkedSections(loopText, loopTemplate);
+        if (changedIds.length) await this.atomicWrite(this.loopUri, newLoop);
+      }
+      return { status: 'applied' };
+    } catch (err) {
+      return { status: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   // Delete an unaccepted task: remove the index entry AND its task file.
