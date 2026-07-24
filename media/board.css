@@ -145,6 +145,8 @@ textarea { resize: vertical; }
 .chip.help { cursor: help; }
 .chip.button { border: none; cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .chip.button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+.chip.id { border: none; cursor: pointer; }
+.chip.id:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
 .link { font-size: 11px; font-family: var(--vscode-editor-font-family, ui-monospace, monospace); color: var(--vscode-textLink-foreground, #3794ff); text-decoration: none; cursor: pointer; }
 .link:hover { text-decoration: underline; }
 

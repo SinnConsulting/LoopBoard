@@ -233,6 +233,7 @@
       const row = h('div', { class: 'done-row-item' },
         icon(SVG.checkGreen),
         h('span', { class: 'done-title' }, t.title.replace(/^\[x\]\s*/, '')),
+        idChip(t.id),
         h('span', { class: 'chip mono', style: { background: 'none', opacity: 1, padding: 0 } }, t.completed || ''));
       if (t.links && t.links.length) row.append(linkAnchor(t.links[0]));
       if (hasDetail) {
@@ -263,6 +264,16 @@
     }
     wrap.append(h('div', { class: 'muted-11', style: { padding: '12px 0' } }, 'Showing last 50'));
     return wrap;
+  }
+
+  function idChip(id) {
+    return h('button', {
+      class: 'chip mono id', type: 'button', title: 'Copy ' + id, 'aria-label': 'Copy task id ' + id,
+      onclick: (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(id).then(() => pushToast('info', 'Copied ' + id));
+      },
+    }, id);
   }
 
   function linkAnchor(url) {
@@ -314,6 +325,7 @@
         h('div', { style: { flex: '1' } },
           h('div', { class: 'draft-head-row', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
             h('span', { class: 'draft-badge' }, 'Draft'),
+            idChip(t.id),
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
           textEl,
           h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
@@ -422,6 +434,7 @@
 
   function renderChips(t) {
     const chips = h('div', { class: 'chips' });
+    chips.append(idChip(t.id));
     if (t.owner) chips.append(h('span', { class: 'chip owner' }, icon(SVG.robot), t.owner));
     else chips.append(h('span', { class: 'chip unassigned' }, 'unassigned'));
     if (t.added) chips.append(h('span', { class: 'chip mono' }, 'added ' + t.added));
