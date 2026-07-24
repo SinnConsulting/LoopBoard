@@ -1,0 +1,67 @@
+name: Build
+
+# Per-branch build artifact: on every push to a task branch, build + test and package a
+# branch-named .vsix, uploaded as a downloadable workflow artifact so any reviewer can grab the
+# exact build for the branch under review and install it in local VS Code — no local toolchain.
+# This is NOT a release: it never publishes to the Marketplace or creates a GitHub Release
+# (that stays entirely in release.yml).
+
+on:
+  push:
+    branches:
+      - 'task/**'
+
+# Only keep the newest build per branch; a rapid re-push cancels the superseded run so artifacts
+# do not pile up.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dev dependencies
+        run: npm ci
+
+      - name: Build
+        run: npx tsc -p ./
+
+      - name: Test
+        run: |
+          npx tsc -p ./tsconfig.test.json
+          node --test 'test/*.test.js'
+
+      # Derive the artifact token from the branch: strip a leading `task/t-` (else `task/`) prefix,
+      # then sanitize any remaining `/` to `-`. e.g. `task/t-bld1` -> `bld1`.
+      - name: Derive artifact filename from branch
+        id: vsix
+        run: |
+          branch="${GITHUB_REF_NAME}"
+          token="${branch#task/t-}"
+          if [ "$token" = "$branch" ]; then
+            token="${branch#task/}"
+          fi
+          token="${token//\//-}"
+          echo "name=loopboard-todo-${token}.vsix" >> "$GITHUB_OUTPUT"
+
+      - name: Package vsix
+        run: npx --yes @vscode/vsce package --no-dependencies --out "${{ steps.vsix.outputs.name }}"
+
+      - name: Upload vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.vsix.outputs.name }}
+          path: ${{ steps.vsix.outputs.name }}
+          if-no-files-found: error
