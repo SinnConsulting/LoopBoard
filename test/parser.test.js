@@ -79,6 +79,13 @@ test('feedback entry: two questions, one answered', () => {
   assert.equal(e.questions[1].answer, '', 'second blank');
 });
 
+test('note: sub-bullets parse (repeatable) and round-trip', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const e = doc.entries.find((x) => x.id === 't-bb01');
+  assert.deepEqual(e.notes, ['Rebase on main before opening the PR.', 'Add a metric for retry count.']);
+  assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
+});
+
 test('DRAFT entries serialize minimally (id, no phase)', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const draft = doc.entries.find((x) => x.isDraft);

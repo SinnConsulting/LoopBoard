@@ -18,7 +18,7 @@ const DECODER = new TextDecoder();
 const ENCODER = new TextEncoder();
 
 function emptyDetail(): TaskDetail {
-  return { worklog: [], links: [], dependsOn: [], notes: [], unknownLines: [], raw: '' };
+  return { worklog: [], links: [], dependsOn: [], unknownLines: [], raw: '' };
 }
 
 // Canonical serialization of an index entry with `rev:` EXCLUDED — the input to the rev bump
@@ -227,6 +227,7 @@ export class Store {
       model: normalizeModel(model ?? ''),
       groomer: normalizeModel(groomer ?? ''),
       questions: [],
+      notes: [],
       unknownLines: [],
       raw: '',
     };

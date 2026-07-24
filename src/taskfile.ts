@@ -1,10 +1,11 @@
 // `.loopboard/tasks/<id>.md` parser/writer (tolerant, §2.2). Pure — no vscode imports so it runs
 // under `node --test`.
 //
-// Pure content, no frontmatter: the index owns title/phase/model/groomer/questions. Fixed headings
-// (Meta, Description, Notes, Worklog, Feedback, Delivered), all optional; the writer emits canonical
-// order, omits empty sections, and rewrites the H1 from the index title. Unknown headings/keys are
-// preserved verbatim and flagged. Fixpoint: serializeTaskFile(parseTaskFile(x)) is idempotent.
+// Pure content, no frontmatter: the index owns title/phase/model/groomer/questions/notes. Fixed
+// headings (Meta, Description, Worklog, Feedback, Delivered), all optional; the writer emits
+// canonical order, omits empty sections, and rewrites the H1 from the index title. Unknown
+// headings/keys are preserved verbatim and flagged. Fixpoint: serializeTaskFile(parseTaskFile(x))
+// is idempotent.
 
 import { TaskDetail } from './model';
 
@@ -26,7 +27,6 @@ function emptyDetail(raw: string): TaskDetail {
     worklog: [],
     links: [],
     dependsOn: [],
-    notes: [],
     unknownLines: [],
     raw,
   };
@@ -87,15 +87,6 @@ export function parseTaskFile(text: string): TaskDetail {
         if (b.length) detail.description = b.join('\n');
         break;
       }
-      case 'notes': {
-        for (const line of body) {
-          if (line.trim() === '') continue;
-          const m = line.match(/^\s*-\s+(.*)$/);
-          if (m) detail.notes.push(m[1].trim());
-          else detail.unknownLines.push(line);
-        }
-        break;
-      }
       case 'worklog': {
         for (const line of body) {
           if (line.trim() === '') continue;
@@ -140,7 +131,6 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
   if (meta.length) blocks.push(['## Meta', ...meta].join('\n'));
 
   if (detail.description) blocks.push(`## Description\n\n${detail.description}`);
-  if (detail.notes.length) blocks.push(['## Notes', ...detail.notes.map((n) => `- ${n}`)].join('\n'));
   if (detail.worklog.length) blocks.push(['## Worklog', ...detail.worklog.map((d) => `- ${d}`)].join('\n'));
   if (detail.feedback) blocks.push(`## Feedback\n\n⚠️ ${detail.feedback}`);
   if (detail.delivered) blocks.push(`## Delivered\n\n${detail.delivered}`);

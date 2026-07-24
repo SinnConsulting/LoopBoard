@@ -7,7 +7,6 @@ node_modules/**
 **/tsconfig*.json
 Makefile
 PLAN.md
-REFACTORING.md
 design-prompt.md
 implement-prompt.md
 idea.md

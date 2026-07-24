@@ -13,10 +13,6 @@ Retries for failed webhook deliveries.
 
 Second paragraph with **bold** and a `code` span.
 
-## Notes
-- Rebase on main before opening the PR.
-- Add a metric for retry count.
-
 ## Worklog
 - 2026-07-08
 - 2026-07-09

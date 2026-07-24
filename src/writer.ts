@@ -45,6 +45,7 @@ export function serializeEntry(entry: IndexEntry): string[] {
     out.push(`  - question: ❓ ${q.text}`);
     out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));
   }
+  for (const n of entry.notes) out.push(`  - note: ${n}`);
   for (const u of entry.unknownLines) out.push(u);
   return out;
 }

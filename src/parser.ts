@@ -18,7 +18,8 @@
 //     - rev: <n>                             (optional; monotonic change marker, writer-managed)
 //     - question: ❓ <text>                   (repeatable)
 //       - answer: <text or blank>
-//   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/note/feedback/
+//     - note: <text>                         (repeatable; unprocessed human worker-note, Rule 16)
+//   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/feedback/
 //   DELIVERED are NOT valid index keys in v4 — they land in unknownLines (preserved + flagged).
 //   `completed:` is canonical in DONE.md entries only.
 // ========================================================================================
@@ -50,6 +51,7 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
     checked,
     isDraft: /^DRAFT:/i.test(title),
     questions: [],
+    notes: [],
     unknownLines: [],
     raw: lines.join('\n'),
   };
@@ -94,6 +96,9 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
           return true;
         }
         return false;
+      case 'note':
+        entry.notes.push(v);
+        return true;
       default:
         return false;
     }

@@ -6,8 +6,8 @@
 
 import { IndexDoc, IndexEntry, TaskDetail, Model, BUILTIN_MODEL_IDS } from './model';
 
-export type IndexField = 'title' | 'model' | 'groomer' | 'answer';
-export type DetailField = 'description' | 'note' | 'feedback';
+export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'note';
+export type DetailField = 'description' | 'feedback';
 export type PatchField = IndexField | DetailField;
 
 export interface FieldPatch {
@@ -28,7 +28,7 @@ export interface DetailMergeResult {
 }
 
 const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
-const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer'];
+const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'note'];
 
 // Which file a field patch targets.
 export function patchTarget(field: PatchField): 'index' | 'detail' {
@@ -54,6 +54,8 @@ export function currentFieldValue(entry: IndexEntry, field: IndexField, question
       return questionIndex !== undefined && entry.questions[questionIndex]
         ? entry.questions[questionIndex].answer
         : '';
+    case 'note':
+      return entry.notes.join('\n');
   }
 }
 
@@ -73,17 +75,21 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
         entry.questions[questionIndex].answer = value;
       }
       break;
+    case 'note':
+      // The board's note field edits the whole set as one value: split on newlines, drop empties.
+      entry.notes = value
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      break;
   }
 }
 
-// Current on-disk value of a detail field. `note` edits the whole `## Notes` section as one value,
-// newline-separated (§ Phase 3).
+// Current on-disk value of a detail field.
 export function currentDetailFieldValue(detail: TaskDetail, field: DetailField): string {
   switch (field) {
     case 'description':
       return detail.description ?? '';
-    case 'note':
-      return detail.notes.join('\n');
     case 'feedback':
       return detail.feedback ?? '';
   }
@@ -93,13 +99,6 @@ function setDetailFieldValue(detail: TaskDetail, field: DetailField, value: stri
   switch (field) {
     case 'description':
       detail.description = value.trim() ? value : undefined;
-      break;
-    case 'note':
-      // The board's note textarea edits the whole section: split on newlines, drop empty lines.
-      detail.notes = value
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
       break;
     case 'feedback':
       detail.feedback = value.trim() ? value.trim() : undefined;

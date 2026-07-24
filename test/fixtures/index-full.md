@@ -16,6 +16,8 @@ and loop worker instructions: [LOOP.md](LOOP.md). Accepted tasks move to [DONE.m
   - id: t-bb01
   - phase: inprogress
   - model: opus
+  - note: Rebase on main before opening the PR.
+  - note: Add a metric for retry count.
 
 - [ ] Add retry logic to the webhook dispatcher
   - id: t-cc01
