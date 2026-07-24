@@ -46,6 +46,7 @@ preserves unrecognized lines verbatim (flagged).
   - phase: new | backlog | inprogress | feedback | review
   - model: opus | sonnet | fable        (optional; absent = default model; Rule 15)
   - groomer: opus | sonnet | fable      (optional; absent = default model; Rule 14)
+  - rev: <n>                            (optional; writer-managed change marker; Rule 17)
   - question: ❓ <text>                   (repeatable, single line; Feedback & New)
     - answer: <text or blank>
   - note: <text>                        (repeatable, single line; unprocessed human note; Rule 16)
@@ -142,6 +143,12 @@ on first use. Detail remains in `tasks/<id>.md`.
     `<today>` to the task file's `## Worklog`, delete the `note:` sub-bullet. A lingering `note:`
     = not yet applied. Notes are index-only (visible on every index pass); nothing is stored in
     the task file.
+17. `rev:` is a per-task change marker the EXTENSION manages — a monotonic integer bumped only
+    when that task's content (its index block or its `tasks/<id>.md`) actually changes. Workers
+    NEVER write `rev:` (writing just to detect a change would trip other loops); read it to tell
+    WHICH tasks changed since your last pass — compare each id's `rev:` to what you recorded last
+    pass and act on ids whose `rev:` moved (plus ids that are new or gone). It defaults to absent
+    (treat as 0) on pre-existing trackers.
 
 Legend: `[ ]` awaiting the human's gate · `[x]` human approved.
 

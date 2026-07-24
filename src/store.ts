@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { Board, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
-import { serializeTodo, serializeDone } from './writer';
+import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
 import { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } from './gates';
@@ -19,6 +19,17 @@ const ENCODER = new TextEncoder();
 
 function emptyDetail(): TaskDetail {
   return { worklog: [], links: [], dependsOn: [], unknownLines: [], raw: '' };
+}
+
+// Canonical serialization of an index entry with `rev:` EXCLUDED — the input to the rev bump
+// decision so bumping rev never counts as a content change (avoids a self-perpetuating bump).
+function indexFingerprint(entry: IndexEntry): string {
+  return serializeEntry({ ...entry, rev: undefined }).join('\n');
+}
+
+// Increment the writer-managed change marker. Absent (pre-existing tracker) counts as 0.
+function bumpRev(entry: IndexEntry): void {
+  entry.rev = (entry.rev ?? 0) + 1;
 }
 
 export class Store {
@@ -133,8 +144,11 @@ export class Store {
   async applyFieldPatch(patch: FieldPatch): Promise<SaveOutcome> {
     if (patchTarget(patch.field) === 'index') {
       const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const entry = doc.entries.find((e) => e.id === patch.taskId);
+      const before = entry ? indexFingerprint(entry) : undefined;
       const result = applyPatch(doc, patch);
       if (result.status !== 'applied') return { status: result.status };
+      if (entry && before !== undefined && indexFingerprint(entry) !== before) bumpRev(entry);
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
       return { status: 'applied' };
     }
@@ -144,10 +158,18 @@ export class Store {
     if (!entry) return { status: 'notfound' };
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+    const beforeDetail = serializeTaskFile(detail, entry.title, entry.id);
     const result = applyDetailPatch(detail, patch);
     if (result.status !== 'applied') return { status: result.status };
     await this.ensureTasksDir();
-    await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+    const afterDetail = serializeTaskFile(detail, entry.title, entry.id);
+    await this.atomicWrite(this.taskUri(entry.id), afterDetail);
+    // A detail-file change bumps the index entry's rev so a loop that reads only TODO.md still
+    // sees the task changed (the original miss this feature fixes). Readers never write.
+    if (afterDetail !== beforeDetail) {
+      bumpRev(entry);
+      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+    }
     return { status: 'applied' };
   }
 
@@ -156,12 +178,15 @@ export class Store {
     const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
     const entry = doc.entries.find((e) => e.id === taskId);
     if (!entry) return { status: 'notfound' };
-    promoteIndex(entry);
-    await this.atomicWrite(this.todoUri, serializeTodo(doc));
 
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+    const before = indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id);
+    promoteIndex(entry);
     promoteDetail(detail, today);
+    if (indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id) !== before) bumpRev(entry);
+    await this.atomicWrite(this.todoUri, serializeTodo(doc));
+
     await this.ensureTasksDir();
     await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
     return { status: 'applied' };

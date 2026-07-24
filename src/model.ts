@@ -93,6 +93,7 @@ export interface IndexEntry {
   isDraft: boolean;
   model?: Model;
   groomer?: Model; // which model grooms this task (absent = default model)
+  rev?: number; // monotonic per-task change marker; bumped by the writer only when content changes
   questions: Question[];
   notes: string[]; // unprocessed human worker-notes (Rule 16): applied then deleted, index-only
   completed?: string; // DONE.md entries only
