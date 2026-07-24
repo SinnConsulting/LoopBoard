@@ -60,11 +60,26 @@
           'Create TODO.md & DONE.md')));
     }
 
+    // When a category has exactly one task, name its id — otherwise the count stands alone.
+    function soleId(phaseKey, match) {
+      const tasks = (board.phases[phaseKey] || []).filter(match);
+      return tasks.length === 1 ? tasks[0].id : null;
+    }
+
     const list = h('div', { class: 'attn-list sb-section' });
     const rows = [];
-    if (b.feedbackUnanswered > 0) rows.push({ icon: '❓', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback' });
-    if (b.reviewCount > 0) rows.push({ icon: '👀', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review', phase: 'review' });
-    if (b.newCount > 0) rows.push({ icon: '🆕', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve', phase: 'new' });
+    if (b.feedbackUnanswered > 0) {
+      const id = soleId('feedback', (t) => t.questions.some((q) => !q.answered));
+      rows.push({ icon: '❓', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback' + (id ? ' (' + id + ')' : ''), phase: 'feedback' });
+    }
+    if (b.reviewCount > 0) {
+      const id = soleId('review', () => true);
+      rows.push({ icon: '👀', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
+    }
+    if (b.newCount > 0) {
+      const id = soleId('new', () => true);
+      rows.push({ icon: '🆕', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
+    }
     for (const r of rows) {
       list.append(h('button', { class: 'attn-row', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: r.phase }) },
         h('span', { class: 'ico' }, r.icon), h('span', { class: 'txt' }, r.text)));
