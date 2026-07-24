@@ -155,7 +155,7 @@
     bar.append(tabs);
 
     bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; render(); } },
-      icon(SVG.plus), 'New story'));
+      icon(SVG.plus), 'New Story'));
     return bar;
   }
 
@@ -617,7 +617,7 @@
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
       pushToast(msg.level, msg.text, action);
     } else if (msg.type === 'reveal') {
-      revealTask(msg.taskId, msg.phase);
+      revealTask(msg.taskId, msg.phase, msg.composer);
     }
   });
 
@@ -647,8 +647,18 @@
   }
   function stripFlash(t) { const { _flash, ...rest } = t; return rest; }
 
-  function revealTask(taskId, targetPhase) {
+  function revealTask(taskId, targetPhase, openComposer) {
     if (!board) return;
+    if (openComposer) {
+      phase = targetPhase || 'new';
+      composerOpen = true;
+      composerText = '';
+      composerGroomer = '';
+      composerModel = '';
+      saveState();
+      render();
+      return;
+    }
     let found = targetPhase;
     if (!found) {
       for (const key in board.phases) if ((board.phases[key] || []).some((t) => t.id === taskId)) { found = key; break; }
