@@ -23,6 +23,11 @@ questions, an HTML-comment template) and `index-unknown.md`:
   verbatim; `completed:` is canonical in DONE.md only (an unknown line in the TODO index).
 - HTML-comment task-like lines are **not** parsed as entries; DRAFT serializes minimally (no
   `phase:`); model+groomer round-trip on drafts; ids assigned on write; DONE.md round-trips.
+- **`rev:` change marker (t-9d5c):** parses as an integer, serializes after `model:`/`groomer:`,
+  is **fixpoint-stable** (parse→write→parse) and round-trips its value; a missing `rev:` stays
+  `undefined` and is never emitted; a non-integer `rev:` lands in `unknownLines`. `serializeEntry`
+  differs ONLY in the `rev` line when `rev` changes (proving the store's rev-excluded fingerprint
+  is a sound bump trigger).
 
 ### Task-file parser/writer — `test/taskfile.test.js` (§2.2)
 - Parses every canonical section; **fixpoint** and byte-for-byte round-trip of a full fixture.
@@ -87,6 +92,12 @@ New v2 checklist (from REFACTORING.md Phase 8):
    refuses to start with a warning and no shell line is emitted. Confirm a `[1m]` override actually
    RUNS: the `--model` value is single-quoted, so zsh does not glob-expand `haiku[1m]` and abort with
    "no matches found".
+
+10. **`rev:` bump (t-9d5c):** edit one task's title (or description) on the board → only THAT
+    entry's `rev:` in `.loopboard/TODO.md` increments; every other entry's `rev:` is untouched.
+    Editing a task's description (a `tasks/<id>.md` write) also bumps that entry's `rev:` in the
+    index. Re-saving with no change (same value) does NOT bump. A task with no `rev:` yet gains
+    `rev: 1` on its first content-changing save.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
