@@ -15,6 +15,7 @@
 //     - phase: new | backlog | inprogress | feedback | review   (omitted for DRAFTs = new)
 //     - model: opus | sonnet | fable        (optional)
 //     - groomer: opus | sonnet | fable      (optional)
+//     - rev: <n>                             (optional; monotonic change marker, writer-managed)
 //     - question: ❓ <text>                   (repeatable)
 //       - answer: <text or blank>
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/note/feedback/
@@ -74,6 +75,12 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
         if (KNOWN_MODELS.includes(v as Model)) entry.groomer = v as Model;
         else return false;
         return true;
+      case 'rev':
+        if (/^\d+$/.test(v)) {
+          entry.rev = parseInt(v, 10);
+          return true;
+        }
+        return false;
       case 'completed':
         if (!allowCompleted) return false; // canonical in DONE.md only (§2.1)
         entry.completed = v;
