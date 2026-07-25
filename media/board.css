@@ -92,6 +92,16 @@ textarea { resize: vertical; }
 .pane-title { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
 .pane-explainer { font-size: 11px; line-height: 1.3; color: var(--vscode-descriptionForeground, #9d9d9d); margin-bottom: 20px; }
 
+/* Local in-tab search bar */
+.search-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.search-input {
+  flex: 1; min-width: 0; font-size: 13px; font-family: inherit;
+  background: var(--vscode-input-background, #3c3c3c); color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 4px; padding: 6px 10px;
+}
+.search-input:focus { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+.search-count { flex-shrink: 0; white-space: nowrap; }
+
 .cards { display: flex; flex-direction: column; gap: 12px; }
 
 .card {
