@@ -14,7 +14,7 @@ function today(): string {
 
 export class Controller {
   private lastBoard: Board | undefined;
-  private pendingReveal: { taskId?: string; phase?: string } | undefined;
+  private pendingReveal: { taskId?: string; phase?: string; composer?: boolean } | undefined;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -162,7 +162,7 @@ export class Controller {
         void vscode.commands.executeCommand('workbench.action.openSettings', 'loopBoard');
         return;
       case 'reveal':
-        this.pendingReveal = { taskId: msg.taskId, phase: msg.phase };
+        this.pendingReveal = { taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer };
         // Flush inline only if the panel already existed (its webview is live). If openBoard just
         // created the panel, the webview's message listener isn't attached yet — posting now would
         // drop the reveal and the board would open on the default tab (the first-click bug). Leave

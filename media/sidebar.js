@@ -122,7 +122,7 @@
         icon(SVG.gear), h('span', { class: 'label' }, 'Settings')),
       h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Synchronise templates', title: 'Refresh TODO.md/LOOP.md scaffolding from the shipped templates', onclick: () => vscode.postMessage({ type: 'syncTemplates' }) },
         icon(SVG.sync), h('span', { class: 'label' }, 'Synchronise Templates')),
-      h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new' }) }, 'New Story')));
+      h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
     root.append(sb);
   }
 
