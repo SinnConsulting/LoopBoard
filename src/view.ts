@@ -76,7 +76,7 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     description: t.description ?? '',
     note: t.notes.length ? t.notes.join('\n') : null,
     questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0 })),
-    feedback: t.feedback ?? null,
+    feedback: t.feedback.length ? t.feedback.join('\n') : null,
     delivered: t.delivered ?? null,
     unparsedLines: t.unknownLines.length ? t.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
   };

@@ -229,6 +229,7 @@ export class Store {
       groomer: normalizeModel(groomer ?? ''),
       questions: [],
       notes: [],
+      feedback: [],
       unknownLines: [],
       raw: '',
     };

@@ -96,6 +96,7 @@ export interface IndexEntry {
   rev?: number; // monotonic per-task change marker; bumped by the writer only when content changes
   questions: Question[];
   notes: string[]; // unprocessed human worker-notes (Rule 16): applied then deleted, index-only
+  feedback: string[]; // Review change requests (Rule 13): index-only, removed when addressed
   completed?: string; // DONE.md entries only
   unknownLines: string[]; // preserved verbatim, flagged in UI
   raw: string; // original block text, for conflict detection
@@ -112,7 +113,6 @@ export interface TaskDetail {
   links: string[];
   dependsOn: string[];
   description?: string;
-  feedback?: string;
   delivered?: string;
   unknownLines: string[]; // preserved verbatim, flagged in UI
   raw: string;

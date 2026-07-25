@@ -37,6 +37,7 @@ and loop worker instructions: [LOOP.md](LOOP.md). Accepted tasks move to [DONE.m
   - id: t-ee01
   - phase: review
   - model: opus
+  - feedback: ⚠️ Redact the auth token from the request log fields.
 
 <!-- Format when a worker parks a task here:
 - [ ] <task>

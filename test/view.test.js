@@ -12,7 +12,7 @@ function task(over) {
     {
       id: 't-x', title: 'T', phase: 'backlog', checked: false, isDraft: false,
       questions: [], hasDetailFile: true,
-      worklog: [], links: [], dependsOn: [], notes: [], unknownLines: [],
+      worklog: [], links: [], dependsOn: [], notes: [], feedback: [], unknownLines: [],
       raw: '',
     },
     over
@@ -64,6 +64,15 @@ test('note maps from notes[] joined with newlines', () => {
   };
   const web = toWebviewBoard(board, 'ws', 'opus', []);
   assert.equal(web.phases.inprogress[0].note, 'a\nb');
+});
+
+test('feedback maps from feedback[] joined with newlines', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-1', phase: 'review', feedback: ['a', 'b'] })],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(web.phases.review[0].feedback, 'a\nb');
 });
 
 test('DONE entries render from the slim IndexEntry (no detail)', () => {

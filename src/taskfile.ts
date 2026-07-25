@@ -1,19 +1,15 @@
 // `.loopboard/tasks/<id>.md` parser/writer (tolerant, §2.2). Pure — no vscode imports so it runs
 // under `node --test`.
 //
-// Pure content, no frontmatter: the index owns title/phase/model/groomer/questions/notes. Fixed
-// headings (Meta, Description, Worklog, Feedback, Delivered), all optional; the writer emits
-// canonical order, omits empty sections, and rewrites the H1 from the index title. Unknown
-// headings/keys are preserved verbatim and flagged. Fixpoint: serializeTaskFile(parseTaskFile(x))
-// is idempotent.
+// Pure content, no frontmatter: the index owns title/phase/model/groomer/questions/notes/feedback.
+// Fixed headings (Meta, Description, Worklog, Delivered), all optional; the writer emits canonical
+// order, omits empty sections, and rewrites the H1 from the index title. Unknown headings/keys
+// (including a legacy `## Feedback` section — feedback now lives in the index, not migrated) are
+// preserved verbatim and flagged. Fixpoint: serializeTaskFile(parseTaskFile(x)) is idempotent.
 
 import { TaskDetail } from './model';
 
 const META_KEYS = ['owner', 'added', 'started', 'promoted', 'completed', 'link', 'depends on'];
-
-function stripLeadingEmoji(s: string): string {
-  return s.replace(/^\s*(❓|⚠️|⚠)\s*/, '').trim();
-}
 
 function splitList(v: string): string[] {
   return v
@@ -96,11 +92,6 @@ export function parseTaskFile(text: string): TaskDetail {
         }
         break;
       }
-      case 'feedback': {
-        const b = trimBlankEdges(body);
-        if (b.length) detail.feedback = stripLeadingEmoji(b.join('\n'));
-        break;
-      }
       case 'delivered': {
         const b = trimBlankEdges(body);
         if (b.length) detail.delivered = b.join('\n');
@@ -132,7 +123,6 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
 
   if (detail.description) blocks.push(`## Description\n\n${detail.description}`);
   if (detail.worklog.length) blocks.push(['## Worklog', ...detail.worklog.map((d) => `- ${d}`)].join('\n'));
-  if (detail.feedback) blocks.push(`## Feedback\n\n⚠️ ${detail.feedback}`);
   if (detail.delivered) blocks.push(`## Delivered\n\n${detail.delivered}`);
 
   // Unknown headings/content, preserved verbatim at the end.

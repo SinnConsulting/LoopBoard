@@ -21,8 +21,8 @@ function readFix(name) {
 }
 
 test('patchTarget routes fields to the right file', () => {
-  for (const f of ['title', 'model', 'groomer', 'answer', 'note']) assert.equal(patchTarget(f), 'index', f);
-  for (const f of ['description', 'feedback']) assert.equal(patchTarget(f), 'detail', f);
+  for (const f of ['title', 'model', 'groomer', 'answer', 'note', 'feedback']) assert.equal(patchTarget(f), 'index', f);
+  for (const f of ['description']) assert.equal(patchTarget(f), 'detail', f);
 });
 
 test('applyPatch applies an index field when no conflict', () => {
@@ -67,7 +67,7 @@ test('applyDetailPatch applies description when no conflict', () => {
 
 test('applyDetailPatch detects a same-field detail conflict', () => {
   const detail = parseTaskFile(readFix('taskfile-full.md'));
-  const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'feedback', value: 'x', base: 'STALE' });
+  const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'description', value: 'x', base: 'STALE' });
   assert.equal(r.status, 'conflict');
 });
 
@@ -88,6 +88,24 @@ test('clearing note via empty value empties the set', () => {
   const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: '', base });
   assert.equal(r.status, 'applied');
   assert.deepEqual(doc.entries.find((e) => e.id === 't-bb01').notes, []);
+});
+
+test('feedback is an index field: edits the whole set, split on newlines, drop empties', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const entry = doc.entries.find((e) => e.id === 't-ee01');
+  const base = 'Redact the auth token from the request log fields.';
+  assert.equal(currentFieldValue(entry, 'feedback'), base);
+  const r = applyPatch(doc, { taskId: 't-ee01', field: 'feedback', value: 'first\n\n  \nsecond\n', base });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(doc.entries.find((e) => e.id === 't-ee01').feedback, ['first', 'second']);
+});
+
+test('clearing feedback via empty value empties the set (Rule 13: removed when addressed)', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const base = 'Redact the auth token from the request log fields.';
+  const r = applyPatch(doc, { taskId: 't-ee01', field: 'feedback', value: '', base });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(doc.entries.find((e) => e.id === 't-ee01').feedback, []);
 });
 
 test('normalizeModel', () => {
