@@ -98,6 +98,33 @@ test('syncMarkedSections leaves a file with no markers at all untouched (route v
   assert.equal(text, current);
 });
 
+test('syncMarkedSections wraps a newly-introduced id whose prose already exists unfenced, instead of duplicating it', () => {
+  const current = [
+    '# Intro title',
+    'Some intro prose that predates the marker.',
+    '',
+    '<!-- loopboard:sync:a:begin -->',
+    'same A',
+    '<!-- loopboard:sync:a:end -->',
+  ].join('\n');
+  const template = [
+    '<!-- loopboard:sync:intro:begin -->',
+    '# Intro title',
+    'Some intro prose that predates the marker.',
+    '<!-- loopboard:sync:intro:end -->',
+    '',
+    '<!-- loopboard:sync:a:begin -->',
+    'same A',
+    '<!-- loopboard:sync:a:end -->',
+  ].join('\n');
+  const { text, changedIds } = syncMarkedSections(current, template);
+  assert.deepEqual(changedIds, ['intro']);
+  const occurrences = text.split('Some intro prose that predates the marker.').length - 1;
+  assert.equal(occurrences, 1, 'the prose must appear exactly once, not duplicated');
+  assert.match(text, /<!-- loopboard:sync:intro:begin -->/);
+  assert.match(text, /<!-- loopboard:sync:intro:end -->/);
+});
+
 test('syncTodoPreamble (legacy, no marker) replaces an out-of-date intro but keeps every task entry', () => {
   const current = [
     '# TODO',
