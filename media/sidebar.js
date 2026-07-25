@@ -114,6 +114,17 @@
           onclick: l.running ? () => vscode.postMessage({ type: 'stopLoop', model: l.id }) : null,
         }, icon(SVG.stop))));
     }
+    // Global single-task limit (LOOP.md Rule 2): surface when a task is In Progress so a human
+    // sees the limit holding back prepared work — or being breached (>1 In Progress at once).
+    const c = board.concurrency;
+    if (c && c.inProgress.length) {
+      const inProg = c.inProgress.map((t) => (t.title || t.id) + ' (' + t.id + ')').join(', ');
+      loops.append(h('div', { class: 'sb-row loop-status' },
+        h('span', { class: 'loop-hint' }, (c.breached ? '⚠ limit breached — ' : '') + 'in progress: ' + inProg)));
+      if (c.message) {
+        loops.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
+      }
+    }
     sb.append(loops);
 
     sb.append(h('div', { class: 'spacer' }));
