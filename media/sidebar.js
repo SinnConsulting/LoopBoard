@@ -119,8 +119,11 @@
     const c = board.concurrency;
     if (c && c.inProgress.length) {
       const inProg = c.inProgress.map((t) => (t.title || t.id) + ' (' + t.id + ')').join(', ');
+      // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
+      // long title stays fully readable without widening the sidebar.
       loops.append(h('div', { class: 'sb-row loop-status' },
-        h('span', { class: 'loop-hint' }, (c.breached ? '⚠ limit breached — ' : '') + 'in progress: ' + inProg)));
+        h('span', { class: 'loop-status-label' }, (c.breached ? '⚠ limit breached — ' : '') + 'In Progress:'),
+        h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, inProg))));
       if (c.message) {
         loops.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
       }
@@ -135,6 +138,27 @@
         icon(SVG.sync), h('span', { class: 'label' }, 'Synchronise Templates')),
       h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
     root.append(sb);
+    setupMarquees();
+  }
+
+  // A long In-Progress title scrolls (marquee) instead of truncating — but only when it actually
+  // overflows its row. Measured after paint; the shift distance + duration scale with the overflow.
+  function setupMarquees() {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.loop-marquee').forEach((box) => {
+        const inner = box.firstElementChild;
+        if (!inner) return;
+        const overflow = inner.scrollWidth - box.clientWidth;
+        if (overflow > 2) {
+          box.classList.add('scrolling');
+          box.style.setProperty('--marquee-shift', -overflow + 'px');
+          box.style.setProperty('--marquee-dur', Math.max(4, overflow / 25) + 's');
+        } else {
+          box.classList.remove('scrolling');
+          box.style.removeProperty('--marquee-shift');
+        }
+      });
+    });
   }
 
   window.addEventListener('message', (event) => {
