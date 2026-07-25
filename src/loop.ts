@@ -35,14 +35,21 @@ export function buildClaudeBase(permissionMode: string, modelString: string): st
   return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}'`;
 }
 
-// Build the tiny bootstrap prompt pasted into a loop terminal: it only names the model and the
-// interval; the worker reads the full standing instructions from `.loopboard/LOOP.md`'s
-// ## Automation section on every pass (so editing that section retunes running loops).
+// Build the tiny bootstrap prompt pasted into a loop terminal: it names the model, whether that
+// model is the configured default, and the interval; the worker reads the full standing
+// instructions from `.loopboard/LOOP.md`'s ## Automation section on every pass (so editing that
+// section retunes running loops).
+//
+// The default-model statement grounds Rules 14/15's "if you are the default model" clauses: a task
+// with an absent `model:`/`groomer:` belongs to the default slot, but a worker only ever knows its
+// own slot name — without this it cannot evaluate those clauses (see t-89f7). `defaultModel` is the
+// resolved `loopBoard.defaultModel` setting, so this works for any configured default, not a
+// hard-coded `opus`.
 //
 // LOOP.md contains several fenced blocks (layout, workflow, grammars), so we must NOT grab the
 // first fence: slice from the `## Automation` heading to the next `## ` heading (or EOF), and
 // require a fenced block inside that slice. No block -> undefined (caller warns).
-export function buildLoopCommand(loopText: string, model: Model, interval: string): string | undefined {
+export function buildLoopCommand(loopText: string, model: Model, defaultModel: Model, interval: string): string | undefined {
   const lines = loopText.split('\n');
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -63,7 +70,9 @@ export function buildLoopCommand(loopText: string, model: Model, interval: strin
   if (!/```[^\n]*\n[\s\S]*?```/.test(section)) return undefined;
 
   return (
-    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model}. Open .loopboard/LOOP.md, read the loop ` +
+    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model}. ` +
+    `The default model is ${defaultModel}, so you ${model === defaultModel ? 'are' : 'are not'} the default model. ` +
+    `Open .loopboard/LOOP.md, read the loop ` +
     `worker instructions in its Automation section, and follow them exactly for this and every pass.`
   );
 }
