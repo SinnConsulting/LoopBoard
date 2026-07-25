@@ -86,6 +86,13 @@ test('note: sub-bullets parse (repeatable) and round-trip', () => {
   assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
 });
 
+test('feedback: sub-bullets parse (repeatable), strip leading ⚠️, and round-trip', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const e = doc.entries.find((x) => x.id === 't-ee01');
+  assert.deepEqual(e.feedback, ['Redact the auth token from the request log fields.']);
+  assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
+});
+
 test('DRAFT entries serialize minimally (id, no phase)', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const draft = doc.entries.find((x) => x.isDraft);

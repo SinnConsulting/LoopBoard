@@ -17,10 +17,6 @@ Second paragraph with **bold** and a `code` span.
 - 2026-07-08
 - 2026-07-09
 
-## Feedback
-
-⚠️ Please redact the auth token from the request log fields.
-
 ## Delivered
 
 Added exponential backoff with jitter across all dispatch workers.

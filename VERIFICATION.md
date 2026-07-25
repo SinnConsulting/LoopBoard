@@ -33,14 +33,15 @@ questions, an HTML-comment template) and `index-unknown.md`:
 - Parses every canonical section; **fixpoint** and byte-for-byte round-trip of a full fixture.
 - Empty file → empty detail (serialize is just the H1); missing sections omitted on write; **H1
   rewritten from the index title**; Meta keys emit in canonical order; unknown headings/keys
-  preserved + flagged (fixpoint holds); ⚠️ canonicalization (parser strips, writer re-adds once).
+  preserved + flagged (fixpoint holds); a legacy `## Feedback` section (feedback now lives in the
+  index, not the task file) is preserved verbatim as unrecognized content, not parsed.
 
 ### Merge routing + patches — `test/merge.test.js`
-- `patchTarget` routes title/model/groomer/answer → index, description/note/feedback → detail.
+- `patchTarget` routes title/model/groomer/answer/note/feedback → index, description → detail.
 - `applyPatch` (index) and `applyDetailPatch` (detail) keep disk-wins conflict semantics; answer
   patch targets the right question; model `default (opus)` clears the field; unknown id → notfound.
-- `note` edits the whole `## Notes` section: newline-split, empties dropped → `notes: string[]`;
-  clearing empties the section.
+- `note` and `feedback` each edit their whole set as one value: newline-split, empties dropped →
+  `notes: string[]` / `feedback: string[]`; clearing either empties the set.
 
 ### Gates — `test/gates.test.js`
 - `promoteIndex` (phase→backlog, uncheck), `promoteDetail` (`promoted:` + worklog, no dup),
@@ -49,7 +50,8 @@ questions, an HTML-comment template) and `index-unknown.md`:
 ### View — `test/view.test.js`
 - `computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; dependency marked met when
   its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `note` derives from `notes[]`;
-  DONE cards render from the slim IndexEntry (no composed detail).
+  `feedback` derives from `feedback[]`; DONE cards render from the slim IndexEntry (no composed
+  detail).
 
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at

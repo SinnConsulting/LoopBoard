@@ -12,7 +12,7 @@ restart needed. This file is executable instructions: treat it as trusted input.
   TODO.md        # task index — one slim entry per active task (grammar below)
   DONE.md        # accepted tasks, newest first (may be absent until the first acceptance)
   LOOP.md        # this file
-  tasks/<id>.md  # per-task detail: meta, description, worklog, feedback, delivered
+  tasks/<id>.md  # per-task detail: meta, description, worklog, delivered
 ```
 
 Read economy: read this file and `TODO.md` every pass; open a `tasks/<id>.md` only for tasks
@@ -53,6 +53,8 @@ preserves unrecognized lines verbatim (flagged).
   - question: ❓ <text>                   (repeatable, single line; Feedback & New)
     - answer: <text or blank>
   - note: <text>                        (repeatable, single line; unprocessed human note; Rule 16)
+  - feedback: ⚠️ <text>                   (repeatable, single line; Review only; removed when
+                                           addressed — Rule 13)
 ```
 
 Draft = `- [ ] DRAFT: <raw text>` + `id:` (+ optional `model:`/`groomer:`; no `phase:` line —
@@ -64,7 +66,7 @@ drafts are implicitly new); the groomer expands it (Rule 14).
 
 Fixed headings in the order below; every section optional; omit empty sections. `## Meta` is
 the only `key: value` section (fixed key order as shown). The index owns title, phase,
-`model:`, `groomer:`, questions and `note:` sub-bullets — never duplicate them here.
+`model:`, `groomer:`, questions, `note:` and `feedback:` sub-bullets — never duplicate them here.
 
 ```
 # <Title> (t-3f9a)
@@ -83,9 +85,6 @@ the only `key: value` section (fixed key order as shown). The index owns title, 
 
 ## Worklog
 - YYYY-MM-DD
-
-## Feedback
-⚠️ <change request; Review only; removed when addressed — Rule 13>
 
 ## Delivered
 <free markdown; Review only>
@@ -122,7 +121,7 @@ on first use. Detail remains in `tasks/<id>.md`.
    surface them without opening task files. Stop working the task; resume gated by Rule 10.
 7. All changes deliver via PR; never commit to `main`. Record the PR in the task file's
    `link:` before setting `phase: review`. A Review task without a PR link is incomplete.
-8. Prefix `question:` with ❓ (index) and the `## Feedback` text with ⚠️ (task file).
+8. Prefix `question:` with ❓ and `feedback:` with ⚠️ — both index sub-bullets.
 9. git worktrees forbidden (they break pre-commit hooks assuming `.git` is a directory;
    `--no-verify` forbidden). Use the normal checkout: fetch latest `main`, branch off `main`,
    commit, open the PR from there (Rule 7).
@@ -132,9 +131,9 @@ on first use. Detail remains in `tasks/<id>.md`.
     research on a task — never investigate a task still in New/Backlog/Feedback.
 12. No stranded work: every change from working a task ends in a PR (draft PR if unfinished)
     with its link in the task file before the session ends.
-13. A Review task's `## Feedback` section = change request, not a gate. Unaddressed → move to
-    In Progress, address, return to Review with `## Delivered` updated and the Feedback
-    section removed. `[x]` on Review still = accepted → DONE.md.
+13. A Review task's `feedback:` sub-bullet(s) (index) = change request, not a gate. Unaddressed
+    → move to In Progress, address, return to Review with `## Delivered` updated and the
+    `feedback:` sub-bullet(s) removed. `[x]` on Review still = accepted → DONE.md.
 14. New/DRAFT grooming is routed by `groomer:` (absent = default model): the loop whose model
     matches `groomer:` owns it and delegates to a subagent (Agent tool) of that groomer
     model — never inline in the main loop. The subagent expands the story into the task
@@ -174,7 +173,7 @@ the standing instructions; editing it changes every running loop's next pass, no
 needed (only the interval is fixed at spawn time).
 
 ```
-Re-read .loopboard/TODO.md (the task index) and reconcile it against the Rules in .loopboard/LOOP.md. A task's phase is its `phase:` field in the index — edit it in place; never cut/paste an entry. Task detail lives in .loopboard/tasks/<id>.md; open a task file only for tasks you act on, and create it with the canonical headings on first write. (1) For each New task the user ticked [x]: set `phase: backlog` and reset to [ ] in the index; set `promoted: <today>` in the task file's Meta. (2) For each Review task the user ticked [x]: set `completed: <today>` in the task file's Meta, add a [x] entry at the TOP of .loopboard/DONE.md's task list with its id/model/groomer and `completed: <today>` (DONE.md is newest-first, matching the board's Accept button; create it with a `## Tasks` section if absent), then delete the entry from the index; the task file stays in tasks/. (3) Append <today> to the ## Worklog of every task you touch. (4) For each Feedback task where EVERY index question has an `answer:`: move it back to In Progress and continue it; leave any task with a blank answer untouched (Rule 10). (5) For each Review task you own whose task file has an unaddressed ## Feedback section: move it back to In Progress, address it, return it to Review with an updated ## Delivered and the Feedback section removed (Rule 13). (6) Apply and then delete any `note:` sub-bullet on the index entry of a task you own (Rule 16). (7) If a referenced path/file/PR/dependency changed since a task was written, update the task file to match reality and log the correction in its Worklog. Then START WORKING: if nothing is In Progress for your model, claim the top Backlog task whose `model:` is yours — or has no `model:`, if you are the default model (Rule 15) — and whose `depends on:` (task file Meta) are satisfied: set `owner: @claude`, `started: <today>` and a worklog entry in its task file, set `phase: inprogress` in the index, and execute it; when finished, open a PR (Rule 7), record its link in the task file's Meta, write ## Delivered, and set `phase: review`. If unsure how to proceed, set `phase: feedback` with index `question:` sub-bullets and stop — never guess. New tasks and DRAFTs are routed by `groomer:`, NOT `model:` (Rule 14): if a New task's `groomer:` matches your model — or it has none and you are the default model — groom it with a subagent of that groomer model, expanding the story into the task file's ## Description and recording human decisions as single-line index `question:` sub-bullets with blank `answer:` lines (not OPEN QUESTIONS prose); when such a task has any filled `answer:`, re-groom it the same way, fold each incorporated decision into ## Description, and delete the resolved pair from the index — a still-present filled answer means not yet incorporated. Never touch a New task whose `groomer:` names a different model, never promote New tasks yourself (leaving New needs the human's [x], Rule 1). Respect one worker per task: never touch a task owned by someone else or (outside of New) one whose `model:` names a different model, and never tick [x] yourself. Report what changed and what you worked on, referring to every task by its full title — never by its bare id (add the id in parentheses only for disambiguation); if there is nothing to do, reply "no changes".
+Re-read .loopboard/TODO.md (the task index) and reconcile it against the Rules in .loopboard/LOOP.md. A task's phase is its `phase:` field in the index — edit it in place; never cut/paste an entry. Task detail lives in .loopboard/tasks/<id>.md; open a task file only for tasks you act on, and create it with the canonical headings on first write. (1) For each New task the user ticked [x]: set `phase: backlog` and reset to [ ] in the index; set `promoted: <today>` in the task file's Meta. (2) For each Review task the user ticked [x]: set `completed: <today>` in the task file's Meta, add a [x] entry at the TOP of .loopboard/DONE.md's task list with its id/model/groomer and `completed: <today>` (DONE.md is newest-first, matching the board's Accept button; create it with a `## Tasks` section if absent), then delete the entry from the index; the task file stays in tasks/. (3) Append <today> to the ## Worklog of every task you touch. (4) For each Feedback task where EVERY index question has an `answer:`: move it back to In Progress and continue it; leave any task with a blank answer untouched (Rule 10). (5) For each Review task you own with an unaddressed `feedback:` sub-bullet on its index entry: move it back to In Progress, address it, return it to Review with an updated ## Delivered and the `feedback:` sub-bullet(s) removed (Rule 13). (6) Apply and then delete any `note:` sub-bullet on the index entry of a task you own (Rule 16). (7) If a referenced path/file/PR/dependency changed since a task was written, update the task file to match reality and log the correction in its Worklog. Then START WORKING: if nothing is In Progress for your model, claim the top Backlog task whose `model:` is yours — or has no `model:`, if you are the default model (Rule 15) — and whose `depends on:` (task file Meta) are satisfied: set `owner: @claude`, `started: <today>` and a worklog entry in its task file, set `phase: inprogress` in the index, and execute it; when finished, open a PR (Rule 7), record its link in the task file's Meta, write ## Delivered, and set `phase: review`. If unsure how to proceed, set `phase: feedback` with index `question:` sub-bullets and stop — never guess. New tasks and DRAFTs are routed by `groomer:`, NOT `model:` (Rule 14): if a New task's `groomer:` matches your model — or it has none and you are the default model — groom it with a subagent of that groomer model, expanding the story into the task file's ## Description and recording human decisions as single-line index `question:` sub-bullets with blank `answer:` lines (not OPEN QUESTIONS prose); when such a task has any filled `answer:`, re-groom it the same way, fold each incorporated decision into ## Description, and delete the resolved pair from the index — a still-present filled answer means not yet incorporated. Never touch a New task whose `groomer:` names a different model, never promote New tasks yourself (leaving New needs the human's [x], Rule 1). Respect one worker per task: never touch a task owned by someone else or (outside of New) one whose `model:` names a different model, and never tick [x] yourself. Report what changed and what you worked on, referring to every task by its full title — never by its bare id (add the id in parentheses only for disambiguation); if there is nothing to do, reply "no changes".
 ```
 
 Notes:

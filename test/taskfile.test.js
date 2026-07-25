@@ -22,7 +22,6 @@ test('parses every canonical section', () => {
   assert.ok(d.description.startsWith('Retries for failed webhook deliveries.'));
   assert.ok(d.description.includes('Second paragraph'), 'multi-line description preserved');
   assert.deepEqual(d.worklog, ['2026-07-08', '2026-07-09']);
-  assert.equal(d.feedback, 'Please redact the auth token from the request log fields.');
   assert.ok(d.delivered.startsWith('Added exponential backoff'));
   assert.equal(d.unknownLines.length, 0);
 });
@@ -81,11 +80,11 @@ test('unknown headings and unknown meta keys are preserved verbatim + flagged', 
   assert.equal(twice, once);
 });
 
-test('⚠️ canonicalization: parser strips, writer re-adds a single leading warning', () => {
-  const d = parseTaskFile('# X (t-1)\n\n## Feedback\n\nNo emoji here.\n');
-  assert.equal(d.feedback, 'No emoji here.');
+test('legacy ## Feedback section is preserved verbatim as unknown content, not parsed', () => {
+  const d = parseTaskFile('# X (t-1)\n\n## Feedback\n\n⚠️ No emoji here.\n');
+  assert.equal(d.feedback, undefined);
+  assert.ok(d.unknownLines.includes('## Feedback'));
   const out = serializeTaskFile(d, 'X', 't-1');
+  assert.ok(out.includes('## Feedback'));
   assert.ok(out.includes('⚠️ No emoji here.'));
-  // Re-parse does not double the emoji.
-  assert.equal(parseTaskFile(out).feedback, 'No emoji here.');
 });

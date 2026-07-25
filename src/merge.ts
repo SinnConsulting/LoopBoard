@@ -6,8 +6,8 @@
 
 import { IndexDoc, IndexEntry, TaskDetail, Model, BUILTIN_MODEL_IDS } from './model';
 
-export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'note';
-export type DetailField = 'description' | 'feedback';
+export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'note' | 'feedback';
+export type DetailField = 'description';
 export type PatchField = IndexField | DetailField;
 
 export interface FieldPatch {
@@ -28,7 +28,7 @@ export interface DetailMergeResult {
 }
 
 const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
-const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'note'];
+const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'note', 'feedback'];
 
 // Which file a field patch targets.
 export function patchTarget(field: PatchField): 'index' | 'detail' {
@@ -56,6 +56,8 @@ export function currentFieldValue(entry: IndexEntry, field: IndexField, question
         : '';
     case 'note':
       return entry.notes.join('\n');
+    case 'feedback':
+      return entry.feedback.join('\n');
   }
 }
 
@@ -82,6 +84,12 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
         .map((l) => l.trim())
         .filter((l) => l.length > 0);
       break;
+    case 'feedback':
+      entry.feedback = value
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      break;
   }
 }
 
@@ -90,8 +98,6 @@ export function currentDetailFieldValue(detail: TaskDetail, field: DetailField):
   switch (field) {
     case 'description':
       return detail.description ?? '';
-    case 'feedback':
-      return detail.feedback ?? '';
   }
 }
 
@@ -99,9 +105,6 @@ function setDetailFieldValue(detail: TaskDetail, field: DetailField, value: stri
   switch (field) {
     case 'description':
       detail.description = value.trim() ? value : undefined;
-      break;
-    case 'feedback':
-      detail.feedback = value.trim() ? value.trim() : undefined;
       break;
   }
 }
