@@ -627,7 +627,7 @@
     autoGrow(ta);
     ta.addEventListener('input', () => autoGrow(ta));
     ta.addEventListener('blur', () => { if (ta.value.trim()) sendPatch(t.id, 'feedback', ta.value.trim(), t.feedback || ''); });
-    wrap.append(h('div', {}, ta, h('div', { class: 'helper' }, 'Writing feedback sends the task back to In Progress.')));
+    wrap.append(h('div', {}, ta));
     return wrap;
   }
 
