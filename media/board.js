@@ -60,6 +60,7 @@
   let lastSyncTs = Date.now();
   let flashSet = new Set(); // task ids to flash on next render
   let pendingBoard = null;
+  let pendingRender = false; // an async/external repaint deferred while a field is focused
   // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
   // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
   let searchOpen = false;
@@ -80,17 +81,26 @@
   function pushToast(level, text, action) {
     const id = toastSeq++;
     toasts.push({ id, level, text, action });
-    render();
+    scheduleRender();
     setTimeout(() => dismissToast(id), level === 'warning' ? 8000 : 4000);
   }
   function dismissToast(id) {
     toasts = toasts.filter((t) => t.id !== id);
-    render();
+    scheduleRender();
   }
 
   function isEditing() {
     const el = document.activeElement;
-    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.closest('#root');
+    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') && el.closest('#root');
+  }
+
+  // Repaints from async/external events (toasts, conflict-clear timers) must not wipe a field the
+  // user is mid-typing in — a full render() does `root.textContent = ''`. Defer them while editing;
+  // the focusout handler flushes the pending one. Synchronous user-initiated renders (tab switch,
+  // click-to-edit, Escape-to-close, blur) stay immediate — they call render() directly.
+  function scheduleRender() {
+    if (isEditing()) { pendingRender = true; return; }
+    render();
   }
 
   // ---- local in-tab search ----
@@ -691,7 +701,7 @@
       }
       applyBoard(incoming);
     } else if (msg.type === 'toast') {
-      if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; render(); }, 3000); }
+      if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
       pushToast(msg.level, msg.text, action);
     } else if (msg.type === 'reveal') {
@@ -703,6 +713,7 @@
     // A freshly applied board supersedes any board that was deferred while editing;
     // otherwise the stale snapshot gets flushed on the next focusout and clobbers newer state.
     pendingBoard = null;
+    pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
     lastSyncTs = Date.now();
     // Attach transient flash flags.
@@ -748,7 +759,7 @@
       const el = document.querySelector('[data-task="' + taskId + '"]');
       if (el) el.scrollIntoView({ block: 'center' });
     }, 30);
-    setTimeout(() => { getUi(taskId).conflict = false; render(); }, 3000);
+    setTimeout(() => { getUi(taskId).conflict = false; scheduleRender(); }, 3000);
   }
 
   // Cmd/Ctrl+F opens the local in-tab filter. The panel is created without enableFindWidget, so this
@@ -765,7 +776,9 @@
   // Apply a deferred board once the user stops editing.
   document.addEventListener('focusout', () => {
     setTimeout(() => {
-      if (pendingBoard && !isEditing()) { const b = pendingBoard; pendingBoard = null; applyBoard(b); }
+      if (isEditing()) return; // focus moved to another field — keep deferring
+      if (pendingBoard) { const b = pendingBoard; pendingBoard = null; applyBoard(b); }
+      else if (pendingRender) { pendingRender = false; render(); }
     }, 50);
   });
 
