@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { parseDone } = require('../out-test/parser.js');
-const { computeBadge, toWebviewBoard } = require('../out-test/view.js');
+const { computeBadge, toWebviewBoard, computeConcurrency } = require('../out-test/view.js');
 
 // Minimal composed task (index + detail fields flattened, as store.compose produces).
 function task(over) {
@@ -73,6 +73,63 @@ test('feedback maps from feedback[] joined with newlines', () => {
   };
   const web = toWebviewBoard(board, 'ws', 'opus', []);
   assert.equal(web.phases.review[0].feedback, 'a\nb');
+});
+
+test('computeConcurrency: nothing In Progress → empty status, no message, not breached', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-1', phase: 'backlog' }), task({ id: 't-2', phase: 'new' })],
+  };
+  const c = computeConcurrency(board);
+  assert.equal(c.inProgress.length, 0);
+  assert.equal(c.skipped.length, 0);
+  assert.equal(c.breached, false);
+  assert.equal(c.message, null);
+});
+
+test('computeConcurrency: one In Progress + a Backlog task → skip message names the prepared task', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [
+      task({ id: 't-run', title: 'Running', phase: 'inprogress' }),
+      task({ id: 't-prep', title: 'Prepared', phase: 'backlog' }),
+    ],
+  };
+  const c = computeConcurrency(board);
+  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running' }]);
+  assert.deepEqual(c.skipped, [{ id: 't-prep', title: 'Prepared' }]);
+  assert.equal(c.breached, false);
+  assert.equal(c.message, 'something is in progress — skipping prepared task t-prep');
+});
+
+test('computeConcurrency: In Progress but no Backlog waiting → no skip message', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-run', phase: 'inprogress' }), task({ id: 't-n', phase: 'new' })],
+  };
+  const c = computeConcurrency(board);
+  assert.equal(c.inProgress.length, 1);
+  assert.equal(c.skipped.length, 0);
+  assert.equal(c.message, null);
+});
+
+test('computeConcurrency: more than one In Progress → breached', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-a', phase: 'inprogress' }), task({ id: 't-b', phase: 'inprogress' })],
+  };
+  const c = computeConcurrency(board);
+  assert.equal(c.inProgress.length, 2);
+  assert.equal(c.breached, true);
+});
+
+test('computeConcurrency flows onto the WebBoard payload', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-run', phase: 'inprogress' }), task({ id: 't-prep', phase: 'backlog' })],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(web.concurrency.message, 'something is in progress — skipping prepared task t-prep');
 });
 
 test('DONE entries render from the slim IndexEntry (no detail)', () => {

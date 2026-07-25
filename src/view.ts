@@ -41,6 +41,18 @@ export interface WebBoard {
   phases: Record<Phase, WebTask[]>;
   loops: LoopStatus[];
   badge: BadgeInfo;
+  concurrency: ConcurrencyStatus;
+}
+
+// Board-wide view of the GLOBAL SINGLE-TASK LIMIT (LOOP.md Rule 2): at most one task may be
+// In Progress across all models. The extension cannot enforce it (loops claim by writing the
+// markdown), but it surfaces the state so a human sees when the limit is holding back prepared
+// work — or being breached.
+export interface ConcurrencyStatus {
+  inProgress: { id: string; title: string }[]; // tasks currently phase: inprogress (any model)
+  skipped: { id: string; title: string }[]; // Backlog tasks a loop would start but the limit blocks
+  breached: boolean; // more than one task In Progress at once — the limit is being violated
+  message: string | null; // the recognizable "something is in progress — skipping prepared task <id>" line
 }
 
 export interface BadgeInfo {
@@ -123,6 +135,24 @@ export function computeBadge(board: Board): BadgeInfo {
   };
 }
 
+export function computeConcurrency(board: Board): ConcurrencyStatus {
+  const inProgress = board.tasks
+    .filter((t) => t.phase === 'inprogress')
+    .map((t) => ({ id: t.id, title: t.title }));
+  // Prepared work a loop would pick up next: claimable Backlog tasks. Only "skipped" while
+  // something is already In Progress (otherwise a loop is free to start them).
+  const skipped =
+    inProgress.length >= 1
+      ? board.tasks.filter((t) => t.phase === 'backlog').map((t) => ({ id: t.id, title: t.title }))
+      : [];
+  const breached = inProgress.length > 1;
+  let message: string | null = null;
+  if (inProgress.length >= 1 && skipped.length >= 1) {
+    message = `something is in progress — skipping prepared task ${skipped.map((s) => s.id).join(', ')}`;
+  }
+  return { inProgress, skipped, breached, message };
+}
+
 export function toWebviewBoard(
   board: Board,
   workspaceName: string,
@@ -151,5 +181,6 @@ export function toWebviewBoard(
     phases,
     loops,
     badge: computeBadge(board),
+    concurrency: computeConcurrency(board),
   };
 }

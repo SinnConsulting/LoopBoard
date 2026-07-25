@@ -38,6 +38,16 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
 }
 .sb-row.loop .label { flex: initial; }
+.loop-status-label { font-size: 11px; flex-shrink: 0; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.loop-marquee { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+.loop-marquee-inner {
+  display: inline-block; white-space: nowrap; will-change: transform;
+  font-size: 11px; font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  color: var(--vscode-foreground, #cccccc);
+}
+.loop-marquee.scrolling .loop-marquee-inner { animation: loop-marquee var(--marquee-dur, 8s) linear infinite alternate; }
+@keyframes loop-marquee { from { transform: translateX(0); } to { transform: translateX(var(--marquee-shift, 0)); } }
+@media (prefers-reduced-motion: reduce) { .loop-marquee.scrolling .loop-marquee-inner { animation: none; } }
 .icon-btn {
   width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; color: var(--vscode-foreground, #cccccc); border-radius: 4px; cursor: pointer; padding: 0;
