@@ -147,9 +147,12 @@ export class Controller {
         return;
       case 'createFiles':
         return this.onCreateFiles();
-      case 'openLink':
-        if (msg.url) void vscode.env.openExternal(vscode.Uri.parse(String(msg.url)));
+      case 'openLink': {
+        if (!msg.url) return;
+        const uri = vscode.Uri.parse(String(msg.url));
+        if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
         return;
+      }
       case 'openBoard':
         this.openBoard();
         return;
