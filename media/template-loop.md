@@ -35,7 +35,7 @@ New → Backlog → In Progress → Review → Done (DONE.md)
 <!-- loopboard:sync:loop-intro:end -->
 
 <!-- loopboard:sync:task-index-format:begin -->
-## Task index format (v4) — `.loopboard/TODO.md`
+## Task index format (v5) — `.loopboard/TODO.md`
 
 Entry = checkbox line + `key: value` sub-bullets, one per line, fixed order below, and NOTHING
 else — all other task data belongs in the task file. Phase = the `phase:` field; move a task

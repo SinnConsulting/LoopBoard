@@ -84,7 +84,7 @@ export interface Question {
   answer: string;
 }
 
-// One `.loopboard/TODO.md` (or DONE.md) entry — grammar v4. Nothing beyond these keys is canonical.
+// One `.loopboard/TODO.md` (or DONE.md) entry — grammar v5. Nothing beyond these keys is canonical.
 export interface IndexEntry {
   id: string;
   title: string;

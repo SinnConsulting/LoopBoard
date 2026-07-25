@@ -1,6 +1,6 @@
 // Single owner of all `.loopboard/` file IO: load, watch, and merge-save. This is the only module
 // that knows paths. Layout (v2):
-//   <workspace>/.loopboard/TODO.md          slim task index (grammar v4)
+//   <workspace>/.loopboard/TODO.md          slim task index (grammar v5)
 //   <workspace>/.loopboard/DONE.md          accepted index, newest first (lazy)
 //   <workspace>/.loopboard/LOOP.md          rules + loop worker instructions
 //   <workspace>/.loopboard/tasks/<id>.md    per-task detail

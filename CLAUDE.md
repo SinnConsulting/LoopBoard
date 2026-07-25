@@ -4,7 +4,7 @@ VSCode extension: renders the workspace `.loopboard/` tracker as an interactive 
 edits back to markdown, spawns model-specific Claude Code loop terminals. Decisions:
 `DECISIONS.md`; verification status: `VERIFICATION.md`.
 
-Storage: everything lives under `.loopboard/` — `TODO.md` (slim task index, grammar v4), `DONE.md`
+Storage: everything lives under `.loopboard/` — `TODO.md` (slim task index, grammar v5), `DONE.md`
 (accepted, lazy), `LOOP.md` (rules + loop worker instructions), `tasks/<id>.md` (per-task detail).
 
 ## Non-negotiable
@@ -14,7 +14,7 @@ Storage: everything lives under `.loopboard/` — `TODO.md` (slim task index, gr
    only Docker, `make`, git, VSCode. A tool missing from node:22 gets its own image.
 2. Zero runtime dependencies. devDependencies = exactly `typescript` + `@types/vscode`. No
    `@types/node`, no bundler, no frameworks; webview = vanilla HTML/CSS/JS.
-3. `.loopboard/` markdown = source of truth. The index (`TODO.md`, grammar v4) carries only
+3. `.loopboard/` markdown = source of truth. The index (`TODO.md`, grammar v5) carries only
    id/phase/model/groomer/questions/notes per entry; every other field lives in `tasks/<id>.md`.
    Parse tolerantly, write back canonical on every save, preserve unparseable lines verbatim
    (flagged in UI). Grammar + task-file format are documented in `LOOP.md`.
