@@ -28,20 +28,47 @@ function extractBlock(text: string, id: string): string | null {
   return text.slice(b.index, e.index + e[0].length);
 }
 
-// Replace each marked section in `current` with the template's version of that same section.
-// Ids the template has but `current` doesn't (partial/legacy file) are skipped — the caller
-// should route those through the full-overwrite path via `hasMarkers` instead.
+// Replace each marked section in `current` with the template's version of that same section. A
+// template id `current` doesn't have yet (the template introduced a new marked section since
+// `current` was last synced) is INSERTED next to its nearest template-order neighbor that
+// `current` already has — adjacent to that neighbor's block, on the same side as in the
+// template — so template evolution reaches already-marked files instead of being skipped
+// forever. A `current` with NO markers at all (genuinely legacy/pre-marker) gets nothing
+// inserted here — the caller should route that case through the full-overwrite path via
+// `hasMarkers` instead.
 export function syncMarkedSections(current: string, template: string): { text: string; changedIds: string[] } {
   let text = current;
   const changedIds: string[] = [];
-  for (const id of markedSectionIds(template)) {
-    const curBlock = extractBlock(current, id);
+  if (!hasMarkers(current)) return { text, changedIds };
+  const templateIds = markedSectionIds(template);
+  for (let i = 0; i < templateIds.length; i++) {
+    const id = templateIds[i];
     const tplBlock = extractBlock(template, id);
-    if (curBlock == null || tplBlock == null) continue;
-    if (curBlock !== tplBlock) {
-      text = text.replace(curBlock, tplBlock);
-      changedIds.push(id);
+    if (tplBlock == null) continue;
+    const curBlock = extractBlock(text, id);
+    if (curBlock != null) {
+      if (curBlock !== tplBlock) {
+        text = text.replace(curBlock, tplBlock);
+        changedIds.push(id);
+      }
+      continue;
     }
+    let before: string | null = null;
+    for (let j = i - 1; j >= 0; j--) {
+      before = extractBlock(text, templateIds[j]);
+      if (before != null) break;
+    }
+    if (before != null) {
+      text = text.replace(before, `${before}\n\n${tplBlock}`);
+    } else {
+      let after: string | null = null;
+      for (let j = i + 1; j < templateIds.length; j++) {
+        after = extractBlock(text, templateIds[j]);
+        if (after != null) break;
+      }
+      text = after != null ? text.replace(after, `${tplBlock}\n\n${after}`) : `${tplBlock}\n\n${text}`;
+    }
+    changedIds.push(id);
   }
   return { text, changedIds };
 }

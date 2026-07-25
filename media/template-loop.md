@@ -1,3 +1,4 @@
+<!-- loopboard:sync:loop-intro:begin -->
 # LOOP — LoopBoard workflow and loop worker instructions
 
 All paths are relative to the workspace root. This file is the standing instructions for loop
@@ -31,6 +32,7 @@ New → Backlog → In Progress → Review → Done (DONE.md)
 - **Feedback** — paused on human answers; returns to In Progress.
 - **Review** — delivered; awaiting acceptance.
 - **Done** — accepted; index entry lives in `DONE.md`; task file stays in `tasks/`.
+<!-- loopboard:sync:loop-intro:end -->
 
 <!-- loopboard:sync:task-index-format:begin -->
 ## Task index format (v4) — `.loopboard/TODO.md`

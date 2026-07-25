@@ -62,14 +62,40 @@ test('syncMarkedSections preserves user content outside the markers', () => {
   assert.match(text, /new A/);
 });
 
-test('syncMarkedSections skips ids the current file does not have (partial/legacy)', () => {
+test('syncMarkedSections inserts a template id the current (already-marked) file lacks, next to its nearest neighbor', () => {
   const current = ['<!-- loopboard:sync:a:begin -->', 'old A', '<!-- loopboard:sync:a:end -->'].join('\n');
   const template = [
     '<!-- loopboard:sync:a:begin -->', 'new A', '<!-- loopboard:sync:a:end -->',
     '<!-- loopboard:sync:b:begin -->', 'new B', '<!-- loopboard:sync:b:end -->',
   ].join('\n');
-  const { changedIds } = syncMarkedSections(current, template);
+  const { text, changedIds } = syncMarkedSections(current, template);
+  assert.deepEqual(changedIds, ['a', 'b']);
+  assert.match(text, /new A/);
+  assert.match(text, /new B/);
+  const aIdx = text.indexOf('new A');
+  const bIdx = text.indexOf('new B');
+  assert.ok(aIdx < bIdx, 'b (later in template order) should land after a');
+});
+
+test('syncMarkedSections inserts a leading template id before its first-present neighbor', () => {
+  const current = ['<!-- loopboard:sync:b:begin -->', 'same B', '<!-- loopboard:sync:b:end -->'].join('\n');
+  const template = [
+    '<!-- loopboard:sync:a:begin -->', 'new A', '<!-- loopboard:sync:a:end -->',
+    '<!-- loopboard:sync:b:begin -->', 'same B', '<!-- loopboard:sync:b:end -->',
+  ].join('\n');
+  const { text, changedIds } = syncMarkedSections(current, template);
   assert.deepEqual(changedIds, ['a']);
+  const aIdx = text.indexOf('new A');
+  const bIdx = text.indexOf('same B');
+  assert.ok(aIdx < bIdx, 'a (earlier in template order) should land before b');
+});
+
+test('syncMarkedSections leaves a file with no markers at all untouched (route via hasMarkers instead)', () => {
+  const current = 'Plain prose, no markers here.';
+  const template = ['<!-- loopboard:sync:a:begin -->', 'new A', '<!-- loopboard:sync:a:end -->'].join('\n');
+  const { text, changedIds } = syncMarkedSections(current, template);
+  assert.deepEqual(changedIds, []);
+  assert.equal(text, current);
 });
 
 test('syncTodoPreamble (legacy, no marker) replaces an out-of-date intro but keeps every task entry', () => {
