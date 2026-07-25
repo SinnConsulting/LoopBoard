@@ -1,7 +1,7 @@
-// `.loopboard/TODO.md` / `.loopboard/DONE.md` index parser (tolerant, grammar v4).
+// `.loopboard/TODO.md` / `.loopboard/DONE.md` index parser (tolerant, grammar v5).
 // No vscode imports so it runs under `node --test`.
 //
-// ============================ TODO.md v4 GRAMMAR (index only) ============================
+// ============================ TODO.md v5 GRAMMAR (index only) ============================
 // A file is: <preamble>  <## Tasks section>
 //   - preamble: everything above the "## Tasks" heading (title + prose pointing at LOOP.md).
 //   - "## Tasks": a single flat section holding EVERY active task; a task's phase is its own
@@ -21,7 +21,7 @@
 //     - note: <text>                         (repeatable; unprocessed human worker-note, Rule 16)
 //     - feedback: ⚠️ <text>                   (repeatable; Review change request, Rule 13)
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
-//   DELIVERED are NOT valid index keys in v4 — they land in unknownLines (preserved + flagged).
+//   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
 //   `completed:` is canonical in DONE.md entries only.
 // ========================================================================================
 

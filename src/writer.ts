@@ -1,4 +1,4 @@
-// IndexDoc -> canonical markdown (strict), grammar v4. Pure — no vscode imports.
+// IndexDoc -> canonical markdown (strict), grammar v5. Pure — no vscode imports.
 // Assigns missing ids; preserves unknown lines and section extras verbatim.
 
 import { IndexDoc, IndexEntry } from './model';

@@ -14,7 +14,7 @@ make package   -> loopboard-todo-2.0.0.vsix (32 files, ~125 KB; templates ship, 
 The pure layer is unit-tested per module; `make test` compiles `tsconfig.test.json` → `out-test/`
 and runs `node --test`.
 
-### Index parser/writer — `test/parser.test.js` (grammar v4)
+### Index parser/writer — `test/parser.test.js` (grammar v5)
 Over `test/fixtures/index-full.md` (six entries incl. a DRAFT, a Feedback entry with two
 questions, an HTML-comment template) and `index-unknown.md`:
 - **Text idempotence** and **index fixpoint** (parse→write→parse deep-equal).
