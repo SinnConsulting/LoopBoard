@@ -218,6 +218,44 @@ test('non-integer rev: lands in unknownLines (preserved, not parsed)', () => {
   assert.deepEqual(doc.entries[0].unknownLines, ['  - rev: abc']);
 });
 
+// ---------------------------------------------------- delete: removal round-trips (t-d58a)
+
+test('removing a task and re-serializing round-trips the remaining tasks and extras verbatim', () => {
+  // Deletion in the store is a whole-entry splice from doc.entries followed by serializeTodo; this
+  // proves the survivors (and the HTML-comment template extra) are untouched and the result is a
+  // stable fixpoint.
+  const doc = parseTodo(readFix('index-full.md'));
+  const before = doc.entries.map((e) => e.id);
+  const removeIdx = doc.entries.findIndex((e) => e.id === 't-cc01');
+  assert.ok(removeIdx >= 0, 'target present before removal');
+
+  doc.entries.splice(removeIdx, 1);
+  const out = serializeTodo(doc);
+  const reparsed = parseTodo(out);
+
+  assert.deepEqual(reparsed.entries.map((e) => e.id), before.filter((id) => id !== 't-cc01'),
+    'exactly the removed id is gone; order preserved');
+  assert.ok(out.includes('Format when a worker parks a task here'), 'section extras (HTML comment) preserved');
+  assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint after removal');
+});
+
+test('removing a DONE entry round-trips the remaining accepted rows', () => {
+  const done = parseDone([
+    '# DONE', '', '## Tasks', '',
+    '- [x] First accepted', '  - id: t-dn01', '  - completed: 2026-07-20',
+    '', '- [x] Second accepted', '  - id: t-dn02', '  - model: opus', '  - completed: 2026-07-21',
+  ].join('\n'));
+  assert.equal(done.length, 2);
+
+  const remaining = done.filter((e) => e.id !== 't-dn01');
+  const out = serializeDone(remaining);
+  const reparsed = parseDone(out);
+
+  assert.deepEqual(reparsed.map((e) => e.id), ['t-dn02'], 'only the removed row is gone');
+  assert.equal(reparsed[0].completed, '2026-07-21', 'survivor fields intact');
+  assert.equal(serializeDone(parseDone(out)), out, 'fixpoint after removal');
+});
+
 test('serializeEntry differs ONLY in the rev line when rev changes (fingerprint excludes rev)', () => {
   // The store bumps rev iff the entry serialized WITHOUT rev changes; this proves re-emitting a
   // bumped rev is the sole textual delta on an otherwise-unchanged entry (no self-perpetuating bump).
