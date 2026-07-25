@@ -263,12 +263,16 @@ export class Store {
   async previewSync(todoTemplate: string, loopTemplate: string): Promise<{ summary: string[]; upToDate: boolean }> {
     const todoText = (await this.readFile(this.todoUri)) ?? '';
     const loopText = (await this.readFile(this.loopUri)) ?? '';
-    const { changed: todoChanged } = syncTodoPreamble(todoText, todoTemplate);
+    const { changed: todoChanged, legacy: todoLegacy } = syncTodoPreamble(todoText, todoTemplate);
     const loopLegacy = loopText.trim() !== '' && !hasMarkers(loopText);
     const loopChangedIds = loopLegacy ? [] : syncMarkedSections(loopText, loopTemplate).changedIds;
 
     const summary: string[] = [];
-    if (todoChanged) summary.push('TODO.md: intro out of date.');
+    if (todoLegacy) {
+      summary.push('TODO.md predates the current format and will be fully replaced (no markers yet).');
+    } else if (todoChanged) {
+      summary.push('TODO.md: intro out of date.');
+    }
     if (loopLegacy) {
       summary.push('LOOP.md predates the current format and will be fully replaced (a backup will be saved to LOOP.md.bkp).');
     } else if (loopChangedIds.length) {

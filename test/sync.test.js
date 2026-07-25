@@ -72,7 +72,7 @@ test('syncMarkedSections skips ids the current file does not have (partial/legac
   assert.deepEqual(changedIds, ['a']);
 });
 
-test('syncTodoPreamble replaces an out-of-date intro but keeps every task entry', () => {
+test('syncTodoPreamble (legacy, no marker) replaces an out-of-date intro but keeps every task entry', () => {
   const current = [
     '# TODO',
     '',
@@ -86,8 +86,9 @@ test('syncTodoPreamble replaces an out-of-date intro but keeps every task entry'
     '',
   ].join('\n');
   const template = ['# TODO', '', 'New intro line.', '', '## Tasks', '', '_(none)_', ''].join('\n');
-  const { text, changed } = syncTodoPreamble(current, template);
+  const { text, changed, legacy } = syncTodoPreamble(current, template);
   assert.equal(changed, true);
+  assert.equal(legacy, true);
   assert.match(text, /New intro line\./);
   assert.doesNotMatch(text, /Old stale intro line\./);
   assert.match(text, /Keep me/);
@@ -96,6 +97,45 @@ test('syncTodoPreamble replaces an out-of-date intro but keeps every task entry'
 
 test('syncTodoPreamble reports unchanged when the intro already matches', () => {
   const same = ['# TODO', '', 'Matching intro.', '', '## Tasks', '', '_(none)_', ''].join('\n');
-  const { changed } = syncTodoPreamble(same, same);
+  const { changed, legacy } = syncTodoPreamble(same, same);
   assert.equal(changed, false);
+  assert.equal(legacy, false);
+});
+
+test('syncTodoPreamble (marked) is surgical and preserves prose outside the marker', () => {
+  const current = [
+    '<!-- loopboard:sync:todo-intro:begin -->',
+    '# TODO',
+    '',
+    'Old stale intro line.',
+    '<!-- loopboard:sync:todo-intro:end -->',
+    '',
+    'A hand-written note the user added below the marker.',
+    '',
+    '## Tasks',
+    '',
+    '- [ ] Keep me',
+    '  - id: t-aaaa',
+    '  - phase: new',
+    '',
+  ].join('\n');
+  const template = [
+    '<!-- loopboard:sync:todo-intro:begin -->',
+    '# TODO',
+    '',
+    'New intro line.',
+    '<!-- loopboard:sync:todo-intro:end -->',
+    '',
+    '## Tasks',
+    '',
+    '_(none)_',
+    '',
+  ].join('\n');
+  const { text, changed, legacy } = syncTodoPreamble(current, template);
+  assert.equal(changed, true);
+  assert.equal(legacy, false);
+  assert.match(text, /New intro line\./);
+  assert.doesNotMatch(text, /Old stale intro line\./);
+  assert.match(text, /A hand-written note the user added below the marker\./);
+  assert.match(text, /Keep me/);
 });

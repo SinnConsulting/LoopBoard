@@ -46,13 +46,27 @@ export function syncMarkedSections(current: string, template: string): { text: s
   return { text, changedIds };
 }
 
-// TODO.md's intro paragraph + `## Tasks` heading scaffold is extension-owned; every task entry
-// (and any custom heading/HTML-comment extras) round-trips verbatim via the existing
-// serializeTodo(parseTodo(x)) fixpoint, so only the preamble needs replacing.
-export function syncTodoPreamble(currentText: string, templateText: string): { text: string; changed: boolean } {
+// TODO.md's intro paragraph is extension-owned and, like LOOP.md, fenced by a
+// `<!-- loopboard:sync:todo-intro:begin/end -->` marker in the shipped template — any prose the
+// user adds before/after the marker (inside the preamble, above the `## Tasks` heading) survives
+// a sync. A legacy preamble with no marker yet is replaced whole (`legacy: true` on that pass);
+// every task entry (and the `## Tasks` heading/HTML-comment extras) round-trips verbatim via the
+// existing serializeTodo(parseTodo(x)) fixpoint regardless, so only the preamble is ever touched.
+export function syncTodoPreamble(
+  currentText: string,
+  templateText: string
+): { text: string; changed: boolean; legacy: boolean } {
   const doc = parseTodo(currentText);
   const templateDoc = parseTodo(templateText);
-  const changed = doc.preamble !== templateDoc.preamble;
-  if (changed) doc.preamble = templateDoc.preamble;
-  return { text: serializeTodo(doc), changed };
+  const legacy = !hasMarkers(doc.preamble);
+  let changed = false;
+  if (legacy) {
+    changed = doc.preamble !== templateDoc.preamble;
+    if (changed) doc.preamble = templateDoc.preamble;
+  } else {
+    const { text, changedIds } = syncMarkedSections(doc.preamble, templateDoc.preamble);
+    changed = changedIds.length > 0;
+    if (changed) doc.preamble = text;
+  }
+  return { text: serializeTodo(doc), changed, legacy: legacy && changed };
 }
