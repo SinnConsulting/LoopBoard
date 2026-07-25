@@ -60,6 +60,12 @@
   let lastSyncTs = Date.now();
   let flashSet = new Set(); // task ids to flash on next render
   let pendingBoard = null;
+  // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
+  // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
+  let searchOpen = false;
+  let searchQuery = '';
+  let searchNeedsFocus = false; // refocus the search input after the next full repaint
+  let searchCaret = null;       // caret offset to restore into the search input
 
   function getUi(id) {
     if (!ui[id]) ui[id] = {};
@@ -85,6 +91,41 @@
   function isEditing() {
     const el = document.activeElement;
     return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.closest('#root');
+  }
+
+  // ---- local in-tab search ----
+  function matchesQuery(t) {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (t.id || '').toLowerCase().includes(q)
+      || (t.title || '').toLowerCase().includes(q)
+      || (t.description || '').toLowerCase().includes(q);
+  }
+  function filterList(list) {
+    return searchQuery.trim() ? list.filter(matchesQuery) : list;
+  }
+  function openSearch() {
+    if (!board || board.todoMissing || composerOpen) return;
+    searchOpen = true;
+    searchNeedsFocus = true;
+    searchCaret = searchQuery.length;
+    render();
+  }
+  function closeSearch() {
+    if (!searchOpen && !searchQuery) return;
+    searchOpen = false;
+    searchQuery = '';
+    searchNeedsFocus = false;
+    searchCaret = null;
+    render();
+  }
+  // Reset without rendering — for callers (tab switch, reveal) that render themselves. The search is
+  // scoped to the current tab, so leaving that tab clears it.
+  function resetSearch() {
+    searchOpen = false;
+    searchQuery = '';
+    searchNeedsFocus = false;
+    searchCaret = null;
   }
 
   // ---- attention ----
@@ -125,6 +166,38 @@
     requestAnimationFrame(() => {
       root.querySelectorAll('textarea.desc, textarea.field').forEach(autoGrow);
     });
+    // A full repaint drops focus; restore it to the search box so typing a query is uninterrupted.
+    if (searchOpen && searchNeedsFocus) {
+      searchNeedsFocus = false;
+      requestAnimationFrame(() => {
+        const si = document.getElementById('search-input');
+        if (!si) return;
+        si.focus();
+        if (searchCaret != null) { try { si.setSelectionRange(searchCaret, searchCaret); } catch (e) { /* ignore */ } }
+      });
+    }
+  }
+
+  function renderSearchBar(shownCount, totalCount) {
+    const input = h('input', {
+      class: 'search-input', id: 'search-input', type: 'text', 'aria-label': 'Filter tasks in this tab',
+      placeholder: 'Filter this tab by id, title or description…',
+    });
+    input.value = searchQuery;
+    input.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      searchCaret = e.target.selectionStart;
+      searchNeedsFocus = true;
+      render();
+    });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } });
+    const count = searchQuery.trim()
+      ? h('span', { class: 'search-count muted-11' }, shownCount + ' of ' + totalCount + ' match' + (shownCount === 1 ? '' : 'es'))
+      : h('span', { class: 'search-count muted-11' }, 'Searching this tab');
+    return h('div', { class: 'search-bar' },
+      input,
+      count,
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close search', title: 'Close search (Esc)', onclick: () => closeSearch() }, icon(SVG.x)));
   }
 
   function renderTopbar() {
@@ -141,7 +214,7 @@
         class: 'tab' + (selected ? ' selected' : '') + (meta.key === 'done' ? ' done-tab' : ''),
         type: 'button',
         'aria-current': selected ? 'true' : 'false',
-        onclick: () => { phase = meta.key; composerOpen = false; saveState(); render(); },
+        onclick: () => { phase = meta.key; composerOpen = false; resetSearch(); saveState(); render(); },
       });
       tab.append(h('span', { class: 'tab-label' }, meta.label));
       if (phaseAttention(meta.key)) {
@@ -153,7 +226,7 @@
     }
     bar.append(tabs);
 
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; render(); } },
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; resetSearch(); render(); } },
       'New Story'));
     return bar;
   }
@@ -172,12 +245,15 @@
       const meta = PHASE_META.find((m) => m.key === phase);
       inner.append(h('div', { class: 'pane-title' }, meta.label));
       inner.append(h('div', { class: 'pane-explainer' }, meta.explainer));
+      const full = board.phases[phase] || [];
+      const list = filterList(full);
+      if (searchOpen) inner.append(renderSearchBar(list.length, full.length));
       if (phase === 'done') {
-        inner.append(renderDone());
+        inner.append(renderDone(list));
       } else {
         const cards = h('div', { class: 'cards' });
-        const list = board.phases[phase] || [];
-        if (list.length === 0) inner.append(h('div', { class: 'muted-11' }, 'Nothing here.'));
+        if (full.length === 0) inner.append(h('div', { class: 'muted-11' }, 'Nothing here.'));
+        else if (list.length === 0) inner.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + searchQuery.trim() + '”.'));
         for (const t of list) cards.append(t.isDraft ? renderDraft(t) : renderCard(t));
         inner.append(cards);
       }
@@ -208,7 +284,7 @@
     };
     const saveBtn = h('button', {
       class: 'btn-primary', type: 'button', disabled: composerText.trim().length === 0, style: { width: 'auto', padding: '8px 16px' },
-      onclick: () => { const t = composerText.trim(); if (!t) return; post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel }); composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new'; saveState(); render(); },
+      onclick: () => { const t = composerText.trim(); if (!t) return; post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel }); composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new'; resetSearch(); saveState(); render(); },
     }, 'Save draft');
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
@@ -223,9 +299,12 @@
     );
   }
 
-  function renderDone() {
+  function renderDone(list) {
     const wrap = h('div', {});
-    const list = board.phases.done || [];
+    if (list.length === 0 && searchQuery.trim()) {
+      wrap.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + searchQuery.trim() + '”.'));
+      return wrap;
+    }
     for (const t of list) {
       const u = getUi(t.id);
       const hasDetail = !!((t.description && t.description.trim()) || (t.delivered && t.delivered.trim()));
@@ -662,7 +741,7 @@
     if (!found) {
       for (const key in board.phases) if ((board.phases[key] || []).some((t) => t.id === taskId)) { found = key; break; }
     }
-    if (found) { phase = found; composerOpen = false; saveState(); }
+    if (found) { phase = found; composerOpen = false; resetSearch(); saveState(); }
     getUi(taskId).conflict = true;
     render();
     setTimeout(() => {
@@ -671,6 +750,17 @@
     }, 30);
     setTimeout(() => { getUi(taskId).conflict = false; render(); }, 3000);
   }
+
+  // Cmd/Ctrl+F opens the local in-tab filter. The panel is created without enableFindWidget, so this
+  // chord otherwise does nothing inside the focused webview; preventDefault stops it bubbling to the
+  // workbench. Shift+Cmd+F is intentionally NOT hijacked (no cross-phase search — local scope only).
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+      if (!board || board.todoMissing || composerOpen) return;
+      e.preventDefault();
+      openSearch();
+    }
+  });
 
   // Apply a deferred board once the user stops editing.
   document.addEventListener('focusout', () => {

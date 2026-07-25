@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString } from './model';
 import { LoopStatus } from './view';
-import { buildLoopCommand, buildClaudeBase } from './loop';
+import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval } from './loop';
 
 // Runtime allowlist for untrusted (webview-supplied) model ids — the logical slot ids. The webview
 // values reach the loop terminal shell line, so the host validates them rather than trusting a
@@ -81,6 +81,14 @@ export class TerminalManager {
     if (!isValidModelString(modelString)) {
       vscode.window.showWarningMessage(`LoopBoard: the configured --model for "${model}" is invalid — not starting the loop.`);
       return;
+    }
+    // permissionMode/interval are spliced into the shell line (buildClaudeBase / buildLoopCommand),
+    // which sanitize them to safe defaults; warn so the user knows an off-list setting was ignored.
+    if (!isValidPermissionMode(cfg.permissionMode)) {
+      vscode.window.showWarningMessage(`LoopBoard: invalid loopBoard.permissionMode "${cfg.permissionMode}" — using "auto".`);
+    }
+    if (!isValidLoopInterval(cfg.interval)) {
+      vscode.window.showWarningMessage(`LoopBoard: invalid loopBoard.loopInterval "${cfg.interval}" — using "1m".`);
     }
     // The bootstrap prompt names the LOGICAL slot (model), so the worker claims `model: <slot>`
     // tasks; the terminal itself spawns with the resolved (possibly 1M-suffixed) --model string.
