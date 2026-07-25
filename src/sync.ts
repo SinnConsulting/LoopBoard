@@ -28,13 +28,22 @@ function extractBlock(text: string, id: string): string | null {
   return text.slice(b.index, e.index + e[0].length);
 }
 
+// The template's prose for `id`, without its own begin/end marker lines — used to detect that
+// same prose sitting unfenced in a target file that predates this marker id.
+function extractInner(text: string, id: string): string | null {
+  const re = new RegExp(`<!--\\s*loopboard:sync:${id}:begin\\s*-->\\n?([\\s\\S]*?)\\n?<!--\\s*loopboard:sync:${id}:end\\s*-->`);
+  const m = text.match(re);
+  return m ? m[1] : null;
+}
+
 // Replace each marked section in `current` with the template's version of that same section. A
 // template id `current` doesn't have yet (the template introduced a new marked section since
-// `current` was last synced) is INSERTED next to its nearest template-order neighbor that
-// `current` already has — adjacent to that neighbor's block, on the same side as in the
-// template — so template evolution reaches already-marked files instead of being skipped
-// forever. A `current` with NO markers at all (genuinely legacy/pre-marker) gets nothing
-// inserted here — the caller should route that case through the full-overwrite path via
+// `current` was last synced) is either (a) WRAPPED in place, if that section's prose already
+// exists unfenced in `current` verbatim (the common case: the marker is new but the text it
+// fences isn't) — never splice a second copy alongside the pre-existing unfenced one — or (b)
+// INSERTED next to its nearest template-order neighbor that `current` already has, when no such
+// unfenced match exists. A `current` with NO markers at all (genuinely legacy/pre-marker) gets
+// nothing inserted here — the caller should route that case through the full-overwrite path via
 // `hasMarkers` instead.
 export function syncMarkedSections(current: string, template: string): { text: string; changedIds: string[] } {
   let text = current;
@@ -51,6 +60,12 @@ export function syncMarkedSections(current: string, template: string): { text: s
         text = text.replace(curBlock, tplBlock);
         changedIds.push(id);
       }
+      continue;
+    }
+    const tplInner = extractInner(template, id);
+    if (tplInner != null && text.includes(tplInner)) {
+      text = text.replace(tplInner, tplBlock);
+      changedIds.push(id);
       continue;
     }
     let before: string | null = null;
