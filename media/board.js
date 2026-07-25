@@ -323,6 +323,11 @@
           onclick: () => { u.doneOpen = !u.doneOpen; render(); },
         }, icon(SVG.chevron)));
       }
+      // Delete an accepted row from the archive (distinct path: removes only the DONE.md line).
+      row.append(h('button', {
+        class: 'icon-btn', type: 'button', 'aria-label': 'Delete from archive', title: 'Delete from archive',
+        onclick: () => post({ type: 'gate', taskId: t.id, action: 'deleteDone' }),
+      }, icon(SVG.x)));
       wrap.append(row);
       if (hasDetail && u.doneOpen) {
         const detail = h('div', { class: 'done-detail' });
@@ -458,6 +463,9 @@
         onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150); },
       }, icon(SVG.check), 'Approve'));
     }
+    // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
+    // phases). The extension shows a native confirmation modal before removing anything.
+    head.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete task', title: 'Delete task', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x)));
     card.append(head);
 
     // chips

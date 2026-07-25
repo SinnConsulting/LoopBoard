@@ -319,6 +319,17 @@ export class Store {
     }
     return { status: 'applied' };
   }
+
+  // Delete an accepted task's archive row from DONE.md ONLY. Unlike deleteTask this KEEPS the task
+  // file tasks/<id>.md — a Done deletion erases just the accepted-history line, not the detail.
+  async deleteDone(taskId: string): Promise<SaveOutcome> {
+    const done = parseDone((await this.readFile(this.doneUri)) ?? '');
+    const idx = done.findIndex((e) => e.id === taskId);
+    if (idx < 0) return { status: 'notfound' };
+    done.splice(idx, 1);
+    await this.atomicWrite(this.doneUri, serializeDone(done));
+    return { status: 'applied' };
+  }
 }
 
 export { EDITABLE_PHASES };

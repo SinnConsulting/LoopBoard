@@ -239,8 +239,33 @@ export class Controller {
       if (r.status === 'applied') this.toast('success', 'Accepted — archived to DONE.md ✓');
       else this.toast('warning', 'Could not accept — the task was not found on disk.');
     } else if (action === 'delete') {
-      await this.store.deleteTask(taskId);
+      if (!(await this.confirmDelete(taskId, false))) return;
+      const r = await this.store.deleteTask(taskId);
+      if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
+    } else if (action === 'deleteDone') {
+      if (!(await this.confirmDelete(taskId, true))) return;
+      const r = await this.store.deleteDone(taskId);
+      if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     }
     return this.refresh();
+  }
+
+  // Native VS Code modal guarding a destructive delete (the sole safety net — deletion is a hard,
+  // undoable-only-by-hand removal of source-of-truth markdown). `isDone` = removing an accepted-
+  // history row from DONE.md. The task is looked up in the last board for its title/phase/owner.
+  private async confirmDelete(taskId: string, isDone: boolean): Promise<boolean> {
+    const task = isDone ? undefined : this.lastBoard?.tasks.find((t) => t.id === taskId);
+    const entry = isDone ? this.lastBoard?.done.find((t) => t.id === taskId) : task;
+    const title = (entry?.title ?? taskId).replace(/^\[x\]\s*/, '');
+    let detail: string;
+    if (isDone) {
+      detail = 'This permanently removes the accepted-history entry from DONE.md (the task file is kept). This cannot be undone.';
+    } else if (task?.phase === 'inprogress' && task.owner && task.owner !== 'unassigned') {
+      detail = 'A loop may be actively working this task. This permanently deletes the task and its task file. This cannot be undone.';
+    } else {
+      detail = 'This permanently deletes the task and its task file. This cannot be undone.';
+    }
+    const choice = await vscode.window.showWarningMessage(`Delete “${title}”?`, { modal: true, detail }, 'Delete');
+    return choice === 'Delete';
   }
 }
