@@ -147,6 +147,8 @@ export class Controller {
         return;
       case 'createFiles':
         return this.onCreateFiles();
+      case 'syncTemplates':
+        return this.onSyncTemplates('Sync to the latest templates?');
       case 'openLink': {
         if (!msg.url) return;
         const uri = vscode.Uri.parse(String(msg.url));
@@ -170,18 +172,50 @@ export class Controller {
     }
   }
 
-  // Scaffold a fresh `.loopboard/` workspace (TODO.md + LOOP.md + tasks/). Wired to both the
-  // board's empty-state button (`createFiles` message) and the `loopboard.init` command.
-  async onCreateFiles(): Promise<void> {
+  private async readTemplates(): Promise<{ todoText: string; loopText: string }> {
     const read = async (name: string) =>
       new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.extensionUri, 'media', name)));
-    const todoText = await read('template-todo.md');
-    const loopText = await read('template-loop.md');
-    const created = await this.store.createInitialFiles(todoText, loopText);
+    return { todoText: await read('template-todo.md'), loopText: await read('template-loop.md') };
+  }
+
+  // Scaffold a fresh `.loopboard/` workspace (TODO.md + LOOP.md + tasks/). Wired to both the
+  // board's empty-state button (`createFiles` message) and the `loopboard.init` command. When
+  // `.loopboard/` already has files, offer the same sync/migrate flow as the explicit button
+  // instead of a flat "already exists" toast.
+  async onCreateFiles(): Promise<void> {
+    const { todoText, loopText } = await this.readTemplates();
+    const { created, error } = await this.store.createInitialFiles(todoText, loopText);
     if (created) {
       void vscode.window.showInformationMessage('LoopBoard: initialized .loopboard/ (TODO.md, LOOP.md, tasks/).');
+      return this.refresh();
+    }
+    if (error) {
+      void vscode.window.showErrorMessage(`LoopBoard: could not initialize .loopboard/ — ${error}`);
+      return this.refresh();
+    }
+    return this.onSyncTemplates('Workspace already has .loopboard/ files — migrate them to the current format?');
+  }
+
+  // Shared sync/migrate flow: preview what's out of date, confirm, then apply. Used by both the
+  // sidebar's "Synchronise Templates" button and Init when `.loopboard/` already exists.
+  private async onSyncTemplates(confirmPrompt: string): Promise<void> {
+    const { todoText, loopText } = await this.readTemplates();
+    const preview = await this.store.previewSync(todoText, loopText);
+    if (preview.upToDate) {
+      void vscode.window.showInformationMessage('LoopBoard: TODO.md and LOOP.md already match the current templates.');
+      return this.refresh();
+    }
+    const choice = await vscode.window.showWarningMessage(
+      `${confirmPrompt}\n\n${preview.summary.join('\n')}`,
+      { modal: true },
+      'Sync'
+    );
+    if (choice !== 'Sync') return;
+    const outcome = await this.store.syncTemplates(todoText, loopText);
+    if (outcome.status === 'applied') {
+      void vscode.window.showInformationMessage('LoopBoard: synced .loopboard/ to the current templates.');
     } else {
-      void vscode.window.showWarningMessage('LoopBoard: .loopboard/ already exists — nothing was overwritten.');
+      void vscode.window.showErrorMessage(`LoopBoard: sync failed — ${outcome.message ?? outcome.status}`);
     }
     return this.refresh();
   }
