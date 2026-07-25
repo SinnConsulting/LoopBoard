@@ -119,9 +119,15 @@
     const c = board.concurrency;
     if (c && c.inProgress.length) {
       const inProg = c.inProgress.map((t) => (t.title || t.id) + ' (' + t.id + ')').join(', ');
+      // Clicking the status lands the board directly on the In-Progress task (by id when there's the
+      // usual single one; otherwise just the In Progress tab, which shows the breached set).
+      const revealMsg = c.inProgress.length === 1
+        ? { type: 'reveal', taskId: c.inProgress[0].id, phase: 'inprogress' }
+        : { type: 'reveal', phase: 'inprogress' };
+      const revealLabel = c.inProgress.length === 1 ? 'Open the in-progress task on the board' : 'Show the In Progress tab';
       // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
       // long title stays fully readable without widening the sidebar.
-      loops.append(h('div', { class: 'sb-row loop-status' },
+      loops.append(h('button', { class: 'sb-row loop-status click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage(revealMsg) },
         h('span', { class: 'loop-status-label' }, (c.breached ? '⚠ limit breached — ' : '') + 'In Progress:'),
         h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, inProg))));
       if (c.message) {
