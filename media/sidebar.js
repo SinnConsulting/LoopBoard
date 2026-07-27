@@ -70,8 +70,7 @@
     const list = h('div', { class: 'attn-list sb-section' });
     const rows = [];
     if (b.feedbackUnanswered > 0) {
-      const id = soleId('feedback', (t) => t.questions.some((q) => !q.answered));
-      rows.push({ icon: '❓', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback' + (id ? ' (' + id + ')' : ''), phase: 'feedback' });
+      rows.push({ icon: '❓', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback' });
     }
     if (b.reviewCount > 0) {
       const id = soleId('review', () => true);
