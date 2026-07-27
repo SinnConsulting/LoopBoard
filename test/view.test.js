@@ -80,56 +80,71 @@ test('computeConcurrency: nothing In Progress → empty status, no message, not 
     preamble: '', done: [],
     tasks: [task({ id: 't-1', phase: 'backlog' }), task({ id: 't-2', phase: 'new' })],
   };
-  const c = computeConcurrency(board);
+  const c = computeConcurrency(board, 'opus');
   assert.equal(c.inProgress.length, 0);
   assert.equal(c.skipped.length, 0);
   assert.equal(c.breached, false);
   assert.equal(c.message, null);
 });
 
-test('computeConcurrency: one In Progress + a Backlog task → skip message names the prepared task', () => {
+test('computeConcurrency: one In Progress + a Backlog task → Active Queue names the in-progress task', () => {
   const board = {
     preamble: '', done: [],
     tasks: [
-      task({ id: 't-run', title: 'Running', phase: 'inprogress' }),
+      task({ id: 't-run', title: 'Running', phase: 'inprogress', model: 'sonnet' }),
       task({ id: 't-prep', title: 'Prepared', phase: 'backlog' }),
     ],
   };
-  const c = computeConcurrency(board);
-  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running' }]);
+  const c = computeConcurrency(board, 'opus');
+  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet' }]);
   assert.deepEqual(c.skipped, [{ id: 't-prep', title: 'Prepared' }]);
   assert.equal(c.breached, false);
-  assert.equal(c.message, 'something is in progress — skipping prepared task t-prep');
+  assert.equal(c.message, 'Active Queue: t-run (sonnet)');
 });
 
-test('computeConcurrency: In Progress but no Backlog waiting → no skip message', () => {
+test('computeConcurrency: in-progress task with no model: falls back to the default model', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-run', phase: 'inprogress' }), task({ id: 't-prep', phase: 'backlog' })],
+  };
+  const c = computeConcurrency(board, 'opus');
+  assert.equal(c.inProgress[0].model, 'opus');
+  assert.equal(c.message, 'Active Queue: t-run (opus)');
+});
+
+test('computeConcurrency: In Progress but no Backlog waiting → no Active Queue message', () => {
   const board = {
     preamble: '', done: [],
     tasks: [task({ id: 't-run', phase: 'inprogress' }), task({ id: 't-n', phase: 'new' })],
   };
-  const c = computeConcurrency(board);
+  const c = computeConcurrency(board, 'opus');
   assert.equal(c.inProgress.length, 1);
   assert.equal(c.skipped.length, 0);
   assert.equal(c.message, null);
 });
 
-test('computeConcurrency: more than one In Progress → breached', () => {
+test('computeConcurrency: more than one In Progress → breached, Active Queue lists all of them', () => {
   const board = {
     preamble: '', done: [],
-    tasks: [task({ id: 't-a', phase: 'inprogress' }), task({ id: 't-b', phase: 'inprogress' })],
+    tasks: [
+      task({ id: 't-a', phase: 'inprogress', model: 'opus' }),
+      task({ id: 't-b', phase: 'inprogress', model: 'fable' }),
+      task({ id: 't-prep', phase: 'backlog' }),
+    ],
   };
-  const c = computeConcurrency(board);
+  const c = computeConcurrency(board, 'opus');
   assert.equal(c.inProgress.length, 2);
   assert.equal(c.breached, true);
+  assert.equal(c.message, 'Active Queue: t-a (opus), t-b (fable)');
 });
 
 test('computeConcurrency flows onto the WebBoard payload', () => {
   const board = {
     preamble: '', done: [],
-    tasks: [task({ id: 't-run', phase: 'inprogress' }), task({ id: 't-prep', phase: 'backlog' })],
+    tasks: [task({ id: 't-run', phase: 'inprogress', model: 'sonnet' }), task({ id: 't-prep', phase: 'backlog' })],
   };
   const web = toWebviewBoard(board, 'ws', 'opus', []);
-  assert.equal(web.concurrency.message, 'something is in progress — skipping prepared task t-prep');
+  assert.equal(web.concurrency.message, 'Active Queue: t-run (sonnet)');
 });
 
 test('DONE entries render from the slim IndexEntry (no detail)', () => {

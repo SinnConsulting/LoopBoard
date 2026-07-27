@@ -49,10 +49,10 @@ export interface WebBoard {
 // markdown), but it surfaces the state so a human sees when the limit is holding back prepared
 // work — or being breached.
 export interface ConcurrencyStatus {
-  inProgress: { id: string; title: string }[]; // tasks currently phase: inprogress (any model)
+  inProgress: { id: string; title: string; model: Model }[]; // tasks currently phase: inprogress (any model)
   skipped: { id: string; title: string }[]; // Backlog tasks a loop would start but the limit blocks
   breached: boolean; // more than one task In Progress at once — the limit is being violated
-  message: string | null; // the recognizable "something is in progress — skipping prepared task <id>" line
+  message: string | null; // "Active Queue: <id> ($MODEL), ..." — only when >1 relevant task (Rule 2)
 }
 
 export interface BadgeInfo {
@@ -135,10 +135,10 @@ export function computeBadge(board: Board): BadgeInfo {
   };
 }
 
-export function computeConcurrency(board: Board): ConcurrencyStatus {
+export function computeConcurrency(board: Board, defaultModel: Model): ConcurrencyStatus {
   const inProgress = board.tasks
     .filter((t) => t.phase === 'inprogress')
-    .map((t) => ({ id: t.id, title: t.title }));
+    .map((t) => ({ id: t.id, title: t.title, model: t.model ?? defaultModel }));
   // Prepared work a loop would pick up next: claimable Backlog tasks. Only "skipped" while
   // something is already In Progress (otherwise a loop is free to start them).
   const skipped =
@@ -147,8 +147,10 @@ export function computeConcurrency(board: Board): ConcurrencyStatus {
       : [];
   const breached = inProgress.length > 1;
   let message: string | null = null;
+  // Only worth surfacing when something else is queued behind the in-progress task(s) — a single
+  // task executing with nothing waiting isn't an "Active Queue" worth a line.
   if (inProgress.length >= 1 && skipped.length >= 1) {
-    message = `something is in progress — skipping prepared task ${skipped.map((s) => s.id).join(', ')}`;
+    message = `Active Queue: ${inProgress.map((t) => `${t.id} (${t.model})`).join(', ')}`;
   }
   return { inProgress, skipped, breached, message };
 }
@@ -181,6 +183,6 @@ export function toWebviewBoard(
     phases,
     loops,
     badge: computeBadge(board),
-    concurrency: computeConcurrency(board),
+    concurrency: computeConcurrency(board, defaultModel),
   };
 }
