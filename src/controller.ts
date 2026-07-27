@@ -235,8 +235,12 @@ export class Controller {
 
   private async onGate(taskId: string, action: string): Promise<void> {
     if (action === 'promote') {
-      await this.store.promote(taskId, today());
-      this.toast('success', 'Promoted to Backlog ✓');
+      if (await this.confirmPromote(taskId)) {
+        await this.store.promote(taskId, today());
+        this.toast('success', 'Promoted to Backlog ✓');
+      }
+      // Cancel falls through to the refresh() below, which restores the card the board
+      // optimistically faded on click (board.js:473) — unlike confirmDelete, which never fades.
     } else if (action === 'accept') {
       const r = await this.store.acceptToDone(taskId, today());
       if (r.status === 'applied') this.toast('success', 'Accepted — archived to DONE.md ✓');
@@ -251,6 +255,23 @@ export class Controller {
       if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     }
     return this.refresh();
+  }
+
+  // Native VS Code modal guarding a New→Backlog promote when the story still has one or more
+  // unanswered questions (Rule 10 only parks Feedback on blank answers, so nothing else stops a
+  // half-groomed New story from advancing). Mirrors the Synchronise Templates precedent above.
+  // Review→DONE acceptance is intentionally NOT guarded — a Review task has feedback: sub-bullets,
+  // not questions.
+  private async confirmPromote(taskId: string): Promise<boolean> {
+    const task = this.lastBoard?.tasks.find((t) => t.id === taskId);
+    const hasUnanswered = !!task && task.questions.some((q) => q.answer.trim().length === 0);
+    if (!hasUnanswered) return true;
+    const choice = await vscode.window.showWarningMessage(
+      'This story has unanswered questions — promote anyway?',
+      { modal: true },
+      'Promote anyway'
+    );
+    return choice === 'Promote anyway';
   }
 
   // Native VS Code modal guarding a destructive delete (the sole safety net — deletion is a hard,
