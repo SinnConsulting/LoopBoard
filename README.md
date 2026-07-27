@@ -56,7 +56,7 @@ created on the first detail edit (or the first loop write); on acceptance the in
   "primaryBorderColor": "#454545",
   "lineColor": "#9d9d9d",
   "fontFamily": "sans-serif"
-}}}%%
+}, "flowchart": { "htmlLabels": false, "padding": 12 } }}%%
 flowchart LR
     New -->|"tick to promote"| Backlog --> InProgress["In Progress"]
     InProgress --> Review
