@@ -63,7 +63,8 @@
   let pendingRender = false; // an async/external repaint deferred while a field is focused
   // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
   // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
-  let searchOpen = false;
+  // The bar is always visible and cannot be dismissed — searchOpen stays true forever.
+  let searchOpen = true;
   let searchQuery = '';
   let searchNeedsFocus = false; // refocus the search input after the next full repaint
   let searchCaret = null;       // caret offset to restore into the search input
@@ -121,18 +122,9 @@
     searchCaret = searchQuery.length;
     render();
   }
-  function closeSearch() {
-    if (!searchOpen && !searchQuery) return;
-    searchOpen = false;
-    searchQuery = '';
-    searchNeedsFocus = false;
-    searchCaret = null;
-    render();
-  }
-  // Reset without rendering — for callers (tab switch, reveal) that render themselves. The search is
-  // scoped to the current tab, so leaving that tab clears it.
+  // Reset without rendering — for callers (tab switch, reveal) that render themselves. The search
+  // bar itself is always on; this only clears the typed query when leaving the current tab.
   function resetSearch() {
-    searchOpen = false;
     searchQuery = '';
     searchNeedsFocus = false;
     searchCaret = null;
@@ -200,14 +192,10 @@
       searchNeedsFocus = true;
       render();
     });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } });
     const count = searchQuery.trim()
       ? h('span', { class: 'search-count muted-11' }, shownCount + ' of ' + totalCount + ' match' + (shownCount === 1 ? '' : 'es'))
       : h('span', { class: 'search-count muted-11' }, 'Searching this tab');
-    return h('div', { class: 'search-bar' },
-      input,
-      count,
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close search', title: 'Close search (Esc)', onclick: () => closeSearch() }, icon(SVG.x)));
+    return h('div', { class: 'search-bar' }, input, count);
   }
 
   function renderTopbar() {
