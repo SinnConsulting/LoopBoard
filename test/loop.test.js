@@ -18,16 +18,29 @@ function readMedia(name) {
   return fs.readFileSync(path.join(process.cwd(), 'media', name), 'utf8');
 }
 
-test('buildLoopCommand: bootstrap prompt names model + interval, points at .loopboard/LOOP.md', () => {
-  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m');
+test('buildLoopCommand: bootstrap prompt names model + interval + effort ceiling, points at .loopboard/LOOP.md', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 'xhigh');
   assert.ok(cmd, 'a loop command was built from the shipped LOOP.md template');
   assert.match(cmd, /^\/loop 5m /, 'interval honored');
   assert.ok(cmd.includes('running as model sonnet'), 'model injected');
+  assert.ok(cmd.includes('grooming effort ceiling of xhigh'), 'effort ceiling injected');
   assert.ok(cmd.includes('.loopboard/LOOP.md'), 'points at LOOP.md');
   assert.ok(cmd.includes('Automation section'), 'directs the worker to the Automation section');
   assert.ok(!cmd.includes("'"), 'no apostrophes (short-argv escaping constraint)');
   assert.ok(!cmd.includes('\n'), 'single line for the TUI paste');
   assert.ok(cmd.length < 300, 'bootstrap prompt stays tiny');
+});
+
+test('buildLoopCommand: effort defaults to high when omitted', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m');
+  assert.ok(cmd.includes('grooming effort ceiling of high'));
+});
+
+test('buildLoopCommand: an invalid effort falls back to high rather than reaching the prompt raw', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'extreme; rm -rf /');
+  assert.ok(cmd.includes('grooming effort ceiling of high'));
+  assert.ok(!cmd.includes('extreme'));
+  assert.ok(!cmd.includes('rm -rf'));
 });
 
 test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do not expand', () => {

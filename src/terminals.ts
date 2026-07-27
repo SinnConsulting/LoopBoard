@@ -98,7 +98,8 @@ export class TerminalManager {
     }
     // The bootstrap prompt names the LOGICAL slot (model), so the worker claims `model: <slot>`
     // tasks; the terminal itself spawns with the resolved (possibly 1M-suffixed) --model string.
-    const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval);
+    // `resolved.effort` is already validated (resolveModels defaults invalid/absent to 'high').
+    const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval, resolved?.effort);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show();
     const base = buildClaudeBase(cfg.permissionMode, modelString);

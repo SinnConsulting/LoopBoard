@@ -10,6 +10,8 @@ const {
   enabledModels,
   resolveModelString,
   readModelsConfig,
+  EFFORT_LEVELS,
+  isValidEffort,
 } = require('../out-test/model.js');
 
 test('haiku is a built-in model slot alongside opus/sonnet/fable', () => {
@@ -26,13 +28,33 @@ test('isValidModelString admits the [1m] suffix and org aliases, rejects shell m
   assert.ok(!isValidModelString(''));
 });
 
-test('resolveModels defaults: every slot enabled, --model equals its id', () => {
+test('resolveModels defaults: every slot enabled, --model equals its id, effort defaults to high', () => {
   const r = resolveModels(undefined);
   assert.equal(r.length, 4);
   for (const m of r) {
     assert.equal(m.enabled, true);
     assert.equal(m.model, m.id);
+    assert.equal(m.effort, 'high');
   }
+});
+
+test('EFFORT_LEVELS / isValidEffort: the five ordered stops, rejects garbage', () => {
+  assert.deepEqual(EFFORT_LEVELS, ['low', 'medium', 'high', 'xhigh', 'max']);
+  for (const e of EFFORT_LEVELS) assert.ok(isValidEffort(e), `${e} valid`);
+  assert.ok(!isValidEffort('HIGH'), 'case-sensitive');
+  assert.ok(!isValidEffort('extreme'));
+  assert.ok(!isValidEffort(''));
+});
+
+test('a valid per-slot effort REPLACES the default; invalid falls back to high', () => {
+  const r = resolveModels({ opus: { effort: 'xhigh' }, sonnet: { effort: 'extreme' } });
+  assert.equal(r.find((m) => m.id === 'opus').effort, 'xhigh');
+  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'high'); // invalid -> default
+});
+
+test('string-shorthand model config still resolves effort to the default (no effort field to set)', () => {
+  const r = resolveModels({ haiku: 'haiku[1m]' });
+  assert.equal(r.find((m) => m.id === 'haiku').effort, 'high');
 });
 
 test('a valid override REPLACES the default --model string; invalid is ignored', () => {
@@ -62,6 +84,7 @@ test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig
   const store = {
     'models.opus.enabled': true,
     'models.opus.model': 'opus[1m]',
+    'models.opus.effort': 'xhigh',
     'models.sonnet.enabled': false,
     'models.sonnet.model': '',
   };
@@ -69,10 +92,12 @@ test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig
   const cfg = readModelsConfig(get);
   assert.equal(cfg.opus.model, 'opus[1m]');
   assert.equal(cfg.opus.enabled, true);
+  assert.equal(cfg.opus.effort, 'xhigh');
   assert.equal(cfg.sonnet.enabled, false);
-  // Unset slots fall back to the passed defaults (enabled true, empty override).
+  // Unset slots fall back to the passed defaults (enabled true, empty override, high effort).
   assert.equal(cfg.fable.enabled, true);
   assert.equal(cfg.fable.model, '');
+  assert.equal(cfg.fable.effort, 'high');
   // Flows straight through resolveModels: override applied, disabled slot dropped from enabled set.
   const r = resolveModels(cfg);
   assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');
