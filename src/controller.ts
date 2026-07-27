@@ -139,6 +139,9 @@ export class Controller {
       case 'spawnLoop':
         if (isKnownModel(msg.model)) this.terminals.spawn(msg.model);
         return;
+      case 'revealTerminal':
+        if (isKnownModel(msg.model)) this.terminals.reveal(msg.model);
+        return;
       case 'recycleLoop':
         if (isKnownModel(msg.model)) this.terminals.recycle(msg.model);
         return;

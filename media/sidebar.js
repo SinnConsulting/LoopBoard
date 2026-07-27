@@ -99,10 +99,21 @@
     loops.append(h('div', { class: 'sb-label' }, 'Loops'));
     for (const l of board.loops) {
       const spawnLabel = l.running ? 'Focus terminal' : 'Start loop';
-      loops.append(h('div', { class: 'sb-row loop' },
+      // Only a running loop's row body reveals+focuses its terminal on click; a stopped loop's row
+      // stays inert (starting one is the play button's job, not a body click).
+      const bodyProps = l.running
+        ? { class: 'loop-body click', role: 'button', tabindex: '0', 'aria-label': 'Reveal ' + l.name + ' terminal', onclick: () => vscode.postMessage({ type: 'revealTerminal', model: l.id }) }
+        : { class: 'loop-body' };
+      const body = h('span', bodyProps,
         h('span', { class: 'loop-dot ' + (l.running ? 'on' : 'off') }),
         h('span', { class: 'label' }, l.name),
-        h('span', { class: 'loop-hint' }, l.hint),
+        h('span', { class: 'loop-hint' }, l.hint));
+      if (l.running) {
+        body.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', model: l.id }); }
+        });
+      }
+      loops.append(h('div', { class: 'sb-row loop' }, body,
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': spawnLabel, title: spawnLabel, onclick: () => vscode.postMessage({ type: 'spawnLoop', model: l.id }) }, icon(SVG.play)),
         h('button', {
           class: 'icon-btn', type: 'button', 'aria-label': 'Restart with fresh context', title: 'Restart with fresh context', disabled: !l.running,

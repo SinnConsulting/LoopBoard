@@ -67,6 +67,12 @@ export class TerminalManager {
       }));
   }
 
+  // Reveal-and-focus an already-running loop's terminal; does nothing if it isn't running (never
+  // creates one — that's spawn()'s job).
+  reveal(model: Model): void {
+    this.find(model)?.show();
+  }
+
   spawn(model: Model): void {
     const existing = this.find(model);
     if (existing) {
