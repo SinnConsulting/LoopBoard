@@ -49,10 +49,22 @@ created on the first detail edit (or the first loop write); on acceptance the in
 
 ## How it works
 
-```
-New → Backlog → In Progress → Review → Done (DONE.md)
-                     ↕
-                  Feedback
+```mermaid
+%%{init: { "theme": "base", "themeVariables": {
+  "primaryColor": "#2d2d2d",
+  "primaryTextColor": "#cccccc",
+  "primaryBorderColor": "#454545",
+  "lineColor": "#9d9d9d",
+  "fontFamily": "sans-serif"
+}, "flowchart": { "htmlLabels": false, "padding": 12 } }}%%
+flowchart LR
+    New -->|"tick to promote"| Backlog --> InProgress["In Progress"]
+    InProgress --> Review
+    InProgress <--> Feedback
+    Review -->|"tick to accept"| Done["Done (DONE.md)"]
+
+    linkStyle 0 stroke:#007fd4,stroke-width:2.5px
+    linkStyle 4 stroke:#007fd4,stroke-width:2.5px
 ```
 
 1. **You describe** a story in the "+ New story" composer (free text, no formatting needed) and
