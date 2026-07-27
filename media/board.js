@@ -470,7 +470,19 @@
       head.append(h('button', {
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — moves to Backlog', title: 'Approve — moves to Backlog',
-        onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150); },
+        onclick: () => {
+          // Unanswered questions mean the host may pop a confirm modal before promoting (Rule 1's
+          // override guard) — fading the card immediately would hide it behind that dialog and
+          // then un-hide it on cancel, which reads as a confusing flicker. Only fade optimistically
+          // on the zero-friction path (no unanswered questions), where promotion is unconditional;
+          // otherwise wait for the host's outcome to arrive via the next board refresh.
+          if (t.questions.some((q) => !q.answered)) {
+            post({ type: 'gate', taskId: t.id, action: 'promote' });
+          } else {
+            card.style.opacity = '0';
+            setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
+          }
+        },
       }, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
