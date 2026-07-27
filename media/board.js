@@ -610,7 +610,11 @@
     t.questions.forEach((q, i) => {
       if (q.answered) answered++;
       const block = h('div', {});
-      block.append(h('div', { class: 'question' }, h('span', {}, '❓'), h('span', { style: { fontSize: '13px', lineHeight: '1.5' } }, q.text)));
+      const qText = h('span', { style: { fontSize: '13px', lineHeight: '1.5' }, html: mdToHtml(q.text) });
+      qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      block.append(h('div', { class: 'question' }, h('span', {}, '❓'), qText));
       const aw = h('div', { class: 'answer-wrap' });
       const ta = h('textarea', { class: 'field', rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
