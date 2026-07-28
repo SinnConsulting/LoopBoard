@@ -188,6 +188,17 @@ Consequences:
 VSCode Workspace Trust gates activation, but trusting a repo to open it is not the same as vetting
 what its `.loopboard/` will tell an agent to do.
 
+## Usage volume
+
+**Usage volume — the only genuine gray zone.** The docs repeat: *"Advertised usage limits for Pro
+and Max plans assume ordinary, individual usage of Claude Code and the Agent SDK."* A tight loop
+(the default is `1m`) spinning multiple model terminals unattended around the clock can push past
+"ordinary, individual usage." The consequence isn't "the extension is illegal" — it's that
+Anthropic may rate-limit / enforce against that account's usage. This is a user-behavior risk, not
+an architectural one, but LoopBoard's design actively encourages high-frequency multi-model
+looping, so it's worth being aware of. LoopBoard drives your own locally-authenticated Claude Code
+CLI — nothing here is against the ToS, this is just a heads-up.
+
 ## License
 
 MIT
