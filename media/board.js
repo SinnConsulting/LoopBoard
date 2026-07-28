@@ -55,6 +55,11 @@
   let composerGroomer = ''; // '' = default model
   let composerModel = '';   // '' = default model
   const ui = {}; // per-task UI state, keyed by task id
+  // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
+  // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
+  // set by the per-card toggle. Persisted via vscode.getState/setState (same blob as `phase`).
+  let collapsedDefault = !!saved.collapsedDefault;
+  let collapsed = Object.assign({}, saved.collapsed);
   let toasts = [];
   let toastSeq = 1;
   let lastSyncTs = Date.now();
@@ -74,7 +79,29 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase });
+    vscode.setState({ phase, collapsedDefault, collapsed });
+  }
+
+  // ---- collapse/expand ----
+  function isCollapsed(id) {
+    return Object.prototype.hasOwnProperty.call(collapsed, id) ? collapsed[id] : collapsedDefault;
+  }
+  function toggleCollapse(id) {
+    collapsed[id] = !isCollapsed(id);
+    saveState();
+    render();
+  }
+  function collapseAll() {
+    collapsedDefault = true;
+    collapsed = {};
+    saveState();
+    render();
+  }
+  function expandAll() {
+    collapsedDefault = false;
+    collapsed = {};
+    saveState();
+    render();
   }
   function post(msg) {
     vscode.postMessage(msg);
@@ -223,6 +250,11 @@
       tabs.append(tab);
     }
     bar.append(tabs);
+
+    bar.append(h('button', {
+      class: 'btn-secondary tb-collapse-all', type: 'button',
+      onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
+    }, collapsedDefault ? 'Expand all' : 'Collapse all'));
 
     bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; resetSearch(); render(); } },
       'New Story'));
@@ -419,15 +451,25 @@
   function renderCard(t) {
     const u = getUi(t.id);
     const variant = t.phase;
+    const isCollapsedCard = isCollapsed(t.id);
     let cls = 'card';
     if (variant === 'feedback') cls += ' feedback';
     else if (variant === 'review') cls += ' review';
     if (u.conflict) cls += ' conflict';
+    if (isCollapsedCard) cls += ' collapsed';
     const card = h('div', { class: cls, 'data-task': t.id });
     if (t._flash) card.append(h('div', { class: 'flash-overlay flash' }));
 
-    // head: title, model select
+    // head: collapse toggle, title, model select
     const head = h('div', { class: 'card-head' });
+
+    head.append(h('button', {
+      class: 'icon-btn collapse-toggle', type: 'button',
+      'aria-expanded': isCollapsedCard ? 'false' : 'true',
+      'aria-label': isCollapsedCard ? 'Expand card' : 'Collapse card',
+      title: isCollapsedCard ? 'Expand card' : 'Collapse card',
+      onclick: () => toggleCollapse(t.id),
+    }, icon(SVG.chevron)));
 
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (u.editingTitle) {
@@ -478,45 +520,47 @@
     head.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete task', title: 'Delete task', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x)));
     card.append(head);
 
-    // chips
+    // chips (always shown, even collapsed)
     card.append(renderChips(t));
 
-    // no detail file yet (task file is created lazily on the first detail edit / loop write)
-    if (!t.hasDetailFile) {
-      card.append(h('div', { class: 'muted-11', style: { marginTop: '6px' } }, 'No detail file yet — tasks/' + t.id + '.md is created on the first edit.'));
-    }
-
-    // unparsed
-    if (t.unparsedLines) {
-      const btn = h('button', { class: 'chip button', type: 'button', onclick: () => { u.unparsedOpen = !u.unparsedOpen; render(); } },
-        t.unparsedLines.length + ' unparsed line' + (t.unparsedLines.length === 1 ? '' : 's'), icon(SVG.chevron));
-      const chipRow = card.querySelector('.chips');
-      chipRow.append(btn);
-      if (u.unparsedOpen) {
-        card.append(h('div', { class: 'unparsed-box' },
-          h('div', { class: 'unparsed-text' }, t.unparsedLines.join('\n')),
-          h('div', { class: 'unparsed-help' }, 'Kept verbatim in TODO.md — edit the file directly to fix them.')));
+    if (!isCollapsedCard) {
+      // no detail file yet (task file is created lazily on the first detail edit / loop write)
+      if (!t.hasDetailFile) {
+        card.append(h('div', { class: 'muted-11', style: { marginTop: '6px' } }, 'No detail file yet — tasks/' + t.id + '.md is created on the first edit.'));
       }
+
+      // unparsed
+      if (t.unparsedLines) {
+        const btn = h('button', { class: 'chip button', type: 'button', onclick: () => { u.unparsedOpen = !u.unparsedOpen; render(); } },
+          t.unparsedLines.length + ' unparsed line' + (t.unparsedLines.length === 1 ? '' : 's'), icon(SVG.chevron));
+        const chipRow = card.querySelector('.chips');
+        chipRow.append(btn);
+        if (u.unparsedOpen) {
+          card.append(h('div', { class: 'unparsed-box' },
+            h('div', { class: 'unparsed-text' }, t.unparsedLines.join('\n')),
+            h('div', { class: 'unparsed-help' }, 'Kept verbatim in TODO.md — edit the file directly to fix them.')));
+        }
+      }
+
+      // description
+      card.append(renderDescription(t));
+
+      // working indicator
+      if (variant === 'inprogress') {
+        card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), (t.owner || 'Worker') + ' is on it · last activity today'));
+      }
+
+      // questions: Feedback always; New too, when the groomer left open decisions
+      if (variant === 'feedback' || (variant === 'new' && t.questions && t.questions.length)) card.append(renderQuestions(t));
+
+      // review blocks
+      if (variant === 'review') card.append(renderReview(t));
+
+      // note
+      card.append(renderNote(t));
     }
 
-    // description
-    card.append(renderDescription(t));
-
-    // working indicator
-    if (variant === 'inprogress') {
-      card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), (t.owner || 'Worker') + ' is on it · last activity today'));
-    }
-
-    // questions: Feedback always; New too, when the groomer left open decisions
-    if (variant === 'feedback' || (variant === 'new' && t.questions && t.questions.length)) card.append(renderQuestions(t));
-
-    // review blocks
-    if (variant === 'review') card.append(renderReview(t));
-
-    // note
-    card.append(renderNote(t));
-
-    // accept gate (Rule 1): single Approve button, bottom-right
+    // accept gate (Rule 1): single Approve button, bottom-right — visible even collapsed
     if (variant === 'review') {
       card.append(h('div', { class: 'approve-row' },
         h('button', {
