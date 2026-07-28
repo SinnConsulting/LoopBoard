@@ -9,6 +9,7 @@ const {
   resolveModels,
   enabledModels,
   resolveModelString,
+  readModelsConfig,
 } = require('../out-test/model.js');
 
 test('haiku is a built-in model slot alongside opus/sonnet/fable', () => {
@@ -55,4 +56,26 @@ test('enabled: false drops a slot from enabledModels', () => {
 test('resolveModelString returns the override or the built-in default', () => {
   assert.equal(resolveModelString('haiku', undefined), 'haiku');
   assert.equal(resolveModelString('opus', { opus: { model: 'opus[1m]' } }), 'opus[1m]');
+});
+
+test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig for resolveModels', () => {
+  const store = {
+    'models.opus.enabled': true,
+    'models.opus.model': 'opus[1m]',
+    'models.sonnet.enabled': false,
+    'models.sonnet.model': '',
+  };
+  const get = (k, d) => (k in store ? store[k] : d);
+  const cfg = readModelsConfig(get);
+  assert.equal(cfg.opus.model, 'opus[1m]');
+  assert.equal(cfg.opus.enabled, true);
+  assert.equal(cfg.sonnet.enabled, false);
+  // Unset slots fall back to the passed defaults (enabled true, empty override).
+  assert.equal(cfg.fable.enabled, true);
+  assert.equal(cfg.fable.model, '');
+  // Flows straight through resolveModels: override applied, disabled slot dropped from enabled set.
+  const r = resolveModels(cfg);
+  assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');
+  assert.equal(r.find((m) => m.id === 'sonnet').enabled, false);
+  assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'fable', 'haiku']);
 });

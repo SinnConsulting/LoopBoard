@@ -48,6 +48,22 @@ function asConfigObject(entry: ModelConfigEntry | undefined): ModelConfigObject 
   return entry || {};
 }
 
+// Build a ModelsConfig from the flattened per-slot settings keys (`models.<slot>.enabled` /
+// `models.<slot>.model`). `get` is a scoped config lookup (e.g. a vscode WorkspaceConfiguration.get
+// bound to the `loopBoard` section); passed as a plain function so this module stays vscode-free and
+// unit-testable. A legacy `loopBoard.models` object resolves through the same dotted lookups, so
+// pre-flatten configs keep working. The result feeds resolveModels() unchanged.
+export function readModelsConfig(get: <T>(key: string, dflt: T) => T): ModelsConfig {
+  const cfg: ModelsConfig = {};
+  for (const id of BUILTIN_MODEL_IDS) {
+    cfg[id] = {
+      enabled: get<boolean>(`models.${id}.enabled`, true),
+      model: get<string>(`models.${id}.model`, ''),
+    };
+  }
+  return cfg;
+}
+
 // A model slot after applying user config: the actual spawn string + whether it is active.
 export interface ResolvedModel {
   id: Model;

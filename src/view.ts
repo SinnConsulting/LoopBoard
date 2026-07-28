@@ -36,7 +36,8 @@ export interface LoopStatus {
 export interface WebBoard {
   todoMissing?: boolean; // set by the controller; offers the scaffold button in the UI
   workspaceName: string;
-  defaultModel: Model;
+  defaultWorkerModel: Model; // owns tasks with no model:; labels the board's Model select default
+  defaultGroomerModel: Model; // grooms tasks with no groomer:; labels the draft Groom-with default
   models: Model[]; // enabled model slot ids, for the board/composer/draft model selects
   phases: Record<Phase, WebTask[]>;
   loops: LoopStatus[];
@@ -158,9 +159,10 @@ export function computeConcurrency(board: Board, defaultModel: Model): Concurren
 export function toWebviewBoard(
   board: Board,
   workspaceName: string,
-  defaultModel: Model,
+  defaultWorkerModel: Model,
   loops: LoopStatus[],
-  models: Model[] = []
+  models: Model[] = [],
+  defaultGroomerModel: Model = defaultWorkerModel
 ): WebBoard {
   const doneIds = doneIdSet(board);
   const phases: Record<Phase, WebTask[]> = {
@@ -178,11 +180,12 @@ export function toWebviewBoard(
 
   return {
     workspaceName,
-    defaultModel,
+    defaultWorkerModel,
+    defaultGroomerModel,
     models,
     phases,
     loops,
     badge: computeBadge(board),
-    concurrency: computeConcurrency(board, defaultModel),
+    concurrency: computeConcurrency(board, defaultWorkerModel),
   };
 }

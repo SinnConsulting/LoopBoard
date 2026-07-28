@@ -170,9 +170,13 @@
   // ---- model select options (data-driven from the board's enabled model list) ----
   // The leading "default (<model>)" option maps to '' (no explicit model:); the rest are the
   // enabled model slots the extension sends in board.models. Disabled slots simply don't appear.
-  function defaultModelOpt() { return 'default (' + ((board && board.defaultModel) || 'opus') + ')'; }
-  function modelOptions() { return [defaultModelOpt()].concat((board && board.models) || []); }
-  function normModelValue(v) { return v === defaultModelOpt() ? '' : v; }
+  // The leading "default (<model>)" label differs by select: worker-model selects show the default
+  // WORKER model, groomer selects show the default GROOMER model (the two settings are independent).
+  function defaultOpt(model) { return 'default (' + (model || 'opus') + ')'; }
+  function workerDefaultOpt() { return defaultOpt(board && board.defaultWorkerModel); }
+  function groomerDefaultOpt() { return defaultOpt(board && board.defaultGroomerModel); }
+  function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || []); }
+  function normModelValue(v, leadOpt) { return v === leadOpt ? '' : v; }
 
   // ---- field patch helper ----
   function sendPatch(taskId, field, value, base, questionIndex) {
@@ -301,14 +305,14 @@
     });
     area.value = composerText;
     // Groomer + worker model selectors ('' = default model), mirroring the card selects.
-    const modelSelect = (label, value, onchange) => {
+    const modelSelect = (label, value, defOpt, onchange) => {
       const sel = h('select', { class: 'model-select', 'aria-label': label });
-      for (const opt of modelOptions()) {
+      for (const opt of modelOptions(defOpt)) {
         const o = h('option', { value: opt }, opt);
-        if (opt === (value || defaultModelOpt())) o.selected = true;
+        if (opt === (value || defOpt)) o.selected = true;
         sel.append(o);
       }
-      sel.addEventListener('change', (e) => onchange(normModelValue(e.target.value)));
+      sel.addEventListener('change', (e) => onchange(normModelValue(e.target.value, defOpt)));
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
@@ -323,8 +327,8 @@
       h('div', { class: 'composer-actions' },
         saveBtn,
         h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; render(); } }, 'Cancel'),
-        modelSelect('Groom with', composerGroomer, (v) => { composerGroomer = v; }),
-        modelSelect('Work with', composerModel, (v) => { composerModel = v; }),
+        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; }),
+        modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
     );
   }
@@ -422,14 +426,15 @@
         onclick: () => { u.editingDraft = true; u.draftText = t.title; render(); } }, t.title);
     }
     // "Groom with" selector: which model expands this draft into a story (absent = default).
-    const groomVal = t.groomer || defaultModelOpt();
+    const groomDefOpt = groomerDefaultOpt();
+    const groomVal = t.groomer || groomDefOpt;
     const groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with' });
-    for (const opt of modelOptions()) {
+    for (const opt of modelOptions(groomDefOpt)) {
       const o = h('option', { value: opt }, opt);
       if (opt === groomVal) o.selected = true;
       groomSel.append(o);
     }
-    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value), t.groomer || ''));
+    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
     return h('div', { class: 'card draft', 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
@@ -485,16 +490,17 @@
     }
     head.append(titleWrap);
 
-    const modelVal = t.model || defaultModelOpt();
+    const modelDefOpt = workerDefaultOpt();
+    const modelVal = t.model || modelDefOpt;
     const sel = h('select', { class: 'model-select', 'aria-label': 'Model' });
-    for (const opt of modelOptions()) {
+    for (const opt of modelOptions(modelDefOpt)) {
       const o = h('option', { value: opt }, opt);
       if (opt === modelVal) o.selected = true;
       sel.append(o);
     }
     // Store represents "no model" as ''; map the display "default (<model>)" value to '' so
     // base matches the on-disk value and we don't trip a false conflict.
-    sel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value), t.model || ''));
+    sel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, modelDefOpt), t.model || ''));
     head.append(sel);
     if (variant === 'new') {
       head.append(h('button', {

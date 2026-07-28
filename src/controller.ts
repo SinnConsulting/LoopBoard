@@ -5,11 +5,23 @@ import { TerminalManager, isKnownModel } from './terminals';
 import { BoardPanel } from './panel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
-import { Model, Board, ModelsConfig, ResolvedModel, resolveModels, BUILTIN_MODEL_IDS } from './model';
+import { Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS } from './model';
 import { FieldPatch } from './merge';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Read a split default-model enum setting, falling back to the legacy single `loopBoard.defaultModel`
+// when the new key was never explicitly set — so pre-split configs keep steering both defaults.
+export function readDefaultModel(c: vscode.WorkspaceConfiguration, key: string): Model {
+  const explicit = c.inspect<Model>(key);
+  const set = explicit?.workspaceFolderValue ?? explicit?.workspaceValue ?? explicit?.globalValue;
+  if (set !== undefined) return set;
+  const legacy = c.inspect<Model>('defaultModel');
+  const legacyVal = legacy?.workspaceFolderValue ?? legacy?.workspaceValue ?? legacy?.globalValue;
+  if (legacyVal !== undefined) return legacyVal;
+  return c.get<Model>(key, 'opus');
 }
 
 export class Controller {
@@ -32,17 +44,18 @@ export class Controller {
     return {
       permissionMode: c.get<string>('permissionMode', 'auto'),
       interval: c.get<string>('loopInterval', '1m'),
-      defaultModel: c.get<Model>('defaultModel', 'opus'),
+      defaultWorkerModel: readDefaultModel(c, 'defaultWorkerModel'),
+      defaultGroomerModel: readDefaultModel(c, 'defaultGroomerModel'),
       autoRecycle: c.get<boolean>('autoRecycle', false),
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
-      models: resolveModels(c.get<ModelsConfig>('models')),
+      models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
 
   private buildWebBoard(board: Board): WebBoard {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
-    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultModel, this.terminals.status(), enabledIds);
+    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, this.terminals.status(), enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
     return web;
   }
@@ -77,7 +90,7 @@ export class Controller {
   private maybeAutoRecycle(prev: Board | undefined, next: Board): void {
     if (!prev || !this.config().autoRecycle) return;
     const inProgressBy = (b: Board, model: Model): number =>
-      b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? this.config().defaultModel) === model).length;
+      b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? this.config().defaultWorkerModel) === model).length;
     for (const model of BUILTIN_MODEL_IDS) {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
@@ -95,7 +108,7 @@ export class Controller {
     const cfg = this.config();
     if (!prev || !cfg.clearSessionAfterTask || cfg.autoRecycle) return;
     const inProgressBy = (b: Board, model: Model): number =>
-      b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? cfg.defaultModel) === model).length;
+      b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? cfg.defaultWorkerModel) === model).length;
     for (const model of BUILTIN_MODEL_IDS) {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
@@ -129,9 +142,9 @@ export class Controller {
       case 'createDraft': {
         // Ungroomed drafts carry explicit groomer/model (default when unspecified) so a loop
         // knows unambiguously who grooms and works the story — never left to the implicit default.
-        const def = this.config().defaultModel;
-        const groomer = String(msg.groomer ?? '') || def;
-        const model = String(msg.model ?? '') || def;
+        const cfg = this.config();
+        const groomer = String(msg.groomer ?? '') || cfg.defaultGroomerModel;
+        const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
         await this.store.createDraft(String(msg.text ?? ''), today(), groomer, model);
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
