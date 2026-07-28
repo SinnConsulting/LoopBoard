@@ -124,6 +124,7 @@ textarea { resize: vertical; }
 .collapse-toggle svg { transition: transform 120ms ease; }
 .collapse-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .card.collapsed .chips { margin-bottom: 0; }
+.card.collapsed .card-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-collapse-all { width: auto; padding: 0 14px; flex-shrink: 0; height: 32px; }
 .approve-btn { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
 .approve-row { margin-top: 12px; display: flex; justify-content: flex-end; }
