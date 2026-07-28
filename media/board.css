@@ -85,6 +85,13 @@ textarea { resize: vertical; }
 .btn-sm.primary { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #ffffff); }
 .btn-sm.secondary { background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #cccccc); }
 .btn-sm:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+.btn-sm[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* Explicit-save fields: a Save/Send button sits beside or below the field; it stays disabled
+   until the draft differs from the last-committed value (Cmd/Ctrl+S triggers the same commit). */
+.field-save-btn { margin-top: 6px; align-self: flex-start; }
+.field-row { display: flex; align-items: center; gap: 8px; }
+.field-col { display: flex; flex-direction: column; gap: 6px; }
 
 /* ---- Content pane ---- */
 .pane { flex: 1; min-height: 0; overflow-y: auto; }
