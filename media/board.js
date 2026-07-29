@@ -619,7 +619,15 @@
     }
     for (const link of t.links || []) chips.append(linkAnchor(link));
     for (const dep of t.dependsOn || []) {
-      chips.append(h('span', { class: 'chip dep' + (dep.met ? '' : ' unmet') }, 'depends on ' + dep.id + (dep.met ? ' ✓' : ' ⚠')));
+      chips.append(h('button', {
+        class: 'chip dep' + (dep.met ? '' : ' unmet'), type: 'button',
+        title: 'Go to ' + dep.id, 'aria-label': 'Go to ' + dep.id,
+        onclick: () => {
+          const exists = board && Object.values(board.phases || {}).some((list) => (list || []).some((c) => c.id === dep.id));
+          if (!exists) { pushToast('warning', dep.id + ' not found'); return; }
+          revealTask(dep.id);
+        },
+      }, 'depends on ' + dep.id + (dep.met ? ' ✓' : ' ⚠')));
     }
     return chips;
   }
