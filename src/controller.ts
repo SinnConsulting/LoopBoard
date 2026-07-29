@@ -194,6 +194,13 @@ export class Controller {
     return { todoText: await read('template-todo.md'), loopText: await read('template-loop.md') };
   }
 
+  // Run once on activation: recreate a missing/empty TODO.md or LOOP.md against an existing
+  // `.loopboard/` with no user click needed. Create-only — never touches a non-empty file.
+  async autoHeal(): Promise<void> {
+    const { todoText, loopText } = await this.readTemplates();
+    await this.store.autoHeal(todoText, loopText);
+  }
+
   // Scaffold a fresh `.loopboard/` workspace (TODO.md + LOOP.md + tasks/). Wired to both the
   // board's empty-state button (`createFiles` message) and the `loopboard.init` command. When
   // `.loopboard/` already has files, offer the same sync/migrate flow as the explicit button
