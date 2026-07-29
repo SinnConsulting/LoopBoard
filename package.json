@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard TODO",
   "description": "Renders the workspace TODO.md as an interactive board and spawns coding-agent loop terminals (Claude Code today).",
-  "version": "2.15.1",
+  "version": "2.16.0",
   "publisher": "SinnConsulting",
   "preview": true,
   "license": "MIT",
@@ -108,7 +108,13 @@
         },
         "loopBoard.models.opus.effort": {
           "type": "string",
-          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
           "default": "high",
           "description": "Grooming-subagent reasoning-effort ceiling for the Opus slot (Rule 14 in LOOP.md) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
         },
@@ -124,7 +130,13 @@
         },
         "loopBoard.models.sonnet.effort": {
           "type": "string",
-          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
           "default": "high",
           "description": "Grooming-subagent reasoning-effort ceiling for the Sonnet slot (Rule 14 in LOOP.md) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
         },
@@ -140,7 +152,13 @@
         },
         "loopBoard.models.fable.effort": {
           "type": "string",
-          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
           "default": "high",
           "description": "Grooming-subagent reasoning-effort ceiling for the Fable slot (Rule 14 in LOOP.md) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
         },
@@ -156,7 +174,13 @@
         },
         "loopBoard.models.haiku.effort": {
           "type": "string",
-          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
           "default": "high",
           "description": "Grooming-subagent reasoning-effort ceiling for the Haiku slot (Rule 14 in LOOP.md) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
         },
