@@ -11,7 +11,7 @@ import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
 import { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } from './gates';
-import { syncMarkedSections, syncTodoPreamble, hasMarkers } from './sync';
+import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
 
@@ -258,51 +258,81 @@ export class Store {
     }
   }
 
-  // Preview what `syncTemplates` would change, without writing anything: TODO.md's intro/heading
-  // scaffold vs. the shipped template, and LOOP.md's marker-fenced sections (or, for a legacy
-  // LOOP.md with no markers yet, the one-time full-file replacement).
+  // Preview what `syncTemplates` would change, without writing anything: whether TODO.md/LOOP.md
+  // are missing/empty (full template write), TODO.md's intro/heading scaffold vs. the shipped
+  // template, and LOOP.md's marker-fenced sections (or, for a legacy LOOP.md with no markers yet,
+  // the one-time full-file replacement).
   async previewSync(todoTemplate: string, loopTemplate: string): Promise<{ summary: string[]; upToDate: boolean }> {
-    const todoText = (await this.readFile(this.todoUri)) ?? '';
-    const loopText = (await this.readFile(this.loopUri)) ?? '';
-    const { changed: todoChanged, legacy: todoLegacy } = syncTodoPreamble(todoText, todoTemplate);
-    const loopLegacy = loopText.trim() !== '' && !hasMarkers(loopText);
-    const loopChangedIds = loopLegacy ? [] : syncMarkedSections(loopText, loopTemplate).changedIds;
-
+    const todoText = await this.readFile(this.todoUri);
+    const loopText = await this.readFile(this.loopUri);
     const summary: string[] = [];
-    if (todoLegacy) {
-      summary.push('TODO.md predates the current format and will be fully replaced (no markers yet).');
-    } else if (todoChanged) {
-      summary.push('TODO.md: intro out of date.');
+
+    if (isEmptyOrMissing(todoText)) {
+      summary.push('TODO.md is missing or empty and will be created from the template.');
+    } else {
+      const { changed: todoChanged, legacy: todoLegacy } = syncTodoPreamble(todoText as string, todoTemplate);
+      if (todoLegacy) {
+        summary.push('TODO.md predates the current format and will be fully replaced (no markers yet).');
+      } else if (todoChanged) {
+        summary.push('TODO.md: intro out of date.');
+      }
     }
-    if (loopLegacy) {
+
+    if (isEmptyOrMissing(loopText)) {
+      summary.push('LOOP.md is missing or empty and will be created from the template.');
+    } else if (!hasMarkers(loopText as string)) {
       summary.push('LOOP.md predates the current format and will be fully replaced (a backup will be saved to LOOP.md.bkp).');
-    } else if (loopChangedIds.length) {
-      summary.push(`LOOP.md: ${loopChangedIds.length} section(s) out of date (${loopChangedIds.join(', ')}).`);
+    } else {
+      const { changedIds } = syncMarkedSections(loopText as string, loopTemplate);
+      if (changedIds.length) summary.push(`LOOP.md: ${changedIds.length} section(s) out of date (${changedIds.join(', ')}).`);
     }
+
     return { summary, upToDate: summary.length === 0 };
   }
 
   // Refresh the extension-owned scaffolding of TODO.md and LOOP.md from the shipped templates.
-  // Never touches task entries (TODO.md) or content outside the markers (LOOP.md), except for a
-  // legacy unmarked LOOP.md, which is backed up to LOOP.md.bkp and fully replaced exactly once.
+  // A missing/empty file (either) is always fully (re)created from its template. Otherwise never
+  // touches task entries (TODO.md) or content outside the markers (LOOP.md), except for a legacy
+  // unmarked non-empty LOOP.md, which is backed up to LOOP.md.bkp and fully replaced exactly once.
   async syncTemplates(todoTemplate: string, loopTemplate: string): Promise<SaveOutcome> {
     try {
-      const todoText = (await this.readFile(this.todoUri)) ?? '';
-      const { text: newTodo, changed: todoChanged } = syncTodoPreamble(todoText, todoTemplate);
-      if (todoChanged) await this.atomicWrite(this.todoUri, newTodo);
+      const todoText = await this.readFile(this.todoUri);
+      if (isEmptyOrMissing(todoText)) {
+        await this.atomicWrite(this.todoUri, todoTemplate);
+      } else {
+        const { text: newTodo, changed: todoChanged } = syncTodoPreamble(todoText as string, todoTemplate);
+        if (todoChanged) await this.atomicWrite(this.todoUri, newTodo);
+      }
 
-      const loopText = (await this.readFile(this.loopUri)) ?? '';
-      if (loopText.trim() !== '' && !hasMarkers(loopText)) {
-        await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), loopText);
+      const loopText = await this.readFile(this.loopUri);
+      if (isEmptyOrMissing(loopText)) {
+        await this.atomicWrite(this.loopUri, loopTemplate);
+      } else if (!hasMarkers(loopText as string)) {
+        await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), loopText as string);
         await this.atomicWrite(this.loopUri, loopTemplate);
       } else {
-        const { text: newLoop, changedIds } = syncMarkedSections(loopText, loopTemplate);
+        const { text: newLoop, changedIds } = syncMarkedSections(loopText as string, loopTemplate);
         if (changedIds.length) await this.atomicWrite(this.loopUri, newLoop);
       }
       return { status: 'applied' };
     } catch (err) {
       return { status: 'error', message: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  // Create-only auto-heal: run automatically on activation against an EXISTING `.loopboard/`
+  // (a missing directory is the init flow's job, not this). Recreates TODO.md/LOOP.md from their
+  // shipped templates only when missing or whitespace-only — a non-empty, user-edited file is left
+  // byte-for-byte untouched. Shares `isEmptyOrMissing` with `syncTemplates` so the two paths agree
+  // on what counts as "missing or empty".
+  async autoHeal(todoTemplate: string, loopTemplate: string): Promise<void> {
+    try {
+      await vscode.workspace.fs.stat(this.loopboardUri);
+    } catch {
+      return; // no .loopboard/ yet — nothing to heal
+    }
+    if (isEmptyOrMissing(await this.readFile(this.todoUri))) await this.atomicWrite(this.todoUri, todoTemplate);
+    if (isEmptyOrMissing(await this.readFile(this.loopUri))) await this.atomicWrite(this.loopUri, loopTemplate);
   }
 
   // Delete an unaccepted task: remove the index entry AND its task file.

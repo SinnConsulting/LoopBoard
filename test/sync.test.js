@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { markedSectionIds, hasMarkers, syncMarkedSections, syncTodoPreamble } = require('../out-test/sync.js');
+const { markedSectionIds, hasMarkers, syncMarkedSections, syncTodoPreamble, isEmptyOrMissing } = require('../out-test/sync.js');
 
 test('markedSectionIds finds every begin marker in document order', () => {
   const text = [
@@ -153,6 +153,31 @@ test('syncTodoPreamble reports unchanged when the intro already matches', () => 
   const { changed, legacy } = syncTodoPreamble(same, same);
   assert.equal(changed, false);
   assert.equal(legacy, false);
+});
+
+test('isEmptyOrMissing is true for undefined (file does not exist)', () => {
+  assert.equal(isEmptyOrMissing(undefined), true);
+});
+
+test('isEmptyOrMissing is true for an empty string and whitespace-only text', () => {
+  assert.equal(isEmptyOrMissing(''), true);
+  assert.equal(isEmptyOrMissing('   \n\t  \n'), true);
+});
+
+test('isEmptyOrMissing is false for any non-blank text', () => {
+  assert.equal(isEmptyOrMissing('# LOOP'), false);
+  assert.equal(isEmptyOrMissing(' x '), false);
+});
+
+test('syncTodoPreamble treats missing/empty TODO.md the same as legacy — recreates the full scaffold, no entries to keep', () => {
+  const template = ['# TODO', '', 'New intro line.', '', '## Tasks', '', '_(none)_', ''].join('\n');
+  for (const current of ['', '   \n  ']) {
+    const { text, changed, legacy } = syncTodoPreamble(current, template);
+    assert.equal(changed, true);
+    assert.equal(legacy, true);
+    assert.match(text, /New intro line\./);
+    assert.match(text, /## Tasks/);
+  }
 });
 
 test('syncTodoPreamble (marked) is surgical and preserves prose outside the marker', () => {

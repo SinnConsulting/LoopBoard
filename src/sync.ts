@@ -21,6 +21,13 @@ export function hasMarkers(text: string): boolean {
   return markedSectionIds(text).length > 0;
 }
 
+// Shared guard: a file is missing (readFile returned undefined) or whitespace-only. Both the
+// manual Sync path and the activation auto-heal path route missing/empty files to a full
+// template write through this same helper so the two behaviors cannot drift.
+export function isEmptyOrMissing(text: string | undefined): boolean {
+  return text === undefined || text.trim() === '';
+}
+
 function extractBlock(text: string, id: string): string | null {
   const b = text.match(markerRegex(id, 'begin'));
   const e = text.match(markerRegex(id, 'end'));

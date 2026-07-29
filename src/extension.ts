@@ -40,7 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   store.startWatching();
-  void controller.refresh();
+  void controller.autoHeal().then(() => controller.refresh());
 }
 
 export function deactivate(): void {
