@@ -184,6 +184,12 @@
     post({ type: 'patch', patch: { taskId, field, value, base, questionIndex } });
   }
 
+  // Explicit-save model (Rule: no field patches on blur or on typing) — every editable field
+  // commits only via its Save button or this Cmd/Ctrl+S shortcut while the field is focused.
+  function isSaveShortcut(e) {
+    return (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S');
+  }
+
   // ============ RENDER ============
   function render() {
     const root = document.getElementById('root');
@@ -411,15 +417,24 @@
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
       ta.value = u.draftText != null ? u.draftText : t.title;
       autoGrow(ta);
-      ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); });
-      ta.addEventListener('keydown', (e) => { if (e.key === 'Escape') { u.editingDraft = false; u.draftText = null; render(); } });
-      ta.addEventListener('blur', () => {
-        if (!u.editingDraft) return;
+      const commitDraft = () => {
+        const val = ta.value.trim();
         u.editingDraft = false;
-        sendPatch(t.id, 'title', (u.draftText != null ? u.draftText : t.title).trim(), t.title);
         u.draftText = null;
+        sendPatch(t.id, 'title', val, t.title);
+        render();
+      };
+      const saveBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: ta.value.trim() === t.title,
+        title: 'Save (Cmd/Ctrl+S)', onclick: commitDraft,
+      }, 'Save');
+      ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { u.editingDraft = false; u.draftText = null; render(); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
-      textEl = ta;
+      textEl = h('div', { class: 'field-col' }, ta, saveBtn);
       requestAnimationFrame(() => ta.focus());
     } else {
       textEl = h('button', { class: 'draft-text draft-text-btn', type: 'button', title: 'Click to edit',
@@ -478,12 +493,26 @@
 
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (u.editingTitle) {
-      const input = h('input', { class: 'card-title-input', type: 'text' });
+      const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
-      input.addEventListener('input', (e) => { u.titleDraft = e.target.value; });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { u.editingTitle = false; render(); } });
-      input.addEventListener('blur', () => { if (!u.editingTitle) return; u.editingTitle = false; sendPatch(t.id, 'title', (u.titleDraft != null ? u.titleDraft : t.title).trim(), t.title); });
-      titleWrap.append(input);
+      const commitTitle = () => {
+        const val = input.value.trim();
+        u.editingTitle = false;
+        u.titleDraft = null;
+        sendPatch(t.id, 'title', val, t.title);
+        render();
+      };
+      const saveBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: input.value.trim() === t.title,
+        title: 'Save (Cmd/Ctrl+S)', 'aria-label': 'Save title', onclick: commitTitle,
+      }, 'Save');
+      input.addEventListener('input', (e) => { u.titleDraft = e.target.value; saveBtn.disabled = e.target.value.trim() === t.title; });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { u.editingTitle = false; u.titleDraft = null; render(); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
+      });
+      titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
       requestAnimationFrame(() => input.focus());
     } else {
       titleWrap.append(h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; render(); } }, t.title));
@@ -629,12 +658,26 @@
     const wrap = h('div', { class: 'desc-wrap' });
     if (u.editingDesc) {
       const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…' });
-      ta.value = t.description || '';
+      ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
       autoGrow(ta);
-      ta.addEventListener('input', () => autoGrow(ta));
-      ta.addEventListener('keydown', (e) => { if (e.key === 'Escape') { u.editingDesc = false; render(); } });
-      ta.addEventListener('blur', () => { if (!u.editingDesc) return; u.editingDesc = false; sendPatch(t.id, 'description', ta.value, t.description || ''); render(); });
-      wrap.append(ta);
+      const commitDesc = () => {
+        const val = ta.value;
+        u.editingDesc = false;
+        u.descDraft = null;
+        sendPatch(t.id, 'description', val, t.description || '');
+        render();
+      };
+      const saveBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: ta.value === (t.description || ''),
+        title: 'Save (Cmd/Ctrl+S)', onclick: commitDesc,
+      }, 'Save');
+      ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { u.editingDesc = false; u.descDraft = null; render(); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
+      });
+      wrap.append(ta, saveBtn);
       requestAnimationFrame(() => ta.focus());
     } else {
       const hasDesc = !!(t.description && t.description.trim());
@@ -654,6 +697,8 @@
   function renderQuestions(t) {
     // Shared by Feedback and New cards; only the copy differs (nothing "resumes" on a New card —
     // answers there guide grooming/promotion instead of unblocking a paused worker).
+    const u = getUi(t.id);
+    if (!u.answerDrafts) u.answerDrafts = {};
     const isNew = t.phase === 'new';
     const wrap = h('div', { class: 'qa-list' });
     let answered = 0;
@@ -669,11 +714,22 @@
       const ta = h('textarea', { class: 'field', rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
         : 'Type your answer — the worker resumes when every question is answered.' });
-      ta.value = q.answer;
+      ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : q.answer;
       autoGrow(ta);
-      ta.addEventListener('input', () => autoGrow(ta));
-      ta.addEventListener('blur', () => sendPatch(t.id, 'answer', ta.value, q.answer, i));
-      aw.append(ta);
+      const commitAnswer = () => {
+        const val = ta.value;
+        sendPatch(t.id, 'answer', val, q.answer, i);
+        delete u.answerDrafts[i];
+        saveBtn.disabled = true;
+      };
+      const saveBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: ta.value === q.answer,
+        title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
+      }, 'Save');
+      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; });
+      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
+      aw.append(ta, saveBtn);
       if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
       block.append(aw);
       wrap.append(block);
@@ -685,6 +741,7 @@
   }
 
   function renderReview(t) {
+    const u = getUi(t.id);
     const wrap = h('div', { class: 'review-block' });
     if (t.delivered) {
       wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, t.delivered)));
@@ -695,11 +752,24 @@
         h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, '⚠️ ' + t.feedback)));
     }
     const ta = h('textarea', { class: 'field', rows: '2', placeholder: 'Write review feedback…' });
-    ta.value = '';
+    ta.value = u.feedbackDraft || '';
     autoGrow(ta);
-    ta.addEventListener('input', () => autoGrow(ta));
-    ta.addEventListener('blur', () => { if (ta.value.trim()) sendPatch(t.id, 'feedback', ta.value.trim(), t.feedback || ''); });
-    wrap.append(h('div', {}, ta));
+    const commitFeedback = () => {
+      const val = ta.value.trim();
+      if (!val) return;
+      sendPatch(t.id, 'feedback', val, t.feedback || '');
+      u.feedbackDraft = '';
+      ta.value = '';
+      saveBtn.disabled = true;
+    };
+    const saveBtn = h('button', {
+      class: 'btn-sm primary field-save-btn', type: 'button',
+      disabled: (u.feedbackDraft || '').trim().length === 0,
+      title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
+    }, 'Save');
+    ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
+    ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); } });
+    wrap.append(h('div', {}, ta, saveBtn));
     return wrap;
   }
 
@@ -709,10 +779,23 @@
     if (u.noteOpen) {
       const ta = h('textarea', { class: 'field', rows: '2', placeholder: "Instruction for the worker's next pass…" });
       ta.value = u.noteDraft || '';
-      ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; });
+      const commitNote = () => {
+        const d = (u.noteDraft || '').trim();
+        if (!d) return;
+        u.noteOpen = false;
+        u.noteDraft = '';
+        sendPatch(t.id, 'note', d, t.note || '');
+        render();
+      };
+      ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
+      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); } });
+      const sendBtn = h('button', {
+        class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
+        title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
+      }, 'Send');
       wrap.append(ta);
       wrap.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-        h('button', { class: 'btn-sm primary', type: 'button', onclick: () => { const d = (u.noteDraft || '').trim(); if (!d) return; u.noteOpen = false; u.noteDraft = ''; sendPatch(t.id, 'note', d, t.note || ''); } }, 'Send'),
+        sendBtn,
         h('span', { class: 'muted-11' }, 'The worker applies this instruction on its next pass, then removes the note.')));
     } else if (t.note) {
       wrap.append(h('div', { class: 'note-chip' },
