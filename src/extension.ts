@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { Store } from './store';
 import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
-import { Controller } from './controller';
-import { Model, ModelsConfig, resolveModels } from './model';
+import { Controller, readDefaultModel } from './controller';
+import { Model, resolveModels, readModelsConfig } from './model';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -21,8 +21,8 @@ export function activate(context: vscode.ExtensionContext): void {
       return {
         permissionMode: c.get<string>('permissionMode', 'auto'),
         interval: c.get<string>('loopInterval', '1m'),
-        defaultModel: c.get<Model>('defaultModel', 'opus'),
-        models: resolveModels(c.get<ModelsConfig>('models')),
+        defaultModel: readDefaultModel(c, 'defaultWorkerModel'),
+        models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
       };
     }
   );
