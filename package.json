@@ -82,7 +82,7 @@
             "fable",
             "haiku"
           ],
-          "default": "opus",
+          "default": "sonnet",
           "description": "The model that owns (works) tasks with no explicit model: field."
         },
         "loopBoard.defaultGroomerModel": {
