@@ -142,7 +142,10 @@ on first use. Detail remains in `tasks/<id>.md`.
     `feedback:` sub-bullet(s) removed. `[x]` on Review still = accepted → DONE.md.
 14. New/DRAFT grooming is routed by `groomer:` (absent = default model): the loop whose model
     matches `groomer:` owns it and delegates to a subagent (Agent tool) of that groomer
-    model — never inline in the main loop. The subagent expands the story into the task
+    model — never inline in the main loop. Choose the subagent's reasoning effort by the
+    story's complexity, from low up to your own grooming effort ceiling (named in your
+    bootstrap prompt); only reach into xhigh/max when the ceiling allows it AND the story
+    text explicitly asks for deep reasoning. The subagent expands the story into the task
     file's `## Description` (creating `tasks/<id>.md` if missing) and keeps the index title
     one short line. Human decisions = single-line `question: ❓` sub-bullets with blank
     `answer:` lines on the index entry (never an "OPEN QUESTIONS" prose paragraph) so the

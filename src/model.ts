@@ -32,12 +32,22 @@ export function isValidModelString(s: string): boolean {
   return MODEL_STRING_RE.test(s);
 }
 
+// Grooming-subagent reasoning-effort ceiling (Rule 14): the worker picks low..this ceiling by
+// story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly
+// asks for deep reasoning. Order matters (Faster -> Smarter).
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORT_LEVELS)[number];
+export function isValidEffort(s: string): s is Effort {
+  return (EFFORT_LEVELS as readonly string[]).includes(s);
+}
+
 // Per-slot user configuration, read from the `loopBoard.models` setting (keyed by slot id). Two
-// accepted shapes: the object form `{ enabled, model }` for full control, or a bare string as a
-// shorthand for just the `--model` override (e.g. `"haiku": "haiku[1m]"`).
+// accepted shapes: the object form `{ enabled, model, effort }` for full control, or a bare string
+// as a shorthand for just the `--model` override (e.g. `"haiku": "haiku[1m]"`).
 export interface ModelConfigObject {
   enabled?: boolean; // default true; false hides the slot from the Loops overview + board selects
   model?: string; // custom `--model` string; empty/invalid => the built-in default (REPLACE when set)
+  effort?: string; // grooming effort ceiling for this slot; invalid/absent => 'high'
 }
 export type ModelConfigEntry = string | ModelConfigObject;
 export type ModelsConfig = Record<string, ModelConfigEntry | undefined>;
@@ -59,6 +69,7 @@ export function readModelsConfig(get: <T>(key: string, dflt: T) => T): ModelsCon
     cfg[id] = {
       enabled: get<boolean>(`models.${id}.enabled`, true),
       model: get<string>(`models.${id}.model`, ''),
+      effort: get<string>(`models.${id}.effort`, 'high'),
     };
   }
   return cfg;
@@ -70,6 +81,7 @@ export interface ResolvedModel {
   label: string;
   model: string; // validated `--model` string to spawn
   enabled: boolean;
+  effort: Effort; // validated grooming effort ceiling (Rule 14); defaults to 'high'
 }
 
 // Merge the built-in slots with user config: a slot may be disabled, and its `--model` string may
@@ -80,7 +92,8 @@ export function resolveModels(config?: ModelsConfig): ResolvedModel[] {
     const c = asConfigObject(cfg[m.id]);
     const override = typeof c.model === 'string' ? c.model.trim() : '';
     const model = override && isValidModelString(override) ? override : m.model;
-    return { id: m.id, label: m.label, model, enabled: c.enabled !== false };
+    const effort = typeof c.effort === 'string' && isValidEffort(c.effort) ? c.effort : 'high';
+    return { id: m.id, label: m.label, model, enabled: c.enabled !== false, effort };
   });
 }
 
