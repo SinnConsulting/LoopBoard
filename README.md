@@ -41,11 +41,17 @@ board, and multiple agent loops can share it safely — now per file. Accepted w
   DONE.md          accepted tasks, newest first (created lazily on the first acceptance)
   LOOP.md          workflow rules + the loop worker instructions the loops read every pass
   tasks/<id>.md    per-task detail: meta, description, notes, worklog, feedback, delivered
+  cache/<id>/      staged image attachments (created on the first attach), see below
 ```
 
 The board composes each card from the slim index entry plus its `tasks/<id>.md`. A task file is
 created on the first detail edit (or the first loop write); on acceptance the index entry moves to
 `DONE.md` while the task file stays in `tasks/` as browsable history.
+
+`.loopboard/` is gitignored, so anything under it — including staged attachments — is local-only
+and never committed or shared via git. Attach an image to a task (drag-drop, paste, or the
+picker icon) and it's staged under `.loopboard/cache/<id>/`, referenced with a markdown link in
+the task's description; the staged file is deleted once the task is accepted to `DONE.md`.
 
 ## How it works
 

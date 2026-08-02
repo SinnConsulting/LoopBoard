@@ -14,9 +14,23 @@ import { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } from './ga
 import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
+export type AttachOutcome = SaveOutcome & { path?: string };
 
 const DECODER = new TextDecoder();
 const ENCODER = new TextEncoder();
+
+// v1 scope (t-att1, human decision): images only. Size cap is configurable (loopBoard.maxAttachmentSizeMB);
+// this default is only used if a caller doesn't pass one.
+const ALLOWED_ATTACHMENT_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+// Keep only the basename, drop anything not alphanumeric/dot/dash/underscore (blocks path
+// traversal and shell-hostile characters), and fall back to a safe default if that empties it.
+function sanitizeAttachmentFilename(name: string): string {
+  const base = name.replace(/^.*[/\\]/, '').trim();
+  const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_');
+  return cleaned || 'attachment';
+}
 
 function emptyDetail(): TaskDetail {
   return { worklog: [], links: [], dependsOn: [], unknownLines: [], raw: '' };
@@ -39,6 +53,7 @@ export class Store {
   private doneUri: vscode.Uri;
   private loopUri: vscode.Uri;
   private tasksDir: vscode.Uri;
+  private cacheDir: vscode.Uri;
   private watchers: vscode.FileSystemWatcher[] = [];
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private listeners: (() => void)[] = [];
@@ -51,10 +66,17 @@ export class Store {
     this.doneUri = vscode.Uri.joinPath(this.loopboardUri, 'DONE.md');
     this.loopUri = vscode.Uri.joinPath(this.loopboardUri, 'LOOP.md');
     this.tasksDir = vscode.Uri.joinPath(this.loopboardUri, 'tasks');
+    this.cacheDir = vscode.Uri.joinPath(this.loopboardUri, 'cache');
   }
 
   get workspaceName(): string {
     return this.folder.name;
+  }
+
+  // Resolve a workspace-relative path (e.g. an attachment link's `.loopboard/cache/<id>/<file>`)
+  // to a full Uri — keeps path knowledge inside store per the module's one-job charter.
+  resolveWorkspacePath(relative: string): vscode.Uri {
+    return vscode.Uri.joinPath(this.folder.uri, relative);
   }
 
   // Raw `.loopboard/LOOP.md` text (empty if missing); consumed by buildLoopCommand.
@@ -101,6 +123,10 @@ export class Store {
     return vscode.Uri.joinPath(this.tasksDir, `${id}.md`);
   }
 
+  private taskCacheDir(id: string): vscode.Uri {
+    return vscode.Uri.joinPath(this.cacheDir, id);
+  }
+
   // Compose a card view-model from an index entry + its (possibly empty) task file.
   private compose(entry: IndexEntry, detail: TaskDetail, hasDetailFile: boolean): Task {
     return {
@@ -144,6 +170,72 @@ export class Store {
 
   private async ensureTasksDir(): Promise<void> {
     await vscode.workspace.fs.createDirectory(this.tasksDir);
+  }
+
+  // Stage an attachment's bytes under .loopboard/cache/<id>/ and append a plain markdown link to
+  // the task's Description (t-att1: images only, ephemeral, cleared on acceptance — see
+  // clearAttachments). No task-file grammar change; the link reuses the existing
+  // description-link rendering, so no parser/writer changes are needed either.
+  async stageAttachment(taskId: string, filename: string, bytes: Uint8Array, maxBytes = DEFAULT_MAX_ATTACHMENT_BYTES): Promise<AttachOutcome> {
+    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+    if (!ALLOWED_ATTACHMENT_EXT.includes(ext)) {
+      return { status: 'error', message: `Only image attachments are supported (${ALLOWED_ATTACHMENT_EXT.join(', ')}).` };
+    }
+    if (bytes.byteLength > maxBytes) {
+      return { status: 'error', message: `Attachment is too large (max ${Math.round(maxBytes / (1024 * 1024))}MB).` };
+    }
+    const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+    const entry = doc.entries.find((e) => e.id === taskId);
+    if (!entry) return { status: 'notfound' };
+
+    const taskCacheDir = this.taskCacheDir(taskId);
+    await vscode.workspace.fs.createDirectory(taskCacheDir);
+    const safeName = await this.dedupeAttachmentName(taskCacheDir, sanitizeAttachmentFilename(filename));
+    await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(taskCacheDir, safeName), bytes);
+    const relPath = `.loopboard/cache/${taskId}/${safeName}`;
+
+    const detailText = await this.readFile(this.taskUri(entry.id));
+    const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+    const link = `[${safeName}](${relPath})`;
+    detail.description = detail.description ? `${detail.description}\n\n${link}` : link;
+    await this.ensureTasksDir();
+    await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+    bumpRev(entry);
+    await this.atomicWrite(this.todoUri, serializeTodo(doc));
+    return { status: 'applied', path: relPath };
+  }
+
+  // Avoid clobbering an existing file with the same name: name, name-2, name-3, ...
+  private async dedupeAttachmentName(dir: vscode.Uri, name: string): Promise<string> {
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    let candidate = name;
+    let n = 2;
+    while (await this.fileExists(vscode.Uri.joinPath(dir, candidate))) {
+      candidate = `${stem}-${n}${ext}`;
+      n++;
+    }
+    return candidate;
+  }
+
+  private async fileExists(uri: vscode.Uri): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Delete a task's staged attachments (t-att1: fires on acceptance to DONE; deleteTask also
+  // calls this opportunistically). Best-effort — a missing cache dir is not an error.
+  private async clearAttachments(taskId: string): Promise<void> {
+    try {
+      await vscode.workspace.fs.delete(this.taskCacheDir(taskId), { recursive: true });
+    } catch {
+      // no cache dir for this task — nothing to clean up
+    }
   }
 
   // Re-read -> re-parse -> apply one field patch -> serialize whole file -> atomic write.
@@ -217,6 +309,7 @@ export class Store {
     const doneEntry = acceptDoneEntry(entry, today);
     const done = parseDone((await this.readFile(this.doneUri)) ?? '');
     await this.atomicWrite(this.doneUri, serializeDone([doneEntry, ...done]));
+    await this.clearAttachments(entry.id);
 
     doc.entries.splice(idx, 1);
     await this.atomicWrite(this.todoUri, serializeTodo(doc));
@@ -353,6 +446,7 @@ export class Store {
     } catch {
       // no task file yet — nothing to delete
     }
+    await this.clearAttachments(taskId);
     return { status: 'applied' };
   }
 

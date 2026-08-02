@@ -210,6 +210,13 @@
             "order": 3,
             "default": false,
             "description": "When a model finishes a task, send /clear to its loop terminal so the next task starts fresh. Same result as Auto Recycle but lighter: the terminal keeps running, only the conversation is cleared. Off by default. Ignored when Auto Recycle is on (a restart already clears everything)."
+          },
+          "loopBoard.maxAttachmentSizeMB": {
+            "type": "number",
+            "order": 4,
+            "default": 10,
+            "minimum": 1,
+            "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
           }
         }
       },

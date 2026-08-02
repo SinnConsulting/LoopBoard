@@ -35,6 +35,7 @@
     x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    clip: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4.5v6a3 3 0 0 1-6 0v-7a2 2 0 0 1 4 0v6.5a1 1 0 0 1-2 0v-6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
   const PHASE_META = [
@@ -472,6 +473,50 @@
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
   }
 
+  // ---- attachments (t-att1): drag-drop / paste read bytes in the webview and base64-encode them
+  // for postMessage (the only path bytes can cross that boundary); the file-picker instead reads
+  // bytes host-side (see 'pickAttachment' in controller.ts) — v1 scope is images only.
+  const ATTACH_MIME_EXT = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
+    'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg',
+  };
+  function attachFile(taskId, file) {
+    if (!file || !file.type || file.type.indexOf('image/') !== 0) {
+      pushToast('warning', 'Only image attachments are supported.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const comma = dataUrl.indexOf(',');
+      if (comma < 0) return;
+      const filename = file.name && file.name.trim() ? file.name : ('pasted-image.' + (ATTACH_MIME_EXT[file.type] || 'png'));
+      post({ type: 'attach', taskId, filename, dataBase64: dataUrl.slice(comma + 1) });
+    };
+    reader.readAsDataURL(file);
+  }
+  function wireAttachDropAndPaste(card, taskId) {
+    card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) attachFile(taskId, files[0]);
+    });
+    card.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); attachFile(taskId, file); }
+          break;
+        }
+      }
+    });
+  }
+
   function renderCard(t) {
     const u = getUi(t.id);
     const variant = t.phase;
@@ -554,10 +599,17 @@
         },
       }, icon(SVG.check), 'Approve'));
     }
+    // Attach an image (t-att1): file-picker button; drag-drop and paste are wired on the whole
+    // card below. Bytes never leave the picker path unbase64'd — the host reads the file directly.
+    head.append(h('button', {
+      class: 'icon-btn', type: 'button', 'aria-label': 'Attach image', title: 'Attach image',
+      onclick: () => post({ type: 'pickAttachment', taskId: t.id }),
+    }, icon(SVG.clip)));
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
     head.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete task', title: 'Delete task', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x)));
     card.append(head);
+    wireAttachDropAndPaste(card, t.id);
 
     // chips (always shown, even collapsed)
     card.append(renderChips(t));
@@ -639,14 +691,15 @@
   // ---- minimal, XSS-clean markdown for descriptions ----
   // Supports **bold**, *italic*/_italic_, `code`, [text](http(s)://url), line breaks.
   // All user text is HTML-escaped first, so the only tags in the output are the ones we emit;
-  // link hrefs are limited to http/https and carried on data-mdlink (wired to openLink on render).
+  // link hrefs are limited to http/https or a staged-attachment `.loopboard/cache/...` relative
+  // path (t-att1), carried on data-mdlink (wired to openLink on render).
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
   function renderInlineMd(text) {
     // `text` is already HTML-escaped. Links first, then bold, then italic.
     let out = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
-      /^https?:\/\//i.test(url) ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
+      /^https?:\/\//i.test(url) || url.startsWith('.loopboard/cache/') ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');

@@ -12,6 +12,16 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
+// here so store.stageAttachment has one raw-bytes entry point regardless of source (drag-drop/
+// paste vs. the host-side file picker, which reads bytes directly).
+function base64ToBytes(dataBase64: string): Uint8Array {
+  const binary = atob(dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 // Read a split default-model enum setting, falling back to the legacy single `loopBoard.defaultModel`
 // when the new key was never explicitly set — so pre-split configs keep steering both defaults.
 export function readDefaultModel(c: vscode.WorkspaceConfiguration, key: string): Model {
@@ -48,6 +58,7 @@ export class Controller {
       defaultGroomerModel: readDefaultModel(c, 'defaultGroomerModel'),
       autoRecycle: c.get<boolean>('autoRecycle', false),
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
+      maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
@@ -169,9 +180,40 @@ export class Controller {
         return this.onSyncTemplates('Sync to the latest templates?');
       case 'openLink': {
         if (!msg.url) return;
-        const uri = vscode.Uri.parse(String(msg.url));
-        if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
+        const url = String(msg.url);
+        const uri = vscode.Uri.parse(url);
+        if (uri.scheme === 'http' || uri.scheme === 'https') {
+          void vscode.env.openExternal(uri);
+        } else if (url.startsWith('.loopboard/')) {
+          // A staged attachment link (t-att1): relative to the workspace root, not a URL.
+          void vscode.commands.executeCommand('vscode.open', this.store.resolveWorkspacePath(url));
+        }
         return;
+      }
+      case 'attach': {
+        const taskId = String(msg.taskId ?? '');
+        const filename = String(msg.filename ?? '');
+        if (!taskId || !filename || typeof msg.dataBase64 !== 'string') return;
+        const result = await this.store.stageAttachment(taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024);
+        if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
+        else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
+        return this.refresh();
+      }
+      case 'pickAttachment': {
+        const taskId = String(msg.taskId ?? '');
+        if (!taskId) return;
+        const picked = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Attach',
+          filters: { Images: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+        });
+        if (!picked || !picked[0]) return;
+        const bytes = await vscode.workspace.fs.readFile(picked[0]);
+        const filename = picked[0].path.split('/').pop() ?? 'attachment';
+        const result = await this.store.stageAttachment(taskId, filename, bytes, this.config().maxAttachmentSizeMB * 1024 * 1024);
+        if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
+        else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
+        return this.refresh();
       }
       case 'openBoard':
         this.openBoard();
