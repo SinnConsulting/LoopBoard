@@ -5,7 +5,7 @@
 //   <workspace>/.loopboard/LOOP.md          rules + loop worker instructions
 //   <workspace>/.loopboard/tasks/<id>.md    per-task detail
 import * as vscode from 'vscode';
-import { Board, IndexEntry, Task, TaskDetail } from './model';
+import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
@@ -126,7 +126,13 @@ export class Store {
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
       tasks.push(this.compose(entry, detail, detailText !== undefined));
     }
-    return { preamble: doc.preamble, tasks, done: parseDone(doneText) };
+    const done: DoneEntry[] = [];
+    for (const entry of parseDone(doneText)) {
+      const detailText = await this.readFile(this.taskUri(entry.id));
+      const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+      done.push({ ...entry, description: detail.description, delivered: detail.delivered });
+    }
+    return { preamble: doc.preamble, tasks, done };
   }
 
   // Atomic write: temp file in the same dir, then rename over the target.
