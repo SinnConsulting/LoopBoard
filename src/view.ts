@@ -1,6 +1,6 @@
 // Board -> lean webview payload, plus attention/badge computation. No vscode imports
 // (takes primitives) so it stays easy to reason about.
-import { Board, IndexEntry, Task, Phase, Model } from './model';
+import { Board, DoneEntry, Task, Phase, Model } from './model';
 
 export interface WebTask {
   id: string;
@@ -95,8 +95,7 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
   };
 }
 
-// DONE.md entries are index-only (no detail composed): render them from the slim entry alone.
-function doneEntryToWeb(e: IndexEntry, doneIds: Set<string>): WebTask {
+function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
   return {
     id: e.id,
     phase: 'done',
@@ -113,11 +112,11 @@ function doneEntryToWeb(e: IndexEntry, doneIds: Set<string>): WebTask {
     worklog: [],
     links: [],
     dependsOn: [],
-    description: '',
+    description: e.description ?? '',
     note: null,
     questions: [],
     feedback: null,
-    delivered: null,
+    delivered: e.delivered ?? null,
     unparsedLines: e.unknownLines.length ? e.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
   };
 }

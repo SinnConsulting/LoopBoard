@@ -254,6 +254,7 @@ textarea { resize: vertical; }
 
 /* Done rows */
 .done-row-item { height: 32px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--vscode-widget-border, #454545); font-size: 13px; }
+.done-row-item.clickable { cursor: pointer; }
 .done-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .done-chevron svg { transition: transform 120ms ease; }
 .done-chevron.open svg { transform: rotate(180deg); }

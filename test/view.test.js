@@ -159,3 +159,15 @@ test('DONE entries render from the slim IndexEntry (no detail)', () => {
   assert.equal(web.phases.done[0].completed, '2026-07-01');
   assert.equal(web.phases.done[0].model, 'sonnet');
 });
+
+test('DONE entries carry description/delivered through from their task file', () => {
+  const [entry] = parseDone('## Tasks\n\n- [x] Shipped\n  - id: t-1\n  - model: sonnet\n  - completed: 2026-07-01');
+  const board = {
+    preamble: '',
+    done: [{ ...entry, description: 'Story text.', delivered: 'What shipped.' }],
+    tasks: [],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(web.phases.done[0].description, 'Story text.');
+  assert.equal(web.phases.done[0].delivered, 'What shipped.');
+});

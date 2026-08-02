@@ -348,7 +348,11 @@
     for (const t of list) {
       const u = getUi(t.id);
       const hasDetail = !!((t.description && t.description.trim()) || (t.delivered && t.delivered.trim()));
-      const row = h('div', { class: 'done-row-item' },
+      const toggleOpen = () => { u.doneOpen = !u.doneOpen; render(); };
+      const row = h('div', {
+        class: 'done-row-item' + (hasDetail ? ' clickable' : ''),
+        onclick: hasDetail ? toggleOpen : undefined,
+      },
         icon(SVG.checkGreen),
         h('span', { class: 'done-title' }, t.title.replace(/^\[x\]\s*/, '')),
         idChip(t.id),
@@ -360,13 +364,13 @@
           'aria-expanded': u.doneOpen ? 'true' : 'false',
           'aria-label': u.doneOpen ? 'Collapse details' : 'Expand details',
           title: u.doneOpen ? 'Collapse details' : 'Expand details',
-          onclick: () => { u.doneOpen = !u.doneOpen; render(); },
+          onclick: (e) => { e.stopPropagation(); toggleOpen(); },
         }, icon(SVG.chevron)));
       }
       // Delete an accepted row from the archive (distinct path: removes only the DONE.md line).
       row.append(h('button', {
         class: 'icon-btn', type: 'button', 'aria-label': 'Delete from archive', title: 'Delete from archive',
-        onclick: () => post({ type: 'gate', taskId: t.id, action: 'deleteDone' }),
+        onclick: (e) => { e.stopPropagation(); post({ type: 'gate', taskId: t.id, action: 'deleteDone' }); },
       }, icon(SVG.x)));
       wrap.append(row);
       if (hasDetail && u.doneOpen) {
@@ -401,7 +405,7 @@
 
   function linkAnchor(url) {
     const label = prLabel(url);
-    return h('a', { class: 'link', href: '#', onclick: (e) => { e.preventDefault(); post({ type: 'openLink', url }); } }, label + ' ↗');
+    return h('a', { class: 'link', href: '#', onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url }); } }, label + ' ↗');
   }
   function prLabel(url) {
     const m = String(url).match(/(\d+)(?:\/?$)/);

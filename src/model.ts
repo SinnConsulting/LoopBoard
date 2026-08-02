@@ -156,8 +156,12 @@ export interface IndexDoc {
   entries: IndexEntry[];
 }
 
+// DONE.md entries, each carrying its task file's description/delivered for the Done-tab card
+// expansion (t-628b) — everything else about a done task stays index-only.
+export type DoneEntry = IndexEntry & Pick<TaskDetail, 'description' | 'delivered'>;
+
 export interface Board {
   preamble: string; // index preamble (round-tripped verbatim)
   tasks: Task[]; // all active (non-done) tasks, in file order
-  done: IndexEntry[]; // from DONE.md, read-only, newest first
+  done: DoneEntry[]; // from DONE.md + tasks/<id>.md, read-only, newest first
 }
