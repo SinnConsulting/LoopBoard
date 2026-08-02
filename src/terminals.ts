@@ -67,16 +67,18 @@ export class TerminalManager {
       }));
   }
 
-  // Reveal-and-focus an already-running loop's terminal; does nothing if it isn't running (never
-  // creates one — that's spawn()'s job).
-  reveal(model: Model): void {
-    this.find(model)?.show();
+  // Reveal an already-running loop's terminal; does nothing if it isn't running (never creates
+  // one — that's spawn()'s job). Focuses it unless `preserveFocus` is set — pass true for
+  // automatic/lifecycle reveals (e.g. auto-recycle) so they never steal focus from the board;
+  // explicit user gestures (clicking ▶ or a loop row) keep the default, focusing behaviour.
+  reveal(model: Model, preserveFocus = false): void {
+    this.find(model)?.show(preserveFocus);
   }
 
-  spawn(model: Model): void {
+  spawn(model: Model, preserveFocus = false): void {
     const existing = this.find(model);
     if (existing) {
-      existing.show();
+      existing.show(preserveFocus);
       return;
     }
     const cfg = this.getConfig();
@@ -101,7 +103,7 @@ export class TerminalManager {
     // `resolved.effort` is already validated (resolveModels defaults invalid/absent to 'high').
     const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval, resolved?.effort);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
-    terminal.show();
+    terminal.show(preserveFocus);
     const base = buildClaudeBase(cfg.permissionMode, modelString);
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
@@ -124,11 +126,11 @@ export class TerminalManager {
     this.find(model)?.dispose();
   }
 
-  recycle(model: Model): void {
+  recycle(model: Model, preserveFocus = false): void {
     const existing = this.find(model);
     if (existing) existing.dispose();
     // Respawn shortly after disposal so the name is free.
-    setTimeout(() => this.spawn(model), 400);
+    setTimeout(() => this.spawn(model, preserveFocus), 400);
   }
 
   // Send /clear into the running loop terminal to reset the claude conversation context, keeping the
