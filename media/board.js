@@ -716,6 +716,10 @@
     const isNew = t.phase === 'new';
     const wrap = h('div', { class: 'qa-list' });
     let answered = 0;
+    let progressEl;
+    const progressText = () => isNew
+      ? `${answered} of ${t.questions.length} questions answered.`
+      : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
     t.questions.forEach((q, i) => {
       if (q.answered) answered++;
       const block = h('div', {});
@@ -735,6 +739,21 @@
         sendPatch(t.id, 'answer', val, q.answer, i);
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
+        // Targeted in-place update (no render()): a full repaint here would destroy the
+        // still-focused textarea/caret, which is exactly what the isEditing()/pendingBoard
+        // deferral exists to prevent — see t-2b96.
+        const isAnswered = val.trim().length > 0;
+        if (isAnswered !== q.answered) {
+          q.answered = isAnswered;
+          answered += isAnswered ? 1 : -1;
+          if (progressEl) progressEl.textContent = progressText();
+        }
+        const existingChip = aw.querySelector('.answered');
+        if (isAnswered && !existingChip) {
+          aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
+        } else if (!isAnswered && existingChip) {
+          existingChip.remove();
+        }
       };
       const saveBtn = h('button', {
         class: 'btn-sm primary field-save-btn', type: 'button',
@@ -748,9 +767,8 @@
       block.append(aw);
       wrap.append(block);
     });
-    wrap.append(h('div', { class: 'progress' }, isNew
-      ? `${answered} of ${t.questions.length} questions answered.`
-      : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`));
+    progressEl = h('div', { class: 'progress' }, progressText());
+    wrap.append(progressEl);
     return wrap;
   }
 
