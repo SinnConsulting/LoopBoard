@@ -163,8 +163,9 @@ textarea { resize: vertical; }
 .chip.mono { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
 .chip.owner { display: flex; align-items: center; gap: 4px; }
 .chip.unassigned { background: none; opacity: 1; font-style: italic; color: var(--vscode-descriptionForeground, #9d9d9d); padding: 2px 0; }
-.chip.dep { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
+.chip.dep { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); border: none; cursor: pointer; }
 .chip.dep.unmet { border: 1px solid var(--vscode-inputValidation-warningBorder, #cca700); opacity: 1; }
+.chip.dep:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
 .chip.help { cursor: help; }
 .chip.button { border: none; cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .chip.button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
