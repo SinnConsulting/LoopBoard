@@ -31,6 +31,11 @@ export class TerminalManager {
   private changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeStatus = this.changeEmitter.event;
   private disposables: vscode.Disposable[] = [];
+  // Which model's terminal our own toggle last revealed — tracked independently of
+  // `vscode.window.activeTerminal` because `workbench.action.closePanel` hides the panel without
+  // clearing it, so the active-terminal check alone can never observe "currently hidden" and a
+  // third click would try to hide an already-hidden panel instead of showing it again.
+  private revealedModel: Model | undefined;
 
   constructor(
     private getCwd: () => vscode.Uri,
@@ -73,21 +78,27 @@ export class TerminalManager {
   // explicit user gestures (clicking ▶ or a loop row) keep the default, focusing behaviour. A
   // second call for the same model toggles the whole bottom panel closed instead — VSCode has no
   // per-terminal hide API, and closePanel never disposes a terminal, so every loop (including
-  // this one) stays alive and is shown intact on the next reveal.
+  // this one) stays alive and is shown intact on the next reveal. Tracked via `revealedModel`
+  // rather than `vscode.window.activeTerminal`: closePanel hides the panel without clearing the
+  // active terminal, so a live activeTerminal check can't tell "hidden" from "shown" and a third
+  // click would silently no-op instead of re-showing.
   reveal(model: Model, preserveFocus = false): void {
     const terminal = this.find(model);
     if (!terminal) return;
-    if (vscode.window.activeTerminal === terminal) {
+    if (this.revealedModel === model) {
       vscode.commands.executeCommand('workbench.action.closePanel');
+      this.revealedModel = undefined;
       return;
     }
     terminal.show(preserveFocus);
+    this.revealedModel = model;
   }
 
   spawn(model: Model, preserveFocus = false): void {
     const existing = this.find(model);
     if (existing) {
       existing.show(preserveFocus);
+      this.revealedModel = model;
       return;
     }
     const cfg = this.getConfig();
@@ -113,6 +124,7 @@ export class TerminalManager {
     const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval, resolved?.effort);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show(preserveFocus);
+    this.revealedModel = model;
     const base = buildClaudeBase(cfg.permissionMode, modelString);
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
@@ -132,10 +144,12 @@ export class TerminalManager {
   }
 
   stop(model: Model): void {
+    if (this.revealedModel === model) this.revealedModel = undefined;
     this.find(model)?.dispose();
   }
 
   recycle(model: Model, preserveFocus = false): void {
+    if (this.revealedModel === model) this.revealedModel = undefined;
     const existing = this.find(model);
     if (existing) existing.dispose();
     // Respawn shortly after disposal so the name is free.
