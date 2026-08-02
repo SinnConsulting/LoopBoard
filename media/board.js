@@ -456,7 +456,7 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
-    return h('div', { class: 'card draft', 'data-task': t.id },
+    const card = h('div', { class: 'card draft', 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
         icon(SVG.robot, 'muted'),
@@ -470,7 +470,13 @@
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
           h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+        h('button', {
+          class: 'icon-btn', type: 'button', 'aria-label': 'Attach image', title: 'Attach image',
+          onclick: () => post({ type: 'pickAttachment', taskId: t.id }),
+        }, icon(SVG.clip)),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
+    wireAttachDropAndPaste(card, t.id);
+    return card;
   }
 
   // ---- attachments (t-att1): drag-drop / paste read bytes in the webview and base64-encode them
