@@ -177,7 +177,7 @@ export class Controller {
         this.openBoard();
         return;
       case 'openSettings':
-        void vscode.commands.executeCommand('workbench.action.openSettings', 'loopBoard');
+        void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:SinnConsulting.loopboard-todo');
         return;
       case 'reveal':
         this.pendingReveal = { taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer };
