@@ -50,10 +50,12 @@
   const saved = vscode.getState() || {};
   let board = null;
   let phase = saved.phase || 'new';
-  let composerOpen = false;
-  let composerText = '';
-  let composerGroomer = ''; // '' = default model
-  let composerModel = '';   // '' = default model
+  // Composer draft is persisted in vscode state (same blob as `phase`) so it survives the webview
+  // being hidden/recreated on tab/window switch (retainContextWhenHidden is false) — see t-ntx1.
+  let composerOpen = !!saved.composerOpen;
+  let composerText = saved.composerText || '';
+  let composerGroomer = saved.composerGroomer || ''; // '' = default model
+  let composerModel = saved.composerModel || '';     // '' = default model
   const ui = {}; // per-task UI state, keyed by task id
   // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
   // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
@@ -79,7 +81,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed });
+    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel });
   }
 
   // ---- collapse/expand ----
@@ -266,7 +268,7 @@
       onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
     }, collapsedDefault ? 'Expand all' : 'Collapse all'));
 
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; resetSearch(); render(); } },
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
@@ -307,7 +309,7 @@
     const area = h('textarea', {
       class: 'composer-area', rows: '10',
       placeholder: 'Describe the story in your own words — goal, context, anything you know. An agent will structure it into title, description and tasks.',
-      oninput: (e) => { composerText = e.target.value; saveBtn.disabled = composerText.trim().length === 0; },
+      oninput: (e) => { composerText = e.target.value; saveBtn.disabled = composerText.trim().length === 0; saveState(); },
     });
     area.value = composerText;
     // Groomer + worker model selectors ('' = default model), mirroring the card selects.
@@ -332,9 +334,9 @@
       area,
       h('div', { class: 'composer-actions' },
         saveBtn,
-        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; render(); } }, 'Cancel'),
-        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; }),
-        modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; }),
+        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; saveState(); render(); } }, 'Cancel'),
+        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }),
+        modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
     );
   }
