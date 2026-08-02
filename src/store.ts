@@ -15,6 +15,7 @@ import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } fr
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
 export type AttachOutcome = SaveOutcome & { path?: string };
+export type DraftOutcome = SaveOutcome & { id?: string };
 
 const DECODER = new TextDecoder();
 const ENCODER = new TextEncoder();
@@ -172,11 +173,15 @@ export class Store {
     await vscode.workspace.fs.createDirectory(this.tasksDir);
   }
 
-  // Stage an attachment's bytes under .loopboard/cache/<id>/ and append a plain markdown link to
-  // the task's Description (t-att1: images only, ephemeral, cleared on acceptance — see
-  // clearAttachments). No task-file grammar change; the link reuses the existing
-  // description-link rendering, so no parser/writer changes are needed either.
-  async stageAttachment(taskId: string, filename: string, bytes: Uint8Array, maxBytes = DEFAULT_MAX_ATTACHMENT_BYTES): Promise<AttachOutcome> {
+  // Stage an attachment's bytes under .loopboard/cache/<id>/ (t-att1: images only, ephemeral,
+  // cleared on acceptance — see clearAttachments). No task-file grammar change; a returned
+  // markdown link reuses the existing description-link rendering.
+  // `appendToDescription`: true (default) appends the link to the task's Description directly —
+  // used when the caller has no specific field open (whole-card drop, or a brand-new draft).
+  // false only stages the bytes and returns the path/link, leaving the caller (a description or
+  // answer field already open in the webview) to fold it into that field's own value and persist
+  // it via the normal field-patch path, so field-scoped inserts land in the right place.
+  async stageAttachment(taskId: string, filename: string, bytes: Uint8Array, maxBytes = DEFAULT_MAX_ATTACHMENT_BYTES, appendToDescription = true): Promise<AttachOutcome> {
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     if (!ALLOWED_ATTACHMENT_EXT.includes(ext)) {
       return { status: 'error', message: `Only image attachments are supported (${ALLOWED_ATTACHMENT_EXT.join(', ')}).` };
@@ -193,6 +198,7 @@ export class Store {
     const safeName = await this.dedupeAttachmentName(taskCacheDir, sanitizeAttachmentFilename(filename));
     await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(taskCacheDir, safeName), bytes);
     const relPath = `.loopboard/cache/${taskId}/${safeName}`;
+    if (!appendToDescription) return { status: 'applied', path: relPath };
 
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
@@ -316,7 +322,7 @@ export class Store {
     return { status: 'applied' };
   }
 
-  async createDraft(text: string, _today: string, groomer?: string, model?: string): Promise<SaveOutcome> {
+  async createDraft(text: string, _today: string, groomer?: string, model?: string): Promise<DraftOutcome> {
     const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
     const draft: IndexEntry = {
       id: '',
@@ -333,8 +339,11 @@ export class Store {
       raw: '',
     };
     doc.entries.push(draft);
+    // serializeTodo assigns missing ids in place, so `draft.id` is populated by the time it
+    // returns — the id a caller needs to immediately act on this draft (e.g. stage an attachment)
+    // without a second read/parse round trip.
     await this.atomicWrite(this.todoUri, serializeTodo(doc));
-    return { status: 'applied' };
+    return { status: 'applied', id: draft.id };
   }
 
   // Scaffold `.loopboard/` (TODO.md + LOOP.md + tasks/). Refuses (created: false, no error) if

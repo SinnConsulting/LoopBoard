@@ -49,9 +49,11 @@ created on the first detail edit (or the first loop write); on acceptance the in
 `DONE.md` while the task file stays in `tasks/` as browsable history.
 
 `.loopboard/` is gitignored, so anything under it — including staged attachments — is local-only
-and never committed or shared via git. Attach an image to a task (drag-drop, paste, or the
-picker icon) and it's staged under `.loopboard/cache/<id>/`, referenced with a markdown link in
-the task's description; the staged file is deleted once the task is accepted to `DONE.md`.
+and never committed or shared via git. Attach an image to a task by dragging it onto a card (or
+the New Story composer) or pasting it from the clipboard — no button, drag-drop/paste only — and
+it's staged under `.loopboard/cache/<id>/`, referenced with a markdown link in the task's
+description (or the specific comment/answer field it was dropped into); the staged file is
+deleted once the task is accepted to `DONE.md`.
 
 ## How it works
 

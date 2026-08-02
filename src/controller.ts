@@ -162,6 +162,24 @@ export class Controller {
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
       }
+      case 'createDraftWithAttach': {
+        // The New Story composer has no task id until a draft exists (t-att1: pasting/dropping an
+        // image there saves the draft first, same as clicking "Save draft", then stages the image
+        // onto the new draft) — image-only, drag-drop/paste, no separate file-picker gesture.
+        const text = String(msg.text ?? '').trim();
+        const filename = String(msg.filename ?? '');
+        if (!text || !filename || typeof msg.dataBase64 !== 'string') return;
+        const cfg = this.config();
+        const groomer = String(msg.groomer ?? '') || cfg.defaultGroomerModel;
+        const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
+        const draft = await this.store.createDraft(text, today(), groomer, model);
+        if (draft.id) {
+          const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(msg.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024);
+          if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
+        }
+        this.toast('info', 'Draft saved — the loop will groom it into a story.');
+        return this.refresh();
+      }
       case 'spawnLoop':
         if (isKnownModel(msg.model)) this.terminals.spawn(msg.model);
         return;
@@ -191,26 +209,23 @@ export class Controller {
         return;
       }
       case 'attach': {
+        // t-att1: images only, drag-drop/paste only (no file-picker button). A whole-card drop
+        // (no `field`) appends straight to the task's Description, same as before. A drop/paste
+        // scoped to an already-open Description or answer field (`field` set, keyed by `reqId`)
+        // only stages the bytes here — the webview folds the returned link into that field's own
+        // draft value and saves it through the normal field-patch path, so it lands in the right
+        // place instead of always the Description.
         const taskId = String(msg.taskId ?? '');
         const filename = String(msg.filename ?? '');
         if (!taskId || !filename || typeof msg.dataBase64 !== 'string') return;
-        const result = await this.store.stageAttachment(taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024);
-        if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
-        else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
-        return this.refresh();
-      }
-      case 'pickAttachment': {
-        const taskId = String(msg.taskId ?? '');
-        if (!taskId) return;
-        const picked = await vscode.window.showOpenDialog({
-          canSelectMany: false,
-          openLabel: 'Attach',
-          filters: { Images: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
-        });
-        if (!picked || !picked[0]) return;
-        const bytes = await vscode.workspace.fs.readFile(picked[0]);
-        const filename = picked[0].path.split('/').pop() ?? 'attachment';
-        const result = await this.store.stageAttachment(taskId, filename, bytes, this.config().maxAttachmentSizeMB * 1024 * 1024);
+        const field = msg.field === 'description' || msg.field === 'answer' ? msg.field : undefined;
+        const result = await this.store.stageAttachment(
+          taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024, !field
+        );
+        if (field && msg.reqId) {
+          BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message });
+          return;
+        }
         if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
         else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
         return this.refresh();
