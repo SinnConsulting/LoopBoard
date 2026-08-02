@@ -70,9 +70,18 @@ export class TerminalManager {
   // Reveal an already-running loop's terminal; does nothing if it isn't running (never creates
   // one — that's spawn()'s job). Focuses it unless `preserveFocus` is set — pass true for
   // automatic/lifecycle reveals (e.g. auto-recycle) so they never steal focus from the board;
-  // explicit user gestures (clicking ▶ or a loop row) keep the default, focusing behaviour.
+  // explicit user gestures (clicking ▶ or a loop row) keep the default, focusing behaviour. A
+  // second call for the same model toggles the whole bottom panel closed instead — VSCode has no
+  // per-terminal hide API, and closePanel never disposes a terminal, so every loop (including
+  // this one) stays alive and is shown intact on the next reveal.
   reveal(model: Model, preserveFocus = false): void {
-    this.find(model)?.show(preserveFocus);
+    const terminal = this.find(model);
+    if (!terminal) return;
+    if (vscode.window.activeTerminal === terminal) {
+      vscode.commands.executeCommand('workbench.action.closePanel');
+      return;
+    }
+    terminal.show(preserveFocus);
   }
 
   spawn(model: Model, preserveFocus = false): void {
