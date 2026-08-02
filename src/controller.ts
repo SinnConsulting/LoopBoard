@@ -95,7 +95,9 @@ export class Controller {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {
-        this.terminals.recycle(model);
+        // Automatic lifecycle recycle — never steal focus from whatever the user is doing on the
+        // board (e.g. typing in an answer field).
+        this.terminals.recycle(model, true);
       }
     }
   }
