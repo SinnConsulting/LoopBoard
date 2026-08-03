@@ -54,6 +54,7 @@
   let composerText = '';
   let composerGroomer = ''; // '' = default model
   let composerModel = '';   // '' = default model
+  let composerNeedsFocus = false;
   const ui = {}; // per-task UI state, keyed by task id
   // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
   // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
@@ -215,6 +216,16 @@
         if (searchCaret != null) { try { si.setSelectionRange(searchCaret, searchCaret); } catch (e) { /* ignore */ } }
       });
     }
+    // Focus the composer textarea on open so an immediate Cmd/Ctrl+V paste (before the user
+    // clicks into it) lands on it — clipboard paste only fires on the focused element (t-att1
+    // feedback: pasting right after "New Story" did nothing since nothing was focused yet).
+    if (composerOpen && composerNeedsFocus) {
+      composerNeedsFocus = false;
+      requestAnimationFrame(() => {
+        const ta = document.querySelector('.composer-area');
+        if (ta) ta.focus();
+      });
+    }
   }
 
   function renderSearchBar(shownCount, totalCount) {
@@ -266,7 +277,7 @@
       onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
     }, collapsedDefault ? 'Expand all' : 'Collapse all'));
 
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; resetSearch(); render(); } },
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; composerNeedsFocus = true; resetSearch(); render(); } },
       'New Story'));
     return bar;
   }
@@ -1033,6 +1044,7 @@
       composerText = '';
       composerGroomer = '';
       composerModel = '';
+      composerNeedsFocus = true;
       saveState();
       render();
       return;
