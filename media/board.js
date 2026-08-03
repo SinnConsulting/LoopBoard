@@ -197,6 +197,9 @@
     const root = document.getElementById('root');
     const scrollPane = root.querySelector('.pane');
     const scrollTop = scrollPane ? scrollPane.scrollTop : 0;
+    // Capture which card field (and its caret) held focus BEFORE the wipe, so a repaint that lands
+    // mid-edit can put focus + caret back afterward instead of blurring the field / jumping the caret.
+    const activeField = captureActiveField();
     root.textContent = '';
     if (!board) {
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
@@ -216,7 +219,39 @@
         si.focus();
         if (searchCaret != null) { try { si.setSelectionRange(searchCaret, searchCaret); } catch (e) { /* ignore */ } }
       });
+    } else if (activeField) {
+      // Same idea for a card field: any render() caller (loop write, toast, conflict-clear, reveal)
+      // is now safe to fire while a field is focused — focus + caret return to that same field.
+      requestAnimationFrame(() => restoreActiveField(activeField));
     }
+  }
+
+  // ---- generic focus/caret restore across a full repaint ----
+  // render() rebuilds #root from scratch (`textContent = ''`), which drops DOM focus and the text
+  // caret. captureActiveField() records the focused card field by task id + field name (+ question
+  // index for answers) and its selection; restoreActiveField() looks the field back up after the
+  // rebuild and restores focus + caret. Generalises the search-input restore above so mid-edit
+  // repaints never blur a card field or move its caret. Cards carry `data-task`; each editable
+  // input/textarea carries `data-field` (+ `data-qindex` for per-question answers).
+  function captureActiveField() {
+    const el = document.activeElement;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return null;
+    const field = el.getAttribute('data-field');
+    if (!field) return null;
+    const card = el.closest('[data-task]');
+    if (!card) return null;
+    let start = null;
+    let end = null;
+    try { start = el.selectionStart; end = el.selectionEnd; } catch (e) { /* ignore */ }
+    return { taskId: card.getAttribute('data-task'), field, qindex: el.getAttribute('data-qindex'), start, end };
+  }
+  function restoreActiveField(a) {
+    let sel = '[data-task="' + a.taskId + '"] [data-field="' + a.field + '"]';
+    if (a.qindex != null) sel += '[data-qindex="' + a.qindex + '"]';
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.focus();
+    if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
   }
 
   function renderSearchBar(shownCount, totalCount) {
@@ -499,7 +534,7 @@
 
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (u.editingTitle) {
-      const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title' });
+      const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
       const commitTitle = () => {
         const val = input.value.trim();
@@ -671,7 +706,7 @@
     const u = getUi(t.id);
     const wrap = h('div', { class: 'desc-wrap' });
     if (u.editingDesc) {
-      const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…' });
+      const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…', 'data-field': 'description' });
       ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
       autoGrow(ta);
       const commitDesc = () => {
@@ -729,7 +764,7 @@
       });
       block.append(h('div', { class: 'question' }, h('span', {}, '❓'), qText));
       const aw = h('div', { class: 'answer-wrap' });
-      const ta = h('textarea', { class: 'field', rows: '2', placeholder: isNew
+      const ta = h('textarea', { class: 'field', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
         : 'Type your answer — the worker resumes when every question is answered.' });
       ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : q.answer;
@@ -783,7 +818,7 @@
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
         h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, '⚠️ ' + t.feedback)));
     }
-    const ta = h('textarea', { class: 'field', rows: '2', placeholder: 'Write review feedback…' });
+    const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
     autoGrow(ta);
     const commitFeedback = () => {
@@ -809,7 +844,7 @@
     const u = getUi(t.id);
     const wrap = h('div', { class: 'note-wrap' });
     if (u.noteOpen) {
-      const ta = h('textarea', { class: 'field', rows: '2', placeholder: "Instruction for the worker's next pass…" });
+      const ta = h('textarea', { class: 'field', 'data-field': 'note', rows: '2', placeholder: "Instruction for the worker's next pass…" });
       ta.value = u.noteDraft || '';
       const commitNote = () => {
         const d = (u.noteDraft || '').trim();
