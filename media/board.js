@@ -755,6 +755,11 @@
     const progressText = () => isNew
       ? `${answered} of ${t.questions.length} questions answered.`
       : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
+    // Save All (t-f86b): commits every question whose draft differs from its saved answer, in one
+    // click. Only enabled once more than one question has an unsaved draft (a single one already
+    // has its own per-question Save).
+    const commits = [];
+    let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
     t.questions.forEach((q, i) => {
       if (q.answered) answered++;
       const block = h('div', {});
@@ -789,14 +794,16 @@
         } else if (!isAnswered && existingChip) {
           existingChip.remove();
         }
+        updateSaveAll();
       };
       const saveBtn = h('button', {
         class: 'btn-sm primary field-save-btn', type: 'button',
         disabled: ta.value === q.answer,
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
-      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; });
+      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
       ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
+      commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
       aw.append(ta, saveBtn);
       if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
       block.append(aw);
@@ -804,6 +811,17 @@
     });
     progressEl = h('div', { class: 'progress' }, progressText());
     wrap.append(progressEl);
+    if (t.questions.length > 1) {
+      const saveAllBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: true,
+        title: 'Save every question whose answer changed',
+        onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
+      }, 'Save All');
+      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length <= 1; };
+      updateSaveAll();
+      wrap.append(h('div', { class: 'approve-row' }, saveAllBtn));
+    }
     return wrap;
   }
 
