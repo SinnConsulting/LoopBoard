@@ -61,6 +61,7 @@ export interface BadgeInfo {
   newCount: number;
   feedbackUnanswered: number;
   reviewCount: number;
+  newUnanswered: number;
 }
 
 function doneIdSet(board: Board): Set<string> {
@@ -127,11 +128,17 @@ export function computeBadge(board: Board): BadgeInfo {
     (t) => t.phase === 'feedback' && t.questions.some((q) => q.answer.trim().length === 0)
   ).length;
   const reviewCount = board.tasks.filter((t) => t.phase === 'review').length;
+  // Already covered by newCount (every New task) — not added into `count`, only surfaced as its
+  // own field so the sidebar can render a separate "— New" attention row (not merged w/ Feedback).
+  const newUnanswered = board.tasks.filter(
+    (t) => t.phase === 'new' && t.questions.some((q) => q.answer.trim().length === 0)
+  ).length;
   return {
     count: newCount + feedbackUnanswered + reviewCount,
     newCount,
     feedbackUnanswered,
     reviewCount,
+    newUnanswered,
   };
 }
 
