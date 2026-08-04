@@ -72,6 +72,9 @@
     if (b.feedbackUnanswered > 0) {
       rows.push({ icon: '❓', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback' });
     }
+    if (b.newUnanswered > 0) {
+      rows.push({ icon: '❓', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' — New', phase: 'new' });
+    }
     if (b.reviewCount > 0) {
       const id = soleId('review', () => true);
       rows.push({ icon: '👀', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });

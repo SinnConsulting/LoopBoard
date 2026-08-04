@@ -36,6 +36,21 @@ test('computeBadge = new (incl DRAFTs) + unanswered feedback + review', () => {
   assert.equal(b.count, 4);
 });
 
+test('computeBadge: newUnanswered counts New tasks with an unanswered question, separate from feedbackUnanswered and not added into count', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [
+      task({ id: 't-1', phase: 'new', questions: [{ text: 'q', answer: '' }] }),
+      task({ id: 't-2', phase: 'new', questions: [{ text: 'q', answer: 'yes' }] }),
+      task({ id: 't-3', phase: 'feedback', questions: [{ text: 'q', answer: '' }] }),
+    ],
+  };
+  const b = computeBadge(board);
+  assert.equal(b.newUnanswered, 1);
+  assert.equal(b.feedbackUnanswered, 1);
+  assert.equal(b.count, 2 + 1 + 0); // newCount(2) + feedbackUnanswered(1) + reviewCount(0)
+});
+
 test('dependency marked met when its id is in DONE (IndexEntry[])', () => {
   const board = {
     preamble: '',

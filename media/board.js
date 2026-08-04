@@ -50,10 +50,12 @@
   const saved = vscode.getState() || {};
   let board = null;
   let phase = saved.phase || 'new';
-  let composerOpen = false;
-  let composerText = '';
-  let composerGroomer = ''; // '' = default model
-  let composerModel = '';   // '' = default model
+  // Composer draft is persisted in vscode state (same blob as `phase`) so it survives the webview
+  // being hidden/recreated on tab/window switch (retainContextWhenHidden is false) — see t-ntx1.
+  let composerOpen = !!saved.composerOpen;
+  let composerText = saved.composerText || '';
+  let composerGroomer = saved.composerGroomer || ''; // '' = default model
+  let composerModel = saved.composerModel || '';     // '' = default model
   let composerNeedsFocus = false;
   const ui = {}; // per-task UI state, keyed by task id
   // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
@@ -80,7 +82,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed });
+    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel });
   }
 
   // ---- collapse/expand ----
@@ -196,6 +198,9 @@
     const root = document.getElementById('root');
     const scrollPane = root.querySelector('.pane');
     const scrollTop = scrollPane ? scrollPane.scrollTop : 0;
+    // Capture which card field (and its caret) held focus BEFORE the wipe, so a repaint that lands
+    // mid-edit can put focus + caret back afterward instead of blurring the field / jumping the caret.
+    const activeField = captureActiveField();
     root.textContent = '';
     if (!board) {
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
@@ -215,6 +220,10 @@
         si.focus();
         if (searchCaret != null) { try { si.setSelectionRange(searchCaret, searchCaret); } catch (e) { /* ignore */ } }
       });
+    } else if (activeField) {
+      // Same idea for a card field: any render() caller (loop write, toast, conflict-clear, reveal)
+      // is now safe to fire while a field is focused — focus + caret return to that same field.
+      requestAnimationFrame(() => restoreActiveField(activeField));
     }
     // Focus the composer textarea on open so an immediate Cmd/Ctrl+V paste (before the user
     // clicks into it) lands on it — clipboard paste only fires on the focused element (t-att1
@@ -226,6 +235,34 @@
         if (ta) ta.focus();
       });
     }
+  }
+
+  // ---- generic focus/caret restore across a full repaint ----
+  // render() rebuilds #root from scratch (`textContent = ''`), which drops DOM focus and the text
+  // caret. captureActiveField() records the focused card field by task id + field name (+ question
+  // index for answers) and its selection; restoreActiveField() looks the field back up after the
+  // rebuild and restores focus + caret. Generalises the search-input restore above so mid-edit
+  // repaints never blur a card field or move its caret. Cards carry `data-task`; each editable
+  // input/textarea carries `data-field` (+ `data-qindex` for per-question answers).
+  function captureActiveField() {
+    const el = document.activeElement;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return null;
+    const field = el.getAttribute('data-field');
+    if (!field) return null;
+    const card = el.closest('[data-task]');
+    if (!card) return null;
+    let start = null;
+    let end = null;
+    try { start = el.selectionStart; end = el.selectionEnd; } catch (e) { /* ignore */ }
+    return { taskId: card.getAttribute('data-task'), field, qindex: el.getAttribute('data-qindex'), start, end };
+  }
+  function restoreActiveField(a) {
+    let sel = '[data-task="' + a.taskId + '"] [data-field="' + a.field + '"]';
+    if (a.qindex != null) sel += '[data-qindex="' + a.qindex + '"]';
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.focus();
+    if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
   }
 
   function renderSearchBar(shownCount, totalCount) {
@@ -277,7 +314,7 @@
       onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
     }, collapsedDefault ? 'Expand all' : 'Collapse all'));
 
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; composerNeedsFocus = true; resetSearch(); render(); } },
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
@@ -318,7 +355,7 @@
     const area = h('textarea', {
       class: 'composer-area', rows: '10',
       placeholder: 'Describe the story in your own words — goal, context, anything you know. An agent will structure it into title, description and tasks.',
-      oninput: (e) => { composerText = e.target.value; saveBtn.disabled = composerText.trim().length === 0; },
+      oninput: (e) => { composerText = e.target.value; saveBtn.disabled = composerText.trim().length === 0; saveState(); },
     });
     area.value = composerText;
     // Groomer + worker model selectors ('' = default model), mirroring the card selects.
@@ -371,9 +408,9 @@
       area,
       h('div', { class: 'composer-actions' },
         saveBtn,
-        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; render(); } }, 'Cancel'),
-        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; }),
-        modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; }),
+        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; saveState(); render(); } }, 'Cancel'),
+        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }),
+        modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
     );
   }
@@ -620,7 +657,7 @@
 
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (u.editingTitle) {
-      const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title' });
+      const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
       const commitTitle = () => {
         const val = input.value.trim();
@@ -794,7 +831,7 @@
     const u = getUi(t.id);
     const wrap = h('div', { class: 'desc-wrap' });
     if (u.editingDesc) {
-      const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…' });
+      const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…', 'data-field': 'description' });
       ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
       autoGrow(ta);
       const commitDesc = () => {
@@ -844,6 +881,15 @@
     const isNew = t.phase === 'new';
     const wrap = h('div', { class: 'qa-list' });
     let answered = 0;
+    let progressEl;
+    const progressText = () => isNew
+      ? `${answered} of ${t.questions.length} questions answered.`
+      : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
+    // Save All (t-f86b): commits every question whose draft differs from its saved answer, in one
+    // click. Only enabled once more than one question has an unsaved draft (a single one already
+    // has its own per-question Save).
+    const commits = [];
+    let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
     t.questions.forEach((q, i) => {
       if (q.answered) answered++;
       const block = h('div', {});
@@ -853,7 +899,7 @@
       });
       block.append(h('div', { class: 'question' }, h('span', {}, '❓'), qText));
       const aw = h('div', { class: 'answer-wrap' });
-      const ta = h('textarea', { class: 'field', rows: '2', placeholder: isNew
+      const ta = h('textarea', { class: 'field', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
         : 'Type your answer — the worker resumes when every question is answered.' });
       ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : q.answer;
@@ -863,27 +909,54 @@
         sendPatch(t.id, 'answer', val, q.answer, i);
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
+        // Targeted in-place update (no render()): a full repaint here would destroy the
+        // still-focused textarea/caret, which is exactly what the isEditing()/pendingBoard
+        // deferral exists to prevent — see t-2b96.
+        const isAnswered = val.trim().length > 0;
+        if (isAnswered !== q.answered) {
+          q.answered = isAnswered;
+          answered += isAnswered ? 1 : -1;
+          if (progressEl) progressEl.textContent = progressText();
+        }
+        const existingChip = aw.querySelector('.answered');
+        if (isAnswered && !existingChip) {
+          aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
+        } else if (!isAnswered && existingChip) {
+          existingChip.remove();
+        }
+        updateSaveAll();
       };
       const saveBtn = h('button', {
         class: 'btn-sm primary field-save-btn', type: 'button',
         disabled: ta.value === q.answer,
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
-      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; });
+      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
       ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
       wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         const link = '[' + filename + '](' + path + ')';
         ta.value = ta.value + (ta.value.trim() ? '\n\n' : '') + link;
         commitAnswer();
       });
+      commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
       aw.append(ta, saveBtn);
       if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
       block.append(aw);
       wrap.append(block);
     });
-    wrap.append(h('div', { class: 'progress' }, isNew
-      ? `${answered} of ${t.questions.length} questions answered.`
-      : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`));
+    progressEl = h('div', { class: 'progress' }, progressText());
+    wrap.append(progressEl);
+    if (t.questions.length > 1) {
+      const saveAllBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: true,
+        title: 'Save every question whose answer changed',
+        onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
+      }, 'Save All');
+      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length <= 1; };
+      updateSaveAll();
+      wrap.append(h('div', { class: 'approve-row' }, saveAllBtn));
+    }
     return wrap;
   }
 
@@ -898,7 +971,7 @@
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
         h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, '⚠️ ' + t.feedback)));
     }
-    const ta = h('textarea', { class: 'field', rows: '2', placeholder: 'Write review feedback…' });
+    const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
     autoGrow(ta);
     const commitFeedback = () => {
@@ -924,7 +997,7 @@
     const u = getUi(t.id);
     const wrap = h('div', { class: 'note-wrap' });
     if (u.noteOpen) {
-      const ta = h('textarea', { class: 'field', rows: '2', placeholder: "Instruction for the worker's next pass…" });
+      const ta = h('textarea', { class: 'field', 'data-field': 'note', rows: '2', placeholder: "Instruction for the worker's next pass…" });
       ta.value = u.noteDraft || '';
       const commitNote = () => {
         const d = (u.noteDraft || '').trim();
