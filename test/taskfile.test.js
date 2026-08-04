@@ -21,9 +21,19 @@ test('parses every canonical section', () => {
   assert.deepEqual(d.dependsOn, ['t-9c2e', 't-dd01']);
   assert.ok(d.description.startsWith('Retries for failed webhook deliveries.'));
   assert.ok(d.description.includes('Second paragraph'), 'multi-line description preserved');
-  assert.deepEqual(d.worklog, ['2026-07-08', '2026-07-09']);
+  assert.deepEqual(d.worklog, [
+    '2026-07-08',
+    '2026-07-09 (opus): claim blocked\n  continuation line one\n  continuation line two',
+  ]);
   assert.ok(d.delivered.startsWith('Added exponential backoff'));
   assert.equal(d.unknownLines.length, 0);
+});
+
+test('wrapped worklog continuation lines attach to their entry, not unknownLines', () => {
+  const src = readFix('taskfile-full.md');
+  const d = parseTaskFile(src);
+  assert.equal(d.worklog.length, 2, 'continuation lines must not become extra worklog entries');
+  assert.equal(d.unknownLines.length, 0, 'continuation lines must not land in unknownLines');
 });
 
 test('fixpoint: serialize(parse(x)) is idempotent', () => {

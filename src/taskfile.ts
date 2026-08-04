@@ -84,12 +84,20 @@ export function parseTaskFile(text: string): TaskDetail {
         break;
       }
       case 'worklog': {
+        let current: string[] | null = null;
         for (const line of body) {
           if (line.trim() === '') continue;
           const m = line.match(/^\s*-\s+(.*)$/);
-          if (m) detail.worklog.push(m[1].trim());
-          else detail.unknownLines.push(line);
+          if (m) {
+            if (current) detail.worklog.push(current.join('\n'));
+            current = [m[1].trim()];
+          } else if (current) {
+            current.push(line);
+          } else {
+            detail.unknownLines.push(line);
+          }
         }
+        if (current) detail.worklog.push(current.join('\n'));
         break;
       }
       case 'delivered': {
@@ -122,7 +130,13 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
   if (meta.length) blocks.push(['## Meta', ...meta].join('\n'));
 
   if (detail.description) blocks.push(`## Description\n\n${detail.description}`);
-  if (detail.worklog.length) blocks.push(['## Worklog', ...detail.worklog.map((d) => `- ${d}`)].join('\n'));
+  if (detail.worklog.length) {
+    const worklogLines = detail.worklog.flatMap((d) => {
+      const [first, ...rest] = d.split('\n');
+      return [`- ${first}`, ...rest];
+    });
+    blocks.push(['## Worklog', ...worklogLines].join('\n'));
+  }
   if (detail.delivered) blocks.push(`## Delivered\n\n${detail.delivered}`);
 
   // Unknown headings/content, preserved verbatim at the end.
