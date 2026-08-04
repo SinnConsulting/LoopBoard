@@ -689,17 +689,67 @@
     out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');
     return out;
   }
-  function mdToHtml(src) {
-    const escaped = escapeHtml(src);
-    const html = escaped.split(/(`[^`]+`)/).map((p) =>
+  // Inline pass for a single block's text (heading, list item, or paragraph run). `text` is raw
+  // user input: escape FIRST, then split off `code` spans, then run the inline renderer on the
+  // rest — so the only tags reaching the DOM are the ones we emit (escape-first XSS invariant).
+  function renderInline(text) {
+    return escapeHtml(text).split(/(`[^`]+`)/).map((p) =>
       p.length >= 2 && p[0] === '`' && p[p.length - 1] === '`'
         ? '<code>' + p.slice(1, -1) + '</code>'
         : renderInlineMd(p)).join('');
-    // Markdown soft-wrap: a single newline is a soft wrap (space) so hard-wrapped source flows to
-    // the full card width; a blank line is a paragraph break (<br><br>).
-    return html
-      .replace(/\n{2,}/g, '<br><br>')
-      .replace(/\n/g, ' ');
+  }
+  // Block-level pass: classifies each line as an ATX heading (#..######), an unordered (- / *) or
+  // ordered (1.) list item, or paragraph text, and delegates each block's content to renderInline.
+  // The classifier only inspects RAW markers; user text is always escaped before it lands in a tag.
+  // Plain (marker-free) descriptions keep the legacy soft-wrap behaviour: single newline = space,
+  // blank line = paragraph break (<br><br>), no <p> wrapper.
+  function mdToHtml(src) {
+    const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
+    const parts = [];
+    let para = [];
+    let listType = null;
+    let listItems = [];
+    const flushPara = () => {
+      if (para.length) { parts.push({ t: 'p', html: renderInline(para.join('\n')).replace(/\n/g, ' ') }); para = []; }
+    };
+    const flushList = () => {
+      if (listItems.length) {
+        parts.push({ t: 'block', html: '<' + listType + '>'
+          + listItems.map((it) => '<li>' + renderInline(it) + '</li>').join('') + '</' + listType + '>' });
+        listItems = []; listType = null;
+      }
+    };
+    for (const line of lines) {
+      const heading = /^ {0,3}(#{1,6})\s+(.*)$/.exec(line);
+      const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+      const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+      if (heading) {
+        flushPara(); flushList();
+        const level = heading[1].length;
+        parts.push({ t: 'block', html: '<h' + level + '>' + renderInline(heading[2]) + '</h' + level + '>' });
+      } else if (ul || ol) {
+        flushPara();
+        const type = ul ? 'ul' : 'ol';
+        if (listType && listType !== type) flushList();
+        listType = type;
+        listItems.push(ul ? ul[1] : ol[1]);
+      } else if (line.trim() === '') {
+        flushList(); flushPara();
+      } else {
+        flushList(); para.push(line);
+      }
+    }
+    flushPara(); flushList();
+    // Assemble: consecutive paragraphs (always blank-line separated) get <br><br>; headings/lists
+    // are block elements and rely on their own CSS margins for spacing.
+    let html = '';
+    let prevWasP = false;
+    for (const part of parts) {
+      if (part.t === 'p' && prevWasP) html += '<br><br>';
+      html += part.html;
+      prevWasP = part.t === 'p';
+    }
+    return html;
   }
 
   function renderDescription(t) {
@@ -763,7 +813,7 @@
     t.questions.forEach((q, i) => {
       if (q.answered) answered++;
       const block = h('div', {});
-      const qText = h('span', { style: { fontSize: '13px', lineHeight: '1.5' }, html: mdToHtml(q.text) });
+      const qText = h('div', { class: 'q-text', html: mdToHtml(q.text) });
       qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
