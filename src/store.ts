@@ -10,7 +10,7 @@ import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
-import { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } from './gates';
+import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
 import { Mutex } from './serialize';
 
@@ -215,6 +215,29 @@ export class Store {
       await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
       return { status: 'applied' };
     });
+  }
+
+  // Demote a Backlog task back to New: inverse of promote. Re-checks the on-disk phase after
+  // re-parsing — a loop may have claimed the task between render and click — and refuses
+  // (status: 'conflict') if it's no longer Backlog, so a race never yanks work out from under
+  // a worker (Disk wins, same conflict model as field patches).
+  async demote(taskId: string, today: string): Promise<SaveOutcome> {
+    const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+    const entry = doc.entries.find((e) => e.id === taskId);
+    if (!entry) return { status: 'notfound' };
+    if (entry.phase !== 'backlog') return { status: 'conflict' };
+
+    const detailText = await this.readFile(this.taskUri(entry.id));
+    const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+    const before = indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id);
+    demoteIndex(entry);
+    demoteDetail(detail, today);
+    if (indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id) !== before) bumpRev(entry);
+    await this.atomicWrite(this.todoUri, serializeTodo(doc));
+
+    await this.ensureTasksDir();
+    await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+    return { status: 'applied' };
   }
 
   // Accept a Review task: (1) set completed: in the task file; (2) prepend to DONE.md; (3) remove

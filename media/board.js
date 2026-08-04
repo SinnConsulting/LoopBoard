@@ -34,6 +34,7 @@
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -590,6 +591,18 @@
           }
         },
       }, icon(SVG.check), 'Approve'));
+    }
+    // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
+    // Non-negotiable #5): Backlog cards only, an active/owned task must never be yankable out
+    // from under a worker. Fires immediately (no confirm modal, non-destructive/reversible) and
+    // does NOT fade the card optimistically — a race-refused demote (the store re-checks the
+    // on-disk phase) would otherwise flicker on the refresh that restores it.
+    if (variant === 'backlog') {
+      head.append(h('button', {
+        class: 'btn-sm secondary demote-btn', type: 'button',
+        'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
+        onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
+      }, icon(SVG.undo), 'Demote'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
