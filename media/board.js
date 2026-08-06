@@ -825,8 +825,10 @@
       ? `${answered} of ${t.questions.length} questions answered.`
       : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
     // Save All (t-f86b): commits every question whose draft differs from its saved answer, in one
-    // click. Only enabled once more than one question has an unsaved draft (a single one already
-    // has its own per-question Save).
+    // click. Enabled whenever at least one question has an unsaved draft — even just one, since
+    // the user may reach for Save All after already saving other answers individually (t-623d);
+    // it then overlaps that lone question's own per-question Save, which is fine, both do the
+    // same thing.
     const commits = [];
     let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
     t.questions.forEach((q, i) => {
@@ -887,7 +889,7 @@
         title: 'Save every question whose answer changed',
         onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
       }, 'Save All');
-      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length <= 1; };
+      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length < 1; };
       updateSaveAll();
       wrap.append(h('div', { class: 'approve-row' }, saveAllBtn));
     }
