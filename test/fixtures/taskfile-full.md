@@ -15,7 +15,9 @@ Second paragraph with **bold** and a `code` span.
 
 ## Worklog
 - 2026-07-08
-- 2026-07-09
+- 2026-07-09 (opus): claim blocked
+  continuation line one
+  continuation line two
 
 ## Delivered
 
