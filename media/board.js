@@ -617,10 +617,19 @@
     // on-disk phase) would otherwise flicker on the refresh that restores it.
     if (variant === 'backlog') {
       head.append(h('button', {
-        class: 'btn-sm secondary demote-btn', type: 'button',
+        class: 'btn-sm primary demote-btn', type: 'button',
         'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
         onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
       }, icon(SVG.undo), 'Demote'));
+    }
+    // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
+    // visible even collapsed since `head` always renders (see the removed bottom .approve-row).
+    if (variant === 'review') {
+      head.append(h('button', {
+        class: 'btn-sm primary approve-btn', type: 'button',
+        'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
+        onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
+      }, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
@@ -667,15 +676,6 @@
       card.append(renderNote(t));
     }
 
-    // accept gate (Rule 1): single Approve button, bottom-right — visible even collapsed
-    if (variant === 'review') {
-      card.append(h('div', { class: 'approve-row' },
-        h('button', {
-          class: 'btn-sm primary approve-btn', type: 'button',
-          'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
-          onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
-        }, icon(SVG.check), 'Approve')));
-    }
     return card;
   }
 
