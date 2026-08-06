@@ -44,15 +44,6 @@ for the sidebar summary, then **Open Board** (or run `LoopBoard: Open Board`).
 
 ---
 
-**⚠️ Beta:** still under active development — expect rough edges and breaking changes between
-versions.
-
-> **⚠️ v2.0.0 is breaking — re-initialize your workspace.** v2 moved storage from a single root
-> `TODO.md` into a `.loopboard/` directory (details below). There is **no migration**: the
-> extension only recognizes the new layout and ignores a root `TODO.md`. Run
-> **`LoopBoard: Initialize Workspace`** (or the board's empty-state button) to scaffold
-> `.loopboard/`, then port any old tasks by hand.
-
 LoopBoard is a VSCode extension that renders the open workspace's `.loopboard/` tracker as an
 interactive board: tick approval checkboxes, answer an AI worker's questions, review delivered
 work, and spawn per-model Claude Code loop terminals — without editing markdown by hand. Accepted

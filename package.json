@@ -4,7 +4,6 @@
   "description": "Turn TODO.md into an interactive Kanban board and run autonomous Claude Code agent loops per task; markdown stays the source of truth.",
   "version": "2.19.0",
   "publisher": "SinnConsulting",
-  "preview": true,
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
   "galleryBanner": {
