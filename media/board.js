@@ -289,6 +289,7 @@
         'aria-current': selected ? 'true' : 'false',
         onclick: () => { phase = meta.key; composerOpen = false; resetSearch(); saveState(); render(); },
       });
+      tab.append(h('span', { class: 'codicon codicon-split-horizontal tab-icon' }));
       tab.append(h('span', { class: 'tab-label' }, meta.label));
       if (phaseAttention(meta.key)) {
         tab.append(h('span', { class: 'attn-dot pulse' }));
@@ -443,7 +444,7 @@
 
   function linkAnchor(url) {
     const label = prLabel(url);
-    return h('a', { class: 'link', href: '#', onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url }); } }, label + ' ↗');
+    return h('a', { class: 'link', href: '#', onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url }); } }, label + ' ', h('span', { class: 'codicon codicon-link-external' }));
   }
   function prLabel(url) {
     const m = String(url).match(/(\d+)(?:\/?$)/);
@@ -532,6 +533,8 @@
       title: isCollapsedCard ? 'Expand card' : 'Collapse card',
       onclick: () => toggleCollapse(t.id),
     }, icon(SVG.chevron)));
+
+    head.append(h('span', { class: 'codicon codicon-project card-type-icon' }));
 
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (u.editingTitle) {
@@ -681,7 +684,7 @@
           if (!exists) { pushToast('warning', dep.id + ' not found'); return; }
           revealTask(dep.id);
         },
-      }, 'depends on ' + dep.id + (dep.met ? ' ✓' : ' ⚠')));
+      }, 'depends on ' + dep.id + ' ', h('span', { class: 'codicon codicon-' + (dep.met ? 'check' : 'warning') })));
     }
     return chips;
   }
@@ -780,7 +783,7 @@
       qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
-      block.append(h('div', { class: 'question' }, h('span', {}, '❓'), qText));
+      block.append(h('div', { class: 'question' }, h('span', { class: 'codicon codicon-question' }), qText));
       const aw = h('div', { class: 'answer-wrap' });
       const ta = h('textarea', { class: 'field', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
@@ -847,7 +850,7 @@
     if (t.feedback) {
       wrap.append(h('div', { class: 'amber-block' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, '⚠️ ' + t.feedback)));
+        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ' + t.feedback)));
     }
     const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
@@ -897,7 +900,7 @@
         h('span', { class: 'muted-11' }, 'The worker applies this instruction on its next pass, then removes the note.')));
     } else if (t.note) {
       wrap.append(h('div', { class: 'note-chip' },
-        h('span', {}, 'Note: ⏳ ' + t.note),
+        h('span', {}, 'Note: ', h('span', { class: 'codicon codicon-clock' }), ' ' + t.note),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Retract note', title: 'Retract note', style: { width: '20px', height: '20px' }, onclick: () => sendPatch(t.id, 'note', '', t.note) }, icon(SVG.x))));
     } else {
       wrap.append(h('button', { class: 'link-btn', type: 'button', onclick: () => { u.noteOpen = true; render(); } }, '＋ Note to worker'));
