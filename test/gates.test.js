@@ -8,7 +8,7 @@ const path = require('node:path');
 
 const { parseTodo } = require('../out-test/parser.js');
 const { parseTaskFile } = require('../out-test/taskfile.js');
-const { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } = require('../out-test/gates.js');
+const { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } = require('../out-test/gates.js');
 
 const FIX = path.join(process.cwd(), 'test', 'fixtures');
 function readFix(name) {
@@ -29,6 +29,25 @@ test('promoteDetail: sets promoted + logs the day (no duplicate)', () => {
   assert.equal(detail.promoted, '2026-07-11');
   assert.deepEqual(detail.worklog, ['2026-07-11'], 'existing day not duplicated');
   promoteDetail(detail, '2026-07-12');
+  assert.deepEqual(detail.worklog, ['2026-07-11', '2026-07-12']);
+});
+
+test('demoteIndex: phase -> new, checkbox reset (inverse of promoteIndex)', () => {
+  const entry = parseTodo(readFix('index-full.md')).entries.find((e) => e.id === 't-aa01');
+  entry.phase = 'backlog';
+  entry.checked = true;
+  demoteIndex(entry);
+  assert.equal(entry.phase, 'new');
+  assert.equal(entry.checked, false);
+});
+
+test('demoteDetail: clears promoted + logs the day (no duplicate)', () => {
+  const detail = parseTaskFile('# X (t-1)\n\n## Meta\n- promoted: 2026-07-11\n\n## Worklog\n- 2026-07-11\n');
+  assert.equal(detail.promoted, '2026-07-11');
+  demoteDetail(detail, '2026-07-11');
+  assert.equal(detail.promoted, undefined);
+  assert.deepEqual(detail.worklog, ['2026-07-11'], 'existing day not duplicated');
+  demoteDetail(detail, '2026-07-12');
   assert.deepEqual(detail.worklog, ['2026-07-11', '2026-07-12']);
 });
 

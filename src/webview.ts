@@ -17,6 +17,7 @@ export async function renderHtml(
   const htmlUri = vscode.Uri.joinPath(mediaUri, `${page}.html`);
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, `${page}.css`));
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, `${page}.js`));
+  const codiconUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, 'codicon', 'codicon.css'));
   const n = nonce();
   const bytes = await vscode.workspace.fs.readFile(htmlUri);
   const template = new TextDecoder().decode(bytes);
@@ -31,5 +32,6 @@ export async function renderHtml(
     .replace(/{{csp}}/g, csp)
     .replace(/{{nonce}}/g, n)
     .replace(/{{styleUri}}/g, styleUri.toString())
-    .replace(/{{scriptUri}}/g, scriptUri.toString());
+    .replace(/{{scriptUri}}/g, scriptUri.toString())
+    .replace(/{{codiconUri}}/g, codiconUri.toString());
 }

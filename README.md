@@ -6,32 +6,48 @@
 
 [![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml)
 [![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml)
+[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/SinnConsulting.loopboard-todo?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=SinnConsulting.loopboard-todo)
 
 **Your `TODO.md`, as a live board your AI agents work from.**
 
 *Write stories in plain markdown — agent loops groom, build, and deliver them while you keep the only two keys that matter: what gets started, and what gets accepted.*
 
-**⚠️ Beta:** still under active development — expect rough edges and breaking changes between
-versions.
-
 </div>
+
+![LoopBoard board in motion](media/screenshot-board.gif)
+
+## Install
+
+1. Open the Extensions view in VSCode (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+2. Search for **LoopBoard** and click **Install** — or install from the
+   [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=SinnConsulting.loopboard-todo) directly.
+
+## Why LoopBoard
+
+- **Markdown stays the source of truth.** Every edit re-reads the disk, applies one field-level
+  patch, and writes the whole file back canonically (atomic temp-file + rename) — humans, the
+  board, and multiple agent loops can share it safely.
+- **Agent loops do the grooming and the work.** Write a story in plain text; a model expands it
+  into a full spec, another claims and delivers it, all without you touching markdown by hand.
+- **You keep only the two keys that matter.** Promote (New → Backlog) and accept (Review → Done)
+  are the only human gates — everything else is a field patch the loops react to.
+- **Per-model loop terminals, spawned from the sidebar.** Assign a groomer and a worker model per
+  task and watch them run in plain VSCode terminals.
+- **Nothing leaves your machine.** LoopBoard drives your own locally-authenticated Claude Code CLI
+  against your own workspace files.
+
+## Quick start
+
+Run **`LoopBoard: Initialize Workspace`** from the Command Palette (or the board's empty-state
+button) to scaffold `.loopboard/` in your workspace. Click the LoopBoard icon in the activity bar
+for the sidebar summary, then **Open Board** (or run `LoopBoard: Open Board`).
 
 ---
 
 LoopBoard is a VSCode extension that renders the open workspace's `.loopboard/` tracker as an
 interactive board: tick approval checkboxes, answer an AI worker's questions, review delivered
-work, and spawn per-model Claude Code loop terminals — without editing markdown by hand.
-
-> **⚠️ v2.0.0 is breaking — re-initialize your workspace.** v2 moved storage from a single root
-> `TODO.md` into a `.loopboard/` directory (details below). There is **no migration**: the
-> extension only recognizes the new layout and ignores a root `TODO.md`. Run
-> **`LoopBoard: Initialize Workspace`** (or the board's empty-state button) to scaffold
-> `.loopboard/`, then port any old tasks by hand.
-
-Markdown stays the single source of truth. Every edit re-reads the disk, applies one field-level
-patch, and writes the whole file back canonically (atomic temp-file + rename), so humans, the
-board, and multiple agent loops can share it safely — now per file. Accepted work is archived to
-`.loopboard/DONE.md`.
+work, and spawn per-model Claude Code loop terminals — without editing markdown by hand. Accepted
+work is archived to `.loopboard/DONE.md`.
 
 ## Storage layout
 
@@ -96,7 +112,7 @@ through into the board:
 |---|---|
 | ![LoopBoard sidebar](media/screenshot-sidebar.png) | **Attention banner** ("7 items need you") rolls up everything currently waiting on you across the workspace, broken down into 👀 tasks sitting in **Review** and 🆕 groomed proposals sitting in **New** ready to promote.<br><br>**Phases** lists every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count, so you can see where work is piling up without opening the full board.<br><br>**Loops** shows one row per model (Opus, Sonnet, Fable) with its assigned role (`default` or a specific `model:`), a status dot for whether its terminal is running, and three controls: ▶ spawn/resume its loop terminal, ↻ recycle it (kill and restart), and ⏹ stop it.<br><br>**Settings** opens the extension's configuration (permission mode, default model, loop interval, auto-recycle). |
 
-## Quick start
+## Development / Contributing
 
 Open this folder in VSCode and press **F5** to start the Extension Development Host. The host
 opens against this repo, whose `.loopboard/` tracker drives the board — if it has none yet, run

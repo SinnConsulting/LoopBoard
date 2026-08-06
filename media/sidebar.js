@@ -70,22 +70,22 @@
     const list = h('div', { class: 'attn-list sb-section' });
     const rows = [];
     if (b.feedbackUnanswered > 0) {
-      rows.push({ icon: '❓', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback' });
+      rows.push({ icon: 'comment-discussion', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback' });
     }
     if (b.newUnanswered > 0) {
-      rows.push({ icon: '❓', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' — New', phase: 'new' });
+      rows.push({ icon: 'issues', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' — New', phase: 'new' });
     }
     if (b.reviewCount > 0) {
       const id = soleId('review', () => true);
-      rows.push({ icon: '👀', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
+      rows.push({ icon: 'eye', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
     }
     if (b.newCount > 0) {
       const id = soleId('new', () => true);
-      rows.push({ icon: '🆕', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
+      rows.push({ icon: 'check-all', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
     }
     for (const r of rows) {
       list.append(h('button', { class: 'attn-row', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: r.phase }) },
-        h('span', { class: 'ico' }, r.icon), h('span', { class: 'txt' }, r.text)));
+        h('span', { class: 'ico codicon codicon-' + r.icon }), h('span', { class: 'txt' }, r.text)));
     }
     if (rows.length) sb.append(list);
 

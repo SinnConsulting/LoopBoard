@@ -103,8 +103,10 @@ on first use. Detail remains in `tasks/<id>.md`.
 ## Rules
 
 1. `[x]` belongs to the human only; a worker never ticks it. `[x]` on New = promote to
-   Backlog. `[x]` on Review = accepted → DONE.md (procedure in the Automation block). Workers
-   perform all other phase moves and propose.
+   Backlog. `[x]` on Review = accepted → DONE.md (procedure in the Automation block). The board
+   also offers Demote (Backlog → New), a third human-only, board-initiated action — not a tick,
+   fires immediately from a button, non-destructive/reversible. Workers perform all other phase
+   moves and propose; workers never demote a task themselves.
 2. One worker per task, and a GLOBAL SINGLE-TASK LIMIT: at most ONE task may be
    `phase: inprogress` across the whole board at any moment, regardless of model. If ANY task
    (even another model's) is In Progress, no loop starts a Backlog task or resumes a
@@ -189,8 +191,8 @@ Notes:
 - The interval comes from `loopBoard.loopInterval` (default 1m) and rides in the spawn
   command, so changing it means recycling the terminal — everything else above is re-read
   live each pass.
-- Human gates hold: loops never promote New tasks or accept Review tasks (both need the
-  human's `[x]`) and park uncertainty in Feedback. The extension's ▶ buttons start the
-  per-model loops.
+- Human gates hold: loops never promote New tasks, accept Review tasks (both need the human's
+  `[x]`), or demote Backlog tasks (a direct board click) — and park uncertainty in Feedback.
+  The extension's ▶ buttons start the per-model loops.
 - Stop a loop via its status line, or cancel the scheduled task in the session.
 <!-- loopboard:sync:automation:end -->

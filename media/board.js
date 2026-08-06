@@ -34,6 +34,7 @@
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -299,6 +300,7 @@
         'aria-current': selected ? 'true' : 'false',
         onclick: () => { phase = meta.key; composerOpen = false; resetSearch(); saveState(); render(); },
       });
+      tab.append(h('span', { class: 'codicon codicon-split-horizontal tab-icon' }));
       tab.append(h('span', { class: 'tab-label' }, meta.label));
       if (phaseAttention(meta.key)) {
         tab.append(h('span', { class: 'attn-dot pulse' }));
@@ -314,7 +316,12 @@
       onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
     }, collapsedDefault ? 'Expand all' : 'Collapse all'));
 
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
+    // Reopen the composer WITHOUT clearing its draft: a non-empty composerText only ever survives
+    // as a genuinely-unsaved draft (Cancel and Save draft both reset it), so wiping here would lose
+    // text the user typed before switching phase tabs and clicking New Story again — see t-ntx1.
+    // composerNeedsFocus stays set so the textarea auto-focuses on open (t-att1), letting an
+    // immediate paste land on it.
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
@@ -481,7 +488,7 @@
 
   function linkAnchor(url) {
     const label = prLabel(url);
-    return h('a', { class: 'link', href: '#', onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url }); } }, label + ' ↗');
+    return h('a', { class: 'link', href: '#', onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url }); } }, label + ' ', h('span', { class: 'codicon codicon-link-external' }));
   }
   function prLabel(url) {
     const m = String(url).match(/(\d+)(?:\/?$)/);
@@ -655,6 +662,8 @@
       onclick: () => toggleCollapse(t.id),
     }, icon(SVG.chevron)));
 
+    head.append(h('span', { class: 'codicon codicon-project card-type-icon' }));
+
     const titleWrap = h('div', { class: 'card-title-wrap' });
     if (u.editingTitle) {
       const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
@@ -713,6 +722,18 @@
           }
         },
       }, icon(SVG.check), 'Approve'));
+    }
+    // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
+    // Non-negotiable #5): Backlog cards only, an active/owned task must never be yankable out
+    // from under a worker. Fires immediately (no confirm modal, non-destructive/reversible) and
+    // does NOT fade the card optimistically — a race-refused demote (the store re-checks the
+    // on-disk phase) would otherwise flicker on the refresh that restores it.
+    if (variant === 'backlog') {
+      head.append(h('button', {
+        class: 'btn-sm secondary demote-btn', type: 'button',
+        'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
+        onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
+      }, icon(SVG.undo), 'Demote'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
@@ -792,7 +813,7 @@
           if (!exists) { pushToast('warning', dep.id + ' not found'); return; }
           revealTask(dep.id);
         },
-      }, 'depends on ' + dep.id + (dep.met ? ' ✓' : ' ⚠')));
+      }, 'depends on ' + dep.id + ' ', h('span', { class: 'codicon codicon-' + (dep.met ? 'check' : 'warning') })));
     }
     return chips;
   }
@@ -814,17 +835,67 @@
     out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');
     return out;
   }
-  function mdToHtml(src) {
-    const escaped = escapeHtml(src);
-    const html = escaped.split(/(`[^`]+`)/).map((p) =>
+  // Inline pass for a single block's text (heading, list item, or paragraph run). `text` is raw
+  // user input: escape FIRST, then split off `code` spans, then run the inline renderer on the
+  // rest — so the only tags reaching the DOM are the ones we emit (escape-first XSS invariant).
+  function renderInline(text) {
+    return escapeHtml(text).split(/(`[^`]+`)/).map((p) =>
       p.length >= 2 && p[0] === '`' && p[p.length - 1] === '`'
         ? '<code>' + p.slice(1, -1) + '</code>'
         : renderInlineMd(p)).join('');
-    // Markdown soft-wrap: a single newline is a soft wrap (space) so hard-wrapped source flows to
-    // the full card width; a blank line is a paragraph break (<br><br>).
-    return html
-      .replace(/\n{2,}/g, '<br><br>')
-      .replace(/\n/g, ' ');
+  }
+  // Block-level pass: classifies each line as an ATX heading (#..######), an unordered (- / *) or
+  // ordered (1.) list item, or paragraph text, and delegates each block's content to renderInline.
+  // The classifier only inspects RAW markers; user text is always escaped before it lands in a tag.
+  // Plain (marker-free) descriptions keep the legacy soft-wrap behaviour: single newline = space,
+  // blank line = paragraph break (<br><br>), no <p> wrapper.
+  function mdToHtml(src) {
+    const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
+    const parts = [];
+    let para = [];
+    let listType = null;
+    let listItems = [];
+    const flushPara = () => {
+      if (para.length) { parts.push({ t: 'p', html: renderInline(para.join('\n')).replace(/\n/g, ' ') }); para = []; }
+    };
+    const flushList = () => {
+      if (listItems.length) {
+        parts.push({ t: 'block', html: '<' + listType + '>'
+          + listItems.map((it) => '<li>' + renderInline(it) + '</li>').join('') + '</' + listType + '>' });
+        listItems = []; listType = null;
+      }
+    };
+    for (const line of lines) {
+      const heading = /^ {0,3}(#{1,6})\s+(.*)$/.exec(line);
+      const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+      const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+      if (heading) {
+        flushPara(); flushList();
+        const level = heading[1].length;
+        parts.push({ t: 'block', html: '<h' + level + '>' + renderInline(heading[2]) + '</h' + level + '>' });
+      } else if (ul || ol) {
+        flushPara();
+        const type = ul ? 'ul' : 'ol';
+        if (listType && listType !== type) flushList();
+        listType = type;
+        listItems.push(ul ? ul[1] : ol[1]);
+      } else if (line.trim() === '') {
+        flushList(); flushPara();
+      } else {
+        flushList(); para.push(line);
+      }
+    }
+    flushPara(); flushList();
+    // Assemble: consecutive paragraphs (always blank-line separated) get <br><br>; headings/lists
+    // are block elements and rely on their own CSS margins for spacing.
+    let html = '';
+    let prevWasP = false;
+    for (const part of parts) {
+      if (part.t === 'p' && prevWasP) html += '<br><br>';
+      html += part.html;
+      prevWasP = part.t === 'p';
+    }
+    return html;
   }
 
   function renderDescription(t) {
@@ -893,11 +964,11 @@
     t.questions.forEach((q, i) => {
       if (q.answered) answered++;
       const block = h('div', {});
-      const qText = h('span', { style: { fontSize: '13px', lineHeight: '1.5' }, html: mdToHtml(q.text) });
+      const qText = h('div', { class: 'q-text', html: mdToHtml(q.text) });
       qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
-      block.append(h('div', { class: 'question' }, h('span', {}, '❓'), qText));
+      block.append(h('div', { class: 'question' }, h('span', { class: 'codicon codicon-question' }), qText));
       const aw = h('div', { class: 'answer-wrap' });
       const ta = h('textarea', { class: 'field', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
@@ -969,7 +1040,7 @@
     if (t.feedback) {
       wrap.append(h('div', { class: 'amber-block' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, '⚠️ ' + t.feedback)));
+        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ' + t.feedback)));
     }
     const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
@@ -1019,7 +1090,7 @@
         h('span', { class: 'muted-11' }, 'The worker applies this instruction on its next pass, then removes the note.')));
     } else if (t.note) {
       wrap.append(h('div', { class: 'note-chip' },
-        h('span', {}, 'Note: ⏳ ' + t.note),
+        h('span', {}, 'Note: ', h('span', { class: 'codicon codicon-clock' }), ' ' + t.note),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Retract note', title: 'Retract note', style: { width: '20px', height: '20px' }, onclick: () => sendPatch(t.id, 'note', '', t.note) }, icon(SVG.x))));
     } else {
       wrap.append(h('button', { class: 'link-btn', type: 'button', onclick: () => { u.noteOpen = true; render(); } }, '＋ Note to worker'));

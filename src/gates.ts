@@ -19,6 +19,20 @@ export function promoteDetail(detail: TaskDetail, today: string): void {
   addWorklog(detail, today);
 }
 
+// Demote (Backlog -> New button) — index side: inverse of promoteIndex. Checkbox stays unticked
+// (awaiting the promote gate again).
+export function demoteIndex(entry: IndexEntry): void {
+  entry.phase = 'new';
+  entry.checked = false;
+}
+
+// Demote — detail side: inverse of promoteDetail. The task was never really promoted, so clear
+// `promoted:` rather than recording a new date; still log the day it was demoted.
+export function demoteDetail(detail: TaskDetail, today: string): void {
+  detail.promoted = undefined;
+  addWorklog(detail, today);
+}
+
 // Accept (tick on Review) — detail side: record completed: and log the day.
 export function acceptDetail(detail: TaskDetail, today: string): void {
   detail.completed = today;

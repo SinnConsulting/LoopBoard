@@ -324,6 +324,11 @@ export class Controller {
       const r = await this.store.acceptToDone(taskId, today());
       if (r.status === 'applied') this.toast('success', 'Accepted — archived to DONE.md ✓');
       else this.toast('warning', 'Could not accept — the task was not found on disk.');
+    } else if (action === 'demote') {
+      const r = await this.store.demote(taskId, today());
+      if (r.status === 'conflict') this.toast('warning', 'Task is no longer in Backlog — the board was refreshed.', taskId);
+      else if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
+      else this.toast('success', 'Demoted to New ✓');
     } else if (action === 'delete') {
       if (!(await this.confirmDelete(taskId, false))) return;
       const r = await this.store.deleteTask(taskId);
