@@ -255,6 +255,20 @@
     if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
   }
 
+  // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
+  // textarea/input (description, title, draft, note). Blurring BEFORE render() matters: render()'s
+  // captureActiveField() reads document.activeElement at the very start, still pointing at the
+  // about-to-be-removed field if we haven't blurred yet — so it recaptures a field that edit mode
+  // just closed, and restoreActiveField() then either re-opens it or (since the post-close view has
+  // no `data-field`) silently no-ops, leaving focus stranded on the now-tabindex=0 view element
+  // instead of released — the "needs a second ESC" bug (t-esc1). Blurring first means
+  // captureActiveField() finds nothing to recapture.
+  function exitFieldEdit(clearFn) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    clearFn();
+    render();
+  }
+
   function renderSearchBar(shownCount, totalCount) {
     const input = h('input', {
       class: 'search-input', id: 'search-input', type: 'text', 'aria-label': 'Filter tasks in this tab',
@@ -489,7 +503,7 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingDraft = false; u.draftText = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
@@ -569,7 +583,7 @@
       }, 'Save');
       input.addEventListener('input', (e) => { u.titleDraft = e.target.value; saveBtn.disabled = e.target.value.trim() === t.title; });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingTitle = false; u.titleDraft = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
       titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
@@ -804,7 +818,7 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingDesc = false; u.descDraft = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
       wrap.append(ta, saveBtn);
@@ -883,7 +897,12 @@
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
       ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
-      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
+      ta.addEventListener('keydown', (e) => {
+        // Answer has no separate view mode to close — Escape discards the unsaved draft back to
+        // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
+        if (e.key === 'Escape') { ta.value = q.answer; delete u.answerDrafts[i]; autoGrow(ta); saveBtn.disabled = true; updateSaveAll(); ta.blur(); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
+      });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
       aw.append(ta, saveBtn);
       if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
@@ -934,7 +953,12 @@
       title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
     }, 'Save');
     ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
-    ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); } });
+    ta.addEventListener('keydown', (e) => {
+      // Feedback has no separate view mode to close — Escape discards the draft (there is no
+      // saved value to revert to) and releases focus (previously a dead key here, t-esc1).
+      if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
+      if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
+    });
     wrap.append(h('div', {}, ta, saveBtn));
     return wrap;
   }
@@ -954,7 +978,10 @@
         render();
       };
       ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); } });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
+      });
       const sendBtn = h('button', {
         class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
         title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
