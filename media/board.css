@@ -208,11 +208,43 @@ textarea { resize: vertical; }
 .desc-rendered a { color: var(--vscode-textLink-foreground, #3794ff); cursor: pointer; text-decoration: none; }
 .desc-rendered a:hover { text-decoration: underline; }
 
+/* Block markdown (t-mkd1): headings + lists, shared by the three mdToHtml consumers
+   (.desc-rendered, .done-detail-text, .q-text). Sized down for compact cards, tight rhythm. */
+.desc-rendered h1, .desc-rendered h2, .desc-rendered h3, .desc-rendered h4, .desc-rendered h5, .desc-rendered h6,
+.done-detail-text h1, .done-detail-text h2, .done-detail-text h3, .done-detail-text h4, .done-detail-text h5, .done-detail-text h6,
+.q-text h1, .q-text h2, .q-text h3, .q-text h4, .q-text h5, .q-text h6 {
+  margin: 8px 0 4px; line-height: 1.3; font-weight: 600;
+}
+.desc-rendered h1, .done-detail-text h1, .q-text h1 { font-size: 16px; }
+.desc-rendered h2, .done-detail-text h2, .q-text h2 { font-size: 15px; }
+.desc-rendered h3, .done-detail-text h3, .q-text h3 { font-size: 14px; }
+.desc-rendered h4, .desc-rendered h5, .desc-rendered h6,
+.done-detail-text h4, .done-detail-text h5, .done-detail-text h6,
+.q-text h4, .q-text h5, .q-text h6 { font-size: 13px; }
+.desc-rendered h1:first-child, .desc-rendered h2:first-child, .desc-rendered h3:first-child,
+.desc-rendered h4:first-child, .desc-rendered h5:first-child, .desc-rendered h6:first-child,
+.done-detail-text h1:first-child, .done-detail-text h2:first-child, .done-detail-text h3:first-child,
+.done-detail-text h4:first-child, .done-detail-text h5:first-child, .done-detail-text h6:first-child,
+.q-text h1:first-child, .q-text h2:first-child, .q-text h3:first-child,
+.q-text h4:first-child, .q-text h5:first-child, .q-text h6:first-child { margin-top: 0; }
+.desc-rendered ul, .desc-rendered ol,
+.done-detail-text ul, .done-detail-text ol,
+.q-text ul, .q-text ol { margin: 4px 0; padding-left: 20px; }
+.desc-rendered li, .done-detail-text li, .q-text li { margin: 2px 0; }
+
 .working { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); }
 .working .loop-dot.on { animation: pulse-dot 1.6s ease-in-out infinite; }
 
 .qa-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .question { display: flex; gap: 8px; align-items: flex-start; background: var(--vscode-textBlockQuote-background, #2c2c2c); border-radius: 4px; padding: 8px 10px; }
+.q-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; word-break: break-word; }
+.q-text code {
+  font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;
+  background: var(--vscode-textCodeBlock-background, rgba(255, 255, 255, 0.1)); padding: 1px 4px; border-radius: 3px;
+}
+.q-text strong { font-weight: 600; }
+.q-text a { color: var(--vscode-textLink-foreground, #3794ff); cursor: pointer; text-decoration: none; }
+.q-text a:hover { text-decoration: underline; }
 .answer-wrap { margin-top: 6px; }
 .field {
   width: 100%; font-size: 13px; line-height: 1.5; font-family: inherit;
