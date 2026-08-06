@@ -364,10 +364,22 @@
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
+    // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
+    // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
+    // when the composer textarea is unfocused (see t-d3dd). onclick stays wired for keyboard
+    // (Enter/Space) activation, which dispatches a synthetic click with no pointerdown.
+    const commitDraft = () => {
+      const t = composerText.trim();
+      if (!t) return;
+      post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
+      composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new';
+      resetSearch(); saveState(); render();
+    };
     const saveBtn = h('button', {
       class: 'btn-primary', type: 'button', disabled: composerText.trim().length === 0, style: { width: 'auto', padding: '8px 16px' },
-      onclick: () => { const t = composerText.trim(); if (!t) return; post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel }); composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new'; resetSearch(); saveState(); render(); },
-    }, 'Save draft');
+      onpointerdown: (e) => { e.preventDefault(); commitDraft(); },
+      onclick: commitDraft,
+    }, 'Save Draft');
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
       h('div', { class: 'pane-explainer' }, 'Describe the story in your own words — an agent structures it for you.'),
