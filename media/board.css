@@ -127,6 +127,11 @@ textarea { resize: vertical; }
 }
 
 .card-head { display: flex; align-items: flex-start; gap: 10px; }
+.card-type-icon { font-size: 14px; margin-top: 3px; flex-shrink: 0; opacity: 0.85; }
+.tab-icon { font-size: 14px; }
+.link .codicon, .chip .codicon, .question .codicon, .amber-block .codicon, .note-chip .codicon {
+  font-size: 13px; flex-shrink: 0;
+}
 .collapse-toggle { margin-top: 2px; }
 .collapse-toggle svg { transition: transform 120ms ease; }
 .collapse-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
