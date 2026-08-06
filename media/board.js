@@ -378,10 +378,21 @@
         h('span', { class: 'muted-11' }, label), sel);
     };
     const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new'; resetSearch(); saveState(); render(); };
+    // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
+    // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
+    // when the composer textarea is unfocused (see t-d3dd). onclick stays wired for keyboard
+    // (Enter/Space) activation, which dispatches a synthetic click with no pointerdown.
+    const commitDraft = () => {
+      const t = composerText.trim();
+      if (!t) return;
+      post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
+      closeComposer();
+    };
     const saveBtn = h('button', {
       class: 'btn-primary', type: 'button', disabled: composerText.trim().length === 0, style: { width: 'auto', padding: '8px 16px' },
-      onclick: () => { const t = composerText.trim(); if (!t) return; post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel }); closeComposer(); },
-    }, 'Save draft');
+      onpointerdown: (e) => { e.preventDefault(); commitDraft(); },
+      onclick: commitDraft,
+    }, 'Save Draft');
     // t-att1: no attach button on the composer — clipboard paste / drag-drop only. There's no
     // task id yet (a draft doesn't exist until saved), so an image here saves the draft first,
     // same as clicking "Save draft", then stages the image onto it in one round trip.
