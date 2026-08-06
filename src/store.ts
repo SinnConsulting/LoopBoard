@@ -10,8 +10,9 @@ import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
-import { promoteIndex, promoteDetail, acceptDetail, acceptDoneEntry } from './gates';
+import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
+import { Mutex } from './serialize';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
 
@@ -43,6 +44,14 @@ export class Store {
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private listeners: (() => void)[] = [];
   private _loopText = '';
+  // Serializes every mutating file operation so their read -> parse -> apply -> write cycles
+  // never interleave. Without this a Save All fan-out (N concurrent applyFieldPatch calls, which
+  // VSCode does not serialize) races on TODO.md: a stale read clobbers a just-saved field, and
+  // two same-instant writes collide on the shared temp file — data loss (t-rac1).
+  private writeLock = new Mutex();
+  // Monotonic counter feeding atomicWrite's temp-file name so two writes in the same millisecond
+  // never target the same temp path.
+  private tmpSeq = 0;
   todoMissing = false;
 
   constructor(private folder: vscode.WorkspaceFolder) {
@@ -135,9 +144,14 @@ export class Store {
     return { preamble: doc.preamble, tasks, done };
   }
 
-  // Atomic write: temp file in the same dir, then rename over the target.
+  // Atomic write: temp file in the same dir, then rename over the target. The temp name mixes a
+  // monotonic counter and a random suffix (not just a millisecond timestamp) so concurrent writes
+  // — even in the same millisecond, or from another Store instance — never collide on one temp
+  // path (which would let the second rename consume a temp the first already moved, losing the
+  // target file).
   private async atomicWrite(uri: vscode.Uri, text: string): Promise<void> {
-    const tmp = uri.with({ path: uri.path + `.tmp-${Date.now()}` });
+    const suffix = `${Date.now()}-${this.tmpSeq++}-${Math.random().toString(36).slice(2, 8)}`;
+    const tmp = uri.with({ path: `${uri.path}.tmp-${suffix}` });
     await vscode.workspace.fs.writeFile(tmp, ENCODER.encode(text));
     await vscode.workspace.fs.rename(tmp, uri, { overwrite: true });
   }
@@ -149,48 +163,75 @@ export class Store {
   // Re-read -> re-parse -> apply one field patch -> serialize whole file -> atomic write.
   // Index fields patch TODO.md; detail fields patch tasks/<id>.md (created if absent).
   async applyFieldPatch(patch: FieldPatch): Promise<SaveOutcome> {
-    if (patchTarget(patch.field) === 'index') {
+    return this.writeLock.run(async () => {
+      if (patchTarget(patch.field) === 'index') {
+        const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+        const entry = doc.entries.find((e) => e.id === patch.taskId);
+        const before = entry ? indexFingerprint(entry) : undefined;
+        const result = applyPatch(doc, patch);
+        if (result.status !== 'applied') return { status: result.status };
+        if (entry && before !== undefined && indexFingerprint(entry) !== before) bumpRev(entry);
+        await this.atomicWrite(this.todoUri, serializeTodo(doc));
+        return { status: 'applied' };
+      }
+      // Detail patch: need the index entry for its id + title (writer rewrites the H1).
       const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
       const entry = doc.entries.find((e) => e.id === patch.taskId);
-      const before = entry ? indexFingerprint(entry) : undefined;
-      const result = applyPatch(doc, patch);
+      if (!entry) return { status: 'notfound' };
+      const detailText = await this.readFile(this.taskUri(entry.id));
+      const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+      const beforeDetail = serializeTaskFile(detail, entry.title, entry.id);
+      const result = applyDetailPatch(detail, patch);
       if (result.status !== 'applied') return { status: result.status };
-      if (entry && before !== undefined && indexFingerprint(entry) !== before) bumpRev(entry);
-      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      await this.ensureTasksDir();
+      const afterDetail = serializeTaskFile(detail, entry.title, entry.id);
+      await this.atomicWrite(this.taskUri(entry.id), afterDetail);
+      // A detail-file change bumps the index entry's rev so a loop that reads only TODO.md still
+      // sees the task changed (the original miss this feature fixes). Readers never write.
+      if (afterDetail !== beforeDetail) {
+        bumpRev(entry);
+        await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      }
       return { status: 'applied' };
-    }
-    // Detail patch: need the index entry for its id + title (writer rewrites the H1).
-    const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
-    const entry = doc.entries.find((e) => e.id === patch.taskId);
-    if (!entry) return { status: 'notfound' };
-    const detailText = await this.readFile(this.taskUri(entry.id));
-    const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-    const beforeDetail = serializeTaskFile(detail, entry.title, entry.id);
-    const result = applyDetailPatch(detail, patch);
-    if (result.status !== 'applied') return { status: result.status };
-    await this.ensureTasksDir();
-    const afterDetail = serializeTaskFile(detail, entry.title, entry.id);
-    await this.atomicWrite(this.taskUri(entry.id), afterDetail);
-    // A detail-file change bumps the index entry's rev so a loop that reads only TODO.md still
-    // sees the task changed (the original miss this feature fixes). Readers never write.
-    if (afterDetail !== beforeDetail) {
-      bumpRev(entry);
-      await this.atomicWrite(this.todoUri, serializeTodo(doc));
-    }
-    return { status: 'applied' };
+    });
   }
 
   // Promote a New task to Backlog: index patch (phase/checkbox) then detail patch (promoted/worklog).
   async promote(taskId: string, today: string): Promise<SaveOutcome> {
+    return this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const entry = doc.entries.find((e) => e.id === taskId);
+      if (!entry) return { status: 'notfound' };
+
+      const detailText = await this.readFile(this.taskUri(entry.id));
+      const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+      const before = indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id);
+      promoteIndex(entry);
+      promoteDetail(detail, today);
+      if (indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id) !== before) bumpRev(entry);
+      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+
+      await this.ensureTasksDir();
+      await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+      return { status: 'applied' };
+    });
+  }
+
+  // Demote a Backlog task back to New: inverse of promote. Re-checks the on-disk phase after
+  // re-parsing — a loop may have claimed the task between render and click — and refuses
+  // (status: 'conflict') if it's no longer Backlog, so a race never yanks work out from under
+  // a worker (Disk wins, same conflict model as field patches).
+  async demote(taskId: string, today: string): Promise<SaveOutcome> {
     const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
     const entry = doc.entries.find((e) => e.id === taskId);
     if (!entry) return { status: 'notfound' };
+    if (entry.phase !== 'backlog') return { status: 'conflict' };
 
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
     const before = indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id);
-    promoteIndex(entry);
-    promoteDetail(detail, today);
+    demoteIndex(entry);
+    demoteDetail(detail, today);
     if (indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id) !== before) bumpRev(entry);
     await this.atomicWrite(this.todoUri, serializeTodo(doc));
 
@@ -203,65 +244,71 @@ export class Store {
   // from TODO.md. DONE is written before the index removal so a crash leaves a visible duplicate
   // rather than a lost task. The task file stays in place.
   async acceptToDone(taskId: string, today: string): Promise<SaveOutcome> {
-    const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
-    const idx = doc.entries.findIndex((e) => e.id === taskId);
-    if (idx < 0) return { status: 'notfound' };
-    const entry = doc.entries[idx];
+    return this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const idx = doc.entries.findIndex((e) => e.id === taskId);
+      if (idx < 0) return { status: 'notfound' };
+      const entry = doc.entries[idx];
 
-    const detailText = await this.readFile(this.taskUri(entry.id));
-    const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-    acceptDetail(detail, today);
-    await this.ensureTasksDir();
-    await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+      const detailText = await this.readFile(this.taskUri(entry.id));
+      const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+      acceptDetail(detail, today);
+      await this.ensureTasksDir();
+      await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
 
-    const doneEntry = acceptDoneEntry(entry, today);
-    const done = parseDone((await this.readFile(this.doneUri)) ?? '');
-    await this.atomicWrite(this.doneUri, serializeDone([doneEntry, ...done]));
+      const doneEntry = acceptDoneEntry(entry, today);
+      const done = parseDone((await this.readFile(this.doneUri)) ?? '');
+      await this.atomicWrite(this.doneUri, serializeDone([doneEntry, ...done]));
 
-    doc.entries.splice(idx, 1);
-    await this.atomicWrite(this.todoUri, serializeTodo(doc));
-    return { status: 'applied' };
+      doc.entries.splice(idx, 1);
+      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      return { status: 'applied' };
+    });
   }
 
   async createDraft(text: string, _today: string, groomer?: string, model?: string): Promise<SaveOutcome> {
-    const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
-    const draft: IndexEntry = {
-      id: '',
-      title: 'DRAFT: ' + text.trim().replace(/\s+/g, ' '),
-      phase: 'new',
-      checked: false,
-      isDraft: true,
-      model: normalizeModel(model ?? ''),
-      groomer: normalizeModel(groomer ?? ''),
-      questions: [],
-      notes: [],
-      feedback: [],
-      unknownLines: [],
-      raw: '',
-    };
-    doc.entries.push(draft);
-    await this.atomicWrite(this.todoUri, serializeTodo(doc));
-    return { status: 'applied' };
+    return this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const draft: IndexEntry = {
+        id: '',
+        title: 'DRAFT: ' + text.trim().replace(/\s+/g, ' '),
+        phase: 'new',
+        checked: false,
+        isDraft: true,
+        model: normalizeModel(model ?? ''),
+        groomer: normalizeModel(groomer ?? ''),
+        questions: [],
+        notes: [],
+        feedback: [],
+        unknownLines: [],
+        raw: '',
+      };
+      doc.entries.push(draft);
+      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      return { status: 'applied' };
+    });
   }
 
   // Scaffold `.loopboard/` (TODO.md + LOOP.md + tasks/). Refuses (created: false, no error) if
   // `.loopboard/` already exists — the caller offers syncTemplates()/previewSync() instead.
   async createInitialFiles(todoText: string, loopText: string): Promise<{ created: boolean; error?: string }> {
-    try {
-      await vscode.workspace.fs.stat(this.loopboardUri);
-      return { created: false };
-    } catch {
-      // does not exist — scaffold it
-    }
-    try {
-      await vscode.workspace.fs.createDirectory(this.loopboardUri);
-      await this.atomicWrite(this.todoUri, todoText);
-      await this.atomicWrite(this.loopUri, loopText);
-      await vscode.workspace.fs.createDirectory(this.tasksDir);
-      return { created: true };
-    } catch (err) {
-      return { created: false, error: err instanceof Error ? err.message : String(err) };
-    }
+    return this.writeLock.run(async () => {
+      try {
+        await vscode.workspace.fs.stat(this.loopboardUri);
+        return { created: false };
+      } catch {
+        // does not exist — scaffold it
+      }
+      try {
+        await vscode.workspace.fs.createDirectory(this.loopboardUri);
+        await this.atomicWrite(this.todoUri, todoText);
+        await this.atomicWrite(this.loopUri, loopText);
+        await vscode.workspace.fs.createDirectory(this.tasksDir);
+        return { created: true };
+      } catch (err) {
+        return { created: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
   }
 
   // Preview what `syncTemplates` would change, without writing anything: whether TODO.md/LOOP.md
@@ -301,29 +348,31 @@ export class Store {
   // touches task entries (TODO.md) or content outside the markers (LOOP.md), except for a legacy
   // unmarked non-empty LOOP.md, which is backed up to LOOP.md.bkp and fully replaced exactly once.
   async syncTemplates(todoTemplate: string, loopTemplate: string): Promise<SaveOutcome> {
-    try {
-      const todoText = await this.readFile(this.todoUri);
-      if (isEmptyOrMissing(todoText)) {
-        await this.atomicWrite(this.todoUri, todoTemplate);
-      } else {
-        const { text: newTodo, changed: todoChanged } = syncTodoPreamble(todoText as string, todoTemplate);
-        if (todoChanged) await this.atomicWrite(this.todoUri, newTodo);
-      }
+    return this.writeLock.run(async () => {
+      try {
+        const todoText = await this.readFile(this.todoUri);
+        if (isEmptyOrMissing(todoText)) {
+          await this.atomicWrite(this.todoUri, todoTemplate);
+        } else {
+          const { text: newTodo, changed: todoChanged } = syncTodoPreamble(todoText as string, todoTemplate);
+          if (todoChanged) await this.atomicWrite(this.todoUri, newTodo);
+        }
 
-      const loopText = await this.readFile(this.loopUri);
-      if (isEmptyOrMissing(loopText)) {
-        await this.atomicWrite(this.loopUri, loopTemplate);
-      } else if (!hasMarkers(loopText as string)) {
-        await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), loopText as string);
-        await this.atomicWrite(this.loopUri, loopTemplate);
-      } else {
-        const { text: newLoop, changedIds } = syncMarkedSections(loopText as string, loopTemplate);
-        if (changedIds.length) await this.atomicWrite(this.loopUri, newLoop);
+        const loopText = await this.readFile(this.loopUri);
+        if (isEmptyOrMissing(loopText)) {
+          await this.atomicWrite(this.loopUri, loopTemplate);
+        } else if (!hasMarkers(loopText as string)) {
+          await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), loopText as string);
+          await this.atomicWrite(this.loopUri, loopTemplate);
+        } else {
+          const { text: newLoop, changedIds } = syncMarkedSections(loopText as string, loopTemplate);
+          if (changedIds.length) await this.atomicWrite(this.loopUri, newLoop);
+        }
+        return { status: 'applied' };
+      } catch (err) {
+        return { status: 'error', message: err instanceof Error ? err.message : String(err) };
       }
-      return { status: 'applied' };
-    } catch (err) {
-      return { status: 'error', message: err instanceof Error ? err.message : String(err) };
-    }
+    });
   }
 
   // Create-only auto-heal: run automatically on activation against an EXISTING `.loopboard/`
@@ -332,39 +381,45 @@ export class Store {
   // byte-for-byte untouched. Shares `isEmptyOrMissing` with `syncTemplates` so the two paths agree
   // on what counts as "missing or empty".
   async autoHeal(todoTemplate: string, loopTemplate: string): Promise<void> {
-    try {
-      await vscode.workspace.fs.stat(this.loopboardUri);
-    } catch {
-      return; // no .loopboard/ yet — nothing to heal
-    }
-    if (isEmptyOrMissing(await this.readFile(this.todoUri))) await this.atomicWrite(this.todoUri, todoTemplate);
-    if (isEmptyOrMissing(await this.readFile(this.loopUri))) await this.atomicWrite(this.loopUri, loopTemplate);
+    return this.writeLock.run(async () => {
+      try {
+        await vscode.workspace.fs.stat(this.loopboardUri);
+      } catch {
+        return; // no .loopboard/ yet — nothing to heal
+      }
+      if (isEmptyOrMissing(await this.readFile(this.todoUri))) await this.atomicWrite(this.todoUri, todoTemplate);
+      if (isEmptyOrMissing(await this.readFile(this.loopUri))) await this.atomicWrite(this.loopUri, loopTemplate);
+    });
   }
 
   // Delete an unaccepted task: remove the index entry AND its task file.
   async deleteTask(taskId: string): Promise<SaveOutcome> {
-    const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
-    const idx = doc.entries.findIndex((e) => e.id === taskId);
-    if (idx < 0) return { status: 'notfound' };
-    doc.entries.splice(idx, 1);
-    await this.atomicWrite(this.todoUri, serializeTodo(doc));
-    try {
-      await vscode.workspace.fs.delete(this.taskUri(taskId));
-    } catch {
-      // no task file yet — nothing to delete
-    }
-    return { status: 'applied' };
+    return this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const idx = doc.entries.findIndex((e) => e.id === taskId);
+      if (idx < 0) return { status: 'notfound' };
+      doc.entries.splice(idx, 1);
+      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      try {
+        await vscode.workspace.fs.delete(this.taskUri(taskId));
+      } catch {
+        // no task file yet — nothing to delete
+      }
+      return { status: 'applied' };
+    });
   }
 
   // Delete an accepted task's archive row from DONE.md ONLY. Unlike deleteTask this KEEPS the task
   // file tasks/<id>.md — a Done deletion erases just the accepted-history line, not the detail.
   async deleteDone(taskId: string): Promise<SaveOutcome> {
-    const done = parseDone((await this.readFile(this.doneUri)) ?? '');
-    const idx = done.findIndex((e) => e.id === taskId);
-    if (idx < 0) return { status: 'notfound' };
-    done.splice(idx, 1);
-    await this.atomicWrite(this.doneUri, serializeDone(done));
-    return { status: 'applied' };
+    return this.writeLock.run(async () => {
+      const done = parseDone((await this.readFile(this.doneUri)) ?? '');
+      const idx = done.findIndex((e) => e.id === taskId);
+      if (idx < 0) return { status: 'notfound' };
+      done.splice(idx, 1);
+      await this.atomicWrite(this.doneUri, serializeDone(done));
+      return { status: 'applied' };
+    });
   }
 }
 

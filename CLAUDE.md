@@ -22,7 +22,8 @@ Storage: everything lives under `.loopboard/` — `TODO.md` (slim task index, gr
    merge logic in exactly one place (`merge.ts`, `patchTarget` routes index vs detail). Saves are
    field-level patches on ONE file: re-read disk, re-parse, apply one field, serialize whole file,
    atomic write (temp + rename). Same-field conflict → disk wins + toast.
-5. Board performs ONLY the two human gates (New→Backlog on tick, Review→DONE.md on accept).
+5. Board performs ONLY three human actions: promote (New→Backlog on tick), accept
+   (Review→DONE.md on tick), and demote (Backlog→New, immediate button click, non-destructive).
    Everything else is a field patch the loop reacts to. Never auto-move tasks optimistically.
 
 ## Commands
