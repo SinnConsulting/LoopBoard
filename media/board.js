@@ -109,9 +109,9 @@
   function post(msg) {
     vscode.postMessage(msg);
   }
-  function pushToast(level, text, action) {
+  function pushToast(level, text, action, iconName) {
     const id = toastSeq++;
-    toasts.push({ id, level, text, action });
+    toasts.push({ id, level, text, action, icon: iconName });
     scheduleRender();
     setTimeout(() => dismissToast(id), level === 'warning' ? 8000 : 4000);
   }
@@ -911,7 +911,9 @@
   function renderToasts() {
     const wrap = h('div', { class: 'toasts' });
     for (const t of toasts) {
-      const el = h('div', { class: 'toast ' + t.level, role: 'status' }, h('span', {}, t.text));
+      const el = h('div', { class: 'toast ' + t.level, role: 'status' },
+        t.icon ? h('span', { class: 'codicon codicon-' + t.icon }) : null,
+        h('span', {}, t.text));
       if (t.action) el.append(h('button', { class: 'toast-action', type: 'button', onclick: t.action.onClick }, t.action.label));
       el.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', style: { width: '20px', height: '20px' }, onclick: () => dismissToast(t.id) }, icon(SVG.x)));
       wrap.append(el);
@@ -949,7 +951,7 @@
     } else if (msg.type === 'toast') {
       if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
-      pushToast(msg.level, msg.text, action);
+      pushToast(msg.level, msg.text, action, msg.icon);
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer);
     }
