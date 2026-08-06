@@ -305,7 +305,10 @@
       onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
     }, collapsedDefault ? 'Expand all' : 'Collapse all'));
 
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerText = ''; composerGroomer = ''; composerModel = ''; resetSearch(); saveState(); render(); } },
+    // Reopen the composer WITHOUT clearing its draft: a non-empty composerText only ever survives
+    // as a genuinely-unsaved draft (Cancel and Save draft both reset it), so wiping here would lose
+    // text the user typed before switching phase tabs and clicking New Story again — see t-ntx1.
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
