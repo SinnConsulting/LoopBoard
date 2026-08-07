@@ -57,6 +57,7 @@
   let composerText = saved.composerText || '';
   let composerGroomer = saved.composerGroomer || ''; // '' = default model
   let composerModel = saved.composerModel || '';     // '' = default model
+  let composerNeedsFocus = false;
   const ui = {}; // per-task UI state, keyed by task id
   // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
   // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
@@ -225,6 +226,16 @@
       // is now safe to fire while a field is focused — focus + caret return to that same field.
       requestAnimationFrame(() => restoreActiveField(activeField));
     }
+    // Focus the composer textarea on open so an immediate Cmd/Ctrl+V paste (before the user
+    // clicks into it) lands on it — clipboard paste only fires on the focused element (t-att1
+    // feedback: pasting right after "New Story" did nothing since nothing was focused yet).
+    if (composerOpen && composerNeedsFocus) {
+      composerNeedsFocus = false;
+      requestAnimationFrame(() => {
+        const ta = document.querySelector('.composer-area');
+        if (ta) ta.focus();
+      });
+    }
   }
 
   // ---- generic focus/caret restore across a full repaint ----
@@ -322,7 +333,9 @@
     // Reopen the composer WITHOUT clearing its draft: a non-empty composerText only ever survives
     // as a genuinely-unsaved draft (Cancel and Save draft both reset it), so wiping here would lose
     // text the user typed before switching phase tabs and clicking New Story again — see t-ntx1.
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; resetSearch(); saveState(); render(); } },
+    // composerNeedsFocus stays set so the textarea auto-focuses on open (t-att1), letting an
+    // immediate paste land on it.
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
@@ -378,6 +391,7 @@
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
+    const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new'; resetSearch(); saveState(); render(); };
     // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
     // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
     // when the composer textarea is unfocused (see t-d3dd). onclick stays wired for keyboard
@@ -386,14 +400,40 @@
       const t = composerText.trim();
       if (!t) return;
       post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
-      composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new';
-      resetSearch(); saveState(); render();
+      closeComposer();
     };
     const saveBtn = h('button', {
       class: 'btn-primary', type: 'button', disabled: composerText.trim().length === 0, style: { width: 'auto', padding: '8px 16px' },
       onpointerdown: (e) => { e.preventDefault(); commitDraft(); },
       onclick: commitDraft,
     }, 'Save Draft');
+    // t-att1: no attach button on the composer — clipboard paste / drag-drop only. There's no
+    // task id yet (a draft doesn't exist until saved), so an image here saves the draft first,
+    // same as clicking "Save draft", then stages the image onto it in one round trip.
+    const stageOnNewDraft = (file) => {
+      const t = area.value.trim();
+      if (!t) { pushToast('warning', 'Add some description before attaching an image.'); return; }
+      readImageFile(file, (filename, dataBase64) => {
+        post({ type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel, filename, dataBase64 });
+        closeComposer();
+      });
+    };
+    area.addEventListener('dragover', (e) => e.preventDefault());
+    area.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) { e.preventDefault(); stageOnNewDraft(files[0]); }
+    });
+    area.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); stageOnNewDraft(file); }
+          break;
+        }
+      }
+    });
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
       h('div', { class: 'pane-explainer' }, 'Describe the story in your own words — an agent structures it for you.'),
@@ -523,7 +563,22 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
-    return h('div', { class: 'card draft', 'data-task': t.id },
+    // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
+    // markdown links to the draft's task-file ## Description. A draft card otherwise renders only
+    // its raw text, so those links were invisible ("uploaded but not mentioned in the text").
+    // Surface the description content here (read-only, mirroring renderDone) so attachments show.
+    let attachEl = null;
+    if (t.description && t.description.trim()) {
+      const desc = h('div', { class: 'done-detail-text', html: mdToHtml(t.description) });
+      desc.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      attachEl = h('div', { style: { marginTop: '8px' } },
+        h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
+        desc);
+    }
+
+    const card = h('div', { class: 'card draft', 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
         icon(SVG.robot, 'muted'),
@@ -533,11 +588,96 @@
             idChip(t.id),
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
           textEl,
+          attachEl,
           h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
           h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
+    wireAttachDropAndPaste(card, t.id);
+    return card;
+  }
+
+  // ---- attachments (t-att1): drag-drop / clipboard paste only, no attach button — read bytes in
+  // the webview and base64-encode them for postMessage (the only path bytes can cross that
+  // boundary). v1 scope is images only. A whole-card drop/paste (no field open) appends straight
+  // to Description (attachFile/wireAttachDropAndPaste below); a drop/paste inside an
+  // already-open Description or answer field instead folds the link into that field's own value
+  // (wireFieldAttach, below) so it saves through the normal field-patch path.
+  const ATTACH_MIME_EXT = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
+    'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg',
+  };
+  // Read an image File/Blob to {filename, dataBase64}, or null (with a toast) if it isn't one.
+  function readImageFile(file, cb) {
+    if (!file || !file.type || file.type.indexOf('image/') !== 0) {
+      pushToast('warning', 'Only image attachments are supported.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const comma = dataUrl.indexOf(',');
+      if (comma < 0) return;
+      const filename = file.name && file.name.trim() ? file.name : ('pasted-image.' + (ATTACH_MIME_EXT[file.type] || 'png'));
+      cb(filename, dataUrl.slice(comma + 1));
+    };
+    reader.readAsDataURL(file);
+  }
+  function attachFile(taskId, file) {
+    readImageFile(file, (filename, dataBase64) => post({ type: 'attach', taskId, filename, dataBase64 }));
+  }
+  function wireAttachDropAndPaste(card, taskId) {
+    card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) attachFile(taskId, files[0]);
+    });
+    card.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); attachFile(taskId, file); }
+          break;
+        }
+      }
+    });
+  }
+
+  // Field-scoped attach (t-att1 feedback: description edits and question answers — "story
+  // comments" — need the same drag-drop/paste attach, folded into that specific field's own
+  // value rather than always the Description). Stages the bytes via the host, then the caller's
+  // `onStaged(path, filename)` inserts the link and saves through the normal field-patch path.
+  let attachReqSeq = 1;
+  const pendingAttach = {};
+  function wireFieldAttach(el, taskId, field, questionIndex, onStaged) {
+    const stage = (file) => {
+      readImageFile(file, (filename, dataBase64) => {
+        const reqId = 'a' + attachReqSeq++;
+        pendingAttach[reqId] = onStaged;
+        post({ type: 'attach', reqId, taskId, filename, dataBase64, field, questionIndex });
+      });
+    };
+    el.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) { e.preventDefault(); e.stopPropagation(); stage(files[0]); }
+    });
+    el.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); e.stopPropagation(); stage(file); }
+          break;
+        }
+      }
+    });
   }
 
   function renderCard(t) {
@@ -649,6 +789,7 @@
     // phases). The extension shows a native confirmation modal before removing anything.
     head.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete task', title: 'Delete task', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x)));
     card.append(head);
+    wireAttachDropAndPaste(card, t.id);
 
     // chips (always shown, even collapsed)
     card.append(renderChips(t));
@@ -721,14 +862,15 @@
   // ---- minimal, XSS-clean markdown for descriptions ----
   // Supports **bold**, *italic*/_italic_, `code`, [text](http(s)://url), line breaks.
   // All user text is HTML-escaped first, so the only tags in the output are the ones we emit;
-  // link hrefs are limited to http/https and carried on data-mdlink (wired to openLink on render).
+  // link hrefs are limited to http/https or a staged-attachment `.loopboard/cache/...` relative
+  // path (t-att1), carried on data-mdlink (wired to openLink on render).
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
   function renderInlineMd(text) {
     // `text` is already HTML-escaped. Links first, then bold, then italic.
     let out = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
-      /^https?:\/\//i.test(url) ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
+      /^https?:\/\//i.test(url) || url.startsWith('.loopboard/cache/') ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');
@@ -821,6 +963,11 @@
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
+      wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
+        const link = '[' + filename + '](' + path + ')';
+        ta.value = ta.value + (ta.value.trim() ? '\n\n' : '') + link;
+        commitDesc();
+      });
       wrap.append(ta, saveBtn);
       requestAnimationFrame(() => ta.focus());
     } else {
@@ -904,6 +1051,11 @@
         // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
         if (e.key === 'Escape') { ta.value = q.answer; delete u.answerDrafts[i]; autoGrow(ta); saveBtn.disabled = true; updateSaveAll(); ta.blur(); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
+      });
+      wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
+        const link = '[' + filename + '](' + path + ')';
+        ta.value = ta.value + (ta.value.trim() ? '\n\n' : '') + link;
+        commitAnswer();
       });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
       aw.append(ta, saveBtn);
@@ -1048,6 +1200,14 @@
       pushToast(msg.level, msg.text, action, msg.icon);
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer);
+    } else if (msg.type === 'attachStaged') {
+      // Reply to a field-scoped attach (wireFieldAttach) — resolved outside the normal board
+      // repaint so it works while the field is still focused/mid-edit.
+      const onStaged = pendingAttach[msg.reqId];
+      delete pendingAttach[msg.reqId];
+      if (!onStaged) return;
+      if (msg.status !== 'applied') { pushToast('warning', msg.message || 'Could not attach that file.'); return; }
+      onStaged(msg.path, msg.filename);
     }
   });
 
@@ -1086,6 +1246,7 @@
       composerText = '';
       composerGroomer = '';
       composerModel = '';
+      composerNeedsFocus = true;
       saveState();
       render();
       return;
