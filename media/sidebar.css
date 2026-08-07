@@ -25,6 +25,7 @@ body {
 .attn-row:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: -2px; }
 .attn-row .txt { flex: 1; font-size: 13px; text-align: left; }
 .attn-row .ico { font-size: 14px; flex-shrink: 0; }
+.sb-attn-title .codicon { font-size: 14px; }
 
 .sb-label { padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vscode-descriptionForeground, #9d9d9d); }
 .sb-row { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 4px; }
@@ -43,6 +44,7 @@ body {
 .loop-body.click:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
 .loop-body.click:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: -2px; }
 .loop-status-label { font-size: 11px; flex-shrink: 0; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.loop-status-label .codicon { font-size: 11px; vertical-align: -1px; }
 .loop-marquee { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
 .loop-marquee-inner {
   display: inline-block; white-space: nowrap; will-change: transform;

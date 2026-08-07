@@ -23,9 +23,9 @@ and loop worker instructions: [LOOP.md](LOOP.md). Accepted tasks move to [DONE.m
   - id: t-cc01
   - phase: feedback
   - model: opus
-  - question: ❓ Exponential backoff with jitter, or fixed 30s intervals?
+  - question: Exponential backoff with jitter, or fixed 30s intervals?
     - answer: Exponential with jitter, cap at 5 attempts.
-  - question: ❓ Dead-letter failed webhooks to a DB table, or log and drop?
+  - question: Dead-letter failed webhooks to a DB table, or log and drop?
     - answer:
 
 - [ ] Migrate integration tests from Jest to node:test
@@ -37,10 +37,10 @@ and loop worker instructions: [LOOP.md](LOOP.md). Accepted tasks move to [DONE.m
   - id: t-ee01
   - phase: review
   - model: opus
-  - feedback: ⚠️ Redact the auth token from the request log fields.
+  - feedback: Redact the auth token from the request log fields.
 
 <!-- Format when a worker parks a task here:
 - [ ] <task>
-  - question: ❓ <what the worker needs decided>
+  - question: <what the worker needs decided>
     - answer:
 -->

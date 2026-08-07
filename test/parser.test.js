@@ -93,6 +93,28 @@ test('feedback: sub-bullets parse (repeatable), strip leading ⚠️, and round-
   assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
 });
 
+test('question/feedback markers are tolerated on read but never re-emitted on write', () => {
+  const src = [
+    '## Tasks',
+    '',
+    '- [ ] Marked entry',
+    '  - id: t-mk01',
+    '  - phase: feedback',
+    '  - question: ❓ Marked question?',
+    '    - answer:',
+    '  - feedback: ⚠️ Marked feedback.',
+    '',
+  ].join('\n');
+  const doc = parseTodo(src);
+  const e = doc.entries.find((x) => x.id === 't-mk01');
+  assert.deepEqual(e.questions.map((q) => q.text), ['Marked question?']);
+  assert.deepEqual(e.feedback, ['Marked feedback.']);
+  const out = serializeTodo(doc);
+  assert.ok(!/❓|⚠️|⚠/.test(out), 'serialized output must not re-add the marker');
+  assert.match(out, /- question: Marked question\?/);
+  assert.match(out, /- feedback: Marked feedback\./);
+});
+
 test('DRAFT entries serialize minimally (id, no phase)', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const draft = doc.entries.find((x) => x.isDraft);

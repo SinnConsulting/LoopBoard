@@ -34,7 +34,7 @@
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    undo: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -110,9 +110,9 @@
   function post(msg) {
     vscode.postMessage(msg);
   }
-  function pushToast(level, text, action) {
+  function pushToast(level, text, action, iconName) {
     const id = toastSeq++;
-    toasts.push({ id, level, text, action });
+    toasts.push({ id, level, text, action, icon: iconName });
     scheduleRender();
     setTimeout(() => dismissToast(id), level === 'warning' ? 8000 : 4000);
   }
@@ -264,6 +264,20 @@
     if (!el) return;
     el.focus();
     if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
+  }
+
+  // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
+  // textarea/input (description, title, draft, note). Blurring BEFORE render() matters: render()'s
+  // captureActiveField() reads document.activeElement at the very start, still pointing at the
+  // about-to-be-removed field if we haven't blurred yet — so it recaptures a field that edit mode
+  // just closed, and restoreActiveField() then either re-opens it or (since the post-close view has
+  // no `data-field`) silently no-ops, leaving focus stranded on the now-tabindex=0 view element
+  // instead of released — the "needs a second ESC" bug (t-esc1). Blurring first means
+  // captureActiveField() finds nothing to recapture.
+  function exitFieldEdit(clearFn) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    clearFn();
+    render();
   }
 
   function renderSearchBar(shownCount, totalCount) {
@@ -529,7 +543,7 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingDraft = false; u.draftText = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
@@ -693,7 +707,7 @@
       }, 'Save');
       input.addEventListener('input', (e) => { u.titleDraft = e.target.value; saveBtn.disabled = e.target.value.trim() === t.title; });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingTitle = false; u.titleDraft = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
       titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
@@ -741,10 +755,19 @@
     // on-disk phase) would otherwise flicker on the refresh that restores it.
     if (variant === 'backlog') {
       head.append(h('button', {
-        class: 'btn-sm secondary demote-btn', type: 'button',
+        class: 'btn-sm primary demote-btn', type: 'button',
         'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
         onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
       }, icon(SVG.undo), 'Demote'));
+    }
+    // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
+    // visible even collapsed since `head` always renders (see the removed bottom .approve-row).
+    if (variant === 'review') {
+      head.append(h('button', {
+        class: 'btn-sm primary approve-btn', type: 'button',
+        'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
+        onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
+      }, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
@@ -792,15 +815,6 @@
       card.append(renderNote(t));
     }
 
-    // accept gate (Rule 1): single Approve button, bottom-right — visible even collapsed
-    if (variant === 'review') {
-      card.append(h('div', { class: 'approve-row' },
-        h('button', {
-          class: 'btn-sm primary approve-btn', type: 'button',
-          'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
-          onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
-        }, icon(SVG.check), 'Approve')));
-    }
     return card;
   }
 
@@ -930,7 +944,7 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingDesc = false; u.descDraft = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
       wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
@@ -968,8 +982,10 @@
       ? `${answered} of ${t.questions.length} questions answered.`
       : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
     // Save All (t-f86b): commits every question whose draft differs from its saved answer, in one
-    // click. Only enabled once more than one question has an unsaved draft (a single one already
-    // has its own per-question Save).
+    // click. Enabled whenever at least one question has an unsaved draft — even just one, since
+    // the user may reach for Save All after already saving other answers individually (t-623d);
+    // it then overlaps that lone question's own per-question Save, which is fine, both do the
+    // same thing.
     const commits = [];
     let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
     t.questions.forEach((q, i) => {
@@ -1014,7 +1030,12 @@
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
       ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
-      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
+      ta.addEventListener('keydown', (e) => {
+        // Answer has no separate view mode to close — Escape discards the unsaved draft back to
+        // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
+        if (e.key === 'Escape') { ta.value = q.answer; delete u.answerDrafts[i]; autoGrow(ta); saveBtn.disabled = true; updateSaveAll(); ta.blur(); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
+      });
       wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         const link = '[' + filename + '](' + path + ')';
         ta.value = ta.value + (ta.value.trim() ? '\n\n' : '') + link;
@@ -1035,7 +1056,7 @@
         title: 'Save every question whose answer changed',
         onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
       }, 'Save All');
-      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length <= 1; };
+      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length < 1; };
       updateSaveAll();
       wrap.append(h('div', { class: 'approve-row' }, saveAllBtn));
     }
@@ -1070,7 +1091,12 @@
       title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
     }, 'Save');
     ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
-    ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); } });
+    ta.addEventListener('keydown', (e) => {
+      // Feedback has no separate view mode to close — Escape discards the draft (there is no
+      // saved value to revert to) and releases focus (previously a dead key here, t-esc1).
+      if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
+      if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
+    });
     wrap.append(h('div', {}, ta, saveBtn));
     return wrap;
   }
@@ -1090,7 +1116,10 @@
         render();
       };
       ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); } });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
+      });
       const sendBtn = h('button', {
         class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
         title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
@@ -1112,7 +1141,9 @@
   function renderToasts() {
     const wrap = h('div', { class: 'toasts' });
     for (const t of toasts) {
-      const el = h('div', { class: 'toast ' + t.level, role: 'status' }, h('span', {}, t.text));
+      const el = h('div', { class: 'toast ' + t.level, role: 'status' },
+        t.icon ? h('span', { class: 'codicon codicon-' + t.icon }) : null,
+        h('span', {}, t.text));
       if (t.action) el.append(h('button', { class: 'toast-action', type: 'button', onclick: t.action.onClick }, t.action.label));
       el.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', style: { width: '20px', height: '20px' }, onclick: () => dismissToast(t.id) }, icon(SVG.x)));
       wrap.append(el);
@@ -1150,7 +1181,7 @@
     } else if (msg.type === 'toast') {
       if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
-      pushToast(msg.level, msg.text, action);
+      pushToast(msg.level, msg.text, action, msg.icon);
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer);
     } else if (msg.type === 'attachStaged') {

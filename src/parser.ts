@@ -16,10 +16,10 @@
 //     - model: opus | sonnet | fable        (optional)
 //     - groomer: opus | sonnet | fable      (optional)
 //     - rev: <n>                             (optional; monotonic change marker, writer-managed)
-//     - question: ❓ <text>                   (repeatable)
+//     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //     - note: <text>                         (repeatable; unprocessed human worker-note, Rule 16)
-//     - feedback: ⚠️ <text>                   (repeatable; Review change request, Rule 13)
+//     - feedback: <text>                     (repeatable; Review change request, Rule 13)
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
 //   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
 //   `completed:` is canonical in DONE.md entries only.
