@@ -14,8 +14,8 @@ const {
   isValidEffort,
 } = require('../out-test/model.js');
 
-test('haiku is a built-in model slot alongside opus/sonnet/fable', () => {
-  assert.deepEqual(BUILTIN_MODEL_IDS, ['opus', 'sonnet', 'fable', 'haiku']);
+test('the built-in model slots are exactly opus/sonnet/fable', () => {
+  assert.deepEqual(BUILTIN_MODEL_IDS, ['opus', 'sonnet', 'fable']);
 });
 
 test('isValidModelString admits the [1m] suffix and org aliases, rejects shell metachars', () => {
@@ -30,7 +30,7 @@ test('isValidModelString admits the [1m] suffix and org aliases, rejects shell m
 
 test('resolveModels defaults: every slot enabled, --model equals its id, effort defaults to high', () => {
   const r = resolveModels(undefined);
-  assert.equal(r.length, 4);
+  assert.equal(r.length, 3);
   for (const m of r) {
     assert.equal(m.enabled, true);
     assert.equal(m.model, m.id);
@@ -53,8 +53,8 @@ test('a valid per-slot effort REPLACES the default; invalid falls back to high',
 });
 
 test('string-shorthand model config still resolves effort to the default (no effort field to set)', () => {
-  const r = resolveModels({ haiku: 'haiku[1m]' });
-  assert.equal(r.find((m) => m.id === 'haiku').effort, 'high');
+  const r = resolveModels({ sonnet: 'sonnet[1m]' });
+  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'high');
 });
 
 test('a valid override REPLACES the default --model string; invalid is ignored', () => {
@@ -63,20 +63,20 @@ test('a valid override REPLACES the default --model string; invalid is ignored',
   assert.equal(r.find((m) => m.id === 'sonnet').model, 'sonnet'); // invalid -> default
 });
 
-test('string shorthand sets the --model override (e.g. "haiku": "haiku[1m]")', () => {
-  const r = resolveModels({ haiku: 'haiku[1m]', opus: 'bad;rm' });
-  assert.equal(r.find((m) => m.id === 'haiku').model, 'haiku[1m]');
-  assert.equal(r.find((m) => m.id === 'haiku').enabled, true);
+test('string shorthand sets the --model override (e.g. "sonnet": "sonnet[1m]")', () => {
+  const r = resolveModels({ sonnet: 'sonnet[1m]', opus: 'bad;rm' });
+  assert.equal(r.find((m) => m.id === 'sonnet').model, 'sonnet[1m]');
+  assert.equal(r.find((m) => m.id === 'sonnet').enabled, true);
   assert.equal(r.find((m) => m.id === 'opus').model, 'opus'); // invalid shorthand -> default
 });
 
 test('enabled: false drops a slot from enabledModels', () => {
   const en = enabledModels({ fable: { enabled: false } });
-  assert.deepEqual(en.map((m) => m.id), ['opus', 'sonnet', 'haiku']);
+  assert.deepEqual(en.map((m) => m.id), ['opus', 'sonnet']);
 });
 
 test('resolveModelString returns the override or the built-in default', () => {
-  assert.equal(resolveModelString('haiku', undefined), 'haiku');
+  assert.equal(resolveModelString('fable', undefined), 'fable');
   assert.equal(resolveModelString('opus', { opus: { model: 'opus[1m]' } }), 'opus[1m]');
 });
 
@@ -102,5 +102,5 @@ test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig
   const r = resolveModels(cfg);
   assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');
   assert.equal(r.find((m) => m.id === 'sonnet').enabled, false);
-  assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'fable', 'haiku']);
+  assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'fable']);
 });
