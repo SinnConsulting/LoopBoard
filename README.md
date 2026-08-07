@@ -75,11 +75,11 @@ acceptance the index entry moves to `DONE.md` while the task file stays in `task
 
 ## Using the board
 
-The activity-bar **sidebar** is the at-a-glance summary — read-only, click-through into the board:
+The activity-bar **sidebar** (left) is a read-only, at-a-glance summary — click any row to jump into the board. From top to bottom, it shows:
 
 | | |
 |---|---|
-| ![LoopBoard sidebar](media/screenshot-sidebar.png) | **Attention banner** rolls up everything waiting on you — tasks in **Review** and groomed proposals in **New** ready to promote.<br><br>**Phases** lists every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.<br><br>**Loops** shows one row per model (Opus, Sonnet, Fable) with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.<br><br>**Settings** opens the extension's configuration. |
+| ![LoopBoard sidebar](media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.</li><li><b>Settings</b> — opens the extension's configuration.</li></ul> |
 
 On the board itself:
 
