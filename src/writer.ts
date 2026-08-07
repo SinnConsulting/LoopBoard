@@ -42,11 +42,11 @@ export function serializeEntry(entry: IndexEntry): string[] {
   if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
   if (entry.rev !== undefined) out.push(`  - rev: ${entry.rev}`);
   for (const q of entry.questions) {
-    out.push(`  - question: ❓ ${q.text}`);
+    out.push(`  - question: ${q.text}`);
     out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));
   }
   for (const n of entry.notes) out.push(`  - note: ${n}`);
-  for (const f of entry.feedback) out.push(`  - feedback: ⚠️ ${f}`);
+  for (const f of entry.feedback) out.push(`  - feedback: ${f}`);
   for (const u of entry.unknownLines) out.push(u);
   return out;
 }
