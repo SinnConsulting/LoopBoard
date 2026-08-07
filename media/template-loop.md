@@ -50,11 +50,11 @@ preserves unrecognized lines verbatim (flagged).
   - model: opus | sonnet | fable        (optional; absent = default model; Rule 15)
   - groomer: opus | sonnet | fable      (optional; absent = default model; Rule 14)
   - rev: <n>                            (optional; writer-managed change marker; Rule 17)
-  - question: ❓ <text>                   (repeatable, single line; Feedback & New)
+  - question: <text>                    (repeatable, single line; Feedback & New)
     - answer: <text or blank>
   - note: <text>                        (repeatable, single line; unprocessed human note; Rule 16)
-  - feedback: ⚠️ <text>                   (repeatable, single line; Review only; removed when
-                                           addressed — Rule 13)
+  - feedback: <text>                    (repeatable, single line; Review only; removed when
+                                          addressed — Rule 13)
 ```
 
 Draft = `- [ ] DRAFT: <raw text>` + `id:` (+ optional `model:`/`groomer:`; no `phase:` line —
@@ -122,12 +122,13 @@ on first use. Detail remains in `tasks/<id>.md`.
    else belongs in the task file. Task files: fixed headings, canonical order. Move = edit
    `phase:` in place; never cut/paste.
 5. Grooming ≠ approval: editing a New task's text is allowed; leaving New requires Rule 1.
-6. Unsure → set `phase: feedback` and add `question: ❓ <text>` sub-bullets (each with its own
+6. Unsure → set `phase: feedback` and add `question: <text>` sub-bullets (each with its own
    `- answer:` beneath) on the INDEX entry — questions stay in the index so the board can
    surface them without opening task files. Stop working the task; resume gated by Rule 10.
 7. All changes deliver via PR; never commit to `main`. Record the PR in the task file's
    `link:` before setting `phase: review`. A Review task without a PR link is incomplete.
-8. Prefix `question:` with ❓ and `feedback:` with ⚠️ — both index sub-bullets.
+8. `question:` and `feedback:` are plain index sub-bullets — no glyph prefix; the sub-bullet name
+   alone classifies them.
 9. git worktrees forbidden (they break pre-commit hooks assuming `.git` is a directory;
    `--no-verify` forbidden). Use the normal checkout: fetch latest `main`, branch off `main`,
    commit, open the PR from there (Rule 7).
@@ -149,7 +150,7 @@ on first use. Detail remains in `tasks/<id>.md`.
     bootstrap prompt); only reach into xhigh/max when the ceiling allows it AND the story
     text explicitly asks for deep reasoning. The subagent expands the story into the task
     file's `## Description` (creating `tasks/<id>.md` if missing) and keeps the index title
-    one short line. Human decisions = single-line `question: ❓` sub-bullets with blank
+    one short line. Human decisions = single-line `question:` sub-bullets with blank
     `answer:` lines on the index entry (never an "OPEN QUESTIONS" prose paragraph) so the
     board can surface them. A New task with any filled `answer:` → re-groom via the same
     subagent: incorporate the answer, fold the decision into `## Description`, delete the
