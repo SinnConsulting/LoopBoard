@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Turn TODO.md into an interactive Kanban board and run autonomous Claude Code agent loops per task; markdown stays the source of truth.",
-  "version": "2.27.0",
+  "version": "2.28.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
