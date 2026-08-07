@@ -79,7 +79,7 @@ The activity-bar **sidebar** is the at-a-glance summary — read-only, click-thr
 
 | | |
 |---|---|
-| ![LoopBoard sidebar](media/hero.png) | **Attention banner** rolls up everything waiting on you — tasks in **Review** and groomed proposals in **New** ready to promote.<br><br>**Phases** lists every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.<br><br>**Loops** shows one row per model (Opus, Sonnet, Fable) with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.<br><br>**Settings** opens the extension's configuration. |
+| ![LoopBoard sidebar](media/screenshot-sidebar.png) | **Attention banner** rolls up everything waiting on you — tasks in **Review** and groomed proposals in **New** ready to promote.<br><br>**Phases** lists every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.<br><br>**Loops** shows one row per model (Opus, Sonnet, Fable) with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.<br><br>**Settings** opens the extension's configuration. |
 
 On the board itself:
 
