@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Less prompting. Less babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
-  "version": "2.27.0",
+  "version": "2.28.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
@@ -80,8 +80,7 @@
             "enum": [
               "opus",
               "sonnet",
-              "fable",
-              "haiku"
+              "fable"
             ],
             "order": 1,
             "default": "sonnet",
@@ -92,8 +91,7 @@
             "enum": [
               "opus",
               "sonnet",
-              "fable",
-              "haiku"
+              "fable"
             ],
             "order": 2,
             "default": "opus",
@@ -173,31 +171,6 @@
             "order": 32,
             "default": "high",
             "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Fable slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
-          },
-          "loopBoard.models.haiku.enabled": {
-            "type": "boolean",
-            "order": 40,
-            "default": true,
-            "description": "Show the Haiku slot in the Loops overview and the board's model selects."
-          },
-          "loopBoard.models.haiku.model": {
-            "type": "string",
-            "order": 41,
-            "default": "",
-            "markdownDescription": "Custom `--model` string spawned for the Haiku slot (e.g. `haiku[1m]`). Empty = `haiku`. Invalid strings are ignored."
-          },
-          "loopBoard.models.haiku.effort": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ],
-            "order": 42,
-            "default": "high",
-            "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Haiku slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
           }
         }
       },

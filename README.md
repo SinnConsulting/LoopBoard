@@ -112,9 +112,11 @@ since all state lives in `.loopboard/`.
 | `loopBoard.clearSessionAfterTask` | `false` | lighter alternative — send `/clear` after a task instead of restarting |
 | `loopBoard.models.<slot>` | — | per-slot overrides: `.enabled`, `.model`, `.effort` (see below) |
 
+See [FAQ.md](FAQ.md) for common questions (e.g. why there's no Haiku slot).
+
 ### Configuring models (`loopBoard.models.<slot>`)
 
-The built-in model slots — `opus`, `sonnet`, `fable`, `haiku` — are what you assign to tasks
+The built-in model slots — `opus`, `sonnet`, `fable` — are what you assign to tasks
 (`model:` / `groomer:`) and what the sidebar **Loops** rows spawn. Each slot is configured through
 three keys:
 
@@ -123,9 +125,9 @@ three keys:
 - `loopBoard.models.<slot>.effort` — grooming-subagent reasoning-effort ceiling (`low`…`max`) for that slot, per Rule 14 in `LOOP.md`.
 
 ```jsonc
-// Pin Opus to a dated snapshot; run Haiku with the 1M-context window; hide Fable.
+// Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.
 "loopBoard.models.opus.model": "claude-opus-4-8",
-"loopBoard.models.haiku.model": "haiku[1m]",
+"loopBoard.models.sonnet.model": "sonnet[1m]",
 "loopBoard.models.fable.enabled": false
 ```
 
