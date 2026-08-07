@@ -20,7 +20,7 @@ function terminalName(model: Model): string {
 // Sidebar-only display order for the Loops rows — explicit and independent of BUILTIN_MODELS
 // (which also drives the board/composer/settings select order; reordering that would ripple into
 // all of those). Touching the Loops row order means editing this one array.
-const SIDEBAR_LOOP_ORDER: Model[] = ['opus', 'sonnet', 'fable'];
+const SIDEBAR_LOOP_ORDER: Model[] = ['fable', 'opus', 'sonnet'];
 
 // `/loop` is a slash command, so it must be submitted inside the running REPL to invoke the loop
 // skill. The tiny bootstrap prompt rides as claude's initial-prompt argv in ONE command line
