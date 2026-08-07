@@ -48,9 +48,9 @@
 
     const header = h('div', { class: 'sb-attn-header' });
     if (b.count > 0) {
-      header.append(h('div', { class: 'sb-attn-title' }, h('span', { class: 'attn-dot pulse' }), b.count + ' item' + (b.count === 1 ? '' : 's') + ' need you'));
+      header.append(h('div', { class: 'sb-attn-title' }, h('span', { class: 'attn-dot pulse' }), b.count + ' - Items require your attention'));
     } else {
-      header.append(h('div', { class: 'sb-attn-title clear' }, 'Nothing needs you ', h('span', { class: 'codicon codicon-pass' })));
+      header.append(h('div', { class: 'sb-attn-title clear' }, 'You are all set', h('span', { class: 'codicon codicon-pass' })));
     }
     sb.append(header);
 
