@@ -245,6 +245,14 @@ textarea { resize: vertical; }
 .q-text strong { font-weight: 600; }
 .q-text a { color: var(--vscode-textLink-foreground, #3794ff); cursor: pointer; text-decoration: none; }
 .q-text a:hover { text-decoration: underline; }
+.suggestions { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.suggestion-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--vscode-textCodeBlock-background, rgba(255, 255, 255, 0.1));
+  border-radius: 4px; padding: 4px 4px 4px 8px;
+}
+.suggestion-text { flex: 1; min-width: 0; font-size: 12px; line-height: 1.4; word-break: break-word; }
+.suggestion-accept-btn { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
 .answer-wrap { margin-top: 6px; }
 .field {
   width: 100%; font-size: 13px; line-height: 1.5; font-family: inherit;

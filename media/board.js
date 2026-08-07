@@ -885,6 +885,24 @@
       ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
       ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
+      // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
+      // click, no AI in the loop — accept just fills the textarea and reuses commitAnswer, i.e. the
+      // ordinary answer field-patch path (`sendPatch(..., 'answer', ...)`); the writer clears a
+      // question's suggestions once it has an answer (merge.ts), so they naturally disappear on the
+      // next board refresh.
+      if (!q.answered && q.suggestions && q.suggestions.length) {
+        const suggWrap = h('div', { class: 'suggestions' });
+        q.suggestions.forEach((s) => {
+          suggWrap.append(h('div', { class: 'suggestion-row' },
+            h('span', { class: 'suggestion-text' }, s),
+            h('button', {
+              class: 'btn-sm primary suggestion-accept-btn', type: 'button',
+              title: 'Accept suggestion', 'aria-label': 'Accept suggestion: ' + s,
+              onclick: () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); },
+            }, icon(SVG.check), 'Accept')));
+        });
+        block.append(suggWrap);
+      }
       aw.append(ta, saveBtn);
       if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
       block.append(aw);
