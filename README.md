@@ -13,7 +13,7 @@
 **LoopBoard is the cockpit.**<br>
 **You're still the pilot.**
 
-**Less prompting. Less babysitting. More building.**
+**Less prompting. No babysitting. More building.**
 
 </div>
 
@@ -179,7 +179,7 @@ but its design encourages high-frequency multi-model looping, so it's worth bein
 
 <div align="center">
 
-**Less prompting. Less babysitting. More building.**
+**Less prompting. No babysitting. More building.**
 
 MIT License
 
