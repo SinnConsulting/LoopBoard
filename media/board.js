@@ -563,6 +563,21 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
+    // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
+    // markdown links to the draft's task-file ## Description. A draft card otherwise renders only
+    // its raw text, so those links were invisible ("uploaded but not mentioned in the text").
+    // Surface the description content here (read-only, mirroring renderDone) so attachments show.
+    let attachEl = null;
+    if (t.description && t.description.trim()) {
+      const desc = h('div', { class: 'done-detail-text', html: mdToHtml(t.description) });
+      desc.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      attachEl = h('div', { style: { marginTop: '8px' } },
+        h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
+        desc);
+    }
+
     const card = h('div', { class: 'card draft', 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
@@ -573,6 +588,7 @@
             idChip(t.id),
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
           textEl,
+          attachEl,
           h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
