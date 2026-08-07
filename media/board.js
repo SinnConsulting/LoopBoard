@@ -34,7 +34,7 @@
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    undo: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -617,10 +617,19 @@
     // on-disk phase) would otherwise flicker on the refresh that restores it.
     if (variant === 'backlog') {
       head.append(h('button', {
-        class: 'btn-sm secondary demote-btn', type: 'button',
+        class: 'btn-sm primary demote-btn', type: 'button',
         'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
         onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
       }, icon(SVG.undo), 'Demote'));
+    }
+    // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
+    // visible even collapsed since `head` always renders (see the removed bottom .approve-row).
+    if (variant === 'review') {
+      head.append(h('button', {
+        class: 'btn-sm primary approve-btn', type: 'button',
+        'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
+        onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
+      }, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
@@ -667,15 +676,6 @@
       card.append(renderNote(t));
     }
 
-    // accept gate (Rule 1): single Approve button, bottom-right — visible even collapsed
-    if (variant === 'review') {
-      card.append(h('div', { class: 'approve-row' },
-        h('button', {
-          class: 'btn-sm primary approve-btn', type: 'button',
-          'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
-          onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
-        }, icon(SVG.check), 'Approve')));
-    }
     return card;
   }
 
