@@ -120,8 +120,8 @@ export class Controller {
     }
   }
 
-  private toast(level: 'info' | 'success' | 'warning', text: string, taskId?: string): void {
-    BoardPanel.current?.post({ type: 'toast', level, text, taskId });
+  private toast(level: 'info' | 'success' | 'warning', text: string, taskId?: string, icon?: string): void {
+    BoardPanel.current?.post({ type: 'toast', level, text, taskId, icon });
   }
 
   async handleMessage(msg: any): Promise<void> {
@@ -259,19 +259,19 @@ export class Controller {
     if (action === 'promote') {
       if (await this.confirmPromote(taskId)) {
         await this.store.promote(taskId, today());
-        this.toast('success', 'Promoted to Backlog ✓');
+        this.toast('success', 'Promoted to Backlog', undefined, 'check');
       }
       // Cancel falls through to the refresh() below, which restores the card the board
       // optimistically faded on click (board.js:473) — unlike confirmDelete, which never fades.
     } else if (action === 'accept') {
       const r = await this.store.acceptToDone(taskId, today());
-      if (r.status === 'applied') this.toast('success', 'Accepted — archived to DONE.md ✓');
+      if (r.status === 'applied') this.toast('success', 'Accepted — archived to DONE.md', undefined, 'check');
       else this.toast('warning', 'Could not accept — the task was not found on disk.');
     } else if (action === 'demote') {
       const r = await this.store.demote(taskId, today());
       if (r.status === 'conflict') this.toast('warning', 'Task is no longer in Backlog — the board was refreshed.', taskId);
       else if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
-      else this.toast('success', 'Demoted to New ✓');
+      else this.toast('success', 'Demoted to New', undefined, 'check');
     } else if (action === 'delete') {
       if (!(await this.confirmDelete(taskId, false))) return;
       const r = await this.store.deleteTask(taskId);
