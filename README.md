@@ -149,9 +149,11 @@ Zero runtime dependencies; the webview is vanilla HTML/CSS/JS with a CSP nonce o
 | `loopBoard.autoRecycle` | `true` | recycle a model's terminal after it finishes a task |
 | `loopBoard.models` | `{}` | per-model overrides — customize the `--model` string, or hide a model |
 
+See [FAQ.md](FAQ.md) for common questions (e.g. why there's no Haiku slot).
+
 ### Configuring models (`loopBoard.models`)
 
-The four built-in model slots — `opus`, `sonnet`, `fable`, `haiku` — are what you assign to tasks
+The three built-in model slots — `opus`, `sonnet`, `fable` — are what you assign to tasks
 (`model:` / `groomer:`) and what the sidebar **Loops** rows spawn. `loopBoard.models` lets you
 override, per slot, the actual string passed as `claude --model <string>`, and toggle a slot on or
 off. Each slot accepts either a **string** (shorthand for just the `--model` override) or an
@@ -159,8 +161,8 @@ off. Each slot accepts either a **string** (shorthand for just the `--model` ove
 
 ```jsonc
 "loopBoard.models": {
-  // String shorthand: run the Haiku slot with the 1M-context window.
-  "haiku": "haiku[1m]",
+  // String shorthand: run the Sonnet slot with the 1M-context window.
+  "sonnet": "sonnet[1m]",
 
   // Object form: pin Opus to a dated snapshot and keep it enabled.
   "opus": { "model": "claude-opus-4-8" },

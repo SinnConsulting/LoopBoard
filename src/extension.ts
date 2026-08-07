@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Store } from './store';
 import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
-import { Controller, readDefaultModel } from './controller';
+import { Controller } from './controller';
 import { Model, resolveModels, readModelsConfig } from './model';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -21,7 +21,6 @@ export function activate(context: vscode.ExtensionContext): void {
       return {
         permissionMode: c.get<string>('permissionMode', 'auto'),
         interval: c.get<string>('loopInterval', '1m'),
-        defaultModel: readDefaultModel(c, 'defaultWorkerModel'),
         models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
       };
     }

@@ -17,6 +17,11 @@ function terminalName(model: Model): string {
   return 'Claude ' + model.charAt(0).toUpperCase() + model.slice(1);
 }
 
+// Sidebar-only display order for the Loops rows — explicit and independent of BUILTIN_MODELS
+// (which also drives the board/composer/settings select order; reordering that would ripple into
+// all of those). Touching the Loops row order means editing this one array.
+const SIDEBAR_LOOP_ORDER: Model[] = ['opus', 'sonnet', 'fable'];
+
 // `/loop` is a slash command, so it must be submitted inside the running REPL to invoke the loop
 // skill. The tiny bootstrap prompt rides as claude's initial-prompt argv in ONE command line
 // (`claude --permission-mode <mode> --model <model> '/loop ...'`, single-quoted): the CLI seeds
@@ -40,7 +45,7 @@ export class TerminalManager {
   constructor(
     private getCwd: () => vscode.Uri,
     private getLoopText: () => string,
-    private getConfig: () => { permissionMode: string; interval: string; defaultModel: Model; models: ResolvedModel[] }
+    private getConfig: () => { permissionMode: string; interval: string; models: ResolvedModel[] }
   ) {
     this.disposables.push(
       vscode.window.onDidOpenTerminal(() => this.changeEmitter.fire()),
@@ -60,15 +65,17 @@ export class TerminalManager {
 
   status(): LoopStatus[] {
     const cfg = this.getConfig();
-    const def = cfg.defaultModel;
-    // Only enabled slots appear in the Loops overview.
+    // Only enabled slots appear in the Loops overview, sorted into the explicit sidebar order.
     return cfg.models
       .filter((m) => m.enabled)
+      .sort((a, b) => SIDEBAR_LOOP_ORDER.indexOf(a.id) - SIDEBAR_LOOP_ORDER.indexOf(b.id))
       .map((m) => ({
         id: m.id,
         name: m.label,
         running: !!this.find(m.id),
-        hint: m.id === def ? 'default' : `model: ${m.id}`,
+        // No override configured (resolved model === the slot's built-in default) => no hint at
+        // all, just the slot name. A custom override shows the actual spawned --model string.
+        hint: m.model === m.id ? '' : `model: ${m.model}`,
       }));
   }
 
