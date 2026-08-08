@@ -45,6 +45,15 @@ test('applyPatch answer patch targets the right question', () => {
   assert.equal(doc.entries.find((e) => e.id === 't-cc01').questions[1].answer, 'Dead-letter to a DB table.');
 });
 
+test('applyPatch answer patch clears that question\'s suggestions (accept reuses the answer path)', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const before = doc.entries.find((e) => e.id === 't-cc01').questions[1];
+  assert.deepEqual(before.suggestions, ['Dead-letter to a DB table.', 'Log and drop.']);
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answer', value: 'Dead-letter to a DB table. accepted', base: '', questionIndex: 1 });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(doc.entries.find((e) => e.id === 't-cc01').questions[1].suggestions, []);
+});
+
 test('applyPatch model normalization: default (opus) clears the field', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const r = applyPatch(doc, { taskId: 't-bb01', field: 'model', value: 'default (opus)', base: 'opus' });

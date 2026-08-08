@@ -27,6 +27,8 @@ and loop worker instructions: [LOOP.md](LOOP.md). Accepted tasks move to [DONE.m
     - answer: Exponential with jitter, cap at 5 attempts.
   - question: Dead-letter failed webhooks to a DB table, or log and drop?
     - answer:
+    - suggestion: Dead-letter to a DB table.
+    - suggestion: Log and drop.
 
 - [ ] Migrate integration tests from Jest to node:test
   - id: t-dd01

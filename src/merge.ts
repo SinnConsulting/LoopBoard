@@ -75,6 +75,9 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
     case 'answer':
       if (questionIndex !== undefined && entry.questions[questionIndex]) {
         entry.questions[questionIndex].answer = value;
+        // Answering (typed or via a suggestion's accept button) settles the question — its
+        // suggestions no longer apply and would otherwise linger until the groomer re-grooms.
+        entry.questions[questionIndex].suggestions = [];
       }
       break;
     case 'note':
