@@ -735,13 +735,19 @@
     return out;
   }
   // Inline pass for a single block's text (heading, list item, or paragraph run). `text` is raw
-  // user input: escape FIRST, then split off `code` spans, then run the inline renderer on the
-  // rest — so the only tags reaching the DOM are the ones we emit (escape-first XSS invariant).
+  // user input: escape FIRST, then MASK `code` spans as index tokens so emphasis delimiters can
+  // pair across a code span (e.g. **`x`**), run the inline renderer, then restore the chips — so
+  // code content is never emphasis-processed and the only tags reaching the DOM are the ones we
+  // emit (escape-first XSS invariant). Index-based restore keeps that invariant: a forged token
+  // can only ever restore to an already-escaped <code> chip, never inject raw HTML.
   function renderInline(text) {
-    return escapeHtml(text).split(/(`[^`]+`)/).map((p) =>
-      p.length >= 2 && p[0] === '`' && p[p.length - 1] === '`'
-        ? '<code>' + p.slice(1, -1) + '</code>'
-        : renderInlineMd(p)).join('');
+    const codes = [];
+    const masked = escapeHtml(text).replace(/`[^`]+`/g, (m) => {
+      codes.push(m.slice(1, -1));
+      return '\x00' + (codes.length - 1) + '\x00';
+    });
+    return renderInlineMd(masked).replace(/\x00(\d+)\x00/g, (m, i) =>
+      codes[i] !== undefined ? '<code>' + codes[i] + '</code>' : m);
   }
   // Block-level pass: classifies each line as an ATX heading (#..######), an unordered (- / *) or
   // ordered (1.) list item, or paragraph text, and delegates each block's content to renderInline.
