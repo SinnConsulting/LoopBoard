@@ -484,6 +484,7 @@
 
   function renderDraft(t) {
     const u = getUi(t.id);
+    const isCollapsedCard = isCollapsed(t.id);
     let textEl;
     if (u.editingDraft) {
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
@@ -523,7 +524,10 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
-    return h('div', { class: 'card draft', 'data-task': t.id },
+    let cls = 'card draft';
+    if (isCollapsedCard) cls += ' collapsed';
+
+    return h('div', { class: cls, 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
         icon(SVG.robot, 'muted'),
@@ -532,11 +536,18 @@
             h('span', { class: 'draft-badge' }, 'Draft'),
             idChip(t.id),
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
-          textEl,
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+          isCollapsedCard ? null : textEl,
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
-          h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+          isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+        h('button', {
+          class: 'icon-btn collapse-toggle', type: 'button',
+          'aria-expanded': isCollapsedCard ? 'false' : 'true',
+          'aria-label': isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          title: isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          onclick: () => toggleCollapse(t.id),
+        }, icon(SVG.chevron)),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
   }
 
