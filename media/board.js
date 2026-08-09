@@ -1219,12 +1219,20 @@
       if (!q.answered && q.suggestions && q.suggestions.length) {
         const suggWrap = h('div', { class: 'suggestions' });
         q.suggestions.forEach((s) => {
+          const acceptSuggestion = () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); };
           suggWrap.append(h('div', { class: 'suggestion-row' },
             h('span', { class: 'suggestion-text' }, s),
             h('button', {
               class: 'btn-sm primary suggestion-accept-btn', type: 'button',
               title: 'Accept suggestion', 'aria-label': 'Accept suggestion: ' + s,
-              onclick: () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); },
+              // Commit on pointerdown (not just click): while the search box is focused a background
+              // loop refresh queues pendingBoard; waiting for `click` lets the focusout flush fire
+              // render()'s `root.textContent=''` and tear this button down before the answer patch
+              // posts, so the accept silently no-ops (t-157b feedback). preventDefault also keeps the
+              // prior field focused so no focusout flush runs mid-gesture. Same race the composer's
+              // Save Draft dodges (t-d3dd); onclick stays wired for keyboard (Enter/Space) activation.
+              onpointerdown: (e) => { e.preventDefault(); acceptSuggestion(); },
+              onclick: acceptSuggestion,
             }, icon(SVG.check), 'Accept')));
         });
         block.append(suggWrap);
