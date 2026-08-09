@@ -277,9 +277,12 @@ export class Store {
       if (!entry) return;
       let title = entry.title;
       for (const f of files) {
-        const marker = `](${f.token})`;
-        title = f.token && title.includes(marker)
-          ? title.split(marker).join(`](${f.path})`)
+        // Rewrite the whole `[label](token)` link, not just the path: dedupe may have renamed
+        // the staged file (image.png → image-2.png) and the label must show the on-disk name.
+        const escapedToken = f.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const linkRe = f.token ? new RegExp(`\\[[^\\]]*\\]\\(${escapedToken}\\)`, 'g') : null;
+        title = linkRe && linkRe.test(title)
+          ? title.replace(linkRe, `[${f.name}](${f.path})`)
           : `${title} [${f.name}](${f.path})`;
       }
       if (title !== entry.title) {

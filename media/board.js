@@ -795,7 +795,9 @@
     const items = [];
     const re = /\[([^\]]+)\]\((\.loopboard\/cache\/[^)\s]+)\)/g;
     let m;
-    while ((m = re.exec(String(description || ''))) !== null) items.push({ label: m[1], path: m[2] });
+    // Label with the on-disk filename (path basename), not the link label — dedupe may have
+    // renamed the staged file (image.png → image-2.png) and the area must show the real name.
+    while ((m = re.exec(String(description || ''))) !== null) items.push({ label: m[2].split('/').pop(), path: m[2] });
     return items;
   }
   function detachAttachment(taskId, path) {
