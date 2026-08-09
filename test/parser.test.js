@@ -171,12 +171,12 @@ test('model + groomer serialize on drafts (model before groomer) and round-trip'
   assert.equal(serializeTodo(doc2), text, 'fixpoint');
 });
 
-test('haiku is accepted as a model:/groomer: value and round-trips', () => {
+test('an unrecognized model: (e.g. the removed haiku slot) lands in unknownLines, not entry.model', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] Haiku task', '  - id: t-hk01', '  - phase: backlog', '  - model: haiku', '  - groomer: haiku'].join('\n');
   const doc = parseTodo(src);
-  assert.equal(doc.entries[0].model, 'haiku');
-  assert.equal(doc.entries[0].groomer, 'haiku');
-  assert.equal(doc.entries[0].unknownLines.length, 0, 'not dropped to unknownLines');
+  assert.equal(doc.entries[0].model, undefined);
+  assert.equal(doc.entries[0].groomer, undefined);
+  assert.deepEqual(doc.entries[0].unknownLines, ['  - model: haiku', '  - groomer: haiku']);
   assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
 });
 

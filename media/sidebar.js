@@ -48,9 +48,9 @@
 
     const header = h('div', { class: 'sb-attn-header' });
     if (b.count > 0) {
-      header.append(h('div', { class: 'sb-attn-title' }, h('span', { class: 'attn-dot pulse' }), b.count + ' item' + (b.count === 1 ? '' : 's') + ' need you'));
+      header.append(h('div', { class: 'sb-attn-title' }, h('span', { class: 'attn-dot pulse' }), b.count + ' - Items require your attention'));
     } else {
-      header.append(h('div', { class: 'sb-attn-title clear' }, 'Nothing needs you 🎉'));
+      header.append(h('div', { class: 'sb-attn-title clear' }, 'You are all set', h('span', { class: 'codicon codicon-pass' })));
     }
     sb.append(header);
 
@@ -141,7 +141,9 @@
       // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
       // long title stays fully readable without widening the sidebar.
       loops.append(h('button', { class: 'sb-row loop-status click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage(revealMsg) },
-        h('span', { class: 'loop-status-label' }, (c.breached ? '⚠ limit breached — ' : '') + 'In Progress:'),
+        h('span', { class: 'loop-status-label' },
+          c.breached ? h('span', { class: 'codicon codicon-warning' }) : null,
+          (c.breached ? ' limit breached — ' : '') + 'In Progress:'),
         h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, inProg))));
       if (c.message) {
         loops.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));

@@ -34,7 +34,7 @@
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
     x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    undo: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
@@ -57,6 +57,16 @@
   let composerText = saved.composerText || '';
   let composerGroomer = saved.composerGroomer || ''; // '' = default model
   let composerModel = saved.composerModel || '';     // '' = default model
+  let composerNeedsFocus = false;
+  let composerCaret = null; // caret offset to restore into the composer textarea after a repaint
+  // Pending composer attachments (t-att1 rework): a brand-new story has no id to stage bytes
+  // under, so pasted/dropped images are held here ({token, filename, dataBase64}); pasting
+  // inserts `[filename](loopboard-pending:<n>)` at the caret so the reference sits in the story
+  // text, and Save Draft stages the bytes and rewrites each placeholder to the real cache path
+  // (host-side) — pasting never auto-saves the draft anymore.
+  // Deliberately NOT persisted via saveState: base64 image payloads can exceed the webview
+  // state budget; pending images live only as long as the webview does.
+  let composerAttachments = [];
   const ui = {}; // per-task UI state, keyed by task id
   // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
   // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
@@ -109,9 +119,9 @@
   function post(msg) {
     vscode.postMessage(msg);
   }
-  function pushToast(level, text, action) {
+  function pushToast(level, text, action, iconName) {
     const id = toastSeq++;
-    toasts.push({ id, level, text, action });
+    toasts.push({ id, level, text, action, icon: iconName });
     scheduleRender();
     setTimeout(() => dismissToast(id), level === 'warning' ? 8000 : 4000);
   }
@@ -225,6 +235,22 @@
       // is now safe to fire while a field is focused — focus + caret return to that same field.
       requestAnimationFrame(() => restoreActiveField(activeField));
     }
+    // Focus the composer textarea on open so an immediate Cmd/Ctrl+V paste (before the user
+    // clicks into it) lands on it — clipboard paste only fires on the focused element (t-att1
+    // feedback: pasting right after "New Story" did nothing since nothing was focused yet).
+    if (composerOpen && composerNeedsFocus) {
+      composerNeedsFocus = false;
+      const caret = composerCaret;
+      composerCaret = null;
+      requestAnimationFrame(() => {
+        const ta = document.querySelector('.composer-area');
+        if (!ta) return;
+        ta.focus();
+        // Restore the caret after a paste-triggered repaint so typing continues right after
+        // the just-inserted link instead of jumping to the end.
+        if (caret != null) { try { ta.setSelectionRange(caret, caret); } catch (e) { /* detached */ } }
+      });
+    }
   }
 
   // ---- generic focus/caret restore across a full repaint ----
@@ -253,6 +279,20 @@
     if (!el) return;
     el.focus();
     if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
+  }
+
+  // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
+  // textarea/input (description, title, draft, note). Blurring BEFORE render() matters: render()'s
+  // captureActiveField() reads document.activeElement at the very start, still pointing at the
+  // about-to-be-removed field if we haven't blurred yet — so it recaptures a field that edit mode
+  // just closed, and restoreActiveField() then either re-opens it or (since the post-close view has
+  // no `data-field`) silently no-ops, leaving focus stranded on the now-tabindex=0 view element
+  // instead of released — the "needs a second ESC" bug (t-esc1). Blurring first means
+  // captureActiveField() finds nothing to recapture.
+  function exitFieldEdit(clearFn) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    clearFn();
+    render();
   }
 
   function renderSearchBar(shownCount, totalCount) {
@@ -308,7 +348,9 @@
     // Reopen the composer WITHOUT clearing its draft: a non-empty composerText only ever survives
     // as a genuinely-unsaved draft (Cancel and Save draft both reset it), so wiping here would lose
     // text the user typed before switching phase tabs and clicking New Story again — see t-ntx1.
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; resetSearch(); saveState(); render(); } },
+    // composerNeedsFocus stays set so the textarea auto-focuses on open (t-att1), letting an
+    // immediate paste land on it.
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
@@ -364,6 +406,7 @@
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
+    const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; phase = 'new'; resetSearch(); saveState(); render(); };
     // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
     // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
     // when the composer textarea is unfocused (see t-d3dd). onclick stays wired for keyboard
@@ -371,22 +414,77 @@
     const commitDraft = () => {
       const t = composerText.trim();
       if (!t) return;
-      post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
-      composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new';
-      resetSearch(); saveState(); render();
+      if (composerAttachments.length) {
+        post({
+          type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel,
+          attachments: composerAttachments.map((a) => ({ token: a.token, filename: a.filename, dataBase64: a.dataBase64 })),
+        });
+      } else {
+        post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
+      }
+      closeComposer();
     };
     const saveBtn = h('button', {
       class: 'btn-primary', type: 'button', disabled: composerText.trim().length === 0, style: { width: 'auto', padding: '8px 16px' },
       onpointerdown: (e) => { e.preventDefault(); commitDraft(); },
       onclick: commitDraft,
     }, 'Save Draft');
+    // t-att1 rework: pasting/dropping an image no longer auto-saves the draft (that ended the
+    // typing flow mid-thought). The image is held in memory, `[filename](loopboard-pending:<n>)`
+    // is inserted at the caret so the reference sits in the story text where you're typing, and
+    // Save Draft stages the bytes and rewrites the placeholder to the real cache path host-side
+    // (no id/path exists before the draft is saved). The list below the textarea carries a
+    // remove × per pending image, which also strips its placeholder from the text.
+    const addPendingAttachment = (file) => {
+      readImageFile(file, (filename, dataBase64) => {
+        const token = 'loopboard-pending:' + attachReqSeq++;
+        insertLinkAtCursor(area, '[' + filename + '](' + token + ')');
+        composerText = area.value;
+        composerAttachments.push({ token, filename, dataBase64 });
+        composerNeedsFocus = true; // render() rebuilds the textarea — hand focus back so typing continues
+        composerCaret = area.selectionStart;
+        saveState();
+        render();
+      });
+    };
+    area.addEventListener('dragover', (e) => e.preventDefault());
+    area.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) { e.preventDefault(); addPendingAttachment(files[0]); }
+    });
+    area.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); addPendingAttachment(file); }
+          break;
+        }
+      }
+    });
+    const pendingEl = composerAttachments.length === 0 ? null : h('div', { style: { marginTop: '8px' } },
+      h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
+      composerAttachments.map((a, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' } },
+        h('span', { class: 'muted-11' }, a.filename),
+        h('button', {
+          class: 'icon-btn', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
+          onclick: () => {
+            // Strip the placeholder link from the text too, so a discarded image leaves no trace.
+            composerText = composerText.split('[' + a.filename + '](' + a.token + ')').join('').replace(/[ \t]{2,}/g, ' ');
+            composerAttachments.splice(i, 1);
+            saveState();
+            render();
+          },
+        }, icon(SVG.x)))));
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
       h('div', { class: 'pane-explainer' }, 'Describe the story in your own words — an agent structures it for you.'),
       area,
+      pendingEl,
       h('div', { class: 'composer-actions' },
         saveBtn,
-        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; saveState(); render(); } }, 'Cancel'),
+        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; saveState(); render(); } }, 'Cancel'),
         modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }),
         modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
@@ -470,6 +568,7 @@
 
   function renderDraft(t) {
     const u = getUi(t.id);
+    const isCollapsedCard = isCollapsed(t.id);
     let textEl;
     if (u.editingDraft) {
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
@@ -489,14 +588,19 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingDraft = false; u.draftText = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
+      // t-att1 rework: no caret-insert into the raw draft text (links crammed into the title made
+      // it unreadable) — a paste/drop while editing bubbles to the card handler, which stages the
+      // image into the description, so it shows in the attachments area like everywhere else.
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
-      requestAnimationFrame(() => ta.focus());
+      // One-shot: only grab focus when the editor first opens — refocusing on every render
+      // re-selects the card after the user already clicked outside (t-att1 feedback).
+      if (u.draftNeedsFocus) { u.draftNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
     } else {
       textEl = h('button', { class: 'draft-text draft-text-btn', type: 'button', title: 'Click to edit',
-        onclick: () => { u.editingDraft = true; u.draftText = t.title; render(); } }, t.title);
+        onclick: () => { u.editingDraft = true; u.draftText = t.title; u.draftNeedsFocus = true; render(); } }, t.title);
     }
     // "Groom with" selector: which model expands this draft into a story (absent = default).
     const groomDefOpt = groomerDefaultOpt();
@@ -509,21 +613,214 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
-    return h('div', { class: 'card draft', 'data-task': t.id },
+    // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
+    // markdown links to the draft's task-file ## Description; the shared attachments area lists
+    // them with an open link and a remove × each.
+    const attachEl = renderAttachmentsArea(t);
+
+    let cls = 'card draft';
+    if (isCollapsedCard) cls += ' collapsed';
+
+    const card = h('div', { class: cls, 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
+        h('button', {
+          class: 'icon-btn collapse-toggle', type: 'button',
+          'aria-expanded': isCollapsedCard ? 'false' : 'true',
+          'aria-label': isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          title: isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          onclick: () => toggleCollapse(t.id),
+        }, icon(SVG.chevron)),
         icon(SVG.robot, 'muted'),
         h('div', { style: { flex: '1' } },
           h('div', { class: 'draft-head-row', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
             h('span', { class: 'draft-badge' }, 'Draft'),
             idChip(t.id),
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
-          textEl,
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+          isCollapsedCard ? null : textEl,
+          isCollapsedCard ? null : attachEl,
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
-          h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+          isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
+    wireAttachDropAndPaste(card, t.id);
+    return card;
+  }
+
+  // ---- attachments (t-att1): drag-drop / clipboard paste only, no attach button — read bytes in
+  // the webview and base64-encode them for postMessage (the only path bytes can cross that
+  // boundary). v1 scope is images only. A whole-card drop/paste (no field open) appends straight
+  // to Description (attachFile/wireAttachDropAndPaste below); a drop/paste inside an
+  // already-open Description, answer, or draft-text field instead folds the link into that
+  // field's own value (wireFieldAttach, below) so it saves through the normal field-patch path.
+  const ATTACH_MIME_EXT = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
+    'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg',
+  };
+  // Read an image File/Blob to {filename, dataBase64}, or null (with a toast) if it isn't one.
+  function readImageFile(file, cb) {
+    if (!file || !file.type || file.type.indexOf('image/') !== 0) {
+      pushToast('warning', 'Only image attachments are supported.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const comma = dataUrl.indexOf(',');
+      if (comma < 0) return;
+      const filename = file.name && file.name.trim() ? file.name : ('pasted-image.' + (ATTACH_MIME_EXT[file.type] || 'png'));
+      cb(filename, dataUrl.slice(comma + 1));
+    };
+    reader.readAsDataURL(file);
+  }
+  function attachFile(taskId, file) {
+    readImageFile(file, (filename, dataBase64) => {
+      const reqId = 'a' + attachReqSeq++;
+      pendingAttach[reqId] = (msg) => applyAttachedMirror(taskId, msg);
+      post({ type: 'attach', reqId, taskId, filename, dataBase64 });
+    });
+  }
+  // Whole-card attach (t-att1 feedback): the host's board refresh is deferred while any field is
+  // focused, so apply the store's post-append text locally and repaint just this card — the
+  // attachment shows immediately instead of after the next outside click. The text comes from
+  // the host verbatim; the store is the single owner of the append format. Full cards carry
+  // their links in `description`; drafts carry them in the raw draft text (`title`).
+  function findBoardTask(taskId) {
+    if (!board) return null;
+    for (const key in board.phases) for (const t of board.phases[key]) if (t.id === taskId) return t;
+    return null;
+  }
+  function applyAttachedMirror(taskId, msg) {
+    const t = findBoardTask(taskId);
+    if (!t) return;
+    if (typeof msg.description !== 'string' && typeof msg.title !== 'string') { scheduleRender(); return; }
+    if (typeof msg.description === 'string') t.description = msg.description;
+    if (typeof msg.title === 'string') t.title = msg.title;
+    repaintCard(t);
+  }
+  function repaintCard(t) {
+    const old = document.querySelector('[data-task="' + t.id + '"]');
+    if (!old) { scheduleRender(); return; }
+    const active = document.activeElement;
+    let restore = null;
+    if (active && active.tagName === 'TEXTAREA' && old.contains(active)) {
+      restore = {
+        field: active.getAttribute('data-field') || (active.classList.contains('draft-edit') ? 'draft' : null),
+        qindex: active.getAttribute('data-qindex'),
+        start: active.selectionStart,
+        end: active.selectionEnd,
+      };
+    }
+    const fresh = t.isDraft ? renderDraft(t) : renderCard(t);
+    old.replaceWith(fresh);
+    if (!restore || !restore.field) return;
+    const sel = restore.field === 'draft' ? 'textarea.draft-edit'
+      : restore.qindex != null ? 'textarea[data-field="answer"][data-qindex="' + restore.qindex + '"]'
+      : 'textarea[data-field="' + restore.field + '"]';
+    const ta = fresh.querySelector(sel);
+    if (ta) { ta.focus(); try { ta.setSelectionRange(restore.start, restore.end); } catch (e) { /* detached */ } }
+  }
+  function wireAttachDropAndPaste(card, taskId) {
+    card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) attachFile(taskId, files[0]);
+    });
+    card.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); attachFile(taskId, file); }
+          break;
+        }
+      }
+    });
+  }
+
+  // Field-scoped attach (t-att1 feedback: description edits and question answers — "story
+  // comments" — need the same drag-drop/paste attach, folded into that specific field's own
+  // value rather than always the Description). Stages the bytes via the host, then the caller's
+  // `onStaged(path, filename)` inserts the link and saves through the normal field-patch path.
+  let attachReqSeq = 1;
+  const pendingAttach = {};
+  // Insert at the caret (replacing any selection), padded with single spaces so the link lands
+  // inline where the user is typing — not appended at the end (t-att1 feedback).
+  function insertLinkAtCursor(ta, link) {
+    const v = ta.value;
+    const start = ta.selectionStart != null ? ta.selectionStart : v.length;
+    const end = ta.selectionEnd != null ? ta.selectionEnd : start;
+    const before = v.slice(0, start);
+    const after = v.slice(end);
+    const pre = before && !/\s$/.test(before) ? ' ' : '';
+    const post = after && !/^\s/.test(after) ? ' ' : '';
+    ta.value = before + pre + link + post + after;
+    const caret = before.length + pre.length + link.length;
+    ta.setSelectionRange(caret, caret);
+  }
+  function wireFieldAttach(el, taskId, field, questionIndex, onStaged) {
+    const stage = (file) => {
+      readImageFile(file, (filename, dataBase64) => {
+        const reqId = 'a' + attachReqSeq++;
+        pendingAttach[reqId] = (msg) => onStaged(msg.path, msg.filename);
+        post({ type: 'attach', reqId, taskId, filename, dataBase64, field, questionIndex });
+      });
+    };
+    el.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) { e.preventDefault(); e.stopPropagation(); stage(files[0]); }
+    });
+    el.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); e.stopPropagation(); stage(file); }
+          break;
+        }
+      }
+    });
+  }
+
+  // Attachments area (t-att1 rework): a consistent block on drafts and full cards listing every
+  // staged `.loopboard/cache/...` link found in the description — click opens the file, the ×
+  // on the right deletes it from the story AND the cache folder (store-owned `detach`).
+  function extractAttachments(description) {
+    const items = [];
+    const re = /\[([^\]]+)\]\((\.loopboard\/cache\/[^)\s]+)\)/g;
+    let m;
+    // Label with the on-disk filename (path basename), not the link label — dedupe may have
+    // renamed the staged file (image.png → image-2.png) and the area must show the real name.
+    while ((m = re.exec(String(description || ''))) !== null) items.push({ label: m[2].split('/').pop(), path: m[2] });
+    return items;
+  }
+  function detachAttachment(taskId, path) {
+    const reqId = 'a' + attachReqSeq++;
+    pendingAttach[reqId] = (msg) => applyAttachedMirror(taskId, msg);
+    post({ type: 'detach', reqId, taskId, path });
+  }
+  function renderAttachmentsArea(t) {
+    // Drafts carry their links in the raw draft text (title); scan the description too for
+    // drafts staged before the rework (legacy).
+    const items = extractAttachments(t.isDraft ? (t.title || '') + '\n' + (t.description || '') : t.description);
+    if (!items.length) return null;
+    return h('div', { style: { marginTop: '8px' } },
+      h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
+      items.map((it) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' } },
+        h('a', {
+          href: '#', 'data-mdlink': it.path,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: it.path }); },
+        }, it.label),
+        h('button', {
+          class: 'icon-btn', type: 'button', 'aria-label': 'Delete attachment', title: 'Delete attachment (removes the file and its link)',
+          onclick: () => detachAttachment(t.id, it.path),
+        }, icon(SVG.x)))));
   }
 
   function renderCard(t) {
@@ -569,7 +866,7 @@
       }, 'Save');
       input.addEventListener('input', (e) => { u.titleDraft = e.target.value; saveBtn.disabled = e.target.value.trim() === t.title; });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingTitle = false; u.titleDraft = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
       titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
@@ -617,15 +914,25 @@
     // on-disk phase) would otherwise flicker on the refresh that restores it.
     if (variant === 'backlog') {
       head.append(h('button', {
-        class: 'btn-sm secondary demote-btn', type: 'button',
+        class: 'btn-sm primary demote-btn', type: 'button',
         'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
         onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
       }, icon(SVG.undo), 'Demote'));
+    }
+    // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
+    // visible even collapsed since `head` always renders (see the removed bottom .approve-row).
+    if (variant === 'review') {
+      head.append(h('button', {
+        class: 'btn-sm primary approve-btn', type: 'button',
+        'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
+        onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
+      }, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
     head.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete task', title: 'Delete task', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x)));
     card.append(head);
+    wireAttachDropAndPaste(card, t.id);
 
     // chips (always shown, even collapsed)
     card.append(renderChips(t));
@@ -652,6 +959,10 @@
       // description
       card.append(renderDescription(t));
 
+      // attachments area (t-att1 rework: same block as on drafts, with per-image delete)
+      const attArea = renderAttachmentsArea(t);
+      if (attArea) card.append(attArea);
+
       // working indicator
       if (variant === 'inprogress') {
         card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), (t.owner || 'Worker') + ' is on it · last activity today'));
@@ -667,15 +978,6 @@
       card.append(renderNote(t));
     }
 
-    // accept gate (Rule 1): single Approve button, bottom-right — visible even collapsed
-    if (variant === 'review') {
-      card.append(h('div', { class: 'approve-row' },
-        h('button', {
-          class: 'btn-sm primary approve-btn', type: 'button',
-          'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
-          onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
-        }, icon(SVG.check), 'Approve')));
-    }
     return card;
   }
 
@@ -707,27 +1009,34 @@
   // ---- minimal, XSS-clean markdown for descriptions ----
   // Supports **bold**, *italic*/_italic_, `code`, [text](http(s)://url), line breaks.
   // All user text is HTML-escaped first, so the only tags in the output are the ones we emit;
-  // link hrefs are limited to http/https and carried on data-mdlink (wired to openLink on render).
+  // link hrefs are limited to http/https or a staged-attachment `.loopboard/cache/...` relative
+  // path (t-att1), carried on data-mdlink (wired to openLink on render).
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
   function renderInlineMd(text) {
     // `text` is already HTML-escaped. Links first, then bold, then italic.
     let out = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
-      /^https?:\/\//i.test(url) ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
+      /^https?:\/\//i.test(url) || url.startsWith('.loopboard/cache/') ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');
     return out;
   }
   // Inline pass for a single block's text (heading, list item, or paragraph run). `text` is raw
-  // user input: escape FIRST, then split off `code` spans, then run the inline renderer on the
-  // rest — so the only tags reaching the DOM are the ones we emit (escape-first XSS invariant).
+  // user input: escape FIRST, then MASK `code` spans as index tokens so emphasis delimiters can
+  // pair across a code span (e.g. **`x`**), run the inline renderer, then restore the chips — so
+  // code content is never emphasis-processed and the only tags reaching the DOM are the ones we
+  // emit (escape-first XSS invariant). Index-based restore keeps that invariant: a forged token
+  // can only ever restore to an already-escaped <code> chip, never inject raw HTML.
   function renderInline(text) {
-    return escapeHtml(text).split(/(`[^`]+`)/).map((p) =>
-      p.length >= 2 && p[0] === '`' && p[p.length - 1] === '`'
-        ? '<code>' + p.slice(1, -1) + '</code>'
-        : renderInlineMd(p)).join('');
+    const codes = [];
+    const masked = escapeHtml(text).replace(/`[^`]+`/g, (m) => {
+      codes.push(m.slice(1, -1));
+      return '\x00' + (codes.length - 1) + '\x00';
+    });
+    return renderInlineMd(masked).replace(/\x00(\d+)\x00/g, (m, i) =>
+      codes[i] !== undefined ? '<code>' + codes[i] + '</code>' : m);
   }
   // Block-level pass: classifies each line as an ATX heading (#..######), an unordered (- / *) or
   // ordered (1.) list item, or paragraph text, and delegates each block's content to renderInline.
@@ -804,18 +1113,24 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { u.editingDesc = false; u.descDraft = null; render(); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
+      wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+        commitDesc();
+      });
       wrap.append(ta, saveBtn);
-      requestAnimationFrame(() => ta.focus());
+      // One-shot: only grab focus when the editor first opens — refocusing on every render
+      // re-selects the card after the user already clicked outside (t-att1 feedback).
+      if (u.descNeedsFocus) { u.descNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
     } else {
       const hasDesc = !!(t.description && t.description.trim());
       const view = hasDesc
         ? h('div', { class: 'desc-rendered', role: 'button', tabindex: '0', html: mdToHtml(t.description) })
         : h('div', { class: 'desc-rendered desc-empty', role: 'button', tabindex: '0' }, 'Add a description…');
-      view.addEventListener('click', () => { u.editingDesc = true; render(); });
-      view.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); u.editingDesc = true; render(); } });
+      view.addEventListener('click', () => { u.editingDesc = true; u.descNeedsFocus = true; render(); });
+      view.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); u.editingDesc = true; u.descNeedsFocus = true; render(); } });
       view.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
@@ -837,8 +1152,10 @@
       ? `${answered} of ${t.questions.length} questions answered.`
       : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
     // Save All (t-f86b): commits every question whose draft differs from its saved answer, in one
-    // click. Only enabled once more than one question has an unsaved draft (a single one already
-    // has its own per-question Save).
+    // click. Enabled whenever at least one question has an unsaved draft — even just one, since
+    // the user may reach for Save All after already saving other answers individually (t-623d);
+    // it then overlaps that lone question's own per-question Save, which is fine, both do the
+    // same thing.
     const commits = [];
     let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
     t.questions.forEach((q, i) => {
@@ -883,7 +1200,16 @@
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
       ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
-      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); } });
+      ta.addEventListener('keydown', (e) => {
+        // Answer has no separate view mode to close — Escape discards the unsaved draft back to
+        // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
+        if (e.key === 'Escape') { ta.value = q.answer; delete u.answerDrafts[i]; autoGrow(ta); saveBtn.disabled = true; updateSaveAll(); ta.blur(); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
+      });
+      wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+        commitAnswer();
+      });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
       // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
       // click, no AI in the loop — accept just fills the textarea and reuses commitAnswer, i.e. the
@@ -917,7 +1243,7 @@
         title: 'Save every question whose answer changed',
         onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
       }, 'Save All');
-      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length <= 1; };
+      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length < 1; };
       updateSaveAll();
       wrap.append(h('div', { class: 'approve-row' }, saveAllBtn));
     }
@@ -952,7 +1278,12 @@
       title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
     }, 'Save');
     ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
-    ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); } });
+    ta.addEventListener('keydown', (e) => {
+      // Feedback has no separate view mode to close — Escape discards the draft (there is no
+      // saved value to revert to) and releases focus (previously a dead key here, t-esc1).
+      if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
+      if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
+    });
     wrap.append(h('div', {}, ta, saveBtn));
     return wrap;
   }
@@ -972,7 +1303,10 @@
         render();
       };
       ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => { if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); } });
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
+      });
       const sendBtn = h('button', {
         class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
         title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
@@ -994,7 +1328,9 @@
   function renderToasts() {
     const wrap = h('div', { class: 'toasts' });
     for (const t of toasts) {
-      const el = h('div', { class: 'toast ' + t.level, role: 'status' }, h('span', {}, t.text));
+      const el = h('div', { class: 'toast ' + t.level, role: 'status' },
+        t.icon ? h('span', { class: 'codicon codicon-' + t.icon }) : null,
+        h('span', {}, t.text));
       if (t.action) el.append(h('button', { class: 'toast-action', type: 'button', onclick: t.action.onClick }, t.action.label));
       el.append(h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', style: { width: '20px', height: '20px' }, onclick: () => dismissToast(t.id) }, icon(SVG.x)));
       wrap.append(el);
@@ -1032,9 +1368,21 @@
     } else if (msg.type === 'toast') {
       if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
-      pushToast(msg.level, msg.text, action);
+      pushToast(msg.level, msg.text, action, msg.icon);
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer);
+    } else if (msg.type === 'attachStaged' || msg.type === 'attachRemoved') {
+      // Reply to an attach (field-scoped wireFieldAttach, or whole-card attachFile) or to the
+      // attachments area's × (detach) — resolved outside the normal board repaint so it works
+      // while a field is still focused/mid-edit.
+      const onStaged = pendingAttach[msg.reqId];
+      delete pendingAttach[msg.reqId];
+      if (!onStaged) return;
+      if (msg.status !== 'applied') {
+        pushToast('warning', msg.message || (msg.type === 'attachRemoved' ? 'Could not delete that attachment.' : 'Could not attach that file.'));
+        return;
+      }
+      onStaged(msg);
     }
   });
 
@@ -1073,6 +1421,8 @@
       composerText = '';
       composerGroomer = '';
       composerModel = '';
+      composerAttachments = [];
+      composerNeedsFocus = true;
       saveState();
       render();
       return;

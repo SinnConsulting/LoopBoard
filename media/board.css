@@ -121,6 +121,7 @@ textarea { resize: vertical; }
 .card.review { border-left: 3px solid var(--vscode-focusBorder, #007fd4); }
 .card.conflict { outline: 2px solid var(--vscode-inputValidation-warningBorder, #cca700); outline-offset: -1px; }
 .card.draft { border: 1px dashed var(--vscode-widget-border, #454545); border-left: 1px dashed var(--vscode-widget-border, #454545); }
+.card.drag-over { outline: 2px dashed var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
 .flash-overlay {
   position: absolute; inset: 0; border-radius: 6px; pointer-events: none;
   background: rgba(255,255,255,0.06); opacity: 0; animation: refresh-flash 600ms ease-out;
@@ -129,7 +130,8 @@ textarea { resize: vertical; }
 .card-head { display: flex; align-items: flex-start; gap: 10px; }
 .card-type-icon { font-size: 14px; margin-top: 3px; flex-shrink: 0; opacity: 0.85; }
 .tab-icon { font-size: 14px; }
-.link .codicon, .chip .codicon, .question .codicon, .amber-block .codicon, .note-chip .codicon {
+.link .codicon, .chip .codicon, .question .codicon, .amber-block .codicon, .note-chip .codicon,
+.toast .codicon {
   font-size: 13px; flex-shrink: 0;
 }
 .collapse-toggle { margin-top: 2px; }
@@ -330,6 +332,7 @@ textarea { resize: vertical; }
 .toast.success { border-left: 3px solid var(--vscode-testing-iconPassed, #73c991); }
 .toast.info { border-left: 3px solid var(--vscode-focusBorder, #007fd4); }
 .toast span { flex: 1; font-size: 13px; line-height: 1.5; }
+.toast .codicon { flex: none; margin-top: 1px; }
 .toast-action { background: none; border: none; color: var(--vscode-textLink-foreground, #3794ff); font-size: 11px; padding: 0; cursor: pointer; flex-shrink: 0; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }

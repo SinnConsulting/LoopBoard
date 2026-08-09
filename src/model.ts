@@ -11,7 +11,7 @@ export type Phase = 'new' | 'inprogress' | 'feedback' | 'backlog' | 'review' | '
 // the loop terminals, and identify a worker for claiming — a FIXED set. What actually gets passed
 // as `claude --model <string>` is resolved per slot from settings (see resolveModels): each slot's
 // `--model` string is overridable, and each slot can be enabled/disabled.
-export type Model = 'opus' | 'sonnet' | 'fable' | 'haiku';
+export type Model = 'opus' | 'sonnet' | 'fable';
 
 // Built-in model slots in display order. `id` is the logical slot; `label` is the display name;
 // `model` is the DEFAULT `--model` string spawned for that slot (identity by default).
@@ -19,7 +19,6 @@ export const BUILTIN_MODELS: { id: Model; label: string; model: string }[] = [
   { id: 'opus', label: 'Opus', model: 'opus' },
   { id: 'sonnet', label: 'Sonnet', model: 'sonnet' },
   { id: 'fable', label: 'Fable', model: 'fable' },
-  { id: 'haiku', label: 'Haiku', model: 'haiku' },
 ];
 
 export const BUILTIN_MODEL_IDS: Model[] = BUILTIN_MODELS.map((m) => m.id);
@@ -43,7 +42,7 @@ export function isValidEffort(s: string): s is Effort {
 
 // Per-slot user configuration, read from the `loopBoard.models` setting (keyed by slot id). Two
 // accepted shapes: the object form `{ enabled, model, effort }` for full control, or a bare string
-// as a shorthand for just the `--model` override (e.g. `"haiku": "haiku[1m]"`).
+// as a shorthand for just the `--model` override (e.g. `"sonnet": "sonnet[1m]"`).
 export interface ModelConfigObject {
   enabled?: boolean; // default true; false hides the slot from the Loops overview + board selects
   model?: string; // custom `--model` string; empty/invalid => the built-in default (REPLACE when set)

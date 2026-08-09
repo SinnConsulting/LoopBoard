@@ -1,8 +1,8 @@
 {
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
-  "description": "Turn TODO.md into an interactive Kanban board and run autonomous Claude Code agent loops per task; markdown stays the source of truth.",
-  "version": "2.24.0",
+  "description": "Less prompting. No babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
+  "version": "2.29.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
@@ -80,8 +80,7 @@
             "enum": [
               "opus",
               "sonnet",
-              "fable",
-              "haiku"
+              "fable"
             ],
             "order": 1,
             "default": "sonnet",
@@ -92,8 +91,7 @@
             "enum": [
               "opus",
               "sonnet",
-              "fable",
-              "haiku"
+              "fable"
             ],
             "order": 2,
             "default": "opus",
@@ -173,31 +171,6 @@
             "order": 32,
             "default": "high",
             "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Fable slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
-          },
-          "loopBoard.models.haiku.enabled": {
-            "type": "boolean",
-            "order": 40,
-            "default": true,
-            "description": "Show the Haiku slot in the Loops overview and the board's model selects."
-          },
-          "loopBoard.models.haiku.model": {
-            "type": "string",
-            "order": 41,
-            "default": "",
-            "markdownDescription": "Custom `--model` string spawned for the Haiku slot (e.g. `haiku[1m]`). Empty = `haiku`. Invalid strings are ignored."
-          },
-          "loopBoard.models.haiku.effort": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ],
-            "order": 42,
-            "default": "high",
-            "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Haiku slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
           }
         }
       },
@@ -222,6 +195,13 @@
             "order": 3,
             "default": false,
             "description": "When a model finishes a task, send /clear to its loop terminal so the next task starts fresh. Same result as Auto Recycle but lighter: the terminal keeps running, only the conversation is cleared. Off by default. Ignored when Auto Recycle is on (a restart already clears everything)."
+          },
+          "loopBoard.maxAttachmentSizeMB": {
+            "type": "number",
+            "order": 4,
+            "default": 10,
+            "minimum": 1,
+            "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
           }
         }
       },

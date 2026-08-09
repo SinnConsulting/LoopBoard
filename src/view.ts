@@ -30,7 +30,7 @@ export interface LoopStatus {
   id: Model;
   name: string;
   running: boolean;
-  hint: string;
+  hint: string; // e.g. "model: <custom>" when the slot has a configured override; '' otherwise
 }
 
 export interface WebBoard {
