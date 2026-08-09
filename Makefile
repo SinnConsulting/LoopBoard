@@ -25,6 +25,7 @@ test: | node_modules
 
 package: | node_modules
 	$(DOCKER) npx --yes @vscode/vsce package --no-dependencies
+	$(DOCKER) sh -c "! npx --yes @vscode/vsce ls --no-dependencies | grep -E '^(\.loopboard|\.claude)/'"
 
 # Full gate: run before every commit.
 check: build test package
