@@ -18,7 +18,9 @@
 
 </div>
 
-> Anthropic's developer loop—popularized by Head of Claude Code Boris Cherny—is a harness engineering approach where developers stop writing single, isolated prompts and instead build iterative, automated loops where Claude observes, plans, acts, and reflects over hours or days.
+> "I don't prompt Claude anymore. I have loops running that prompt Claude and figure out what to do. My job is to write loops."
+>
+> — Boris Cherny, creator of Claude Code at Anthropic
 
 ![LoopBoard hero](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/hero.png)
 
