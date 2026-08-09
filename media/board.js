@@ -587,6 +587,13 @@
     const card = h('div', { class: cls, 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
+        h('button', {
+          class: 'icon-btn collapse-toggle', type: 'button',
+          'aria-expanded': isCollapsedCard ? 'false' : 'true',
+          'aria-label': isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          title: isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          onclick: () => toggleCollapse(t.id),
+        }, icon(SVG.chevron)),
         icon(SVG.robot, 'muted'),
         h('div', { style: { flex: '1' } },
           h('div', { class: 'draft-head-row', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
@@ -599,13 +606,6 @@
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
-        h('button', {
-          class: 'icon-btn collapse-toggle', type: 'button',
-          'aria-expanded': isCollapsedCard ? 'false' : 'true',
-          'aria-label': isCollapsedCard ? 'Expand draft' : 'Collapse draft',
-          title: isCollapsedCard ? 'Expand draft' : 'Collapse draft',
-          onclick: () => toggleCollapse(t.id),
-        }, icon(SVG.chevron)),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
     return card;
