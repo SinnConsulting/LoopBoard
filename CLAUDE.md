@@ -82,6 +82,15 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   apostrophe-free (still `'\''`-escaped).
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
+- Debug trace (`loopBoard.debug` = `off | info | verbose`): any new code that writes a
+  `.loopboard/` file or reads/acts on VSCode configuration MUST emit a `store.debugLog(level,
+  event, detail)` line — `info` for lifecycle (gates, loop spawn/recycle/stop, disk-wins
+  conflicts, activation), `verbose` for per-patch/attachment/config-read/message detail — routed
+  through the single store sink (`store.ts`), never a private `console.log` or ad-hoc file. `off`
+  writes nothing. Values are logged verbatim into the gitignored `.loopboard/debug.log` (buffered
+  hybrid: in-memory buffer → debounced flush → whole-file read-concat-write, no temp+rename, 10 MB
+  tail-cap, forced flush on `deactivate`). Pure modules stay vscode/store-free — log at the
+  store/controller/terminals boundary, never thread a logger into them.
 
 ## Conventions
 

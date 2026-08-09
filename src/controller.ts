@@ -51,6 +51,9 @@ export class Controller {
 
   private config() {
     const c = vscode.workspace.getConfiguration('loopBoard');
+    // config() is a hot helper (called several times per refresh), so the read is logged at
+    // verbose — not info — to keep the info trail a readable high-level lifecycle log (t-2901).
+    this.store.debugLog('verbose', 'config-read', 'loopBoard');
     return {
       permissionMode: c.get<string>('permissionMode', 'auto'),
       interval: c.get<string>('loopInterval', '1m'),
@@ -108,6 +111,7 @@ export class Controller {
       if (before > 0 && after === 0) {
         // Automatic lifecycle recycle — never steal focus from whatever the user is doing on the
         // board (e.g. typing in an answer field).
+        this.store.debugLog('info', 'auto-recycle', model);
         this.terminals.recycle(model, true);
       }
     }
@@ -126,6 +130,7 @@ export class Controller {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {
+        this.store.debugLog('info', 'clear-session', model);
         this.terminals.clearSession(model);
       }
     }
@@ -136,6 +141,7 @@ export class Controller {
   }
 
   async handleMessage(msg: any): Promise<void> {
+    this.store.debugLog('verbose', 'dispatch', String(msg?.type ?? '?'));
     switch (msg?.type) {
       case 'ready':
         if (this.lastBoard) {
