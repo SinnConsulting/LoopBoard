@@ -19,7 +19,7 @@
 
 > Anthropic's developer loop—popularized by Head of Claude Code Boris Cherny—is a harness engineering approach where developers stop writing single, isolated prompts and instead build iterative, automated loops where Claude observes, plans, acts, and reflects over hours or days.
 
-![LoopBoard hero](media/hero.png)
+![LoopBoard hero](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/hero.png)
 
 LoopBoard is a VSCode extension that turns your workspace `.loopboard/` tracker into an interactive
 board your Claude Code agent loops groom, build, and deliver from — while you keep the only two keys
@@ -49,7 +49,7 @@ that matter: **what gets started, and what gets accepted.** Markdown stays the s
 
 > **That's it.**
 
-![LoopBoard board in motion](media/screenshot-board.gif)
+![LoopBoard board in motion](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-board.gif)
 
 ## Get started
 
@@ -91,7 +91,7 @@ The activity-bar **sidebar** (left) is a read-only, at-a-glance summary — clic
 
 | | |
 |---|---|
-| ![LoopBoard sidebar](media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.</li><li><b>Settings</b> — opens the extension's configuration.</li></ul> |
+| ![LoopBoard sidebar](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.</li><li><b>Settings</b> — opens the extension's configuration.</li></ul> |
 
 On the board itself:
 
