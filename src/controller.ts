@@ -218,15 +218,16 @@ export class Controller {
         const taskId = String(msg.taskId ?? '');
         const filename = String(msg.filename ?? '');
         if (!taskId || !filename || typeof msg.dataBase64 !== 'string') return;
-        const field = msg.field === 'description' || msg.field === 'answer' ? msg.field : undefined;
+        const field = msg.field === 'description' || msg.field === 'answer' || msg.field === 'title' ? msg.field : undefined;
         const result = await this.store.stageAttachment(
           taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024, !field
         );
         if (msg.reqId) {
           // Field-scoped: the webview folds the link into the field's draft value, no refresh
-          // here. Whole-card: the webview mirrors the append locally for an immediate repaint,
-          // but still refresh so deferred board state reconciles with disk.
-          BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message });
+          // here. Whole-card: the webview mirrors the append locally for an immediate repaint
+          // (`description` carries the store's authoritative post-append text), but still
+          // refresh so deferred board state reconciles with disk.
+          BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message, description: result.description });
           if (field) return;
           return this.refresh();
         }

@@ -15,7 +15,7 @@ import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } fr
 import { Mutex } from './serialize';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
-export type AttachOutcome = SaveOutcome & { path?: string };
+export type AttachOutcome = SaveOutcome & { path?: string; description?: string };
 export type DraftOutcome = SaveOutcome & { id?: string };
 
 const DECODER = new TextDecoder();
@@ -163,12 +163,39 @@ export class Store {
       tasks.push(this.compose(entry, detail, detailText !== undefined));
     }
     const done: DoneEntry[] = [];
-    for (const entry of parseDone(doneText)) {
+    const doneEntries = parseDone(doneText);
+    for (const entry of doneEntries) {
       const detailText = await this.readFile(this.taskUri(entry.id));
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
       done.push({ ...entry, description: detail.description, delivered: detail.delivered });
     }
+    // Once per session: prune cache dirs whose task exists in neither index nor DONE (a task
+    // removed outside the board strands its attachments — cleanup otherwise only fires on
+    // acceptance or board-side delete). Skipped when TODO.md is missing: an empty index then
+    // means "unreadable", not "no tasks", and pruning would wipe every live cache dir.
+    if (!this.prunedOrphans && !this.todoMissing) {
+      this.prunedOrphans = true;
+      const liveIds = new Set<string>([...doc.entries.map((e) => e.id), ...doneEntries.map((e) => e.id)]);
+      void this.pruneOrphanedCacheDirs(liveIds);
+    }
     return { preamble: doc.preamble, tasks, done };
+  }
+
+  private prunedOrphans = false;
+  private async pruneOrphanedCacheDirs(liveIds: Set<string>): Promise<void> {
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(this.cacheDir);
+    } catch {
+      return; // no cache dir yet
+    }
+    for (const [name, type] of entries) {
+      // Conservative: only id-shaped directories, and only when the id is live nowhere.
+      if (type !== vscode.FileType.Directory) continue;
+      if (!/^t-[a-z0-9]{4}$/.test(name)) continue;
+      if (liveIds.has(name)) continue;
+      await this.clearAttachments(name);
+    }
   }
 
   // Atomic write: temp file in the same dir, then rename over the target. The temp name mixes a
@@ -222,7 +249,9 @@ export class Store {
     await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
     bumpRev(entry);
     await this.atomicWrite(this.todoUri, serializeTodo(doc));
-    return { status: 'applied', path: relPath };
+    // Return the task's new Description so the webview can mirror it verbatim — the store stays
+    // the single owner of the append format.
+    return { status: 'applied', path: relPath, description: detail.description };
   }
 
   // Avoid clobbering an existing file with the same name: name, name-2, name-3, ...

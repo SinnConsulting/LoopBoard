@@ -547,6 +547,10 @@
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
+      wireFieldAttach(ta, t.id, 'title', undefined, (path, filename) => {
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+        commitDraft();
+      });
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
@@ -615,8 +619,8 @@
   // the webview and base64-encode them for postMessage (the only path bytes can cross that
   // boundary). v1 scope is images only. A whole-card drop/paste (no field open) appends straight
   // to Description (attachFile/wireAttachDropAndPaste below); a drop/paste inside an
-  // already-open Description or answer field instead folds the link into that field's own value
-  // (wireFieldAttach, below) so it saves through the normal field-patch path.
+  // already-open Description, answer, or draft-text field instead folds the link into that
+  // field's own value (wireFieldAttach, below) so it saves through the normal field-patch path.
   const ATTACH_MIME_EXT = {
     'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
     'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg',
@@ -640,23 +644,24 @@
   function attachFile(taskId, file) {
     readImageFile(file, (filename, dataBase64) => {
       const reqId = 'a' + attachReqSeq++;
-      pendingAttach[reqId] = (path, fname) => appendAttachmentLocally(taskId, path, fname);
+      pendingAttach[reqId] = (path, fname, description) => applyAttachedDescription(taskId, description);
       post({ type: 'attach', reqId, taskId, filename, dataBase64 });
     });
   }
   // Whole-card attach (t-att1 feedback): the host's board refresh is deferred while any field is
-  // focused, so mirror the host's Description append locally and repaint just this card — the
-  // attachment shows immediately instead of after the next outside click.
+  // focused, so apply the store's post-append Description locally and repaint just this card —
+  // the attachment shows immediately instead of after the next outside click. The text comes
+  // from the host verbatim; the store is the single owner of the append format.
   function findBoardTask(taskId) {
     if (!board) return null;
     for (const key in board.phases) for (const t of board.phases[key]) if (t.id === taskId) return t;
     return null;
   }
-  function appendAttachmentLocally(taskId, path, filename) {
+  function applyAttachedDescription(taskId, description) {
     const t = findBoardTask(taskId);
     if (!t) return;
-    const link = '[' + filename + '](' + path + ')';
-    t.description = t.description && t.description.trim() ? t.description + '\n\n' + link : link;
+    if (typeof description !== 'string') { scheduleRender(); return; }
+    t.description = description;
     repaintCard(t);
   }
   function repaintCard(t) {
@@ -1281,7 +1286,7 @@
       delete pendingAttach[msg.reqId];
       if (!onStaged) return;
       if (msg.status !== 'applied') { pushToast('warning', msg.message || 'Could not attach that file.'); return; }
-      onStaged(msg.path, msg.filename);
+      onStaged(msg.path, msg.filename, msg.description);
     }
   });
 
