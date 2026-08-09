@@ -121,6 +121,7 @@ textarea { resize: vertical; }
 .card.review { border-left: 3px solid var(--vscode-focusBorder, #007fd4); }
 .card.conflict { outline: 2px solid var(--vscode-inputValidation-warningBorder, #cca700); outline-offset: -1px; }
 .card.draft { border: 1px dashed var(--vscode-widget-border, #454545); border-left: 1px dashed var(--vscode-widget-border, #454545); }
+.card.drag-over { outline: 2px dashed var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
 .flash-overlay {
   position: absolute; inset: 0; border-radius: 6px; pointer-events: none;
   background: rgba(255,255,255,0.06); opacity: 0; animation: refresh-flash 600ms ease-out;

@@ -66,12 +66,24 @@ archived to `.loopboard/DONE.md`.
   DONE.md          accepted tasks, newest first (created lazily on the first acceptance)
   LOOP.md          workflow rules + the loop worker instructions the loops read every pass
   tasks/<id>.md    per-task detail: meta, description, notes, worklog, feedback, delivered
+  cache/<id>/      staged image attachments (created on the first attach), see below
 ```
 
 The board composes each card from the slim index entry plus its `tasks/<id>.md`. Every edit
 re-reads the disk, applies one field-level patch, and writes the whole file back canonically
 (atomic temp-file + rename) — so humans, the board, and multiple agent loops share it safely. On
 acceptance the index entry moves to `DONE.md` while the task file stays in `tasks/` as history.
+
+`.loopboard/` is gitignored, so anything under it — including staged attachments — is local-only
+and never committed or shared via git. Attach an image to a task by dragging it onto a card (or
+the New Story composer) or pasting it from the clipboard — no button, drag-drop/paste only — and
+it's staged under `.loopboard/cache/<id>/`, referenced with a markdown link in the task's
+description (or the specific comment/answer field it was dropped into; drafts carry the link in
+their raw story text). In the New Story composer, pasting inserts a `[name](…)` link at the
+caret and the image stays pending (the draft isn't saved yet) — Save Draft stages the bytes and
+rewrites the link to the real cache path. Each card lists its staged images in an Attachments
+area with a × that deletes the file and its link; all remaining staged files are deleted once
+the task is accepted to `DONE.md`.
 
 ## Using the board
 
