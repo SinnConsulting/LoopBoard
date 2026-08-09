@@ -22,7 +22,7 @@
 >
 > — Boris Cherny, creator of Claude Code at Anthropic
 
-![LoopBoard hero](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/hero.png)
+[![LoopBoard demo — watch on YouTube](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/hero.jpg)](https://youtu.be/Cqdq1-CAapc)
 
 LoopBoard is a VSCode extension that turns your workspace `.loopboard/` tracker into an interactive
 board your Claude Code agent loops groom, build, and deliver from — while you keep the only two keys
