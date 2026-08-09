@@ -12,6 +12,16 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
+// here so store.stageAttachment has one raw-bytes entry point regardless of source (drag-drop/
+// paste vs. the host-side file picker, which reads bytes directly).
+function base64ToBytes(dataBase64: string): Uint8Array {
+  const binary = atob(dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 // Read a split default-model enum setting, falling back to the legacy single `loopBoard.defaultModel`
 // when the new key was never explicitly set — so pre-split configs keep steering both defaults.
 export function readDefaultModel(c: vscode.WorkspaceConfiguration, key: string): Model {
@@ -48,6 +58,7 @@ export class Controller {
       defaultGroomerModel: readDefaultModel(c, 'defaultGroomerModel'),
       autoRecycle: c.get<boolean>('autoRecycle', false),
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
+      maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
@@ -151,6 +162,33 @@ export class Controller {
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
       }
+      case 'createDraftWithAttach': {
+        // The New Story composer has no task id until a draft exists (t-att1 rework: pasted/
+        // dropped images are held pending in the webview — never auto-saved — and ride the
+        // Save Draft commit as an `attachments` array, staged onto the fresh draft here).
+        const text = String(msg.text ?? '').trim();
+        const attachments: unknown[] = Array.isArray(msg.attachments) ? msg.attachments : [];
+        if (!text) return;
+        const cfg = this.config();
+        const groomer = String(msg.groomer ?? '') || cfg.defaultGroomerModel;
+        const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
+        const draft = await this.store.createDraft(text, today(), groomer, model);
+        if (draft.id) {
+          // Stage bytes only (no auto-append) and then resolve the composer's caret-inserted
+          // `[name](loopboard-pending:<n>)` placeholders to the real staged cache paths.
+          const staged: { token: string; name: string; path: string }[] = [];
+          for (const a of attachments as { filename?: unknown; dataBase64?: unknown; token?: unknown }[]) {
+            const filename = String(a?.filename ?? '');
+            if (!filename || typeof a?.dataBase64 !== 'string') continue;
+            const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(a.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024, false);
+            if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
+            else if (result.path) staged.push({ token: String(a?.token ?? ''), name: result.path.split('/').pop() ?? filename, path: result.path });
+          }
+          await this.store.resolvePendingLinks(draft.id, staged);
+        }
+        this.toast('info', 'Draft saved — the loop will groom it into a story.');
+        return this.refresh();
+      }
       case 'spawnLoop':
         if (isKnownModel(msg.model)) this.terminals.spawn(msg.model);
         return;
@@ -169,9 +207,57 @@ export class Controller {
         return this.onSyncTemplates('Sync to the latest templates?');
       case 'openLink': {
         if (!msg.url) return;
-        const uri = vscode.Uri.parse(String(msg.url));
-        if (uri.scheme === 'http' || uri.scheme === 'https') void vscode.env.openExternal(uri);
+        const url = String(msg.url);
+        const uri = vscode.Uri.parse(url);
+        if (uri.scheme === 'http' || uri.scheme === 'https') {
+          void vscode.env.openExternal(uri);
+        } else if (url.startsWith('.loopboard/')) {
+          // A staged attachment link (t-att1): relative to the workspace root, not a URL.
+          void vscode.commands.executeCommand('vscode.open', this.store.resolveWorkspacePath(url));
+        }
         return;
+      }
+      case 'attach': {
+        // t-att1: images only, drag-drop/paste only (no file-picker button). A whole-card drop
+        // (no `field`) appends straight to the task's Description, same as before. A drop/paste
+        // scoped to an already-open Description or answer field (`field` set, keyed by `reqId`)
+        // only stages the bytes here — the webview folds the returned link into that field's own
+        // draft value and saves it through the normal field-patch path, so it lands in the right
+        // place instead of always the Description.
+        const taskId = String(msg.taskId ?? '');
+        const filename = String(msg.filename ?? '');
+        if (!taskId || !filename || typeof msg.dataBase64 !== 'string') return;
+        const field = msg.field === 'description' || msg.field === 'answer' || msg.field === 'title' ? msg.field : undefined;
+        const result = await this.store.stageAttachment(
+          taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024, !field
+        );
+        if (msg.reqId) {
+          // Field-scoped: the webview folds the link into the field's draft value, no refresh
+          // here. Whole-card: the webview mirrors the append locally for an immediate repaint
+          // (`description` carries the store's authoritative post-append text), but still
+          // refresh so deferred board state reconciles with disk.
+          BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message, description: result.description, title: result.title });
+          if (field) return;
+          return this.refresh();
+        }
+        if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
+        else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
+        return this.refresh();
+      }
+      case 'detach': {
+        // t-att1 rework: the attachments area's × — delete the staged file and strip its markdown
+        // link from the story's Description in one store-owned step, then mirror the result back
+        // (same reply pattern as attachStaged) so the card repaints while a field is focused.
+        const taskId = String(msg.taskId ?? '');
+        const relPath = String(msg.path ?? '');
+        if (!taskId || !relPath) return;
+        const result = await this.store.removeAttachment(taskId, relPath);
+        if (msg.reqId) {
+          BoardPanel.current?.post({ type: 'attachRemoved', reqId: msg.reqId, status: result.status, message: result.message, description: result.description, title: result.title });
+        } else if (result.status === 'error') {
+          this.toast('warning', result.message ?? 'Could not delete that attachment.', taskId);
+        }
+        return this.refresh();
       }
       case 'openBoard':
         this.openBoard();
