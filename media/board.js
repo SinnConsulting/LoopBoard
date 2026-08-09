@@ -524,6 +524,7 @@
 
   function renderDraft(t) {
     const u = getUi(t.id);
+    const isCollapsedCard = isCollapsed(t.id);
     let textEl;
     if (u.editingDraft) {
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
@@ -578,7 +579,10 @@
         desc);
     }
 
-    const card = h('div', { class: 'card draft', 'data-task': t.id },
+    let cls = 'card draft';
+    if (isCollapsedCard) cls += ' collapsed';
+
+    const card = h('div', { class: cls, 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
         icon(SVG.robot, 'muted'),
@@ -587,12 +591,19 @@
             h('span', { class: 'draft-badge' }, 'Draft'),
             idChip(t.id),
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
-          textEl,
-          attachEl,
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+          isCollapsedCard ? null : textEl,
+          isCollapsedCard ? null : attachEl,
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel),
-          h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+          isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+        h('button', {
+          class: 'icon-btn collapse-toggle', type: 'button',
+          'aria-expanded': isCollapsedCard ? 'false' : 'true',
+          'aria-label': isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          title: isCollapsedCard ? 'Expand draft' : 'Collapse draft',
+          onclick: () => toggleCollapse(t.id),
+        }, icon(SVG.chevron)),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
     return card;
@@ -877,13 +888,19 @@
     return out;
   }
   // Inline pass for a single block's text (heading, list item, or paragraph run). `text` is raw
-  // user input: escape FIRST, then split off `code` spans, then run the inline renderer on the
-  // rest — so the only tags reaching the DOM are the ones we emit (escape-first XSS invariant).
+  // user input: escape FIRST, then MASK `code` spans as index tokens so emphasis delimiters can
+  // pair across a code span (e.g. **`x`**), run the inline renderer, then restore the chips — so
+  // code content is never emphasis-processed and the only tags reaching the DOM are the ones we
+  // emit (escape-first XSS invariant). Index-based restore keeps that invariant: a forged token
+  // can only ever restore to an already-escaped <code> chip, never inject raw HTML.
   function renderInline(text) {
-    return escapeHtml(text).split(/(`[^`]+`)/).map((p) =>
-      p.length >= 2 && p[0] === '`' && p[p.length - 1] === '`'
-        ? '<code>' + p.slice(1, -1) + '</code>'
-        : renderInlineMd(p)).join('');
+    const codes = [];
+    const masked = escapeHtml(text).replace(/`[^`]+`/g, (m) => {
+      codes.push(m.slice(1, -1));
+      return '\x00' + (codes.length - 1) + '\x00';
+    });
+    return renderInlineMd(masked).replace(/\x00(\d+)\x00/g, (m, i) =>
+      codes[i] !== undefined ? '<code>' + codes[i] + '</code>' : m);
   }
   // Block-level pass: classifies each line as an ATX heading (#..######), an unordered (- / *) or
   // ordered (1.) list item, or paragraph text, and delegates each block's content to renderInline.
