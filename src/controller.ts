@@ -222,9 +222,13 @@ export class Controller {
         const result = await this.store.stageAttachment(
           taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024, !field
         );
-        if (field && msg.reqId) {
+        if (msg.reqId) {
+          // Field-scoped: the webview folds the link into the field's draft value, no refresh
+          // here. Whole-card: the webview mirrors the append locally for an immediate repaint,
+          // but still refresh so deferred board state reconciles with disk.
           BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message });
-          return;
+          if (field) return;
+          return this.refresh();
         }
         if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
         else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);

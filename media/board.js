@@ -548,10 +548,12 @@
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
-      requestAnimationFrame(() => ta.focus());
+      // One-shot: only grab focus when the editor first opens — refocusing on every render
+      // re-selects the card after the user already clicked outside (t-att1 feedback).
+      if (u.draftNeedsFocus) { u.draftNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
     } else {
       textEl = h('button', { class: 'draft-text draft-text-btn', type: 'button', title: 'Click to edit',
-        onclick: () => { u.editingDraft = true; u.draftText = t.title; render(); } }, t.title);
+        onclick: () => { u.editingDraft = true; u.draftText = t.title; u.draftNeedsFocus = true; render(); } }, t.title);
     }
     // "Groom with" selector: which model expands this draft into a story (absent = default).
     const groomDefOpt = groomerDefaultOpt();
@@ -636,7 +638,48 @@
     reader.readAsDataURL(file);
   }
   function attachFile(taskId, file) {
-    readImageFile(file, (filename, dataBase64) => post({ type: 'attach', taskId, filename, dataBase64 }));
+    readImageFile(file, (filename, dataBase64) => {
+      const reqId = 'a' + attachReqSeq++;
+      pendingAttach[reqId] = (path, fname) => appendAttachmentLocally(taskId, path, fname);
+      post({ type: 'attach', reqId, taskId, filename, dataBase64 });
+    });
+  }
+  // Whole-card attach (t-att1 feedback): the host's board refresh is deferred while any field is
+  // focused, so mirror the host's Description append locally and repaint just this card — the
+  // attachment shows immediately instead of after the next outside click.
+  function findBoardTask(taskId) {
+    if (!board) return null;
+    for (const key in board.phases) for (const t of board.phases[key]) if (t.id === taskId) return t;
+    return null;
+  }
+  function appendAttachmentLocally(taskId, path, filename) {
+    const t = findBoardTask(taskId);
+    if (!t) return;
+    const link = '[' + filename + '](' + path + ')';
+    t.description = t.description && t.description.trim() ? t.description + '\n\n' + link : link;
+    repaintCard(t);
+  }
+  function repaintCard(t) {
+    const old = document.querySelector('[data-task="' + t.id + '"]');
+    if (!old) { scheduleRender(); return; }
+    const active = document.activeElement;
+    let restore = null;
+    if (active && active.tagName === 'TEXTAREA' && old.contains(active)) {
+      restore = {
+        field: active.getAttribute('data-field') || (active.classList.contains('draft-edit') ? 'draft' : null),
+        qindex: active.getAttribute('data-qindex'),
+        start: active.selectionStart,
+        end: active.selectionEnd,
+      };
+    }
+    const fresh = t.isDraft ? renderDraft(t) : renderCard(t);
+    old.replaceWith(fresh);
+    if (!restore || !restore.field) return;
+    const sel = restore.field === 'draft' ? 'textarea.draft-edit'
+      : restore.qindex != null ? 'textarea[data-field="answer"][data-qindex="' + restore.qindex + '"]'
+      : 'textarea[data-field="' + restore.field + '"]';
+    const ta = fresh.querySelector(sel);
+    if (ta) { ta.focus(); try { ta.setSelectionRange(restore.start, restore.end); } catch (e) { /* detached */ } }
   }
   function wireAttachDropAndPaste(card, taskId) {
     card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
@@ -666,6 +709,20 @@
   // `onStaged(path, filename)` inserts the link and saves through the normal field-patch path.
   let attachReqSeq = 1;
   const pendingAttach = {};
+  // Insert at the caret (replacing any selection), padded with single spaces so the link lands
+  // inline where the user is typing — not appended at the end (t-att1 feedback).
+  function insertLinkAtCursor(ta, link) {
+    const v = ta.value;
+    const start = ta.selectionStart != null ? ta.selectionStart : v.length;
+    const end = ta.selectionEnd != null ? ta.selectionEnd : start;
+    const before = v.slice(0, start);
+    const after = v.slice(end);
+    const pre = before && !/\s$/.test(before) ? ' ' : '';
+    const post = after && !/^\s/.test(after) ? ' ' : '';
+    ta.value = before + pre + link + post + after;
+    const caret = before.length + pre.length + link.length;
+    ta.setSelectionRange(caret, caret);
+  }
   function wireFieldAttach(el, taskId, field, questionIndex, onStaged) {
     const stage = (file) => {
       readImageFile(file, (filename, dataBase64) => {
@@ -981,19 +1038,20 @@
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
       wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
-        const link = '[' + filename + '](' + path + ')';
-        ta.value = ta.value + (ta.value.trim() ? '\n\n' : '') + link;
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitDesc();
       });
       wrap.append(ta, saveBtn);
-      requestAnimationFrame(() => ta.focus());
+      // One-shot: only grab focus when the editor first opens — refocusing on every render
+      // re-selects the card after the user already clicked outside (t-att1 feedback).
+      if (u.descNeedsFocus) { u.descNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
     } else {
       const hasDesc = !!(t.description && t.description.trim());
       const view = hasDesc
         ? h('div', { class: 'desc-rendered', role: 'button', tabindex: '0', html: mdToHtml(t.description) })
         : h('div', { class: 'desc-rendered desc-empty', role: 'button', tabindex: '0' }, 'Add a description…');
-      view.addEventListener('click', () => { u.editingDesc = true; render(); });
-      view.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); u.editingDesc = true; render(); } });
+      view.addEventListener('click', () => { u.editingDesc = true; u.descNeedsFocus = true; render(); });
+      view.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); u.editingDesc = true; u.descNeedsFocus = true; render(); } });
       view.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
@@ -1070,8 +1128,7 @@
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
       });
       wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
-        const link = '[' + filename + '](' + path + ')';
-        ta.value = ta.value + (ta.value.trim() ? '\n\n' : '') + link;
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
       });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
@@ -1218,8 +1275,8 @@
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer);
     } else if (msg.type === 'attachStaged') {
-      // Reply to a field-scoped attach (wireFieldAttach) — resolved outside the normal board
-      // repaint so it works while the field is still focused/mid-edit.
+      // Reply to an attach (field-scoped wireFieldAttach, or whole-card attachFile) — resolved
+      // outside the normal board repaint so it works while a field is still focused/mid-edit.
       const onStaged = pendingAttach[msg.reqId];
       delete pendingAttach[msg.reqId];
       if (!onStaged) return;
