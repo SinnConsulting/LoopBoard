@@ -66,6 +66,7 @@ body {
 .loop-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .loop-dot.on { background: var(--vscode-testing-iconPassed, #73c991); }
 .loop-dot.off { background: var(--vscode-disabledForeground, #656565); }
+.loop-dot.working { animation: pulse-dot 1.6s ease-in-out infinite; }
 .divider { height: 1px; background: var(--vscode-widget-border, #454545); margin: 4px 16px; }
 .spacer { flex: 1; }
 
