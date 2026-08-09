@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
   const sidebar = new SidebarProvider(context.extensionUri);
-  controller = new Controller(context.extensionUri, store, terminals, sidebar);
+  controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState);
 
   context.subscriptions.push(
     { dispose: () => store.dispose() },
@@ -40,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   store.startWatching();
   void controller.autoHeal().then(() => controller.refresh());
+  void controller.maybeShowGettingStarted();
 }
 
 export function deactivate(): void {
