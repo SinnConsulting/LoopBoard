@@ -277,6 +277,45 @@ export class Store {
     }
   }
 
+  // Remove ONE staged attachment (t-att1 rework: the attachments area's × on a card): delete the
+  // file under .loopboard/cache/<id>/ and strip its markdown link(s) from the task's Description.
+  // The path must point inside this task's own cache dir (no separators/.. in the filename). The
+  // store owns both the delete and the link removal so the webview and disk can't diverge; the
+  // returned description lets the webview mirror the result verbatim (same as stageAttachment).
+  async removeAttachment(taskId: string, relPath: string): Promise<AttachOutcome> {
+    const prefix = `.loopboard/cache/${taskId}/`;
+    const name = relPath.startsWith(prefix) ? relPath.slice(prefix.length) : '';
+    if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+      return { status: 'error', message: 'Not a staged attachment of this task.' };
+    }
+    return this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const entry = doc.entries.find((e) => e.id === taskId);
+      if (!entry) return { status: 'notfound' as const };
+      try {
+        await vscode.workspace.fs.delete(vscode.Uri.joinPath(this.taskCacheDir(taskId), name));
+      } catch {
+        // file already gone — still strip the dangling link below
+      }
+      const detailText = await this.readFile(this.taskUri(entry.id));
+      const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
+      const escaped = relPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const stripped = (detail.description ?? '')
+        .replace(new RegExp(`[ \\t]*\\[[^\\]]*\\]\\(${escaped}\\)`, 'g'), '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      if (stripped !== (detail.description ?? '')) {
+        detail.description = stripped;
+        await this.ensureTasksDir();
+        await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+        bumpRev(entry);
+        await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      }
+      return { status: 'applied' as const, description: detail.description };
+    });
+  }
+
   // Delete a task's staged attachments (t-att1: fires on acceptance to DONE; deleteTask also
   // calls this opportunistically). Best-effort — a missing cache dir is not an error.
   private async clearAttachments(taskId: string): Promise<void> {

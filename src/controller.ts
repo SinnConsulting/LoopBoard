@@ -163,19 +163,23 @@ export class Controller {
         return this.refresh();
       }
       case 'createDraftWithAttach': {
-        // The New Story composer has no task id until a draft exists (t-att1: pasting/dropping an
-        // image there saves the draft first, same as clicking "Save draft", then stages the image
-        // onto the new draft) — image-only, drag-drop/paste, no separate file-picker gesture.
+        // The New Story composer has no task id until a draft exists (t-att1 rework: pasted/
+        // dropped images are held pending in the webview — never auto-saved — and ride the
+        // Save Draft commit as an `attachments` array, staged onto the fresh draft here).
         const text = String(msg.text ?? '').trim();
-        const filename = String(msg.filename ?? '');
-        if (!text || !filename || typeof msg.dataBase64 !== 'string') return;
+        const attachments: unknown[] = Array.isArray(msg.attachments) ? msg.attachments : [];
+        if (!text) return;
         const cfg = this.config();
         const groomer = String(msg.groomer ?? '') || cfg.defaultGroomerModel;
         const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
         const draft = await this.store.createDraft(text, today(), groomer, model);
         if (draft.id) {
-          const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(msg.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024);
-          if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
+          for (const a of attachments as { filename?: unknown; dataBase64?: unknown }[]) {
+            const filename = String(a?.filename ?? '');
+            if (!filename || typeof a?.dataBase64 !== 'string') continue;
+            const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(a.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024);
+            if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
+          }
         }
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
@@ -233,6 +237,21 @@ export class Controller {
         }
         if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', taskId);
         else if (result.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
+        return this.refresh();
+      }
+      case 'detach': {
+        // t-att1 rework: the attachments area's × — delete the staged file and strip its markdown
+        // link from the story's Description in one store-owned step, then mirror the result back
+        // (same reply pattern as attachStaged) so the card repaints while a field is focused.
+        const taskId = String(msg.taskId ?? '');
+        const relPath = String(msg.path ?? '');
+        if (!taskId || !relPath) return;
+        const result = await this.store.removeAttachment(taskId, relPath);
+        if (msg.reqId) {
+          BoardPanel.current?.post({ type: 'attachRemoved', reqId: msg.reqId, status: result.status, message: result.message, description: result.description });
+        } else if (result.status === 'error') {
+          this.toast('warning', result.message ?? 'Could not delete that attachment.', taskId);
+        }
         return this.refresh();
       }
       case 'openBoard':

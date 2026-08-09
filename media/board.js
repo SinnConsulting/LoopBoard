@@ -58,6 +58,12 @@
   let composerGroomer = saved.composerGroomer || ''; // '' = default model
   let composerModel = saved.composerModel || '';     // '' = default model
   let composerNeedsFocus = false;
+  // Pending composer attachments (t-att1 rework): a brand-new story has no id to stage bytes
+  // under, so pasted/dropped images are held here ({filename, dataBase64}) and staged onto the
+  // draft only when "Save Draft" commits it — pasting never auto-saves the draft anymore.
+  // Deliberately NOT persisted via saveState: base64 image payloads can exceed the webview
+  // state budget; pending images live only as long as the webview does.
+  let composerAttachments = [];
   const ui = {}; // per-task UI state, keyed by task id
   // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
   // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
@@ -391,7 +397,7 @@
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
-    const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; phase = 'new'; resetSearch(); saveState(); render(); };
+    const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; phase = 'new'; resetSearch(); saveState(); render(); };
     // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
     // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
     // when the composer textarea is unfocused (see t-d3dd). onclick stays wired for keyboard
@@ -399,7 +405,11 @@
     const commitDraft = () => {
       const t = composerText.trim();
       if (!t) return;
-      post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
+      if (composerAttachments.length) {
+        post({ type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel, attachments: composerAttachments });
+      } else {
+        post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
+      }
       closeComposer();
     };
     const saveBtn = h('button', {
@@ -407,21 +417,20 @@
       onpointerdown: (e) => { e.preventDefault(); commitDraft(); },
       onclick: commitDraft,
     }, 'Save Draft');
-    // t-att1: no attach button on the composer — clipboard paste / drag-drop only. There's no
-    // task id yet (a draft doesn't exist until saved), so an image here saves the draft first,
-    // same as clicking "Save draft", then stages the image onto it in one round trip.
-    const stageOnNewDraft = (file) => {
-      const t = area.value.trim();
-      if (!t) { pushToast('warning', 'Add some description before attaching an image.'); return; }
+    // t-att1 rework: pasting/dropping an image no longer auto-saves the draft (that ended the
+    // typing flow mid-thought). The image is held in memory and listed below the textarea with
+    // a remove ×; everything stages onto the draft only when "Save Draft" commits it.
+    const addPendingAttachment = (file) => {
       readImageFile(file, (filename, dataBase64) => {
-        post({ type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel, filename, dataBase64 });
-        closeComposer();
+        composerAttachments.push({ filename, dataBase64 });
+        composerNeedsFocus = true; // render() rebuilds the textarea — hand focus back so typing continues
+        render();
       });
     };
     area.addEventListener('dragover', (e) => e.preventDefault());
     area.addEventListener('drop', (e) => {
       const files = e.dataTransfer && e.dataTransfer.files;
-      if (files && files.length) { e.preventDefault(); stageOnNewDraft(files[0]); }
+      if (files && files.length) { e.preventDefault(); addPendingAttachment(files[0]); }
     });
     area.addEventListener('paste', (e) => {
       const items = e.clipboardData && e.clipboardData.items;
@@ -429,18 +438,27 @@
       for (const item of items) {
         if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
           const file = item.getAsFile();
-          if (file) { e.preventDefault(); stageOnNewDraft(file); }
+          if (file) { e.preventDefault(); addPendingAttachment(file); }
           break;
         }
       }
     });
+    const pendingEl = composerAttachments.length === 0 ? null : h('div', { style: { marginTop: '8px' } },
+      h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
+      composerAttachments.map((a, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' } },
+        h('span', { class: 'muted-11' }, a.filename),
+        h('button', {
+          class: 'icon-btn', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
+          onclick: () => { composerAttachments.splice(i, 1); render(); },
+        }, icon(SVG.x)))));
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
       h('div', { class: 'pane-explainer' }, 'Describe the story in your own words — an agent structures it for you.'),
       area,
+      pendingEl,
       h('div', { class: 'composer-actions' },
         saveBtn,
-        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; saveState(); render(); } }, 'Cancel'),
+        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; saveState(); render(); } }, 'Cancel'),
         modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }),
         modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
@@ -547,10 +565,9 @@
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
-      wireFieldAttach(ta, t.id, 'title', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        commitDraft();
-      });
+      // t-att1 rework: no caret-insert into the raw draft text (links crammed into the title made
+      // it unreadable) — a paste/drop while editing bubbles to the card handler, which stages the
+      // image into the description, so it shows in the attachments area like everywhere else.
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
@@ -571,19 +588,9 @@
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
     // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
-    // markdown links to the draft's task-file ## Description. A draft card otherwise renders only
-    // its raw text, so those links were invisible ("uploaded but not mentioned in the text").
-    // Surface the description content here (read-only, mirroring renderDone) so attachments show.
-    let attachEl = null;
-    if (t.description && t.description.trim()) {
-      const desc = h('div', { class: 'done-detail-text', html: mdToHtml(t.description) });
-      desc.querySelectorAll('a[data-mdlink]').forEach((a) => {
-        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-      });
-      attachEl = h('div', { style: { marginTop: '8px' } },
-        h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
-        desc);
-    }
+    // markdown links to the draft's task-file ## Description; the shared attachments area lists
+    // them with an open link and a remove × each.
+    const attachEl = renderAttachmentsArea(t);
 
     let cls = 'card draft';
     if (isCollapsedCard) cls += ' collapsed';
@@ -753,6 +760,37 @@
     });
   }
 
+  // Attachments area (t-att1 rework): a consistent block on drafts and full cards listing every
+  // staged `.loopboard/cache/...` link found in the description — click opens the file, the ×
+  // on the right deletes it from the story AND the cache folder (store-owned `detach`).
+  function extractAttachments(description) {
+    const items = [];
+    const re = /\[([^\]]+)\]\((\.loopboard\/cache\/[^)\s]+)\)/g;
+    let m;
+    while ((m = re.exec(String(description || ''))) !== null) items.push({ label: m[1], path: m[2] });
+    return items;
+  }
+  function detachAttachment(taskId, path) {
+    const reqId = 'a' + attachReqSeq++;
+    pendingAttach[reqId] = (p, f, description) => applyAttachedDescription(taskId, description);
+    post({ type: 'detach', reqId, taskId, path });
+  }
+  function renderAttachmentsArea(t) {
+    const items = extractAttachments(t.description);
+    if (!items.length) return null;
+    return h('div', { style: { marginTop: '8px' } },
+      h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
+      items.map((it) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' } },
+        h('a', {
+          href: '#', 'data-mdlink': it.path,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: it.path }); },
+        }, it.label),
+        h('button', {
+          class: 'icon-btn', type: 'button', 'aria-label': 'Delete attachment', title: 'Delete attachment (removes the file and its link)',
+          onclick: () => detachAttachment(t.id, it.path),
+        }, icon(SVG.x)))));
+  }
+
   function renderCard(t) {
     const u = getUi(t.id);
     const variant = t.phase;
@@ -888,6 +926,10 @@
 
       // description
       card.append(renderDescription(t));
+
+      // attachments area (t-att1 rework: same block as on drafts, with per-image delete)
+      const attArea = renderAttachmentsArea(t);
+      if (attArea) card.append(attArea);
 
       // working indicator
       if (variant === 'inprogress') {
@@ -1279,13 +1321,17 @@
       pushToast(msg.level, msg.text, action, msg.icon);
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer);
-    } else if (msg.type === 'attachStaged') {
-      // Reply to an attach (field-scoped wireFieldAttach, or whole-card attachFile) — resolved
-      // outside the normal board repaint so it works while a field is still focused/mid-edit.
+    } else if (msg.type === 'attachStaged' || msg.type === 'attachRemoved') {
+      // Reply to an attach (field-scoped wireFieldAttach, or whole-card attachFile) or to the
+      // attachments area's × (detach) — resolved outside the normal board repaint so it works
+      // while a field is still focused/mid-edit.
       const onStaged = pendingAttach[msg.reqId];
       delete pendingAttach[msg.reqId];
       if (!onStaged) return;
-      if (msg.status !== 'applied') { pushToast('warning', msg.message || 'Could not attach that file.'); return; }
+      if (msg.status !== 'applied') {
+        pushToast('warning', msg.message || (msg.type === 'attachRemoved' ? 'Could not delete that attachment.' : 'Could not attach that file.'));
+        return;
+      }
       onStaged(msg.path, msg.filename, msg.description);
     }
   });
@@ -1325,6 +1371,7 @@
       composerText = '';
       composerGroomer = '';
       composerModel = '';
+      composerAttachments = [];
       composerNeedsFocus = true;
       saveState();
       render();
