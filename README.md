@@ -78,10 +78,12 @@ acceptance the index entry moves to `DONE.md` while the task file stays in `task
 and never committed or shared via git. Attach an image to a task by dragging it onto a card (or
 the New Story composer) or pasting it from the clipboard — no button, drag-drop/paste only — and
 it's staged under `.loopboard/cache/<id>/`, referenced with a markdown link in the task's
-description (or the specific comment/answer field it was dropped into). In the New Story
-composer, pasted images stay pending (the draft isn't saved yet) and are staged when you click
-Save Draft. Each card lists its staged images in an Attachments area with a × that deletes the
-file and its link; all remaining staged files are deleted once the task is accepted to `DONE.md`.
+description (or the specific comment/answer field it was dropped into; drafts carry the link in
+their raw story text). In the New Story composer, pasting inserts a `[name](…)` link at the
+caret and the image stays pending (the draft isn't saved yet) — Save Draft stages the bytes and
+rewrites the link to the real cache path. Each card lists its staged images in an Attachments
+area with a × that deletes the file and its link; all remaining staged files are deleted once
+the task is accepted to `DONE.md`.
 
 ## Using the board
 

@@ -15,7 +15,7 @@ import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } fr
 import { Mutex } from './serialize';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
-export type AttachOutcome = SaveOutcome & { path?: string; description?: string };
+export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string };
 export type DraftOutcome = SaveOutcome & { id?: string };
 
 const DECODER = new TextDecoder();
@@ -241,6 +241,17 @@ export class Store {
     const relPath = `.loopboard/cache/${taskId}/${safeName}`;
     if (!appendToDescription) return { status: 'applied', path: relPath };
 
+    // Drafts (t-att1 rework): the raw draft text IS the story the groomer structures, so the
+    // link must land there — a link only in the task-file Description never shows in the text
+    // and can be lost when grooming rewrites ## Description. Append to the index title instead,
+    // as `[name](path)` (image name, then the path in brackets).
+    if (entry.isDraft) {
+      entry.title = `${entry.title} [${safeName}](${relPath})`;
+      bumpRev(entry);
+      await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      return { status: 'applied', path: relPath, title: entry.title };
+    }
+
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
     const link = `[${safeName}](${relPath})`;
@@ -252,6 +263,31 @@ export class Store {
     // Return the task's new Description so the webview can mirror it verbatim — the store stays
     // the single owner of the append format.
     return { status: 'applied', path: relPath, description: detail.description };
+  }
+
+  // Rewrite a fresh draft's pending-attachment placeholders (t-att1 rework: the composer inserts
+  // `[name](loopboard-pending:<n>)` at the caret while typing — no id/path exists until Save
+  // Draft stages the bytes) to the real staged cache paths. A placeholder the user deleted from
+  // the text gets its link appended at the end instead, so a staged file is never unreferenced.
+  async resolvePendingLinks(taskId: string, files: { token: string; name: string; path: string }[]): Promise<void> {
+    if (!files.length) return;
+    await this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const entry = doc.entries.find((e) => e.id === taskId);
+      if (!entry) return;
+      let title = entry.title;
+      for (const f of files) {
+        const marker = `](${f.token})`;
+        title = f.token && title.includes(marker)
+          ? title.split(marker).join(`](${f.path})`)
+          : `${title} [${f.name}](${f.path})`;
+      }
+      if (title !== entry.title) {
+        entry.title = title;
+        bumpRev(entry);
+        await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      }
+    });
   }
 
   // Avoid clobbering an existing file with the same name: name, name-2, name-3, ...
@@ -297,22 +333,31 @@ export class Store {
       } catch {
         // file already gone — still strip the dangling link below
       }
+      const escaped = relPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const linkRe = new RegExp(`[ \\t]*\\[[^\\]]*\\]\\(${escaped}\\)`, 'g');
+      // Drafts carry their links in the raw draft text (the index title); strip there too —
+      // but never down to an empty title.
+      const strippedTitle = entry.title.replace(linkRe, '').replace(/[ \t]{2,}/g, ' ').trim();
+      const titleChanged = strippedTitle !== entry.title && strippedTitle.length > 0;
+      if (titleChanged) entry.title = strippedTitle;
       const detailText = await this.readFile(this.taskUri(entry.id));
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-      const escaped = relPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const stripped = (detail.description ?? '')
-        .replace(new RegExp(`[ \\t]*\\[[^\\]]*\\]\\(${escaped}\\)`, 'g'), '')
+      const strippedDesc = (detail.description ?? '')
+        .replace(linkRe, '')
         .replace(/[ \t]+\n/g, '\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-      if (stripped !== (detail.description ?? '')) {
-        detail.description = stripped;
+      const descChanged = strippedDesc !== (detail.description ?? '');
+      if (descChanged) {
+        detail.description = strippedDesc;
         await this.ensureTasksDir();
         await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+      }
+      if (descChanged || titleChanged) {
         bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
       }
-      return { status: 'applied' as const, description: detail.description };
+      return { status: 'applied' as const, description: detail.description, title: entry.title };
     });
   }
 

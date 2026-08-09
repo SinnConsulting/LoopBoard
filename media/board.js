@@ -58,9 +58,12 @@
   let composerGroomer = saved.composerGroomer || ''; // '' = default model
   let composerModel = saved.composerModel || '';     // '' = default model
   let composerNeedsFocus = false;
+  let composerCaret = null; // caret offset to restore into the composer textarea after a repaint
   // Pending composer attachments (t-att1 rework): a brand-new story has no id to stage bytes
-  // under, so pasted/dropped images are held here ({filename, dataBase64}) and staged onto the
-  // draft only when "Save Draft" commits it — pasting never auto-saves the draft anymore.
+  // under, so pasted/dropped images are held here ({token, filename, dataBase64}); pasting
+  // inserts `[filename](loopboard-pending:<n>)` at the caret so the reference sits in the story
+  // text, and Save Draft stages the bytes and rewrites each placeholder to the real cache path
+  // (host-side) — pasting never auto-saves the draft anymore.
   // Deliberately NOT persisted via saveState: base64 image payloads can exceed the webview
   // state budget; pending images live only as long as the webview does.
   let composerAttachments = [];
@@ -237,9 +240,15 @@
     // feedback: pasting right after "New Story" did nothing since nothing was focused yet).
     if (composerOpen && composerNeedsFocus) {
       composerNeedsFocus = false;
+      const caret = composerCaret;
+      composerCaret = null;
       requestAnimationFrame(() => {
         const ta = document.querySelector('.composer-area');
-        if (ta) ta.focus();
+        if (!ta) return;
+        ta.focus();
+        // Restore the caret after a paste-triggered repaint so typing continues right after
+        // the just-inserted link instead of jumping to the end.
+        if (caret != null) { try { ta.setSelectionRange(caret, caret); } catch (e) { /* detached */ } }
       });
     }
   }
@@ -406,7 +415,10 @@
       const t = composerText.trim();
       if (!t) return;
       if (composerAttachments.length) {
-        post({ type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel, attachments: composerAttachments });
+        post({
+          type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel,
+          attachments: composerAttachments.map((a) => ({ token: a.token, filename: a.filename, dataBase64: a.dataBase64 })),
+        });
       } else {
         post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
       }
@@ -418,12 +430,20 @@
       onclick: commitDraft,
     }, 'Save Draft');
     // t-att1 rework: pasting/dropping an image no longer auto-saves the draft (that ended the
-    // typing flow mid-thought). The image is held in memory and listed below the textarea with
-    // a remove ×; everything stages onto the draft only when "Save Draft" commits it.
+    // typing flow mid-thought). The image is held in memory, `[filename](loopboard-pending:<n>)`
+    // is inserted at the caret so the reference sits in the story text where you're typing, and
+    // Save Draft stages the bytes and rewrites the placeholder to the real cache path host-side
+    // (no id/path exists before the draft is saved). The list below the textarea carries a
+    // remove × per pending image, which also strips its placeholder from the text.
     const addPendingAttachment = (file) => {
       readImageFile(file, (filename, dataBase64) => {
-        composerAttachments.push({ filename, dataBase64 });
+        const token = 'loopboard-pending:' + attachReqSeq++;
+        insertLinkAtCursor(area, '[' + filename + '](' + token + ')');
+        composerText = area.value;
+        composerAttachments.push({ token, filename, dataBase64 });
         composerNeedsFocus = true; // render() rebuilds the textarea — hand focus back so typing continues
+        composerCaret = area.selectionStart;
+        saveState();
         render();
       });
     };
@@ -449,7 +469,13 @@
         h('span', { class: 'muted-11' }, a.filename),
         h('button', {
           class: 'icon-btn', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
-          onclick: () => { composerAttachments.splice(i, 1); render(); },
+          onclick: () => {
+            // Strip the placeholder link from the text too, so a discarded image leaves no trace.
+            composerText = composerText.split('[' + a.filename + '](' + a.token + ')').join('').replace(/[ \t]{2,}/g, ' ');
+            composerAttachments.splice(i, 1);
+            saveState();
+            render();
+          },
         }, icon(SVG.x)))));
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
@@ -651,24 +677,26 @@
   function attachFile(taskId, file) {
     readImageFile(file, (filename, dataBase64) => {
       const reqId = 'a' + attachReqSeq++;
-      pendingAttach[reqId] = (path, fname, description) => applyAttachedDescription(taskId, description);
+      pendingAttach[reqId] = (msg) => applyAttachedMirror(taskId, msg);
       post({ type: 'attach', reqId, taskId, filename, dataBase64 });
     });
   }
   // Whole-card attach (t-att1 feedback): the host's board refresh is deferred while any field is
-  // focused, so apply the store's post-append Description locally and repaint just this card —
-  // the attachment shows immediately instead of after the next outside click. The text comes
-  // from the host verbatim; the store is the single owner of the append format.
+  // focused, so apply the store's post-append text locally and repaint just this card — the
+  // attachment shows immediately instead of after the next outside click. The text comes from
+  // the host verbatim; the store is the single owner of the append format. Full cards carry
+  // their links in `description`; drafts carry them in the raw draft text (`title`).
   function findBoardTask(taskId) {
     if (!board) return null;
     for (const key in board.phases) for (const t of board.phases[key]) if (t.id === taskId) return t;
     return null;
   }
-  function applyAttachedDescription(taskId, description) {
+  function applyAttachedMirror(taskId, msg) {
     const t = findBoardTask(taskId);
     if (!t) return;
-    if (typeof description !== 'string') { scheduleRender(); return; }
-    t.description = description;
+    if (typeof msg.description !== 'string' && typeof msg.title !== 'string') { scheduleRender(); return; }
+    if (typeof msg.description === 'string') t.description = msg.description;
+    if (typeof msg.title === 'string') t.title = msg.title;
     repaintCard(t);
   }
   function repaintCard(t) {
@@ -739,7 +767,7 @@
     const stage = (file) => {
       readImageFile(file, (filename, dataBase64) => {
         const reqId = 'a' + attachReqSeq++;
-        pendingAttach[reqId] = onStaged;
+        pendingAttach[reqId] = (msg) => onStaged(msg.path, msg.filename);
         post({ type: 'attach', reqId, taskId, filename, dataBase64, field, questionIndex });
       });
     };
@@ -772,11 +800,13 @@
   }
   function detachAttachment(taskId, path) {
     const reqId = 'a' + attachReqSeq++;
-    pendingAttach[reqId] = (p, f, description) => applyAttachedDescription(taskId, description);
+    pendingAttach[reqId] = (msg) => applyAttachedMirror(taskId, msg);
     post({ type: 'detach', reqId, taskId, path });
   }
   function renderAttachmentsArea(t) {
-    const items = extractAttachments(t.description);
+    // Drafts carry their links in the raw draft text (title); scan the description too for
+    // drafts staged before the rework (legacy).
+    const items = extractAttachments(t.isDraft ? (t.title || '') + '\n' + (t.description || '') : t.description);
     if (!items.length) return null;
     return h('div', { style: { marginTop: '8px' } },
       h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
@@ -1332,7 +1362,7 @@
         pushToast('warning', msg.message || (msg.type === 'attachRemoved' ? 'Could not delete that attachment.' : 'Could not attach that file.'));
         return;
       }
-      onStaged(msg.path, msg.filename, msg.description);
+      onStaged(msg);
     }
   });
 

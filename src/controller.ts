@@ -174,12 +174,17 @@ export class Controller {
         const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
         const draft = await this.store.createDraft(text, today(), groomer, model);
         if (draft.id) {
-          for (const a of attachments as { filename?: unknown; dataBase64?: unknown }[]) {
+          // Stage bytes only (no auto-append) and then resolve the composer's caret-inserted
+          // `[name](loopboard-pending:<n>)` placeholders to the real staged cache paths.
+          const staged: { token: string; name: string; path: string }[] = [];
+          for (const a of attachments as { filename?: unknown; dataBase64?: unknown; token?: unknown }[]) {
             const filename = String(a?.filename ?? '');
             if (!filename || typeof a?.dataBase64 !== 'string') continue;
-            const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(a.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024);
+            const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(a.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024, false);
             if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
+            else if (result.path) staged.push({ token: String(a?.token ?? ''), name: result.path.split('/').pop() ?? filename, path: result.path });
           }
+          await this.store.resolvePendingLinks(draft.id, staged);
         }
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
@@ -231,7 +236,7 @@ export class Controller {
           // here. Whole-card: the webview mirrors the append locally for an immediate repaint
           // (`description` carries the store's authoritative post-append text), but still
           // refresh so deferred board state reconciles with disk.
-          BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message, description: result.description });
+          BoardPanel.current?.post({ type: 'attachStaged', reqId: msg.reqId, status: result.status, path: result.path, filename, message: result.message, description: result.description, title: result.title });
           if (field) return;
           return this.refresh();
         }
@@ -248,7 +253,7 @@ export class Controller {
         if (!taskId || !relPath) return;
         const result = await this.store.removeAttachment(taskId, relPath);
         if (msg.reqId) {
-          BoardPanel.current?.post({ type: 'attachRemoved', reqId: msg.reqId, status: result.status, message: result.message, description: result.description });
+          BoardPanel.current?.post({ type: 'attachRemoved', reqId: msg.reqId, status: result.status, message: result.message, description: result.description, title: result.title });
         } else if (result.status === 'error') {
           this.toast('warning', result.message ?? 'Could not delete that attachment.', taskId);
         }
