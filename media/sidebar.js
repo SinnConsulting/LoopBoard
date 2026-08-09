@@ -101,14 +101,21 @@
     const loops = h('div', { class: 'sb-section' });
     loops.append(h('div', { class: 'sb-label' }, 'Loops'));
     for (const l of board.loops) {
-      const spawnLabel = l.running ? 'Focus terminal' : 'Start loop';
+      // Actively working = this loop is running AND owns the single In-Progress task (LOOP.md
+      // Rule 2's GLOBAL SINGLE-TASK LIMIT), derived from board.concurrency.inProgress by model.
+      const owns = !!(board.concurrency && board.concurrency.inProgress.some((t) => t.model === l.id));
+      const working = l.running && owns;
+      const dotClass = 'loop-dot ' + (l.running ? 'on' : 'off') + (working ? ' working pulse' : '');
+      // Play is disabled while running (the row body handles focusing it instead) — its label
+      // must not claim an action the disabled button no longer performs.
+      const spawnLabel = l.running ? 'Loop running' : 'Start loop';
       // Only a running loop's row body reveals+focuses its terminal on click; a stopped loop's row
       // stays inert (starting one is the play button's job, not a body click).
       const bodyProps = l.running
         ? { class: 'loop-body click', role: 'button', tabindex: '0', 'aria-label': 'Reveal ' + l.name + ' terminal', onclick: () => vscode.postMessage({ type: 'revealTerminal', model: l.id }) }
         : { class: 'loop-body' };
       const body = h('span', bodyProps,
-        h('span', { class: 'loop-dot ' + (l.running ? 'on' : 'off') }),
+        h('span', { class: dotClass }),
         h('span', { class: 'label' }, l.name),
         h('span', { class: 'loop-hint' }, l.hint));
       if (l.running) {
@@ -117,7 +124,10 @@
         });
       }
       loops.append(h('div', { class: 'sb-row loop' }, body,
-        h('button', { class: 'icon-btn', type: 'button', 'aria-label': spawnLabel, title: spawnLabel, onclick: () => vscode.postMessage({ type: 'spawnLoop', model: l.id }) }, icon(SVG.play)),
+        h('button', {
+          class: 'icon-btn', type: 'button', 'aria-label': spawnLabel, title: spawnLabel, disabled: l.running,
+          onclick: l.running ? null : () => vscode.postMessage({ type: 'spawnLoop', model: l.id }),
+        }, icon(SVG.play)),
         h('button', {
           class: 'icon-btn', type: 'button', 'aria-label': 'Restart with fresh context', title: 'Restart with fresh context', disabled: !l.running,
           onclick: l.running ? () => vscode.postMessage({ type: 'recycleLoop', model: l.id }) : null,
