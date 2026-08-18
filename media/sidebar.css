@@ -7,7 +7,10 @@ body {
   font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased;
 }
 @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes pulse-row { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none !important; } }
+
+.sync-pulse { animation: pulse-row 1.8s ease-in-out infinite; }
 
 .sb { height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
 .sb-section { padding: 8px; }
