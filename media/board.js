@@ -145,8 +145,16 @@
   }
 
   // ---- local in-tab search ----
+  // `is:unanswered` is a reserved token (namespaced against plain-text hits on the word
+  // "unanswered"): it requires the task have at least one blank-answer question, and combines
+  // with any remaining text as an AND.
   function matchesQuery(t) {
-    const q = searchQuery.trim().toLowerCase();
+    const raw = searchQuery.trim().toLowerCase();
+    if (!raw) return true;
+    const tokens = raw.split(/\s+/);
+    const unanswered = tokens.includes('is:unanswered');
+    const q = tokens.filter((tok) => tok !== 'is:unanswered').join(' ');
+    if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
       || (t.title || '').toLowerCase().includes(q)
@@ -1389,7 +1397,7 @@
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
       pushToast(msg.level, msg.text, action, msg.icon);
     } else if (msg.type === 'reveal') {
-      revealTask(msg.taskId, msg.phase, msg.composer);
+      revealTask(msg.taskId, msg.phase, msg.composer, msg.search);
     } else if (msg.type === 'attachStaged' || msg.type === 'attachRemoved') {
       // Reply to an attach (field-scoped wireFieldAttach, or whole-card attachFile) or to the
       // attachments area's × (detach) — resolved outside the normal board repaint so it works
@@ -1432,7 +1440,7 @@
   }
   function stripFlash(t) { const { _flash, ...rest } = t; return rest; }
 
-  function revealTask(taskId, targetPhase, openComposer) {
+  function revealTask(taskId, targetPhase, openComposer, search) {
     if (!board) return;
     if (openComposer) {
       phase = targetPhase || 'new';
@@ -1450,7 +1458,18 @@
     if (!found) {
       for (const key in board.phases) if ((board.phases[key] || []).some((t) => t.id === taskId)) { found = key; break; }
     }
-    if (found) { phase = found; composerOpen = false; resetSearch(); saveState(); }
+    if (found) {
+      phase = found;
+      composerOpen = false;
+      if (search) {
+        searchQuery = search;
+        searchNeedsFocus = false;
+        searchCaret = null;
+      } else {
+        resetSearch();
+      }
+      saveState();
+    }
     getUi(taskId).conflict = true;
     render();
     setTimeout(() => {
