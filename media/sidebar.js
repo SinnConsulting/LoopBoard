@@ -47,120 +47,120 @@
     const sb = h('div', { class: 'sb' });
     const b = board.badge;
 
-    const header = h('div', { class: 'sb-attn-header' });
-    if (b.count > 0) {
-      header.append(h('div', { class: 'sb-attn-title' }, h('span', { class: 'attn-dot pulse' }), b.count + ' - Items require your attention'));
-    } else {
-      header.append(h('div', { class: 'sb-attn-title clear' }, 'You are all set', h('span', { class: 'codicon codicon-pass' })));
-    }
-    sb.append(header);
-
     if (board.todoMissing) {
       sb.append(h('div', { class: 'setup-wrap' },
         h('div', { class: 'setup-text' }, 'No TODO.md in this workspace yet.'),
         h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'createFiles' }) },
           'Create TODO.md & DONE.md')));
-    }
-
-    // When a category has exactly one task, name its id — otherwise the count stands alone.
-    function soleId(phaseKey, match) {
-      const tasks = (board.phases[phaseKey] || []).filter(match);
-      return tasks.length === 1 ? tasks[0].id : null;
-    }
-
-    const list = h('div', { class: 'attn-list sb-section' });
-    const rows = [];
-    if (b.feedbackUnanswered > 0) {
-      rows.push({ icon: 'comment-discussion', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback', search: 'is:unanswered' });
-    }
-    if (b.newUnanswered > 0) {
-      rows.push({ icon: 'issues', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' — New', phase: 'new', search: 'is:unanswered' });
-    }
-    if (b.reviewCount > 0) {
-      const id = soleId('review', () => true);
-      rows.push({ icon: 'eye', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
-    }
-    if (b.newCount > 0) {
-      const id = soleId('new', () => true);
-      rows.push({ icon: 'check-all', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
-    }
-    for (const r of rows) {
-      list.append(h('button', { class: 'attn-row', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: r.phase, search: r.search }) },
-        h('span', { class: 'ico codicon codicon-' + r.icon }), h('span', { class: 'txt' }, r.text)));
-    }
-    if (rows.length) sb.append(list);
-
-    const counts = h('div', { class: 'sb-section' });
-    counts.append(h('div', { class: 'sb-label' }, 'Phases'));
-    for (const p of PHASES) {
-      counts.append(h('button', { class: 'sb-row click', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: p.key }) },
-        h('span', { class: 'label' }, p.label), h('span', { class: 'count' }, String((board.phases[p.key] || []).length))));
-    }
-    sb.append(counts);
-
-    sb.append(h('div', { class: 'divider' }));
-    const loops = h('div', { class: 'sb-section' });
-    loops.append(h('div', { class: 'sb-label' }, 'Loops'));
-    for (const l of board.loops) {
-      // Actively working = this loop is running AND owns the single In-Progress task (LOOP.md
-      // Rule 2's GLOBAL SINGLE-TASK LIMIT), derived from board.concurrency.inProgress by model.
-      const owns = !!(board.concurrency && board.concurrency.inProgress.some((t) => t.model === l.id));
-      const working = l.running && owns;
-      const dotClass = 'loop-dot ' + (l.running ? 'on' : 'off') + (working ? ' working pulse' : '');
-      // Play is disabled while running (the row body handles focusing it instead) — its label
-      // must not claim an action the disabled button no longer performs.
-      const spawnLabel = l.running ? 'Loop running' : 'Start loop';
-      // Only a running loop's row body reveals+focuses its terminal on click; a stopped loop's row
-      // stays inert (starting one is the play button's job, not a body click).
-      const bodyProps = l.running
-        ? { class: 'loop-body click', role: 'button', tabindex: '0', 'aria-label': 'Reveal ' + l.name + ' terminal', onclick: () => vscode.postMessage({ type: 'revealTerminal', model: l.id }) }
-        : { class: 'loop-body' };
-      const body = h('span', bodyProps,
-        h('span', { class: dotClass }),
-        h('span', { class: 'label' }, l.name),
-        h('span', { class: 'loop-hint' }, l.hint));
-      if (l.running) {
-        body.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', model: l.id }); }
-        });
+    } else {
+      const header = h('div', { class: 'sb-attn-header' });
+      if (b.count > 0) {
+        header.append(h('div', { class: 'sb-attn-title' }, h('span', { class: 'attn-dot pulse' }), b.count + ' - Items require your attention'));
+      } else {
+        header.append(h('div', { class: 'sb-attn-title clear' }, 'You are all set', h('span', { class: 'codicon codicon-pass' })));
       }
-      loops.append(h('div', { class: 'sb-row loop' }, body,
-        h('button', {
-          class: 'icon-btn', type: 'button', 'aria-label': spawnLabel, title: spawnLabel, disabled: l.running,
-          onclick: l.running ? null : () => vscode.postMessage({ type: 'spawnLoop', model: l.id }),
-        }, icon(SVG.play)),
-        h('button', {
-          class: 'icon-btn', type: 'button', 'aria-label': 'Restart with fresh context', title: 'Restart with fresh context', disabled: !l.running,
-          onclick: l.running ? () => vscode.postMessage({ type: 'recycleLoop', model: l.id }) : null,
-        }, icon(SVG.recycle)),
-        h('button', {
-          class: 'icon-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop loop', disabled: !l.running,
-          onclick: l.running ? () => vscode.postMessage({ type: 'stopLoop', model: l.id }) : null,
-        }, icon(SVG.stop))));
-    }
-    // Global single-task limit (LOOP.md Rule 2): surface when a task is In Progress so a human
-    // sees the limit holding back prepared work — or being breached (>1 In Progress at once).
-    const c = board.concurrency;
-    if (c && c.inProgress.length) {
-      const inProg = c.inProgress.map((t) => (t.title || t.id) + ' (' + t.id + ')').join(', ');
-      // Clicking the status lands the board directly on the In-Progress task (by id when there's the
-      // usual single one; otherwise just the In Progress tab, which shows the breached set).
-      const revealMsg = c.inProgress.length === 1
-        ? { type: 'reveal', taskId: c.inProgress[0].id, phase: 'inprogress' }
-        : { type: 'reveal', phase: 'inprogress' };
-      const revealLabel = c.inProgress.length === 1 ? 'Open the in-progress task on the board' : 'Show the In Progress tab';
-      // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
-      // long title stays fully readable without widening the sidebar.
-      loops.append(h('button', { class: 'sb-row loop-status click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage(revealMsg) },
-        h('span', { class: 'loop-status-label' },
-          c.breached ? h('span', { class: 'codicon codicon-warning' }) : null,
-          (c.breached ? ' limit breached — ' : '') + 'In Progress:'),
-        h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, inProg))));
-      if (c.message) {
-        loops.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
+      sb.append(header);
+
+      // When a category has exactly one task, name its id — otherwise the count stands alone.
+      function soleId(phaseKey, match) {
+        const tasks = (board.phases[phaseKey] || []).filter(match);
+        return tasks.length === 1 ? tasks[0].id : null;
       }
+
+      const list = h('div', { class: 'attn-list sb-section' });
+      const rows = [];
+      if (b.feedbackUnanswered > 0) {
+        rows.push({ icon: 'comment-discussion', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback', search: 'is:unanswered' });
+      }
+      if (b.newUnanswered > 0) {
+        rows.push({ icon: 'issues', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' — New', phase: 'new', search: 'is:unanswered' });
+      }
+      if (b.reviewCount > 0) {
+        const id = soleId('review', () => true);
+        rows.push({ icon: 'eye', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
+      }
+      if (b.newCount > 0) {
+        const id = soleId('new', () => true);
+        rows.push({ icon: 'check-all', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
+      }
+      for (const r of rows) {
+        list.append(h('button', { class: 'attn-row', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: r.phase, search: r.search }) },
+          h('span', { class: 'ico codicon codicon-' + r.icon }), h('span', { class: 'txt' }, r.text)));
+      }
+      if (rows.length) sb.append(list);
+
+      const counts = h('div', { class: 'sb-section' });
+      counts.append(h('div', { class: 'sb-label' }, 'Phases'));
+      for (const p of PHASES) {
+        counts.append(h('button', { class: 'sb-row click', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: p.key }) },
+          h('span', { class: 'label' }, p.label), h('span', { class: 'count' }, String((board.phases[p.key] || []).length))));
+      }
+      sb.append(counts);
+
+      sb.append(h('div', { class: 'divider' }));
+      const loops = h('div', { class: 'sb-section' });
+      loops.append(h('div', { class: 'sb-label' }, 'Loops'));
+      for (const l of board.loops) {
+        // Actively working = this loop is running AND owns the single In-Progress task (LOOP.md
+        // Rule 2's GLOBAL SINGLE-TASK LIMIT), derived from board.concurrency.inProgress by model.
+        const owns = !!(board.concurrency && board.concurrency.inProgress.some((t) => t.model === l.id));
+        const working = l.running && owns;
+        const dotClass = 'loop-dot ' + (l.running ? 'on' : 'off') + (working ? ' working pulse' : '');
+        // Play is disabled while running (the row body handles focusing it instead) — its label
+        // must not claim an action the disabled button no longer performs.
+        const spawnLabel = l.running ? 'Loop running' : 'Start loop';
+        // Only a running loop's row body reveals+focuses its terminal on click; a stopped loop's row
+        // stays inert (starting one is the play button's job, not a body click).
+        const bodyProps = l.running
+          ? { class: 'loop-body click', role: 'button', tabindex: '0', 'aria-label': 'Reveal ' + l.name + ' terminal', onclick: () => vscode.postMessage({ type: 'revealTerminal', model: l.id }) }
+          : { class: 'loop-body' };
+        const body = h('span', bodyProps,
+          h('span', { class: dotClass }),
+          h('span', { class: 'label' }, l.name),
+          h('span', { class: 'loop-hint' }, l.hint));
+        if (l.running) {
+          body.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', model: l.id }); }
+          });
+        }
+        loops.append(h('div', { class: 'sb-row loop' }, body,
+          h('button', {
+            class: 'icon-btn', type: 'button', 'aria-label': spawnLabel, title: spawnLabel, disabled: l.running,
+            onclick: l.running ? null : () => vscode.postMessage({ type: 'spawnLoop', model: l.id }),
+          }, icon(SVG.play)),
+          h('button', {
+            class: 'icon-btn', type: 'button', 'aria-label': 'Restart with fresh context', title: 'Restart with fresh context', disabled: !l.running,
+            onclick: l.running ? () => vscode.postMessage({ type: 'recycleLoop', model: l.id }) : null,
+          }, icon(SVG.recycle)),
+          h('button', {
+            class: 'icon-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop loop', disabled: !l.running,
+            onclick: l.running ? () => vscode.postMessage({ type: 'stopLoop', model: l.id }) : null,
+          }, icon(SVG.stop))));
+      }
+      // Global single-task limit (LOOP.md Rule 2): surface when a task is In Progress so a human
+      // sees the limit holding back prepared work — or being breached (>1 In Progress at once).
+      const c = board.concurrency;
+      if (c && c.inProgress.length) {
+        const inProg = c.inProgress.map((t) => (t.title || t.id) + ' (' + t.id + ')').join(', ');
+        // Clicking the status lands the board directly on the In-Progress task (by id when there's the
+        // usual single one; otherwise just the In Progress tab, which shows the breached set).
+        const revealMsg = c.inProgress.length === 1
+          ? { type: 'reveal', taskId: c.inProgress[0].id, phase: 'inprogress' }
+          : { type: 'reveal', phase: 'inprogress' };
+        const revealLabel = c.inProgress.length === 1 ? 'Open the in-progress task on the board' : 'Show the In Progress tab';
+        // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
+        // long title stays fully readable without widening the sidebar.
+        loops.append(h('button', { class: 'sb-row loop-status click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage(revealMsg) },
+          h('span', { class: 'loop-status-label' },
+            c.breached ? h('span', { class: 'codicon codicon-warning' }) : null,
+            (c.breached ? ' limit breached — ' : '') + 'In Progress:'),
+          h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, inProg))));
+        if (c.message) {
+          loops.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
+        }
+      }
+      sb.append(loops);
     }
-    sb.append(loops);
 
     sb.append(h('div', { class: 'spacer' }));
     sb.append(h('div', { class: 'open-wrap' },
@@ -170,7 +170,7 @@
         icon(SVG.gear), h('span', { class: 'label' }, 'Settings')),
       h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Synchronise templates', title: 'Refresh TODO.md/LOOP.md scaffolding from the shipped templates', onclick: () => vscode.postMessage({ type: 'syncTemplates' }) },
         icon(SVG.sync), h('span', { class: 'label' }, 'Synchronise Templates')),
-      h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
+      board.todoMissing ? null : h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
     root.append(sb);
     setupMarquees();
   }
