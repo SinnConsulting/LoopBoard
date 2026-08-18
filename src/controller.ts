@@ -68,16 +68,24 @@ export class Controller {
       autoRecycle: c.get<boolean>('autoRecycle', false),
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
+      pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
 
-  private buildWebBoard(board: Board): WebBoard {
+  private async buildWebBoard(board: Board): Promise<WebBoard> {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, this.terminals.status(), enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
+    // Recomputed on every refresh (and again right after a sync click via the refresh() it
+    // triggers) so the pulse reflects live disk state rather than a cached snapshot (t-pul1).
+    if (cfg.pulseTemplateSync && !this.store.todoMissing) {
+      const { todoText, loopText } = await this.readTemplates();
+      const preview = await this.store.previewSync(todoText, loopText);
+      web.templatesOutOfDate = !preview.upToDate;
+    }
     return web;
   }
 
@@ -86,7 +94,7 @@ export class Controller {
     this.maybeAutoRecycle(this.lastBoard, board);
     this.maybeClearSession(this.lastBoard, board);
     this.lastBoard = board;
-    const web = this.buildWebBoard(board);
+    const web = await this.buildWebBoard(board);
     BoardPanel.current?.post({ type: 'board', board: web });
     this.sidebar.post({ type: 'board', board: web });
     this.sidebar.setBadge(web.badge);
@@ -152,7 +160,7 @@ export class Controller {
     switch (msg?.type) {
       case 'ready':
         if (this.lastBoard) {
-          const web = this.buildWebBoard(this.lastBoard);
+          const web = await this.buildWebBoard(this.lastBoard);
           BoardPanel.current?.post({ type: 'board', board: web });
           this.sidebar.post({ type: 'board', board: web });
           this.sidebar.setBadge(web.badge);
