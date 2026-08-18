@@ -915,11 +915,16 @@
           setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
         }
       };
+      // A real mouse click fires pointerdown AND click; onclick stays wired only for keyboard
+      // (Enter/Space) activation, which dispatches a synthetic click with no preceding
+      // pointerdown. Without this flag both events reach commitPromote for a single mouse
+      // activation, double-posting the gate and doubling the success toast (t-02a2).
+      let firedByPointer = false;
       head.append(h('button', {
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — moves to Backlog', title: 'Approve — moves to Backlog',
-        onpointerdown: (e) => { e.preventDefault(); commitPromote(); },
-        onclick: commitPromote,
+        onpointerdown: (e) => { e.preventDefault(); firedByPointer = true; commitPromote(); },
+        onclick: () => { if (firedByPointer) { firedByPointer = false; return; } commitPromote(); },
       }, icon(SVG.check), 'Approve'));
     }
     // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
