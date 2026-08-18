@@ -18,6 +18,7 @@
 //     - rev: <n>                             (optional; monotonic change marker, writer-managed)
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
+//       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
 //     - note: <text>                         (repeatable; unprocessed human worker-note, Rule 16)
 //     - feedback: <text>                     (repeatable; Review change request, Rule 13)
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
@@ -90,11 +91,17 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
         entry.completed = v;
         return true;
       case 'question':
-        entry.questions.push({ text: stripLeadingEmoji(v), answer: '' });
+        entry.questions.push({ text: stripLeadingEmoji(v), answer: '', suggestions: [] });
         return true;
       case 'answer':
         if (entry.questions.length > 0) {
           entry.questions[entry.questions.length - 1].answer = v;
+          return true;
+        }
+        return false;
+      case 'suggestion':
+        if (entry.questions.length > 0) {
+          entry.questions[entry.questions.length - 1].suggestions.push(v);
           return true;
         }
         return false;
@@ -116,6 +123,12 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
     const answerMatch = line.match(/^ {3,}- answer:\s?(.*)$/i);
     if (answerMatch) {
       applySegment('answer', answerMatch[1]);
+      continue;
+    }
+    // suggestion sub-sub-bullet: "    - suggestion: ..." (repeatable, nests under the last question)
+    const suggestionMatch = line.match(/^ {3,}- suggestion:\s?(.*)$/i);
+    if (suggestionMatch) {
+      applySegment('suggestion', suggestionMatch[1]);
       continue;
     }
     // Regular sub-bullet: "  - <key>: <value>"

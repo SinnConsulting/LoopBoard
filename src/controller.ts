@@ -12,6 +12,11 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Single source of truth for the Getting Started docs target — both the first-run popup and the
+// sidebar Help button open this URL (t-de8d).
+export const HELP_URL = 'https://github.com/SinnConsulting/LoopBoard#get-started';
+const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
+
 // The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
 // here so store.stageAttachment has one raw-bytes entry point regardless of source (drag-drop/
 // paste vs. the host-side file picker, which reads bytes directly).
@@ -42,7 +47,8 @@ export class Controller {
     private extensionUri: vscode.Uri,
     private store: Store,
     private terminals: TerminalManager,
-    private sidebar: SidebarProvider
+    private sidebar: SidebarProvider,
+    private globalState: vscode.Memento
   ) {
     store.onChange(() => this.refresh());
     terminals.onDidChangeStatus(() => this.refresh());
@@ -71,6 +77,7 @@ export class Controller {
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, this.terminals.status(), enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
+    web.helpUrl = HELP_URL;
     return web;
   }
 
@@ -293,6 +300,23 @@ export class Controller {
   async autoHeal(): Promise<void> {
     const { todoText, loopText } = await this.readTemplates();
     await this.store.autoHeal(todoText, loopText);
+  }
+
+  // First-run (and every subsequent activation) Getting Started prompt, gated on a globalState
+  // flag that only "Show never again" sets — dismissing or opening the docs leaves it unset so
+  // the popup reappears next activation (t-de8d).
+  async maybeShowGettingStarted(): Promise<void> {
+    if (this.globalState.get<boolean>(GETTING_STARTED_DISMISSED_KEY)) return;
+    const choice = await vscode.window.showInformationMessage(
+      'LoopBoard: new here? Check out the Getting Started guide.',
+      'Open Getting Started',
+      'Show never again'
+    );
+    if (choice === 'Open Getting Started') {
+      void vscode.env.openExternal(vscode.Uri.parse(HELP_URL));
+    } else if (choice === 'Show never again') {
+      void this.globalState.update(GETTING_STARTED_DISMISSED_KEY, true);
+    }
   }
 
   // Scaffold a fresh `.loopboard/` workspace (TODO.md + LOOP.md + tasks/). Wired to both the

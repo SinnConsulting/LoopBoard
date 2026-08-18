@@ -20,7 +20,7 @@ export interface WebTask {
   dependsOn: { id: string; met: boolean }[];
   description: string;
   note: string | null;
-  questions: { text: string; answer: string; answered: boolean }[];
+  questions: { text: string; answer: string; answered: boolean; suggestions: string[] }[];
   feedback: string | null;
   delivered: string | null;
   unparsedLines: string[] | null;
@@ -35,6 +35,7 @@ export interface LoopStatus {
 
 export interface WebBoard {
   todoMissing?: boolean; // set by the controller; offers the scaffold button in the UI
+  helpUrl?: string; // set by the controller; sidebar Help button target
   workspaceName: string;
   defaultWorkerModel: Model; // owns tasks with no model:; labels the board's Model select default
   defaultGroomerModel: Model; // grooms tasks with no groomer:; labels the draft Groom-with default
@@ -89,7 +90,7 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     dependsOn: t.dependsOn.map((id) => ({ id, met: doneIds.has(id) })),
     description: t.description ?? '',
     note: t.notes.length ? t.notes.join('\n') : null,
-    questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0 })),
+    questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0, suggestions: q.suggestions || [] })),
     feedback: t.feedback.length ? t.feedback.join('\n') : null,
     delivered: t.delivered ?? null,
     unparsedLines: t.unknownLines.length ? t.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,

@@ -44,6 +44,7 @@ export function serializeEntry(entry: IndexEntry): string[] {
   for (const q of entry.questions) {
     out.push(`  - question: ${q.text}`);
     out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));
+    for (const s of q.suggestions) out.push(`    - suggestion: ${s}`);
   }
   for (const n of entry.notes) out.push(`  - note: ${n}`);
   for (const f of entry.feedback) out.push(`  - feedback: ${f}`);

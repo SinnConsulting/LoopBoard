@@ -6,7 +6,8 @@
 
 [![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml)
 [![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml)
-[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/SinnConsulting.loopboard-todo?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=SinnConsulting.loopboard-todo)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model)
 
 **The missing UI for Claude Code loops.**<br>
 **Claude Code is the engine.**<br>
@@ -17,9 +18,11 @@
 
 </div>
 
-> Anthropic's developer loop—popularized by Head of Claude Code Boris Cherny—is a harness engineering approach where developers stop writing single, isolated prompts and instead build iterative, automated loops where Claude observes, plans, acts, and reflects over hours or days.
+> "I don't prompt Claude anymore. I have loops running that prompt Claude and figure out what to do. My job is to write loops."
+>
+> — Boris Cherny, creator of Claude Code at Anthropic
 
-![LoopBoard hero](media/hero.png)
+[![LoopBoard demo — watch on YouTube](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/hero.jpg)](https://youtu.be/Cqdq1-CAapc)
 
 LoopBoard is a VSCode extension that turns your workspace `.loopboard/` tracker into an interactive
 board your Claude Code agent loops groom, build, and deliver from — while you keep the only two keys
@@ -27,16 +30,14 @@ that matter: **what gets started, and what gets accepted.** Markdown stays the s
 
 ## Why LoopBoard?
 
-| Without LoopBoard | With LoopBoard |
-|-------------------|----------------|
-| Start a new chat for every task | Create a task once |
-| Write prompts | Press **Start** |
-| Manage long-running sessions | LoopBoard manages the workflow |
-| Coordinate planning and implementation yourself | Groomer and Worker collaborate |
-| Constantly monitor the AI | Step in only when you're needed |
-| Lose momentum during debugging | Chat with Claude and continue the loop |
-| Juggle context across conversations | Everything stays attached to the task |
-| Orchestrate autonomous workflows | Focus on building software |
+What you get, at a glance:
+
+- 🗂️ **Your `TODO.md` is the board** — markdown stays the source of truth; the UI is a live view, never a second database.
+- 🤖 **Agents groom, build, and deliver** — Groomer and Worker loops collaborate on each task while you hold the only two gates: what starts, what's accepted.
+- ⏯️ **Press Start, not prompts** — spawn model-specific Claude Code loop terminals in one click instead of writing a fresh prompt per task.
+- 🧩 **Multi-model slots** — assign Opus / Sonnet / Fable per task (groom vs. work), each a configurable slot.
+- 🔒 **Zero runtime dependencies** — the extension ships no runtime deps; the webview is vanilla HTML/CSS/JS with a CSP nonce on every script.
+- 🧵 **Context stays on the task** — worklog, feedback, and delivery notes live in `tasks/<id>.md`, not scattered across chats.
 
 ## How LoopBoard works
 
@@ -49,7 +50,7 @@ that matter: **what gets started, and what gets accepted.** Markdown stays the s
 
 > **That's it.**
 
-![LoopBoard board in motion](media/screenshot-board.gif)
+![LoopBoard board in motion](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-board.gif)
 
 ## Get started
 
@@ -91,7 +92,7 @@ The activity-bar **sidebar** (left) is a read-only, at-a-glance summary — clic
 
 | | |
 |---|---|
-| ![LoopBoard sidebar](media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.</li><li><b>Settings</b> — opens the extension's configuration.</li></ul> |
+| ![LoopBoard sidebar](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.</li><li><b>Settings</b> — opens the extension's configuration.</li></ul> |
 
 On the board itself:
 

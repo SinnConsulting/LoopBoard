@@ -889,22 +889,29 @@
     sel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, modelDefOpt), t.model || ''));
     head.append(sel);
     if (variant === 'new') {
+      // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the
+      // button down via render()'s `root.textContent = ''` — waiting for `click` risks it being
+      // swallowed when a field (e.g. the search box) was focused right before the click (see
+      // t-d3dd, t-3042). onclick stays wired for keyboard (Enter/Space) activation, which
+      // dispatches a synthetic click with no pointerdown.
+      const commitPromote = () => {
+        // Unanswered questions mean the host may pop a confirm modal before promoting (Rule 1's
+        // override guard) — fading the card immediately would hide it behind that dialog and
+        // then un-hide it on cancel, which reads as a confusing flicker. Only fade optimistically
+        // on the zero-friction path (no unanswered questions), where promotion is unconditional;
+        // otherwise wait for the host's outcome to arrive via the next board refresh.
+        if (t.questions.some((q) => !q.answered)) {
+          post({ type: 'gate', taskId: t.id, action: 'promote' });
+        } else {
+          card.style.opacity = '0';
+          setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
+        }
+      };
       head.append(h('button', {
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — moves to Backlog', title: 'Approve — moves to Backlog',
-        onclick: () => {
-          // Unanswered questions mean the host may pop a confirm modal before promoting (Rule 1's
-          // override guard) — fading the card immediately would hide it behind that dialog and
-          // then un-hide it on cancel, which reads as a confusing flicker. Only fade optimistically
-          // on the zero-friction path (no unanswered questions), where promotion is unconditional;
-          // otherwise wait for the host's outcome to arrive via the next board refresh.
-          if (t.questions.some((q) => !q.answered)) {
-            post({ type: 'gate', taskId: t.id, action: 'promote' });
-          } else {
-            card.style.opacity = '0';
-            setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
-          }
-        },
+        onpointerdown: (e) => { e.preventDefault(); commitPromote(); },
+        onclick: commitPromote,
       }, icon(SVG.check), 'Approve'));
     }
     // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
@@ -922,10 +929,14 @@
     // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
     // visible even collapsed since `head` always renders (see the removed bottom .approve-row).
     if (variant === 'review') {
+      // Same pointerdown-commit treatment as the New Approve button above — beats a mid-gesture
+      // board refresh from tearing the button down before the click lands (t-3042).
+      const commitAccept = () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); };
       head.append(h('button', {
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
-        onclick: () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); },
+        onpointerdown: (e) => { e.preventDefault(); commitAccept(); },
+        onclick: commitAccept,
       }, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
@@ -1211,6 +1222,32 @@
         commitAnswer();
       });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
+      // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
+      // click, no AI in the loop — accept just fills the textarea and reuses commitAnswer, i.e. the
+      // ordinary answer field-patch path (`sendPatch(..., 'answer', ...)`); the writer clears a
+      // question's suggestions once it has an answer (merge.ts), so they naturally disappear on the
+      // next board refresh.
+      if (!q.answered && q.suggestions && q.suggestions.length) {
+        const suggWrap = h('div', { class: 'suggestions' });
+        q.suggestions.forEach((s) => {
+          const acceptSuggestion = () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); };
+          suggWrap.append(h('div', { class: 'suggestion-row' },
+            h('span', { class: 'suggestion-text' }, s),
+            h('button', {
+              class: 'btn-sm primary suggestion-accept-btn', type: 'button',
+              title: 'Accept suggestion', 'aria-label': 'Accept suggestion: ' + s,
+              // Commit on pointerdown (not just click): while the search box is focused a background
+              // loop refresh queues pendingBoard; waiting for `click` lets the focusout flush fire
+              // render()'s `root.textContent=''` and tear this button down before the answer patch
+              // posts, so the accept silently no-ops (t-157b feedback). preventDefault also keeps the
+              // prior field focused so no focusout flush runs mid-gesture. Same race the composer's
+              // Save Draft dodges (t-d3dd); onclick stays wired for keyboard (Enter/Space) activation.
+              onpointerdown: (e) => { e.preventDefault(); acceptSuggestion(); },
+              onclick: acceptSuggestion,
+            }, icon(SVG.check), 'Accept')));
+        });
+        block.append(suggWrap);
+      }
       aw.append(ta, saveBtn);
       if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
       block.append(aw);

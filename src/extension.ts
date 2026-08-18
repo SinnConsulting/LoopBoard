@@ -31,7 +31,7 @@ export function activate(context: vscode.ExtensionContext): void {
     (level, event, detail) => store.debugLog(level, event, detail)
   );
   const sidebar = new SidebarProvider(context.extensionUri);
-  controller = new Controller(context.extensionUri, store, terminals, sidebar);
+  controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState);
 
   context.subscriptions.push(
     { dispose: () => store.dispose() },
@@ -46,6 +46,7 @@ export function activate(context: vscode.ExtensionContext): void {
   store.debugLog('info', 'activate', folder.name);
   store.startWatching();
   void controller.autoHeal().then(() => controller.refresh());
+  void controller.maybeShowGettingStarted();
 }
 
 export async function deactivate(): Promise<void> {
