@@ -45,7 +45,10 @@ export class TerminalManager {
   constructor(
     private getCwd: () => vscode.Uri,
     private getLoopText: () => string,
-    private getConfig: () => { permissionMode: string; interval: string; models: ResolvedModel[] }
+    private getConfig: () => { permissionMode: string; interval: string; models: ResolvedModel[] },
+    // Opt-in debug trace (t-2901) — routed through the store's single sink; defaults to a no-op so
+    // the manager stays decoupled from the store and testable.
+    private log: (level: 'info' | 'verbose', event: string, detail?: string) => void = () => {}
   ) {
     this.disposables.push(
       vscode.window.onDidOpenTerminal(() => this.changeEmitter.fire()),
@@ -95,10 +98,12 @@ export class TerminalManager {
     if (this.revealedModel === model) {
       vscode.commands.executeCommand('workbench.action.closePanel');
       this.revealedModel = undefined;
+      this.log('info', 'loop-reveal', `${model} -> hide`);
       return;
     }
     terminal.show(preserveFocus);
     this.revealedModel = model;
+    this.log('info', 'loop-reveal', `${model} -> show`);
   }
 
   spawn(model: Model, preserveFocus = false): void {
@@ -106,6 +111,7 @@ export class TerminalManager {
     if (existing) {
       existing.show(preserveFocus);
       this.revealedModel = model;
+      this.log('info', 'loop-spawn', `${model} -> already running (revealed)`);
       return;
     }
     const cfg = this.getConfig();
@@ -114,15 +120,18 @@ export class TerminalManager {
     const resolved = cfg.models.find((m) => m.id === model);
     const modelString = resolved ? resolved.model : model;
     if (!isValidModelString(modelString)) {
+      this.log('info', 'loop-spawn', `${model} -> aborted (invalid --model "${modelString}")`);
       vscode.window.showWarningMessage(`LoopBoard: the configured --model for "${model}" is invalid — not starting the loop.`);
       return;
     }
     // permissionMode/interval are spliced into the shell line (buildClaudeBase / buildLoopCommand),
     // which sanitize them to safe defaults; warn so the user knows an off-list setting was ignored.
     if (!isValidPermissionMode(cfg.permissionMode)) {
+      this.log('info', 'loop-spawn', `${model} -> invalid permissionMode "${cfg.permissionMode}"`);
       vscode.window.showWarningMessage(`LoopBoard: invalid loopBoard.permissionMode "${cfg.permissionMode}" — using "auto".`);
     }
     if (!isValidLoopInterval(cfg.interval)) {
+      this.log('info', 'loop-spawn', `${model} -> invalid loopInterval "${cfg.interval}"`);
       vscode.window.showWarningMessage(`LoopBoard: invalid loopBoard.loopInterval "${cfg.interval}" — using "1m".`);
     }
     // The bootstrap prompt names the LOGICAL slot (model), so the worker claims `model: <slot>`
@@ -133,6 +142,7 @@ export class TerminalManager {
     terminal.show(preserveFocus);
     this.revealedModel = model;
     const base = buildClaudeBase(cfg.permissionMode, modelString);
+    this.log('info', 'loop-spawn', `${model} -> --model ${modelString}`);
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
       // delay note above). Single-quoted; the prompt is one short line built by buildLoopCommand.
@@ -152,11 +162,13 @@ export class TerminalManager {
 
   stop(model: Model): void {
     if (this.revealedModel === model) this.revealedModel = undefined;
+    this.log('info', 'loop-stop', model);
     this.find(model)?.dispose();
   }
 
   recycle(model: Model, preserveFocus = false): void {
     if (this.revealedModel === model) this.revealedModel = undefined;
+    this.log('info', 'loop-recycle', model);
     const existing = this.find(model);
     if (existing) existing.dispose();
     // Respawn shortly after disposal so the name is free.
@@ -169,6 +181,7 @@ export class TerminalManager {
   clearSession(model: Model): void {
     const terminal = this.find(model);
     if (!terminal) return;
+    this.log('info', 'loop-clear', model);
     terminal.sendText('/clear', false);
     setTimeout(() => {
       if (this.find(model) === terminal) terminal.sendText('', true);

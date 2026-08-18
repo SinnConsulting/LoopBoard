@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
-import { Store } from './store';
+import { Store, DebugLevel } from './store';
 import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
 import { Controller } from './controller';
 import { Model, resolveModels, readModelsConfig } from './model';
+
+// Held for deactivate() so the debug sink's buffered tail is flushed on a clean shutdown (t-2901).
+let activeStore: Store | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -12,7 +15,8 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   let controller: Controller;
-  const store = new Store(folder);
+  const store = new Store(folder, () => vscode.workspace.getConfiguration('loopBoard').get<DebugLevel>('debug', 'off'));
+  activeStore = store;
   const terminals = new TerminalManager(
     () => folder.uri,
     () => store.loopText,
@@ -23,7 +27,8 @@ export function activate(context: vscode.ExtensionContext): void {
         interval: c.get<string>('loopInterval', '1m'),
         models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
       };
-    }
+    },
+    (level, event, detail) => store.debugLog(level, event, detail)
   );
   const sidebar = new SidebarProvider(context.extensionUri);
   controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState);
@@ -38,11 +43,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles())
   );
 
+  store.debugLog('info', 'activate', folder.name);
   store.startWatching();
   void controller.autoHeal().then(() => controller.refresh());
   void controller.maybeShowGettingStarted();
 }
 
-export function deactivate(): void {
-  // Subscriptions handle disposal.
+export async function deactivate(): Promise<void> {
+  // Persist the debug sink's buffered tail before the process exits (VSCode awaits this Promise).
+  await activeStore?.flushDebug();
+  // Subscriptions handle the rest of disposal.
 }

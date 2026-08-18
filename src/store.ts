@@ -18,8 +18,27 @@ export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error
 export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string };
 export type DraftOutcome = SaveOutcome & { id?: string };
 
+// Opt-in debug trace level (loopBoard.debug). `off` = the sink is never touched.
+export type DebugLevel = 'off' | 'info' | 'verbose';
+
 const DECODER = new TextDecoder();
 const ENCODER = new TextEncoder();
+
+// debug.log growth bound (t-2901): tail-cap at 10 MB, trimming oldest lines on a newline boundary.
+const DEBUG_MAX_BYTES = 10 * 1024 * 1024;
+// Coalesce a burst of debugLog pushes into one disk write (mirrors the 300ms notify debounce).
+const DEBUG_FLUSH_MS = 300;
+
+// Trim a debug.log byte buffer to the newest DEBUG_MAX_BYTES, dropping from the front to the first
+// newline PAST the overflow so no half-line survives at the top. Byte-based: 0x0A never appears
+// inside a UTF-8 multibyte sequence, so cutting on it can never split a character.
+function trimDebugTail(bytes: Uint8Array): Uint8Array {
+  if (bytes.byteLength <= DEBUG_MAX_BYTES) return bytes;
+  let cut = bytes.byteLength - DEBUG_MAX_BYTES;
+  while (cut < bytes.byteLength && bytes[cut] !== 0x0a) cut++;
+  cut = Math.min(cut + 1, bytes.byteLength); // skip the newline itself
+  return bytes.subarray(cut);
+}
 
 // v1 scope (t-att1, human decision): images only. Size cap is configurable (loopBoard.maxAttachmentSizeMB);
 // this default is only used if a caller doesn't pass one.
@@ -56,8 +75,14 @@ export class Store {
   private loopUri: vscode.Uri;
   private tasksDir: vscode.Uri;
   private cacheDir: vscode.Uri;
+  private debugLogUri: vscode.Uri;
   private watchers: vscode.FileSystemWatcher[] = [];
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  // Debug sink (t-2901): in-memory buffer → debounced flush → read-concat-write of debug.log,
+  // serialized on debugTail (NOT writeLock — logging must never block or nest inside a real save).
+  private debugBuffer: string[] = [];
+  private debugFlushTimer: ReturnType<typeof setTimeout> | undefined;
+  private debugTail: Promise<void> = Promise.resolve();
   private listeners: (() => void)[] = [];
   private _loopText = '';
   // Serializes every mutating file operation so their read -> parse -> apply -> write cycles
@@ -70,13 +95,61 @@ export class Store {
   private tmpSeq = 0;
   todoMissing = false;
 
-  constructor(private folder: vscode.WorkspaceFolder) {
+  // `getDebugLevel` reads loopBoard.debug on demand — injected so the store stays config-agnostic
+  // (no getConfiguration call here) and testable. Defaults to `off` (no logging) when unset.
+  constructor(private folder: vscode.WorkspaceFolder, private getDebugLevel: () => DebugLevel = () => 'off') {
     this.loopboardUri = vscode.Uri.joinPath(folder.uri, '.loopboard');
     this.todoUri = vscode.Uri.joinPath(this.loopboardUri, 'TODO.md');
     this.doneUri = vscode.Uri.joinPath(this.loopboardUri, 'DONE.md');
     this.loopUri = vscode.Uri.joinPath(this.loopboardUri, 'LOOP.md');
     this.tasksDir = vscode.Uri.joinPath(this.loopboardUri, 'tasks');
     this.cacheDir = vscode.Uri.joinPath(this.loopboardUri, 'cache');
+    this.debugLogUri = vscode.Uri.joinPath(this.loopboardUri, 'debug.log');
+  }
+
+  // Opt-in verbose trace (t-2901). Appends one line to `.loopboard/debug.log` when loopBoard.debug
+  // is `info`/`verbose` and the call's level is not below the setting; `off` returns immediately
+  // (nothing constructed, no read, no write). The line is pushed onto an in-memory buffer and a
+  // debounced flush is scheduled — best-effort, never blocks a real save. Values are logged
+  // VERBATIM: debug.log lives under the gitignored `.loopboard/`, so nothing leaves the machine.
+  debugLog(level: 'info' | 'verbose', event: string, detail?: string): void {
+    const current = this.getDebugLevel();
+    if (current === 'off') return;
+    if (level === 'verbose' && current !== 'verbose') return;
+    const line = detail === undefined
+      ? `${new Date().toISOString()}\t${event}`
+      : `${new Date().toISOString()}\t${event}\t${detail}`;
+    this.debugBuffer.push(line);
+    if (this.debugFlushTimer) clearTimeout(this.debugFlushTimer);
+    this.debugFlushTimer = setTimeout(() => void this.flushDebug(), DEBUG_FLUSH_MS);
+  }
+
+  // Force the pending debug lines to disk now (called on deactivate so the tail survives a clean
+  // shutdown). Cancels the debounce and chains the flush onto debugTail so it never interleaves
+  // with an in-flight flush.
+  async flushDebug(): Promise<void> {
+    if (this.debugFlushTimer) {
+      clearTimeout(this.debugFlushTimer);
+      this.debugFlushTimer = undefined;
+    }
+    this.debugTail = this.debugTail.then(() => this.doFlushDebug());
+    return this.debugTail;
+  }
+
+  // read whole debug.log → concat buffered lines → 10 MB tail-trim → write whole file. No
+  // temp+rename (a torn write only garbles a trailing line, never source-of-truth); errors are
+  // swallowed so a logging failure never surfaces.
+  private async doFlushDebug(): Promise<void> {
+    if (this.debugBuffer.length === 0) return;
+    const pending = this.debugBuffer;
+    this.debugBuffer = [];
+    try {
+      const existing = (await this.readFile(this.debugLogUri)) ?? '';
+      const text = existing + pending.join('\n') + '\n';
+      await vscode.workspace.fs.writeFile(this.debugLogUri, trimDebugTail(ENCODER.encode(text)));
+    } catch {
+      // best-effort trace: a logging failure must never break a real save
+    }
   }
 
   get workspaceName(): string {
@@ -97,6 +170,7 @@ export class Store {
   dispose(): void {
     for (const w of this.watchers) w.dispose();
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    if (this.debugFlushTimer) clearTimeout(this.debugFlushTimer);
   }
 
   onChange(listener: () => void): void {
@@ -239,6 +313,7 @@ export class Store {
     const safeName = await this.dedupeAttachmentName(taskCacheDir, sanitizeAttachmentFilename(filename));
     await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(taskCacheDir, safeName), bytes);
     const relPath = `.loopboard/cache/${taskId}/${safeName}`;
+    this.debugLog('verbose', 'attach', `${taskId} -> ${relPath} (${bytes.byteLength}b)`);
     if (!appendToDescription) return { status: 'applied', path: relPath };
 
     // Drafts (t-att1 rework): the raw draft text IS the story the groomer structures, so the
@@ -289,6 +364,7 @@ export class Store {
         entry.title = title;
         bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
+        this.debugLog('verbose', 'resolvePendingLinks', `${taskId} -> ${files.length} link(s)`);
       }
     });
   }
@@ -360,6 +436,7 @@ export class Store {
         bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
       }
+      this.debugLog('verbose', 'detach', `${taskId} -> ${relPath}`);
       return { status: 'applied' as const, description: detail.description, title: entry.title };
     });
   }
@@ -383,9 +460,15 @@ export class Store {
         const entry = doc.entries.find((e) => e.id === patch.taskId);
         const before = entry ? indexFingerprint(entry) : undefined;
         const result = applyPatch(doc, patch);
-        if (result.status !== 'applied') return { status: result.status };
-        if (entry && before !== undefined && indexFingerprint(entry) !== before) bumpRev(entry);
+        if (result.status !== 'applied') {
+          // A same-field disk-wins conflict silently drops a human edit — an especially important line.
+          if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${patch.field} -> ${patch.value}`);
+          return { status: result.status };
+        }
+        const bumped = entry !== undefined && before !== undefined && indexFingerprint(entry) !== before;
+        if (bumped) bumpRev(entry!);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
+        this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied${bumped ? ' rev+' : ''} = ${patch.value}`);
         return { status: 'applied' };
       }
       // Detail patch: need the index entry for its id + title (writer rewrites the H1).
@@ -396,16 +479,21 @@ export class Store {
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
       const beforeDetail = serializeTaskFile(detail, entry.title, entry.id);
       const result = applyDetailPatch(detail, patch);
-      if (result.status !== 'applied') return { status: result.status };
+      if (result.status !== 'applied') {
+        if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${patch.field} -> ${patch.value}`);
+        return { status: result.status };
+      }
       await this.ensureTasksDir();
       const afterDetail = serializeTaskFile(detail, entry.title, entry.id);
       await this.atomicWrite(this.taskUri(entry.id), afterDetail);
       // A detail-file change bumps the index entry's rev so a loop that reads only TODO.md still
       // sees the task changed (the original miss this feature fixes). Readers never write.
-      if (afterDetail !== beforeDetail) {
+      const bumped = afterDetail !== beforeDetail;
+      if (bumped) {
         bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
       }
+      this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied${bumped ? ' rev+' : ''} = ${patch.value}`);
       return { status: 'applied' };
     });
   }
@@ -427,6 +515,7 @@ export class Store {
 
       await this.ensureTasksDir();
       await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+      this.debugLog('info', 'promote', `${entry.id} -> backlog`);
       return { status: 'applied' };
     });
   }
@@ -439,7 +528,10 @@ export class Store {
     const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
     const entry = doc.entries.find((e) => e.id === taskId);
     if (!entry) return { status: 'notfound' };
-    if (entry.phase !== 'backlog') return { status: 'conflict' };
+    if (entry.phase !== 'backlog') {
+      this.debugLog('info', 'demote', `${taskId} -> conflict (not backlog)`);
+      return { status: 'conflict' };
+    }
 
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
@@ -451,6 +543,7 @@ export class Store {
 
     await this.ensureTasksDir();
     await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+    this.debugLog('info', 'demote', `${entry.id} -> new`);
     return { status: 'applied' };
   }
 
@@ -477,6 +570,7 @@ export class Store {
 
       doc.entries.splice(idx, 1);
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      this.debugLog('info', 'accept', `${entry.id} -> DONE.md`);
       return { status: 'applied' };
     });
   }
@@ -503,6 +597,7 @@ export class Store {
       // returns — the id a caller needs to immediately act on this draft (e.g. stage an attachment)
       // without a second read/parse round trip.
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      this.debugLog('info', 'createDraft', `${draft.id} = ${draft.title}`);
       return { status: 'applied', id: draft.id };
     });
   }
@@ -522,6 +617,7 @@ export class Store {
         await this.atomicWrite(this.todoUri, todoText);
         await this.atomicWrite(this.loopUri, loopText);
         await vscode.workspace.fs.createDirectory(this.tasksDir);
+        this.debugLog('info', 'scaffold', 'created .loopboard/ (TODO.md, LOOP.md, tasks/)');
         return { created: true };
       } catch (err) {
         return { created: false, error: err instanceof Error ? err.message : String(err) };
@@ -586,6 +682,7 @@ export class Store {
           const { text: newLoop, changedIds } = syncMarkedSections(loopText as string, loopTemplate);
           if (changedIds.length) await this.atomicWrite(this.loopUri, newLoop);
         }
+        this.debugLog('info', 'syncTemplates', 'applied');
         return { status: 'applied' };
       } catch (err) {
         return { status: 'error', message: err instanceof Error ? err.message : String(err) };
@@ -605,8 +702,14 @@ export class Store {
       } catch {
         return; // no .loopboard/ yet — nothing to heal
       }
-      if (isEmptyOrMissing(await this.readFile(this.todoUri))) await this.atomicWrite(this.todoUri, todoTemplate);
-      if (isEmptyOrMissing(await this.readFile(this.loopUri))) await this.atomicWrite(this.loopUri, loopTemplate);
+      if (isEmptyOrMissing(await this.readFile(this.todoUri))) {
+        await this.atomicWrite(this.todoUri, todoTemplate);
+        this.debugLog('info', 'autoHeal', 'recreated TODO.md');
+      }
+      if (isEmptyOrMissing(await this.readFile(this.loopUri))) {
+        await this.atomicWrite(this.loopUri, loopTemplate);
+        this.debugLog('info', 'autoHeal', 'recreated LOOP.md');
+      }
     });
   }
 
@@ -624,6 +727,7 @@ export class Store {
         // no task file yet — nothing to delete
       }
       await this.clearAttachments(taskId);
+      this.debugLog('info', 'deleteTask', taskId);
       return { status: 'applied' };
     });
   }
@@ -637,6 +741,7 @@ export class Store {
       if (idx < 0) return { status: 'notfound' };
       done.splice(idx, 1);
       await this.atomicWrite(this.doneUri, serializeDone(done));
+      this.debugLog('info', 'deleteDone', taskId);
       return { status: 'applied' };
     });
   }

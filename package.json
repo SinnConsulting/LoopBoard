@@ -196,9 +196,25 @@
             "default": false,
             "description": "When a model finishes a task, send /clear to its loop terminal so the next task starts fresh. Same result as Auto Recycle but lighter: the terminal keeps running, only the conversation is cleared. Off by default. Ignored when Auto Recycle is on (a restart already clears everything)."
           },
+          "loopBoard.debug": {
+            "type": "string",
+            "enum": [
+              "off",
+              "info",
+              "verbose"
+            ],
+            "enumDescriptions": [
+              "No debug logging (default). Nothing is written and there is no overhead.",
+              "Key lifecycle events only: activation, promote/accept/demote gates, loop spawn/recycle/stop, same-field disk-wins conflicts.",
+              "Everything, including every field patch/save, attachment, template scaffold/heal/sync, config read, and webview message dispatch."
+            ],
+            "order": 4,
+            "default": "off",
+            "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
+          },
           "loopBoard.maxAttachmentSizeMB": {
             "type": "number",
-            "order": 4,
+            "order": 5,
             "default": 10,
             "minimum": 1,
             "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
