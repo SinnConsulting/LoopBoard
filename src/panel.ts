@@ -21,7 +21,13 @@ export class BoardPanel {
         localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
       }
     );
-    this.panel.iconPath = vscode.Uri.joinPath(extensionUri, 'media', 'icon.svg');
+    // Editor-tab icons aren't theme-recolored the way the activity-bar view-container icon is
+    // (media/icon.svg's currentColor fill resolves to near-black and disappears in dark themes),
+    // so ship fixed-color light/dark variants instead (t-a16d).
+    this.panel.iconPath = {
+      light: vscode.Uri.joinPath(extensionUri, 'media', 'icon-light.svg'),
+      dark: vscode.Uri.joinPath(extensionUri, 'media', 'icon-dark.svg'),
+    };
     void this.initHtml();
     this.panel.webview.onDidReceiveMessage((msg) => this.messageHandler(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
