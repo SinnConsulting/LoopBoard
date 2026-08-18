@@ -1031,17 +1031,20 @@
   }
 
   // ---- minimal, XSS-clean markdown for descriptions ----
-  // Supports **bold**, *italic*/_italic_, `code`, [text](http(s)://url), line breaks.
+  // Supports **bold**, *italic*/_italic_, `code`, [text](scheme://url), line breaks.
   // All user text is HTML-escaped first, so the only tags in the output are the ones we emit;
-  // link hrefs are limited to http/https or a staged-attachment `.loopboard/cache/...` relative
-  // path (t-att1), carried on data-mdlink (wired to openLink on render).
+  // link hrefs are limited to any absolute `scheme://...` URL (t-adf2 — matches the `link:` meta
+  // chip's scheme-agnostic handling, so custom schemes like `tool://` are clickable here too) or
+  // a staged-attachment `.loopboard/cache/...` relative path (t-att1), carried on data-mdlink
+  // (wired to openLink on render). Requiring `://` (not just a leading scheme + colon) keeps
+  // non-URL forms like `javascript:...` out, since those have no `//`.
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
   function renderInlineMd(text) {
     // `text` is already HTML-escaped. Links first, then bold, then italic.
     let out = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
-      /^https?:\/\//i.test(url) || url.startsWith('.loopboard/cache/') ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
+      /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) || url.startsWith('.loopboard/cache/') ? '<a href="#" data-mdlink="' + url + '">' + label + '</a>' : m);
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');

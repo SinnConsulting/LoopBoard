@@ -230,11 +230,17 @@ export class Controller {
         if (!msg.url) return;
         const url = String(msg.url);
         const uri = vscode.Uri.parse(url);
-        if (uri.scheme === 'http' || uri.scheme === 'https') {
-          void vscode.env.openExternal(uri);
-        } else if (url.startsWith('.loopboard/')) {
+        if (url.startsWith('.loopboard/')) {
           // A staged attachment link (t-att1): relative to the workspace root, not a URL.
           void vscode.commands.executeCommand('vscode.open', this.store.resolveWorkspacePath(url));
+        } else if (uri.scheme) {
+          // Hand any absolute URI to the OS default handler for its scheme — not just
+          // http(s) — so custom schemes like `tool://<ticketId>` (t-adf2) are honestly forwarded
+          // rather than silently dropped. openExternal resolves false when no handler is
+          // registered for the scheme; surface that instead of failing silently.
+          void vscode.env.openExternal(uri).then((opened) => {
+            if (!opened) this.toast('info', `No handler for ${uri.scheme}:// links.`);
+          });
         }
         return;
       }
