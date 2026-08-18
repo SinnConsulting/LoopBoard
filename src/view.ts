@@ -20,7 +20,7 @@ export interface WebTask {
   dependsOn: { id: string; met: boolean }[];
   description: string;
   note: string | null;
-  questions: { text: string; answer: string; answered: boolean }[];
+  questions: { text: string; answer: string; answered: boolean; suggestions: string[] }[];
   feedback: string | null;
   delivered: string | null;
   unparsedLines: string[] | null;
@@ -90,7 +90,7 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     dependsOn: t.dependsOn.map((id) => ({ id, met: doneIds.has(id) })),
     description: t.description ?? '',
     note: t.notes.length ? t.notes.join('\n') : null,
-    questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0 })),
+    questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0, suggestions: q.suggestions || [] })),
     feedback: t.feedback.length ? t.feedback.join('\n') : null,
     delivered: t.delivered ?? null,
     unparsedLines: t.unknownLines.length ? t.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,

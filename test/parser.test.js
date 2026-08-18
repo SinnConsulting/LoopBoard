@@ -79,6 +79,30 @@ test('feedback entry: two questions, one answered', () => {
   assert.equal(e.questions[1].answer, '', 'second blank');
 });
 
+test('suggestion: sub-sub-bullets parse under their question (repeatable) and round-trip', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const e = doc.entries.find((x) => x.id === 't-cc01');
+  assert.deepEqual(e.questions[0].suggestions, [], 'answered question carries no suggestions in this fixture');
+  assert.deepEqual(e.questions[1].suggestions, ['Dead-letter to a DB table.', 'Log and drop.']);
+  assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
+});
+
+test('orphan suggestion (no preceding question) is dropped, matching the answer guard', () => {
+  const src = [
+    '## Tasks',
+    '',
+    '- [ ] Orphan suggestion entry',
+    '  - id: t-os01',
+    '  - phase: new',
+    '    - suggestion: Nothing to attach to.',
+    '',
+  ].join('\n');
+  const doc = parseTodo(src);
+  const e = doc.entries.find((x) => x.id === 't-os01');
+  assert.deepEqual(e.questions, []);
+  assert.deepEqual(e.unknownLines, [], 'matches the pre-existing orphan-answer guard behavior (:96-100)');
+});
+
 test('note: sub-bullets parse (repeatable) and round-trip', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const e = doc.entries.find((x) => x.id === 't-bb01');

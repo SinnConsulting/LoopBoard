@@ -110,6 +110,7 @@ export function resolveModelString(id: Model, config?: ModelsConfig): string {
 export interface Question {
   text: string;
   answer: string;
+  suggestions: string[]; // groomer-proposed answers (Rule 14); accepted via the existing answer patch
 }
 
 // One `.loopboard/TODO.md` (or DONE.md) entry — grammar v5. Nothing beyond these keys is canonical.
