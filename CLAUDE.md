@@ -63,9 +63,13 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   lines inside comments must not parse as entries).
 - Emoji canonicalization: index parser strips leading ❓ from question text; task-file parser
   strips ⚠️ from `## Feedback`; writers re-add them.
-- Task file `tasks/<id>.md` is created lazily (first detail patch / first loop write); a missing
-  file = empty detail, and the card shows a "no detail file yet" hint. The writer rewrites the H1
-  from the index title on every task-file save (index title wins on divergence).
+- Task file `tasks/<id>.md` is eager-scaffolded on draft create (t-6ab4: `store.createDraft`
+  writes a skeleton — `owner: unassigned`, `added: <today>`, everything else empty and so omitted
+  by `serializeTaskFile`, same shape the writer already canonicalizes an empty detail to). A
+  missing file (only possible for pre-t-6ab4 entries or one deleted out-of-band) still parses as
+  empty detail and the card still shows the "no detail file yet" hint — it just no longer fires
+  for ordinary new drafts. The writer rewrites the H1 from the index title on every task-file save
+  (index title wins on divergence).
 - Webview vs concurrent loop writes: board defers incoming refresh while a field is focused
   (`pendingBoard`, flushed on focusout). Model select normalizes `default (opus)` → `''`
   before patching so an unchanged default never trips a false same-field conflict.

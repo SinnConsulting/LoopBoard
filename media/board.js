@@ -29,6 +29,19 @@
   function icon(svg, cls) {
     return h('span', { class: cls || '', html: svg, style: { display: 'inline-flex' } });
   }
+  // Shared double-fire guard (t-2238) for buttons that commit on pointerdown (beating a
+  // mid-gesture board refresh that tears the button down via render()'s `root.textContent = ''`
+  // before a trailing `click` lands — t-3042/t-d3dd) while still supporting keyboard (Enter/
+  // Space) activation, which dispatches a synthetic `click` with no preceding `pointerdown`. A
+  // real mouse click fires both events; without the flag, both would reach `commit`.
+  function makeGateButton(props, commit) {
+    let firedByPointer = false;
+    const children = Array.prototype.slice.call(arguments, 2);
+    return h.apply(null, ['button', Object.assign({}, props, {
+      onpointerdown: (e) => { e.preventDefault(); firedByPointer = true; commit(); },
+      onclick: () => { if (firedByPointer) { firedByPointer = false; return; } commit(); },
+    })].concat(children));
+  }
   const SVG = {
     check: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
@@ -417,8 +430,9 @@
     const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; phase = 'new'; resetSearch(); saveState(); render(); };
     // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
     // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
-    // when the composer textarea is unfocused (see t-d3dd). onclick stays wired for keyboard
-    // (Enter/Space) activation, which dispatches a synthetic click with no pointerdown.
+    // when the composer textarea is unfocused (see t-d3dd). Routed through the shared
+    // makeGateButton double-fire guard (t-2238) — previously unguarded and latent (masked only
+    // because closeComposer() tears the button out of the DOM before the trailing click lands).
     const commitDraft = () => {
       const t = composerText.trim();
       if (!t) return;
@@ -432,11 +446,9 @@
       }
       closeComposer();
     };
-    const saveBtn = h('button', {
+    const saveBtn = makeGateButton({
       class: 'btn-primary', type: 'button', disabled: composerText.trim().length === 0, style: { width: 'auto', padding: '8px 16px' },
-      onpointerdown: (e) => { e.preventDefault(); commitDraft(); },
-      onclick: commitDraft,
-    }, 'Save Draft');
+    }, commitDraft, 'Save Draft');
     // t-att1 rework: pasting/dropping an image no longer auto-saves the draft (that ended the
     // typing flow mid-thought). The image is held in memory, `[filename](loopboard-pending:<n>)`
     // is inserted at the caret so the reference sits in the story text where you're typing, and
@@ -915,17 +927,12 @@
           setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
         }
       };
-      // A real mouse click fires pointerdown AND click; onclick stays wired only for keyboard
-      // (Enter/Space) activation, which dispatches a synthetic click with no preceding
-      // pointerdown. Without this flag both events reach commitPromote for a single mouse
-      // activation, double-posting the gate and doubling the success toast (t-02a2).
-      let firedByPointer = false;
-      head.append(h('button', {
+      // Double-fire guard (t-02a2, now the shared makeGateButton helper — t-2238): without it, a
+      // single mouse activation's pointerdown AND click would both reach commitPromote.
+      head.append(makeGateButton({
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — moves to Backlog', title: 'Approve — moves to Backlog',
-        onpointerdown: (e) => { e.preventDefault(); firedByPointer = true; commitPromote(); },
-        onclick: () => { if (firedByPointer) { firedByPointer = false; return; } commitPromote(); },
-      }, icon(SVG.check), 'Approve'));
+      }, commitPromote, icon(SVG.check), 'Approve'));
     }
     // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
     // Non-negotiable #5): Backlog cards only, an active/owned task must never be yankable out
@@ -942,15 +949,15 @@
     // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
     // visible even collapsed since `head` always renders (see the removed bottom .approve-row).
     if (variant === 'review') {
-      // Same pointerdown-commit treatment as the New Approve button above — beats a mid-gesture
-      // board refresh from tearing the button down before the click lands (t-3042).
+      // Routed through the shared makeGateButton double-fire guard (t-2238) — previously wired
+      // onpointerdown+onclick straight to commitAccept with no guard, so a single mouse
+      // activation posted the accept gate twice: the second post found the task already moved to
+      // DONE.md and surfaced a spurious "not found" toast alongside the real success toast.
       const commitAccept = () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); };
-      head.append(h('button', {
+      head.append(makeGateButton({
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
-        onpointerdown: (e) => { e.preventDefault(); commitAccept(); },
-        onclick: commitAccept,
-      }, icon(SVG.check), 'Approve'));
+      }, commitAccept, icon(SVG.check), 'Approve'));
     }
     // Delete affordance on every editable-phase card (renderCard is only ever used for non-Done
     // phases). The extension shows a native confirmation modal before removing anything.
@@ -962,7 +969,8 @@
     card.append(renderChips(t));
 
     if (!isCollapsedCard) {
-      // no detail file yet (task file is created lazily on the first detail edit / loop write)
+      // No detail file: since t-6ab4, draft creation eager-scaffolds tasks/<id>.md, so this only
+      // fires for an entry that predates that change or had its task file deleted out-of-band.
       if (!t.hasDetailFile) {
         card.append(h('div', { class: 'muted-11', style: { marginTop: '6px' } }, 'No detail file yet — tasks/' + t.id + '.md is created on the first edit.'));
       }
@@ -1314,18 +1322,18 @@
         const suggWrap = h('div', { class: 'qa-suggest' }, h('div', { class: 'qa-suggest-label' }, 'Suggested'));
         q.suggestions.forEach((s) => {
           const acceptSuggestion = () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); };
-          suggWrap.append(h('button', {
+          // Commit on pointerdown (not just click): while the search box is focused a background
+          // loop refresh queues pendingBoard; waiting for `click` lets the focusout flush fire
+          // render()'s `root.textContent=''` and tear this button down before the answer patch
+          // posts, so the accept silently no-ops (t-157b feedback). preventDefault also keeps the
+          // prior field focused so no focusout flush runs mid-gesture. Same race the composer's
+          // Save Draft dodges (t-d3dd). Routed through the shared makeGateButton double-fire
+          // guard (t-2238) — previously unguarded and latent (masked only because a real click
+          // lands on the already-removed suggWrap).
+          suggWrap.append(makeGateButton({
             class: 'qa-suggestion', type: 'button',
             title: 'Accept suggestion', 'aria-label': 'Accept suggestion: ' + s,
-            // Commit on pointerdown (not just click): while the search box is focused a background
-            // loop refresh queues pendingBoard; waiting for `click` lets the focusout flush fire
-            // render()'s `root.textContent=''` and tear this button down before the answer patch
-            // posts, so the accept silently no-ops (t-157b feedback). preventDefault also keeps the
-            // prior field focused so no focusout flush runs mid-gesture. Same race the composer's
-            // Save Draft dodges (t-d3dd); onclick stays wired for keyboard (Enter/Space) activation.
-            onpointerdown: (e) => { e.preventDefault(); acceptSuggestion(); },
-            onclick: acceptSuggestion,
-          }, s));
+          }, acceptSuggestion, s));
         });
         body.append(suggWrap);
       }
