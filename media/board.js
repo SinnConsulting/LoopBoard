@@ -1168,37 +1168,92 @@
 
   function renderQuestions(t) {
     // Shared by Feedback and New cards; only the copy differs (nothing "resumes" on a New card —
-    // answers there guide grooming/promotion instead of unblocking a paused worker).
+    // answers there guide grooming/promotion instead of unblocking a paused worker). "Answer
+    // rail" layout (t-2394): bordered panel, header with segmented progress meter + Save All,
+    // per-question left status rail (grey/blue-via-:focus-within/green), and answered rows
+    // collapse to a dim summary with an "edit" toggle.
     const u = getUi(t.id);
     if (!u.answerDrafts) u.answerDrafts = {};
+    if (!u.qaEditOpen) u.qaEditOpen = {};
     const isNew = t.phase === 'new';
-    const wrap = h('div', { class: 'qa-list' });
+    const panel = h('div', { class: 'qa-panel' });
+    const head = h('div', { class: 'qa-head' });
+    const list = h('div', { class: 'qa-list' });
+    panel.append(head, list);
+
     let answered = 0;
-    let progressEl;
-    const progressText = () => isNew
-      ? `${answered} of ${t.questions.length} questions answered.`
-      : `${answered} of ${t.questions.length} questions answered — worker resumes at ${t.questions.length} of ${t.questions.length}.`;
+    for (const q of t.questions) if (q.answered) answered++;
+    const countEl = h('span', { class: 'qa-count' }, '');
+    const meterSegs = [];
+    const meter = h('div', { class: 'qa-meter', title: 'Progress' });
+    t.questions.forEach((q) => {
+      const seg = h('span', { class: q.answered ? 'is-answered' : '' });
+      meterSegs.push(seg);
+      meter.append(seg);
+    });
+    const updateHead = () => {
+      countEl.textContent = answered + ' / ' + t.questions.length + ' answered';
+      meterSegs.forEach((seg, i) => seg.classList.toggle('is-answered', !!t.questions[i].answered));
+    };
+    updateHead();
+    const headRight = h('div', { class: 'qa-head-right' }, meter);
+    head.append(
+      h('div', { class: 'qa-head-left' }, h('span', { class: 'qa-title' }, 'Open questions'), countEl),
+      headRight,
+    );
+
     // Save All (t-f86b): commits every question whose draft differs from its saved answer, in one
     // click. Enabled whenever at least one question has an unsaved draft — even just one, since
     // the user may reach for Save All after already saving other answers individually (t-623d);
     // it then overlaps that lone question's own per-question Save, which is fine, both do the
-    // same thing.
+    // same thing. Restyled (t-2394) into the header, as the design's secondary button.
     const commits = [];
     let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
+    if (t.questions.length > 1) {
+      const saveAllBtn = h('button', {
+        class: 'qa-btn is-secondary', type: 'button',
+        disabled: true,
+        title: 'Save every question whose answer changed',
+        onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
+      }, 'Save All');
+      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length < 1; };
+      headRight.append(saveAllBtn);
+    }
+
     t.questions.forEach((q, i) => {
-      if (q.answered) answered++;
-      const block = h('div', {});
-      const qText = h('div', { class: 'q-text', html: mdToHtml(q.text) });
+      const item = h('div', { class: 'qa-item' + (q.answered ? ' is-answered' : '') });
+      const rail = h('div', { class: 'qa-rail' });
+      const body = h('div', { class: 'qa-body' });
+      item.append(rail, body);
+
+      const qText = h('div', { class: 'qa-q', html: mdToHtml(q.text) });
       qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
-      block.append(h('div', { class: 'question' }, h('span', { class: 'codicon codicon-question' }), qText));
-      const aw = h('div', { class: 'answer-wrap' });
-      const ta = h('textarea', { class: 'field', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
+      const qLine = h('div', { class: 'qa-q-line' }, qText);
+      body.append(qLine);
+
+      const editor = h('div', { class: 'qa-editor' });
+      const ta = h('textarea', { class: 'field qa-input', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
         : 'Type your answer — the worker resumes when every question is answered.' });
       ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : q.answer;
       autoGrow(ta);
+
+      const summaryText = h('span', { class: 'qa-answer-text' }, q.answer);
+      const summary = h('div', { class: 'qa-answer' }, h('span', { class: 'qa-answer-check codicon codicon-check' }), summaryText);
+
+      const editBtn = h('button', { class: 'qa-link-btn', type: 'button' }, 'edit');
+      const posMarker = h('span', { class: 'qa-pos' }, (i + 1) + ' of ' + t.questions.length);
+      qLine.append(q.answered ? editBtn : posMarker);
+
+      const setCollapsed = (collapsed) => {
+        summary.style.display = collapsed ? '' : 'none';
+        editor.style.display = collapsed ? 'none' : '';
+        editBtn.textContent = collapsed ? 'edit' : 'cancel';
+      };
+      editBtn.addEventListener('click', () => { u.qaEditOpen[i] = !u.qaEditOpen[i]; setCollapsed(!u.qaEditOpen[i]); });
+
       const commitAnswer = () => {
         const val = ta.value;
         sendPatch(t.id, 'answer', val, q.answer, i);
@@ -1211,18 +1266,18 @@
         if (isAnswered !== q.answered) {
           q.answered = isAnswered;
           answered += isAnswered ? 1 : -1;
-          if (progressEl) progressEl.textContent = progressText();
+          updateHead();
+          item.classList.toggle('is-answered', isAnswered);
+          if (isAnswered && qLine.contains(posMarker)) qLine.replaceChild(editBtn, posMarker);
+          else if (!isAnswered && qLine.contains(editBtn)) qLine.replaceChild(posMarker, editBtn);
         }
-        const existingChip = aw.querySelector('.answered');
-        if (isAnswered && !existingChip) {
-          aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
-        } else if (!isAnswered && existingChip) {
-          existingChip.remove();
-        }
+        summaryText.textContent = val;
+        u.qaEditOpen[i] = false;
+        setCollapsed(isAnswered);
         updateSaveAll();
       };
       const saveBtn = h('button', {
-        class: 'btn-sm primary field-save-btn', type: 'button',
+        class: 'qa-btn', type: 'button',
         disabled: ta.value === q.answer,
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
@@ -1230,7 +1285,17 @@
       ta.addEventListener('keydown', (e) => {
         // Answer has no separate view mode to close — Escape discards the unsaved draft back to
         // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
-        if (e.key === 'Escape') { ta.value = q.answer; delete u.answerDrafts[i]; autoGrow(ta); saveBtn.disabled = true; updateSaveAll(); ta.blur(); return; }
+        // On an already-answered row being edited, Escape also collapses back to the summary.
+        if (e.key === 'Escape') {
+          ta.value = q.answer;
+          delete u.answerDrafts[i];
+          autoGrow(ta);
+          saveBtn.disabled = true;
+          updateSaveAll();
+          ta.blur();
+          if (q.answered) { u.qaEditOpen[i] = false; setCollapsed(true); }
+          return;
+        }
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
       });
       wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
@@ -1238,51 +1303,39 @@
         commitAnswer();
       });
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
+
       // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
       // click, no AI in the loop — accept just fills the textarea and reuses commitAnswer, i.e. the
       // ordinary answer field-patch path (`sendPatch(..., 'answer', ...)`); the writer clears a
       // question's suggestions once it has an answer (merge.ts), so they naturally disappear on the
-      // next board refresh.
+      // next board refresh. Restyled (t-2394) as full-width buttons under a "SUGGESTED" label —
+      // one-click Accept semantics unchanged.
       if (!q.answered && q.suggestions && q.suggestions.length) {
-        const suggWrap = h('div', { class: 'suggestions' });
+        const suggWrap = h('div', { class: 'qa-suggest' }, h('div', { class: 'qa-suggest-label' }, 'Suggested'));
         q.suggestions.forEach((s) => {
           const acceptSuggestion = () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); };
-          suggWrap.append(h('div', { class: 'suggestion-row' },
-            h('span', { class: 'suggestion-text' }, s),
-            h('button', {
-              class: 'btn-sm primary suggestion-accept-btn', type: 'button',
-              title: 'Accept suggestion', 'aria-label': 'Accept suggestion: ' + s,
-              // Commit on pointerdown (not just click): while the search box is focused a background
-              // loop refresh queues pendingBoard; waiting for `click` lets the focusout flush fire
-              // render()'s `root.textContent=''` and tear this button down before the answer patch
-              // posts, so the accept silently no-ops (t-157b feedback). preventDefault also keeps the
-              // prior field focused so no focusout flush runs mid-gesture. Same race the composer's
-              // Save Draft dodges (t-d3dd); onclick stays wired for keyboard (Enter/Space) activation.
-              onpointerdown: (e) => { e.preventDefault(); acceptSuggestion(); },
-              onclick: acceptSuggestion,
-            }, icon(SVG.check), 'Accept')));
+          suggWrap.append(h('button', {
+            class: 'qa-suggestion', type: 'button',
+            title: 'Accept suggestion', 'aria-label': 'Accept suggestion: ' + s,
+            // Commit on pointerdown (not just click): while the search box is focused a background
+            // loop refresh queues pendingBoard; waiting for `click` lets the focusout flush fire
+            // render()'s `root.textContent=''` and tear this button down before the answer patch
+            // posts, so the accept silently no-ops (t-157b feedback). preventDefault also keeps the
+            // prior field focused so no focusout flush runs mid-gesture. Same race the composer's
+            // Save Draft dodges (t-d3dd); onclick stays wired for keyboard (Enter/Space) activation.
+            onpointerdown: (e) => { e.preventDefault(); acceptSuggestion(); },
+            onclick: acceptSuggestion,
+          }, s));
         });
-        block.append(suggWrap);
+        body.append(suggWrap);
       }
-      aw.append(ta, saveBtn);
-      if (q.answered) aw.append(h('div', { class: 'answered' }, icon(SVG.check), 'answered'));
-      block.append(aw);
-      wrap.append(block);
+
+      editor.append(ta, h('div', { class: 'qa-editor-foot' }, h('span', { class: 'qa-hint' }, '⌘S save'), saveBtn));
+      body.append(summary, editor);
+      setCollapsed(q.answered);
+      list.append(item);
     });
-    progressEl = h('div', { class: 'progress' }, progressText());
-    wrap.append(progressEl);
-    if (t.questions.length > 1) {
-      const saveAllBtn = h('button', {
-        class: 'btn-sm primary field-save-btn', type: 'button',
-        disabled: true,
-        title: 'Save every question whose answer changed',
-        onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
-      }, 'Save All');
-      updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length < 1; };
-      updateSaveAll();
-      wrap.append(h('div', { class: 'approve-row' }, saveAllBtn));
-    }
-    return wrap;
+    return panel;
   }
 
   function renderReview(t) {
