@@ -71,10 +71,16 @@ New v2 checklist (from REFACTORING.md Phase 8):
 1. **Init:** fresh empty workspace → `LoopBoard: Initialize Workspace` scaffolds `.loopboard/`
    (TODO.md + LOOP.md + empty `tasks/`, no DONE.md); the board opens empty. Running it again
    refuses without overwriting.
-2. **Draft:** add a draft on the board → an index entry appears in `.loopboard/TODO.md`, no task
-   file yet, the card hints "No detail file yet".
-3. **First detail edit:** edit the description on a card → `.loopboard/tasks/<id>.md` is created
-   with only a `## Description` section (H1 from the index title).
+2. **Draft (t-6ab4, eager scaffold):** add a draft on the board → an index entry appears in
+   `.loopboard/TODO.md` AND `.loopboard/tasks/<id>.md` is created immediately with just `## Meta`
+   (`owner: unassigned`, `added: <today>`) and the H1 from the index title — no "No detail file
+   yet" hint on the card.
+3. **First detail edit:** edit the description on a card → `.loopboard/tasks/<id>.md` gains a
+   `## Description` section (H1 stays from the index title).
+3a. **Delete cleanup (t-6ab4, verify-only — already implemented, no source change):** delete a
+    draft/New card (with an attachment staged) → the index entry, `.loopboard/tasks/<id>.md`, and
+    `.loopboard/cache/<id>/` are all gone, no orphan files left. Repeat on a groomed (non-draft)
+    task — same result.
 4. **Concurrency:** external edit to a task file while its card field is focused → refresh is
    deferred (no clobber); a same-field concurrent edit → disk wins + amber toast.
 5. **Promote gate:** tick a New task → `phase: backlog` in the index, `promoted:` in the task

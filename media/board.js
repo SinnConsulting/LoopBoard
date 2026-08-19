@@ -962,7 +962,8 @@
     card.append(renderChips(t));
 
     if (!isCollapsedCard) {
-      // no detail file yet (task file is created lazily on the first detail edit / loop write)
+      // No detail file: since t-6ab4, draft creation eager-scaffolds tasks/<id>.md, so this only
+      // fires for an entry that predates that change or had its task file deleted out-of-band.
       if (!t.hasDetailFile) {
         card.append(h('div', { class: 'muted-11', style: { marginTop: '6px' } }, 'No detail file yet — tasks/' + t.id + '.md is created on the first edit.'));
       }
