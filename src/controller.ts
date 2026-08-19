@@ -253,16 +253,16 @@ export class Controller {
         return;
       }
       case 'attach': {
-        // t-att1: images only, drag-drop/paste only (no file-picker button). A whole-card drop
-        // (no `field`) appends straight to the task's Description, same as before. A drop/paste
-        // scoped to an already-open Description or answer field (`field` set, keyed by `reqId`)
-        // only stages the bytes here — the webview folds the returned link into that field's own
-        // draft value and saves it through the normal field-patch path, so it lands in the right
-        // place instead of always the Description.
+        // t-att1 (any file type since t-058e), drag-drop/paste only (no file-picker button). A
+        // whole-card drop (no `field`) appends straight to the task's Description, same as
+        // before. A drop/paste scoped to an already-open Description, answer, feedback, or note
+        // field (`field` set, keyed by `reqId`) only stages the bytes here — the webview folds
+        // the returned link into that field's own draft value and saves it through the normal
+        // field-patch path, so it lands in the right place instead of always the Description.
         const taskId = String(msg.taskId ?? '');
         const filename = String(msg.filename ?? '');
         if (!taskId || !filename || typeof msg.dataBase64 !== 'string') return;
-        const field = msg.field === 'description' || msg.field === 'answer' || msg.field === 'title' ? msg.field : undefined;
+        const field = msg.field === 'description' || msg.field === 'answer' || msg.field === 'title' || msg.field === 'feedback' || msg.field === 'note' ? msg.field : undefined;
         const result = await this.store.stageAttachment(
           taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024, !field
         );

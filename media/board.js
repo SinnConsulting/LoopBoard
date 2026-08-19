@@ -456,7 +456,7 @@
     // (no id/path exists before the draft is saved). The list below the textarea carries a
     // remove × per pending image, which also strips its placeholder from the text.
     const addPendingAttachment = (file) => {
-      readImageFile(file, (filename, dataBase64) => {
+      readAttachmentFile(file, (filename, dataBase64) => {
         const token = 'loopboard-pending:' + attachReqSeq++;
         insertLinkAtCursor(area, '[' + filename + '](' + token + ')');
         composerText = area.value;
@@ -476,7 +476,7 @@
       const items = e.clipboardData && e.clipboardData.items;
       if (!items) return;
       for (const item of items) {
-        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+        if (item.kind === 'file') {
           const file = item.getAsFile();
           if (file) { e.preventDefault(); addPendingAttachment(file); }
           break;
@@ -668,34 +668,34 @@
     return card;
   }
 
-  // ---- attachments (t-att1): drag-drop / clipboard paste only, no attach button — read bytes in
-  // the webview and base64-encode them for postMessage (the only path bytes can cross that
-  // boundary). v1 scope is images only. A whole-card drop/paste (no field open) appends straight
-  // to Description (attachFile/wireAttachDropAndPaste below); a drop/paste inside an
-  // already-open Description, answer, or draft-text field instead folds the link into that
-  // field's own value (wireFieldAttach, below) so it saves through the normal field-patch path.
+  // ---- attachments (t-att1, broadened to all file types by t-058e): drag-drop / clipboard
+  // paste only, no attach button — read bytes in the webview and base64-encode them for
+  // postMessage (the only path bytes can cross that boundary). Any file type is accepted here;
+  // the host (store.stageAttachment) is the size-cap gate, the only remaining one. A whole-card
+  // drop/paste (no field open) appends straight to Description (attachFile/wireAttachDropAndPaste
+  // below); a drop/paste inside an already-open Description, answer, feedback, note, or
+  // draft-text field instead folds the link into that field's own value (wireFieldAttach, below)
+  // so it saves through the normal field-patch path.
   const ATTACH_MIME_EXT = {
     'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
     'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg',
   };
-  // Read an image File/Blob to {filename, dataBase64}, or null (with a toast) if it isn't one.
-  function readImageFile(file, cb) {
-    if (!file || !file.type || file.type.indexOf('image/') !== 0) {
-      pushToast('warning', 'Only image attachments are supported.');
-      return;
-    }
+  // Read any File/Blob to {filename, dataBase64}. Falls back to a generic name only for a
+  // nameless paste (the realistic case is a pasted image without a filename).
+  function readAttachmentFile(file, cb) {
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result || '');
       const comma = dataUrl.indexOf(',');
       if (comma < 0) return;
-      const filename = file.name && file.name.trim() ? file.name : ('pasted-image.' + (ATTACH_MIME_EXT[file.type] || 'png'));
+      const filename = file.name && file.name.trim() ? file.name : ('pasted-file.' + (ATTACH_MIME_EXT[file.type] || 'bin'));
       cb(filename, dataUrl.slice(comma + 1));
     };
     reader.readAsDataURL(file);
   }
   function attachFile(taskId, file) {
-    readImageFile(file, (filename, dataBase64) => {
+    readAttachmentFile(file, (filename, dataBase64) => {
       const reqId = 'a' + attachReqSeq++;
       pendingAttach[reqId] = (msg) => applyAttachedMirror(taskId, msg);
       post({ type: 'attach', reqId, taskId, filename, dataBase64 });
@@ -754,7 +754,7 @@
       const items = e.clipboardData && e.clipboardData.items;
       if (!items) return;
       for (const item of items) {
-        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+        if (item.kind === 'file') {
           const file = item.getAsFile();
           if (file) { e.preventDefault(); attachFile(taskId, file); }
           break;
@@ -785,7 +785,7 @@
   }
   function wireFieldAttach(el, taskId, field, questionIndex, onStaged) {
     const stage = (file) => {
-      readImageFile(file, (filename, dataBase64) => {
+      readAttachmentFile(file, (filename, dataBase64) => {
         const reqId = 'a' + attachReqSeq++;
         pendingAttach[reqId] = (msg) => onStaged(msg.path, msg.filename);
         post({ type: 'attach', reqId, taskId, filename, dataBase64, field, questionIndex });
@@ -799,7 +799,7 @@
       const items = e.clipboardData && e.clipboardData.items;
       if (!items) return;
       for (const item of items) {
-        if (item.kind === 'file' && item.type.indexOf('image/') === 0) {
+        if (item.kind === 'file') {
           const file = item.getAsFile();
           if (file) { e.preventDefault(); e.stopPropagation(); stage(file); }
           break;
@@ -1380,6 +1380,10 @@
       if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
+    wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
+      insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+      commitFeedback();
+    });
     wrap.append(h('div', {}, ta, saveBtn));
     return wrap;
   }
@@ -1407,6 +1411,11 @@
         class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
         title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
       }, 'Send');
+      wireFieldAttach(ta, t.id, 'note', undefined, (path, filename) => {
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+        u.noteDraft = ta.value;
+        commitNote();
+      });
       wrap.append(ta);
       wrap.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
         sendBtn,
