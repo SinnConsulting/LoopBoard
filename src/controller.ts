@@ -50,8 +50,8 @@ export class Controller {
     private sidebar: SidebarProvider,
     private globalState: vscode.Memento
   ) {
-    store.onChange(() => this.refresh());
-    terminals.onDidChangeStatus(() => this.refresh());
+    store.onChange(() => this.refresh('store-change'));
+    terminals.onDidChangeStatus(() => this.refresh('terminal-status'));
     sidebar.onMessage((msg) => this.handleMessage(msg));
   }
 
@@ -85,11 +85,16 @@ export class Controller {
       const { todoText, loopText } = await this.readTemplates();
       const preview = await this.store.previewSync(todoText, loopText);
       web.templatesOutOfDate = !preview.upToDate;
+      this.store.debugLog('verbose', 'template-preview', preview.upToDate ? 'upToDate' : 'stale');
     }
     return web;
   }
 
-  async refresh(): Promise<void> {
+  // `trigger` is the natural anchor for "what caused this repaint" (t-0143) — high-frequency, so
+  // verbose only; most message-handler-triggered refreshes use the default rather than threading
+  // a distinct label through every call site.
+  async refresh(trigger = 'message'): Promise<void> {
+    this.store.debugLog('verbose', 'refresh', trigger);
     const board = await this.store.load();
     this.maybeAutoRecycle(this.lastBoard, board);
     this.maybeClearSession(this.lastBoard, board);
@@ -151,7 +156,10 @@ export class Controller {
     }
   }
 
+  // Every toast is captured here so it survives past the webview (t-0143) — warnings are what
+  // matter in a bug report, so they log at info; routine success/info toasts stay verbose-only.
   private toast(level: 'info' | 'success' | 'warning', text: string, taskId?: string, icon?: string): void {
+    this.store.debugLog(level === 'warning' ? 'info' : 'verbose', 'toast', `${level}${taskId ? ' ' + taskId : ''} — ${text}`);
     BoardPanel.current?.post({ type: 'toast', level, text, taskId, icon });
   }
 
@@ -321,11 +329,13 @@ export class Controller {
   // the popup reappears next activation (t-de8d).
   async maybeShowGettingStarted(): Promise<void> {
     if (this.globalState.get<boolean>(GETTING_STARTED_DISMISSED_KEY)) return;
+    this.store.debugLog('info', 'popup', 'info — LoopBoard: new here? Check out the Getting Started guide.');
     const choice = await vscode.window.showInformationMessage(
       'LoopBoard: new here? Check out the Getting Started guide.',
       'Open Getting Started',
       'Show never again'
     );
+    this.store.debugLog('info', 'popup-choice', `getting-started -> ${choice ?? 'dismissed'}`);
     if (choice === 'Open Getting Started') {
       void vscode.env.openExternal(vscode.Uri.parse(HELP_URL));
     } else if (choice === 'Show never again') {
@@ -341,10 +351,12 @@ export class Controller {
     const { todoText, loopText } = await this.readTemplates();
     const { created, error } = await this.store.createInitialFiles(todoText, loopText);
     if (created) {
+      this.store.debugLog('info', 'popup', 'info — LoopBoard: initialized .loopboard/ (TODO.md, LOOP.md, tasks/).');
       void vscode.window.showInformationMessage('LoopBoard: initialized .loopboard/ (TODO.md, LOOP.md, tasks/).');
       return this.refresh();
     }
     if (error) {
+      this.store.debugLog('info', 'popup', `error — LoopBoard: could not initialize .loopboard/ — ${error}`);
       void vscode.window.showErrorMessage(`LoopBoard: could not initialize .loopboard/ — ${error}`);
       return this.refresh();
     }
@@ -357,19 +369,24 @@ export class Controller {
     const { todoText, loopText } = await this.readTemplates();
     const preview = await this.store.previewSync(todoText, loopText);
     if (preview.upToDate) {
+      this.store.debugLog('info', 'popup', 'info — LoopBoard: TODO.md and LOOP.md already match the current templates.');
       void vscode.window.showInformationMessage('LoopBoard: TODO.md and LOOP.md already match the current templates.');
       return this.refresh();
     }
+    this.store.debugLog('info', 'popup', `confirm — ${confirmPrompt}`);
     const choice = await vscode.window.showWarningMessage(
       `${confirmPrompt}\n\n${preview.summary.join('\n')}`,
       { modal: true },
       'Sync'
     );
+    this.store.debugLog('info', 'popup-choice', `sync-templates -> ${choice ?? 'cancelled'}`);
     if (choice !== 'Sync') return;
     const outcome = await this.store.syncTemplates(todoText, loopText);
     if (outcome.status === 'applied') {
+      this.store.debugLog('info', 'popup', 'info — LoopBoard: synced .loopboard/ to the current templates.');
       void vscode.window.showInformationMessage('LoopBoard: synced .loopboard/ to the current templates.');
     } else {
+      this.store.debugLog('info', 'popup', `error — LoopBoard: sync failed — ${outcome.message ?? outcome.status}`);
       void vscode.window.showErrorMessage(`LoopBoard: sync failed — ${outcome.message ?? outcome.status}`);
     }
     return this.refresh();
@@ -386,10 +403,15 @@ export class Controller {
   }
 
   private async onGate(taskId: string, action: string): Promise<void> {
+    // Logged before the confirm gate (if any) so a cancelled promote/delete still leaves a
+    // trace — previously a click that a modal aborted produced zero log output (t-0143).
+    this.store.debugLog('info', 'gate-request', `${action} ${taskId}`);
     if (action === 'promote') {
       if (await this.confirmPromote(taskId)) {
         await this.store.promote(taskId, today());
         this.toast('success', 'Promoted to Backlog', undefined, 'check');
+      } else {
+        this.store.debugLog('info', 'gate-cancelled', `promote ${taskId}`);
       }
       // Cancel falls through to the refresh() below, which restores the card the board
       // optimistically faded on click (board.js:473) — unlike confirmDelete, which never fades.
@@ -403,11 +425,11 @@ export class Controller {
       else if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
       else this.toast('success', 'Demoted to New', undefined, 'check');
     } else if (action === 'delete') {
-      if (!(await this.confirmDelete(taskId, false))) return;
+      if (!(await this.confirmDelete(taskId, false))) { this.store.debugLog('info', 'gate-cancelled', `delete ${taskId}`); return; }
       const r = await this.store.deleteTask(taskId);
       if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     } else if (action === 'deleteDone') {
-      if (!(await this.confirmDelete(taskId, true))) return;
+      if (!(await this.confirmDelete(taskId, true))) { this.store.debugLog('info', 'gate-cancelled', `deleteDone ${taskId}`); return; }
       const r = await this.store.deleteDone(taskId);
       if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     }
@@ -423,12 +445,15 @@ export class Controller {
     const task = this.lastBoard?.tasks.find((t) => t.id === taskId);
     const hasUnanswered = !!task && task.questions.some((q) => q.answer.trim().length === 0);
     if (!hasUnanswered) return true;
+    this.store.debugLog('info', 'popup', `confirm — This story has unanswered questions — promote anyway? (${taskId})`);
     const choice = await vscode.window.showWarningMessage(
       'This story has unanswered questions — promote anyway?',
       { modal: true },
       'Promote anyway'
     );
-    return choice === 'Promote anyway';
+    const accepted = choice === 'Promote anyway';
+    this.store.debugLog('info', 'popup-choice', `confirm-promote ${taskId} -> ${accepted ? 'accepted' : 'cancelled'}`);
+    return accepted;
   }
 
   // Native VS Code modal guarding a destructive delete (the sole safety net — deletion is a hard,
@@ -446,7 +471,10 @@ export class Controller {
     } else {
       detail = 'This permanently deletes the task and its task file. This cannot be undone.';
     }
+    this.store.debugLog('info', 'popup', `confirm — Delete "${title}"? (${taskId})`);
     const choice = await vscode.window.showWarningMessage(`Delete “${title}”?`, { modal: true, detail }, 'Delete');
-    return choice === 'Delete';
+    const accepted = choice === 'Delete';
+    this.store.debugLog('info', 'popup-choice', `confirm-delete ${taskId} -> ${accepted ? 'accepted' : 'cancelled'}`);
+    return accepted;
   }
 }

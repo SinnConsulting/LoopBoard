@@ -155,6 +155,7 @@ export class TerminalManager {
       }, BOOT_DELAY_MS);
     } else {
       terminal.sendText(base);
+      this.log('info', 'loop-spawn', `${model} -> no loop instructions found, starting without a loop`);
       vscode.window.showWarningMessage('LoopBoard: no loop instructions found in .loopboard/LOOP.md Automation section — starting claude without a loop.');
     }
     this.changeEmitter.fire();
