@@ -548,8 +548,11 @@
       if (hasDetail && u.doneOpen) {
         const detail = h('div', { class: 'done-detail' });
         if (t.delivered && t.delivered.trim()) {
-          detail.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'),
-            h('div', { class: 'done-detail-text' }, t.delivered)));
+          const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
+          delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+            a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+          });
+          detail.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
         }
         if (t.description && t.description.trim()) {
           const desc = h('div', { class: 'done-detail-text', html: mdToHtml(t.description) });
@@ -1350,12 +1353,20 @@
     const u = getUi(t.id);
     const wrap = h('div', { class: 'review-block' });
     if (t.delivered) {
-      wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, t.delivered)));
+      const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
+      delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
     }
     if (t.feedback) {
+      const feedbackText = h('span', { html: mdToHtml(t.feedback) });
+      feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
       wrap.append(h('div', { class: 'amber-block' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ' + t.feedback)));
+        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText)));
     }
     const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
@@ -1412,8 +1423,12 @@
         sendBtn,
         h('span', { class: 'muted-11' }, 'The worker applies this instruction on its next pass, then removes the note.')));
     } else if (t.note) {
+      const noteText = h('span', { html: mdToHtml(t.note) });
+      noteText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
       wrap.append(h('div', { class: 'note-chip' },
-        h('span', {}, 'Note: ', h('span', { class: 'codicon codicon-clock' }), ' ' + t.note),
+        h('span', {}, 'Note: ', h('span', { class: 'codicon codicon-clock' }), ' ', noteText),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Retract note', title: 'Retract note', style: { width: '20px', height: '20px' }, onclick: () => sendPatch(t.id, 'note', '', t.note) }, icon(SVG.x))));
     } else {
       wrap.append(h('button', { class: 'link-btn', type: 'button', onclick: () => { u.noteOpen = true; render(); } }, '＋ Note to worker'));

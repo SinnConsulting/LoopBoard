@@ -106,6 +106,13 @@ New v2 checklist (from REFACTORING.md Phase 8):
     Editing a task's description (a `tasks/<id>.md` write) also bumps that entry's `rev:` in the
     index. Re-saving with no change (same value) does NOT bump. A task with no `rev:` yet gains
     `rev: 1` on its first content-changing save.
+11. **Delivered/Feedback/Note render as markdown (t-7a94):** a Review card whose Delivered note
+    contains `` `code` ``, `**bold**`, a bare `https://…` URL, and a `-`/`1.` list renders all of
+    them formatted (code chip, emphasis, clickable link, list) — same in the DONE-archive expanded
+    detail after acceptance. A Review feedback comment or a Note-to-worker instruction containing
+    a staged-attachment `[name](.loopboard/cache/<id>/name)` link renders it clickable (opens via
+    `openLink`), not as literal `[text](path)` — both keep their leading warning/clock codicon.
+    Plain Description/question-text rendering is unchanged (no regression).
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
