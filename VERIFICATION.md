@@ -148,7 +148,17 @@ New v2 checklist (from REFACTORING.md Phase 8):
     row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
     second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)
     still works when the panel was never hidden externally.
-16. **Composer attachment size cap (t-5f50):** with a small `loopBoard.maxAttachmentSizeMB` set
+16. **Attachment chip idiom unified (t-f51c):** a description, a draft, an answer, and Review
+    feedback each with an attached image all render the SAME `.qa-attachment` chip (ext badge +
+    link name + ×) as a note's attachment — no more bare-link description/draft lists. The
+    new-story composer's pending-attachment list also renders as chips, but the name is static
+    (not clickable — no cache file yet). Every one of these four fields (new-story composer,
+    description edit, answer edit, Review feedback) shows a `＋ Attach` button next to its
+    Save/paste hint; clicking it opens a file picker and stages the file exactly like a drop/
+    paste would. Removing an answer or feedback attachment chip strips its link from that
+    field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
+    No image thumbnails anywhere (unchanged from t-b149).
+17. **Composer attachment size cap (t-5f50):** with a small `loopBoard.maxAttachmentSizeMB` set
     (e.g. 1), drop/paste a file over the cap into the New Story composer → it is rejected
     immediately with an "Attachment is too large (max 1MB)." toast, is NOT added to the pending
     list, and no `[name](loopboard-pending:<n>)` placeholder lands in the draft text. An under-cap
