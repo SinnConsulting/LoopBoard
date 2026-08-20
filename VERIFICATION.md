@@ -130,6 +130,14 @@ New v2 checklist (from REFACTORING.md Phase 8):
     body text, and its × removes the file AND strips the link from the note (re-fetch confirms
     no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
     retracts the note entirely (existing behavior, unchanged).
+14. **In-tab filter persistence (t-2452):** type a filter (plain text, and separately
+    `is:unanswered`) while on one phase tab, then click through New / Backlog / In Progress /
+    Review / Feedback / Done — the typed query stays in the search box and each tab re-filters
+    its own cards with it, unchanged. Reload the VS Code window (or switch away and back so the
+    webview is recreated) with a query typed — the query is still there after reload. Opening the
+    New Story composer, or clicking Cancel/Save Draft to close it, still clears the filter as
+    before. Revealing a specific task (e.g. via a dependency chip) without an explicit search
+    still clears the filter rather than risk hiding the revealed task behind a stale query.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
