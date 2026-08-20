@@ -137,7 +137,12 @@ New v2 checklist (from REFACTORING.md Phase 8):
     webview is recreated) with a query typed — the query is still there after reload. Opening the
     New Story composer, or clicking Cancel/Save Draft to close it, still clears the filter as
     before. Revealing a specific task (e.g. via a dependency chip) without an explicit search
-    still clears the filter rather than risk hiding the revealed task behind a stale query.
+    still clears the filter rather than risk hiding the revealed task behind a stale query. **Also**
+    verify the SIDEBAR's phase-count rows and attention rows (New/Backlog/etc. counts, "N new",
+    "N in review") switch the board's phase tab WITHOUT clearing an active filter — this was the
+    actual gap behind the "still not persisted across phases" reports (the sidebar posts a bare
+    phase-only reveal with no task id, which previously fell through to the same reset path as a
+    genuine task-specific jump).
 15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
     terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
     row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no

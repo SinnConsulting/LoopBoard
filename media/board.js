@@ -1630,7 +1630,12 @@
         searchQuery = search;
         searchNeedsFocus = false;
         searchCaret = null;
-      } else {
+      } else if (taskId) {
+        // Only reset when jumping to a SPECIFIC task with no explicit search (e.g. a disk-wins
+        // conflict toast) — a bare phase-only reveal (the sidebar's phase-count/attention rows,
+        // which post `{type:'reveal', phase}` with no taskId) must not clear an in-progress
+        // filter just because the user switched phases from the sidebar instead of the in-app
+        // tab strip (t-2452 — this was the actual remaining persistence gap).
         resetSearch();
       }
       saveState();
