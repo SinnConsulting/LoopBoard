@@ -806,6 +806,8 @@
         }
       }
     });
+    return stage; // callers may also trigger a stage programmatically (e.g. a drop on a
+    // sibling empty-state control before the field itself exists yet — t-b149).
   }
 
   // Attachments area (t-att1 rework): a consistent block on drafts and full cards listing every
@@ -1388,11 +1390,32 @@
     return wrap;
   }
 
+  // Attachment chip for a note (t-b149): matches the qa-* visual idiom (ext badge + link-colored
+  // name + remove), reusing extractAttachments/detachAttachment. No thumbnail — a real image
+  // preview needs a webview-safe URI for the already-staged file (asWebviewUri, via a new
+  // host round-trip), out of scope for this reskin; every attachment shows as a name chip.
+  function noteAttachmentChip(taskId, item) {
+    const ext = (item.label.split('.').pop() || '').toUpperCase();
+    return h('div', { class: 'qa-attachment' },
+      h('span', { class: 'qa-attachment-ext' }, ext || '?'),
+      h('a', {
+        class: 'qa-attachment-name', href: '#', 'data-mdlink': item.path,
+        onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: item.path }); },
+      }, item.label),
+      h('button', {
+        class: 'icon-btn qa-attachment-remove', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
+        onclick: (e) => { e.stopPropagation(); detachAttachment(taskId, item.path); },
+      }, icon(SVG.x)));
+  }
+
   function renderNote(t) {
     const u = getUi(t.id);
     const wrap = h('div', { class: 'note-wrap' });
     if (u.noteOpen) {
-      const ta = h('textarea', { class: 'field', 'data-field': 'note', rows: '2', placeholder: "Instruction for the worker's next pass…" });
+      const ta = h('textarea', {
+        class: 'field qa-note-field', 'data-field': 'note', rows: '2',
+        placeholder: 'Note to worker — context, constraints, links. Paste an image to attach it.',
+      });
       ta.value = u.noteDraft || '';
       const commitNote = () => {
         const d = (u.noteDraft || '').trim();
@@ -1407,25 +1430,63 @@
         if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
       });
+      // Stage into the draft text without committing (t-b149): unlike the description/answer
+      // fields, the note composer stays open after a paste/drop so more text or attachments can
+      // follow — only Send/⌘↵ actually saves.
+      const stage = wireFieldAttach(ta, t.id, 'note', undefined, (path, filename) => {
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+        u.noteDraft = ta.value;
+        sendBtn.disabled = u.noteDraft.trim().length === 0;
+      });
+      if (u.pendingNoteFile) {
+        const f = u.pendingNoteFile;
+        u.pendingNoteFile = null;
+        stage(f);
+      }
+      const attachBtn = h('button', {
+        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+        onclick: () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.addEventListener('change', () => { if (input.files && input.files[0]) stage(input.files[0]); });
+          input.click();
+        },
+      }, '＋ Attach');
       const sendBtn = h('button', {
         class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
         title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
-      }, 'Send');
-      wireFieldAttach(ta, t.id, 'note', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        u.noteDraft = ta.value;
-        commitNote();
-      });
-      wrap.append(ta);
-      wrap.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-        sendBtn,
-        h('span', { class: 'muted-11' }, 'The worker applies this instruction on its next pass, then removes the note.')));
+      }, t.note ? 'Save note' : 'Add note');
+      const composer = h('div', { class: 'qa-note-composer' },
+        ta,
+        h('div', { class: 'qa-note-composer-foot' },
+          h('div', { class: 'qa-note-composer-hint' },
+            attachBtn,
+            h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘↵ saves')),
+          sendBtn));
+      wrap.append(composer);
     } else if (t.note) {
-      wrap.append(h('div', { class: 'note-chip' },
-        h('span', {}, 'Note: ', h('span', { class: 'codicon codicon-clock' }), ' ' + t.note),
-        h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Retract note', title: 'Retract note', style: { width: '20px', height: '20px' }, onclick: () => sendPatch(t.id, 'note', '', t.note) }, icon(SVG.x))));
+      const attachments = extractAttachments(t.note);
+      const bodyText = attachments.reduce((s, a) => s.split('[' + a.label + '](' + a.path + ')').join('').trim(), t.note);
+      wrap.append(h('div', { class: 'qa-note' },
+        h('div', { class: 'qa-note-head' },
+          h('div', { class: 'qa-note-meta' }, h('span', { class: 'qa-note-kind' }, 'Note')),
+          h('div', { class: 'qa-note-tools' },
+            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; render(); } }, 'edit'),
+            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => sendPatch(t.id, 'note', '', t.note) }, 'delete'))),
+        bodyText ? h('div', { class: 'qa-note-body' }, bodyText) : null,
+        attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => noteAttachmentChip(t.id, a))) : null));
     } else {
-      wrap.append(h('button', { class: 'link-btn', type: 'button', onclick: () => { u.noteOpen = true; render(); } }, '＋ Note to worker'));
+      const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; render(); } },
+        '＋ Note to worker · or drop files here');
+      emptyBtn.addEventListener('dragover', (e) => { e.preventDefault(); emptyBtn.classList.add('drag-over'); });
+      emptyBtn.addEventListener('dragleave', () => emptyBtn.classList.remove('drag-over'));
+      emptyBtn.addEventListener('drop', (e) => {
+        e.preventDefault();
+        emptyBtn.classList.remove('drag-over');
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) { u.noteOpen = true; u.pendingNoteFile = files[0]; render(); }
+      });
+      wrap.append(emptyBtn);
     }
     return wrap;
   }

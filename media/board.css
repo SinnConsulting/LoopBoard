@@ -136,7 +136,7 @@ textarea { resize: vertical; }
 .card-head { display: flex; align-items: flex-start; gap: 10px; }
 .card-type-icon { font-size: 14px; margin-top: 3px; flex-shrink: 0; opacity: 0.85; }
 .tab-icon { font-size: 14px; }
-.link .codicon, .chip .codicon, .amber-block .codicon, .note-chip .codicon,
+.link .codicon, .chip .codicon, .amber-block .codicon,
 .toast .codicon {
   font-size: 13px; flex-shrink: 0;
 }
@@ -335,11 +335,55 @@ textarea { resize: vertical; }
 .amber-label { font-size: 11px; font-weight: 600; color: var(--vscode-inputValidation-warningBorder, #cca700); margin-bottom: 2px; }
 
 .note-wrap { margin-top: 12px; }
-.note-chip {
-  display: flex; align-items: center; gap: 8px; border-radius: 4px; padding: 4px 8px; font-size: 11px;
-  background: color-mix(in srgb, var(--vscode-inputValidation-warningBorder, #cca700) 14%, transparent);
+
+/* Notes-to-worker (t-b149): reuses the qa-* visual idiom t-2394 introduced for the Q&A panel —
+   bordered surfaces, mono uppercase labels, link-colored actions — so the note area reads as
+   one system with it. Reskin of the existing single ephemeral note; no multi-note model. */
+.qa-note {
+  border-left: 3px solid var(--vscode-charts-yellow, #cca700);
+  background: var(--vscode-textBlockQuote-background, #2c2c2c);
+  border-radius: 4px; padding: 8px 10px;
 }
-.note-chip span { flex: 1; }
+.qa-note-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qa-note-meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.qa-note-kind {
+  font-family: var(--vscode-editor-font-family, monospace); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-charts-yellow, #cca700);
+}
+.qa-note-tools { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.qa-note-body { font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; margin-top: 4px; }
+
+.qa-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.qa-attachment {
+  display: flex; align-items: center; gap: 6px; border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 4px; padding: 3px 6px; font-size: 11px; background: var(--vscode-editor-background, #1e1e1e);
+}
+.qa-attachment-ext {
+  font-family: var(--vscode-editor-font-family, monospace); font-size: 9px; text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #9d9d9d); border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 2px; padding: 2px 4px; flex-shrink: 0;
+}
+.qa-attachment-name { color: var(--vscode-textLink-foreground, #3794ff); cursor: pointer; text-decoration: none; }
+.qa-attachment-name:hover { text-decoration: underline; }
+.qa-attachment-remove { flex-shrink: 0; width: 16px; height: 16px; }
+
+.qa-note-composer {
+  border: 1px solid var(--vscode-panel-border, #454545); border-radius: 4px; padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.qa-note-composer:focus-within { border-color: var(--vscode-focusBorder, #007fd4); }
+.qa-note-field { border: none; padding: 0; background: none; }
+.qa-note-field:focus { outline: none; }
+.qa-note-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qa-note-composer-hint { display: flex; align-items: center; gap: 8px; }
+
+.qa-note-empty {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px dashed var(--vscode-panel-border, #454545); border-radius: 4px; padding: 10px;
+  background: none; color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 12px; cursor: pointer;
+}
+.qa-note-empty:hover, .qa-note-empty.drag-over { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground, #cccccc); }
+
 .link-btn { font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); background: none; border: none; padding: 0; cursor: pointer; }
 .link-btn:hover { color: var(--vscode-textLink-foreground, #3794ff); }
 .link-btn:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
