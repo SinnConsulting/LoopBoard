@@ -52,7 +52,16 @@ export class TerminalManager {
   ) {
     this.disposables.push(
       vscode.window.onDidOpenTerminal(() => this.changeEmitter.fire()),
-      vscode.window.onDidCloseTerminal(() => this.changeEmitter.fire())
+      vscode.window.onDidCloseTerminal(() => this.changeEmitter.fire()),
+      // Self-heal `revealedModel` against an external hide (e.g. native CMD+J Toggle Panel):
+      // VS Code clears the active terminal when the terminal panel loses visibility, so if the
+      // active terminal is no longer the one we last revealed, our flag is stale — reset it so
+      // the next loop-row click show()s instead of firing a no-op closePanel (t-2e35).
+      vscode.window.onDidChangeActiveTerminal((active) => {
+        if (this.revealedModel !== undefined && active !== this.find(this.revealedModel)) {
+          this.revealedModel = undefined;
+        }
+      })
     );
   }
 

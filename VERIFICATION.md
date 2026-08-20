@@ -138,6 +138,11 @@ New v2 checklist (from REFACTORING.md Phase 8):
     New Story composer, or clicking Cancel/Save Draft to close it, still clears the filter as
     before. Revealing a specific task (e.g. via a dependency chip) without an explicit search
     still clears the filter rather than risk hiding the revealed task behind a stale query.
+15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
+    terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
+    row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
+    second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)
+    still works when the panel was never hidden externally.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
