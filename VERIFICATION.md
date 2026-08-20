@@ -158,6 +158,13 @@ New v2 checklist (from REFACTORING.md Phase 8):
     paste would. Removing an answer or feedback attachment chip strips its link from that
     field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
     No image thumbnails anywhere (unchanged from t-b149).
+17. **Depends-on chip filters instead of jumps (t-a524):** on a card with a `depends on <id>`
+    chip, click it — for a Done target AND for an active (non-Done) target alike, the board
+    switches to that target's own phase tab and the in-tab search box fills with `task:<id>`,
+    filtering the tab down to just that one card (no more jump-and-scroll). This still works for
+    a Done dependency accepted long enough ago to fall outside the newest-50 entries shown on the
+    Done tab. A dependency id that exists nowhere on the board still shows the unchanged
+    "<id> not found" warning toast. The chip's tooltip/aria-label reads "Filter to <id>".
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
