@@ -159,10 +159,10 @@ New v2 checklist (from REFACTORING.md Phase 8):
     field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
     No image thumbnails anywhere (unchanged from t-b149).
 17. **Composer save shortcut (t-9b50):** with the New Story composer open and text typed, press
-    Cmd/Ctrl+S → the draft saves (same as clicking Save Draft) and the composer closes. Repeat
-    and press Cmd/Ctrl+Enter instead → same result. With the composer empty (or whitespace-only),
-    both shortcuts are a silent no-op (nothing saved, composer stays open), matching the disabled
-    Save Draft button. A plain Enter still inserts a newline in the textarea.
+    Cmd/Ctrl+S → the draft saves (same as clicking Save Draft) and the composer closes. With the
+    composer empty (or whitespace-only), the shortcut is a silent no-op (nothing saved, composer
+    stays open), matching the disabled Save Draft button. Cmd/Ctrl+Enter does NOT save — a plain
+    Enter (with or without Cmd/Ctrl) still just inserts a newline in the textarea.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
