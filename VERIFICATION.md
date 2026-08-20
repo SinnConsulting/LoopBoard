@@ -130,7 +130,20 @@ New v2 checklist (from REFACTORING.md Phase 8):
     body text, and its × removes the file AND strips the link from the note (re-fetch confirms
     no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
     retracts the note entirely (existing behavior, unchanged).
-14. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
+14. **In-tab filter persistence (t-2452):** type a filter (plain text, and separately
+    `is:unanswered`) while on one phase tab, then click through New / Backlog / In Progress /
+    Review / Feedback / Done — the typed query stays in the search box and each tab re-filters
+    its own cards with it, unchanged. Reload the VS Code window (or switch away and back so the
+    webview is recreated) with a query typed — the query is still there after reload. Opening the
+    New Story composer, or clicking Cancel/Save Draft to close it, still clears the filter as
+    before. Revealing a specific task (e.g. via a dependency chip) without an explicit search
+    still clears the filter rather than risk hiding the revealed task behind a stale query. **Also**
+    verify the SIDEBAR's phase-count rows and attention rows (New/Backlog/etc. counts, "N new",
+    "N in review") switch the board's phase tab WITHOUT clearing an active filter — this was the
+    actual gap behind the "still not persisted across phases" reports (the sidebar posts a bare
+    phase-only reveal with no task id, which previously fell through to the same reset path as a
+    genuine task-specific jump).
+15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
     terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
     row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
     second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)

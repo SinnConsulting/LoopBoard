@@ -96,7 +96,11 @@
   // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
   // The bar is always visible and cannot be dismissed — searchOpen stays true forever.
   let searchOpen = true;
-  let searchQuery = '';
+  // One shared query across every tab (t-2452): switching tabs no longer clears it (only the New
+  // Story composer opening/closing and revealing a specific task still reset it — those are
+  // genuinely new contexts, not a tab hop). Persisted in vscode state (same blob as `phase`) so
+  // it also survives the webview being hidden/recreated on tab/window switch or a reload.
+  let searchQuery = saved.searchQuery || '';
   let searchNeedsFocus = false; // refocus the search input after the next full repaint
   let searchCaret = null;       // caret offset to restore into the search input
 
@@ -105,7 +109,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel });
+    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, searchQuery });
   }
 
   // ---- collapse/expand ----
@@ -183,8 +187,9 @@
     searchCaret = searchQuery.length;
     render();
   }
-  // Reset without rendering — for callers (tab switch, reveal) that render themselves. The search
-  // bar itself is always on; this only clears the typed query when leaving the current tab.
+  // Reset without rendering — for callers (opening/closing the New Story composer, revealing a
+  // specific task) that render themselves. A plain phase-tab switch no longer calls this (t-2452:
+  // the filter persists across tabs) — only these genuinely new contexts clear it.
   function resetSearch() {
     searchQuery = '';
     searchNeedsFocus = false;
@@ -326,6 +331,7 @@
       searchQuery = e.target.value;
       searchCaret = e.target.selectionStart;
       searchNeedsFocus = true;
+      saveState();
       render();
     });
     const count = searchQuery.trim()
@@ -348,7 +354,9 @@
         class: 'tab' + (selected ? ' selected' : '') + (meta.key === 'done' ? ' done-tab' : ''),
         type: 'button',
         'aria-current': selected ? 'true' : 'false',
-        onclick: () => { phase = meta.key; composerOpen = false; resetSearch(); saveState(); render(); },
+        // t-2452: switching tabs no longer clears the filter — it carries across New/Backlog/
+        // In Progress/Review/Feedback/Done so each tab re-filters with the same query.
+        onclick: () => { phase = meta.key; composerOpen = false; saveState(); render(); },
       });
       tab.append(h('span', { class: 'codicon codicon-split-horizontal tab-icon' }));
       tab.append(h('span', { class: 'tab-label' }, meta.label));
@@ -1622,7 +1630,12 @@
         searchQuery = search;
         searchNeedsFocus = false;
         searchCaret = null;
-      } else {
+      } else if (taskId) {
+        // Only reset when jumping to a SPECIFIC task with no explicit search (e.g. a disk-wins
+        // conflict toast) — a bare phase-only reveal (the sidebar's phase-count/attention rows,
+        // which post `{type:'reveal', phase}` with no taskId) must not clear an in-progress
+        // filter just because the user switched phases from the sidebar instead of the in-app
+        // tab strip (t-2452 — this was the actual remaining persistence gap).
         resetSearch();
       }
       saveState();
