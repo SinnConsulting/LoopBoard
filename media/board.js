@@ -548,8 +548,11 @@
       if (hasDetail && u.doneOpen) {
         const detail = h('div', { class: 'done-detail' });
         if (t.delivered && t.delivered.trim()) {
-          detail.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'),
-            h('div', { class: 'done-detail-text' }, t.delivered)));
+          const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
+          delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+            a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+          });
+          detail.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
         }
         if (t.description && t.description.trim()) {
           const desc = h('div', { class: 'done-detail-text', html: mdToHtml(t.description) });
@@ -1352,12 +1355,20 @@
     const u = getUi(t.id);
     const wrap = h('div', { class: 'review-block' });
     if (t.delivered) {
-      wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, t.delivered)));
+      const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
+      delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
     }
     if (t.feedback) {
+      const feedbackText = h('span', { html: mdToHtml(t.feedback) });
+      feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
       wrap.append(h('div', { class: 'amber-block' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ' + t.feedback)));
+        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText)));
     }
     const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
@@ -1467,13 +1478,20 @@
     } else if (t.note) {
       const attachments = extractAttachments(t.note);
       const bodyText = attachments.reduce((s, a) => s.split('[' + a.label + '](' + a.path + ')').join('').trim(), t.note);
+      let bodyEl = null;
+      if (bodyText) {
+        bodyEl = h('div', { class: 'qa-note-body', html: mdToHtml(bodyText) });
+        bodyEl.querySelectorAll('a[data-mdlink]').forEach((a) => {
+          a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+        });
+      }
       wrap.append(h('div', { class: 'qa-note' },
         h('div', { class: 'qa-note-head' },
           h('div', { class: 'qa-note-meta' }, h('span', { class: 'qa-note-kind' }, 'Note')),
           h('div', { class: 'qa-note-tools' },
             h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; render(); } }, 'edit'),
             h('button', { class: 'qa-link-btn', type: 'button', onclick: () => sendPatch(t.id, 'note', '', t.note) }, 'delete'))),
-        bodyText ? h('div', { class: 'qa-note-body' }, bodyText) : null,
+        bodyEl,
         attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => noteAttachmentChip(t.id, a))) : null));
     } else {
       const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; render(); } },

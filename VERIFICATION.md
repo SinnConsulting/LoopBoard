@@ -106,14 +106,21 @@ New v2 checklist (from REFACTORING.md Phase 8):
     Editing a task's description (a `tasks/<id>.md` write) also bumps that entry's `rev:` in the
     index. Re-saving with no change (same value) does NOT bump. A task with no `rev:` yet gains
     `rev: 1` on its first content-changing save.
-11. **Attachments, any file type (t-058e):** on each of the four surfaces — New Story composer,
+11. **Delivered/Feedback/Note render as markdown (t-7a94):** a Review card whose Delivered note
+    contains `` `code` ``, `**bold**`, a bare `https://…` URL, and a `-`/`1.` list renders all of
+    them formatted (code chip, emphasis, clickable link, list) — same in the DONE-archive expanded
+    detail after acceptance. A Review feedback comment or a Note-to-worker instruction containing
+    a staged-attachment `[name](.loopboard/cache/<id>/name)` link renders it clickable (opens via
+    `openLink`), not as literal `[text](path)` — both keep their leading warning/clock codicon.
+    Plain Description/question-text rendering is unchanged (no regression).
+12. **Attachments, any file type (t-058e):** on each of the four surfaces — New Story composer,
     Description/answer fields, Review feedback field, note-to-worker field — drag-drop AND paste
     a non-image file (e.g. a `.pdf` or `.zip`) → it stages under `.loopboard/cache/<id>/` and a
     `[name](path)` link lands in that field's own text (feedback/note do NOT misfile into
     Description). A file over `loopBoard.maxAttachmentSizeMB` (default 10MB) is still rejected
     host-side with a toast; that is the only remaining gate — no type allowlist/denylist, an
     `.exe`/`.sh` attaches too (explicit human decision, t-058e).
-12. **Notes-to-worker reskin (t-b149):** empty state shows the dashed "＋ Note to worker · or drop
+13. **Notes-to-worker reskin (t-b149):** empty state shows the dashed "＋ Note to worker · or drop
     files here" drop-zone; clicking it (or dropping a file on it) opens the `.qa-note-composer`.
     Typing + Add note saves and renders the note as a `.qa-note` card (yellow rail, "NOTE" label,
     edit/delete links) in both a light AND a dark theme. Pasting a screenshot into the open
