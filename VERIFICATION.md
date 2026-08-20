@@ -113,6 +113,16 @@ New v2 checklist (from REFACTORING.md Phase 8):
     a staged-attachment `[name](.loopboard/cache/<id>/name)` link renders it clickable (opens via
     `openLink`), not as literal `[text](path)` — both keep their leading warning/clock codicon.
     Plain Description/question-text rendering is unchanged (no regression).
+12. **Notes-to-worker reskin (t-b149):** empty state shows the dashed "＋ Note to worker · or drop
+    files here" drop-zone; clicking it (or dropping a file on it) opens the `.qa-note-composer`.
+    Typing + Add note saves and renders the note as a `.qa-note` card (yellow rail, "NOTE" label,
+    edit/delete links) in both a light AND a dark theme. Pasting a screenshot into the open
+    composer stages it and inserts `[name](.loopboard/cache/<id>/name)` at the caret WITHOUT
+    closing the composer (further edits/attachments still possible before Save); the saved note
+    then shows an attachment chip (ext badge + clickable name → opens via `openLink`) below the
+    body text, and its × removes the file AND strips the link from the note (re-fetch confirms
+    no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
+    retracts the note entirely (existing behavior, unchanged).
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough

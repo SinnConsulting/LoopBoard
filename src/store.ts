@@ -432,7 +432,14 @@ export class Store {
         await this.ensureTasksDir();
         await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
       }
-      if (descChanged || titleChanged) {
+      // t-b149: a note-scoped attachment link lives in the note text itself (notes[], an index
+      // field) — strip it there too so removing an attachment chip from a note actually clears
+      // its link, not just the cached file.
+      const noteJoined = entry.notes.join('\n');
+      const strippedNote = noteJoined.replace(linkRe, '').replace(/[ \t]{2,}/g, ' ').trim();
+      const noteChanged = strippedNote !== noteJoined;
+      if (noteChanged) entry.notes = strippedNote ? strippedNote.split('\n') : [];
+      if (descChanged || titleChanged || noteChanged) {
         bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
       }
