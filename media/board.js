@@ -475,6 +475,10 @@
         render();
       });
     };
+    area.addEventListener('keydown', (e) => {
+      if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); return; }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); commitDraft(); }
+    });
     area.addEventListener('dragover', (e) => e.preventDefault());
     area.addEventListener('drop', (e) => {
       const files = e.dataTransfer && e.dataTransfer.files;
