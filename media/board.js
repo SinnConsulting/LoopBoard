@@ -475,6 +475,9 @@
         render();
       });
     };
+    area.addEventListener('keydown', (e) => {
+      if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
+    });
     area.addEventListener('dragover', (e) => e.preventDefault());
     area.addEventListener('drop', (e) => {
       const files = e.dataTransfer && e.dataTransfer.files;
