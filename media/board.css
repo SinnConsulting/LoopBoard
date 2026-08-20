@@ -365,6 +365,8 @@ textarea { resize: vertical; }
 }
 .qa-attachment-name { color: var(--vscode-textLink-foreground, #3794ff); cursor: pointer; text-decoration: none; }
 .qa-attachment-name:hover { text-decoration: underline; }
+.qa-attachment-name.is-pending { color: var(--vscode-descriptionForeground, #9d9d9d); cursor: default; }
+.qa-attachment-name.is-pending:hover { text-decoration: none; }
 .qa-attachment-remove { flex-shrink: 0; width: 16px; height: 16px; }
 
 .qa-note-composer {

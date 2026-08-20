@@ -148,6 +148,16 @@ New v2 checklist (from REFACTORING.md Phase 8):
     row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
     second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)
     still works when the panel was never hidden externally.
+16. **Attachment chip idiom unified (t-f51c):** a description, a draft, an answer, and Review
+    feedback each with an attached image all render the SAME `.qa-attachment` chip (ext badge +
+    link name + ×) as a note's attachment — no more bare-link description/draft lists. The
+    new-story composer's pending-attachment list also renders as chips, but the name is static
+    (not clickable — no cache file yet). Every one of these four fields (new-story composer,
+    description edit, answer edit, Review feedback) shows a `＋ Attach` button next to its
+    Save/paste hint; clicking it opens a file picker and stages the file exactly like a drop/
+    paste would. Removing an answer or feedback attachment chip strips its link from that
+    field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
+    No image thumbnails anywhere (unchanged from t-b149).
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough

@@ -491,20 +491,25 @@
         }
       }
     });
-    const pendingEl = composerAttachments.length === 0 ? null : h('div', { style: { marginTop: '8px' } },
-      h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
-      composerAttachments.map((a, i) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' } },
-        h('span', { class: 'muted-11' }, a.filename),
-        h('button', {
-          class: 'icon-btn', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
-          onclick: () => {
-            // Strip the placeholder link from the text too, so a discarded image leaves no trace.
-            composerText = composerText.split('[' + a.filename + '](' + a.token + ')').join('').replace(/[ \t]{2,}/g, ' ');
-            composerAttachments.splice(i, 1);
-            saveState();
-            render();
-          },
-        }, icon(SVG.x)))));
+    const pendingEl = composerAttachments.length === 0 ? null : h('div', { class: 'qa-attachments', style: { marginTop: '8px' } },
+      composerAttachments.map((a, i) => attachmentChip({ label: a.filename, path: a.token }, () => {
+        // Strip the placeholder link from the text too, so a discarded image leaves no trace.
+        composerText = composerText.split('[' + a.filename + '](' + a.token + ')').join('').replace(/[ \t]{2,}/g, ' ');
+        composerAttachments.splice(i, 1);
+        saveState();
+        render();
+      }, false)));
+    // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+    // alongside the existing silent drag-drop/paste support.
+    const attachBtn = h('button', {
+      class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+      onclick: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.addEventListener('change', () => { if (input.files && input.files[0]) addPendingAttachment(input.files[0]); });
+        input.click();
+      },
+    }, '＋ Attach');
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
       h('div', { class: 'pane-explainer' }, 'Describe the story in your own words — an agent structures it for you.'),
@@ -513,9 +518,10 @@
       h('div', { class: 'composer-actions' },
         saveBtn,
         h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; saveState(); render(); } }, 'Cancel'),
+        attachBtn,
         modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }),
         modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
-        h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed.'))
+        h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed. ⌘V pastes screenshots.'))
     );
   }
 
@@ -838,6 +844,28 @@
     pendingAttach[reqId] = (msg) => applyAttachedMirror(taskId, msg);
     post({ type: 'detach', reqId, taskId, path });
   }
+  // Shared attachment chip (t-f51c): ext badge + name + remove, in the qa-* visual idiom
+  // notes-to-worker introduced (t-b149) — every attachment-list surface (description/draft area,
+  // answer, feedback, note, new-story composer) renders through this one helper so the look and
+  // CSS block (`.qa-attachment*`) stay single-sourced. `clickable === false` renders a static
+  // (non-opening) name — used for the new-story composer's pending list, whose bytes aren't
+  // staged to a real cache path until Save Draft, so there is nothing yet to open.
+  function attachmentChip(item, onRemove, clickable) {
+    const ext = (item.label.split('.').pop() || '').toUpperCase();
+    const nameEl = clickable === false
+      ? h('span', { class: 'qa-attachment-name is-pending' }, item.label)
+      : h('a', {
+          class: 'qa-attachment-name', href: '#', 'data-mdlink': item.path,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: item.path }); },
+        }, item.label);
+    return h('div', { class: 'qa-attachment' },
+      h('span', { class: 'qa-attachment-ext' }, ext || '?'),
+      nameEl,
+      h('button', {
+        class: 'icon-btn qa-attachment-remove', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
+        onclick: (e) => { e.stopPropagation(); onRemove(); },
+      }, icon(SVG.x)));
+  }
   function renderAttachmentsArea(t) {
     // Drafts carry their links in the raw draft text (title); scan the description too for
     // drafts staged before the rework (legacy).
@@ -845,15 +873,18 @@
     if (!items.length) return null;
     return h('div', { style: { marginTop: '8px' } },
       h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
-      items.map((it) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' } },
-        h('a', {
-          href: '#', 'data-mdlink': it.path,
-          onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: it.path }); },
-        }, it.label),
-        h('button', {
-          class: 'icon-btn', type: 'button', 'aria-label': 'Delete attachment', title: 'Delete attachment (removes the file and its link)',
-          onclick: () => detachAttachment(t.id, it.path),
-        }, icon(SVG.x)))));
+      h('div', { class: 'qa-attachments' }, items.map((it) => attachmentChip(it, () => detachAttachment(t.id, it.path)))));
+  }
+  // Attachment list for a field whose links live inline in its own free text (answer/feedback,
+  // t-f51c) — extracts the same `[name](.loopboard/cache/...)` links renderAttachmentsArea does,
+  // but removal strips the link out of THAT field's text and repatches it via `commit`, since
+  // there is no separate attachment store for these fields.
+  function renderFieldAttachmentsArea(text, commit) {
+    const items = extractAttachments(text);
+    if (!items.length) return null;
+    return h('div', { class: 'qa-attachments' }, items.map((it) => attachmentChip(it, () => {
+      commit(String(text || '').split('[' + it.label + '](' + it.path + ')').join('').replace(/[ \t]{2,}/g, ' ').trim());
+    })));
   }
 
   function renderCard(t) {
@@ -1164,11 +1195,23 @@
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
-      wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
+      const stageDesc = wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitDesc();
       });
-      wrap.append(ta, saveBtn);
+      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+      // alongside the existing silent drag-drop/paste support.
+      const descAttachBtn = h('button', {
+        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+        onclick: () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.addEventListener('change', () => { if (input.files && input.files[0]) stageDesc(input.files[0]); });
+          input.click();
+        },
+      }, '＋ Attach');
+      wrap.append(ta, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
+        saveBtn, descAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.descNeedsFocus) { u.descNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
@@ -1275,6 +1318,15 @@
       };
       editBtn.addEventListener('click', () => { u.qaEditOpen[i] = !u.qaEditOpen[i]; setCollapsed(!u.qaEditOpen[i]); });
 
+      // Attachment list for this answer (t-f51c): links inserted via wireFieldAttach live inline
+      // in the answer text itself — extract them into the same chip idiom as every other surface.
+      // Removing a chip strips its link from the answer and re-commits, same as a normal edit.
+      const attachWrap = h('div', {});
+      const refreshAnswerAttachments = (val) => {
+        attachWrap.replaceChildren();
+        const area = renderFieldAttachmentsArea(val, (newVal) => { ta.value = newVal; commitAnswer(); });
+        if (area) attachWrap.append(area);
+      };
       const commitAnswer = () => {
         const val = ta.value;
         sendPatch(t.id, 'answer', val, q.answer, i);
@@ -1296,6 +1348,7 @@
         u.qaEditOpen[i] = false;
         setCollapsed(isAnswered);
         updateSaveAll();
+        refreshAnswerAttachments(val);
       };
       const saveBtn = h('button', {
         class: 'qa-btn', type: 'button',
@@ -1319,10 +1372,21 @@
         }
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
       });
-      wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
+      const stageAnswer = wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
       });
+      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+      // alongside the existing silent drag-drop/paste support.
+      const answerAttachBtn = h('button', {
+        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+        onclick: () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.addEventListener('change', () => { if (input.files && input.files[0]) stageAnswer(input.files[0]); });
+          input.click();
+        },
+      }, '＋ Attach');
       commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
 
       // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
@@ -1351,8 +1415,9 @@
         body.append(suggWrap);
       }
 
-      editor.append(ta, h('div', { class: 'qa-editor-foot' }, h('span', { class: 'qa-hint' }, '⌘S save'), saveBtn));
-      body.append(summary, editor);
+      editor.append(ta, h('div', { class: 'qa-editor-foot' }, answerAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'), saveBtn));
+      refreshAnswerAttachments(q.answer);
+      body.append(summary, editor, attachWrap);
       setCollapsed(q.answered);
       list.append(item);
     });
@@ -1374,9 +1439,11 @@
       feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
+      const feedbackAttachArea = renderFieldAttachmentsArea(t.feedback, (newVal) => sendPatch(t.id, 'feedback', newVal, t.feedback));
       wrap.append(h('div', { class: 'amber-block' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText)));
+        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText),
+        feedbackAttachArea));
     }
     const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
     ta.value = u.feedbackDraft || '';
@@ -1401,30 +1468,25 @@
       if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
-    wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
+    const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
       insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
       commitFeedback();
     });
-    wrap.append(h('div', {}, ta, saveBtn));
+    // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+    // alongside the existing silent drag-drop/paste support.
+    const feedbackAttachBtn = h('button', {
+      class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+      onclick: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.addEventListener('change', () => { if (input.files && input.files[0]) stageFeedback(input.files[0]); });
+        input.click();
+      },
+    }, '＋ Attach');
+    wrap.append(h('div', {}, ta,
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
+        saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'))));
     return wrap;
-  }
-
-  // Attachment chip for a note (t-b149): matches the qa-* visual idiom (ext badge + link-colored
-  // name + remove), reusing extractAttachments/detachAttachment. No thumbnail — a real image
-  // preview needs a webview-safe URI for the already-staged file (asWebviewUri, via a new
-  // host round-trip), out of scope for this reskin; every attachment shows as a name chip.
-  function noteAttachmentChip(taskId, item) {
-    const ext = (item.label.split('.').pop() || '').toUpperCase();
-    return h('div', { class: 'qa-attachment' },
-      h('span', { class: 'qa-attachment-ext' }, ext || '?'),
-      h('a', {
-        class: 'qa-attachment-name', href: '#', 'data-mdlink': item.path,
-        onclick: (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: item.path }); },
-      }, item.label),
-      h('button', {
-        class: 'icon-btn qa-attachment-remove', type: 'button', 'aria-label': 'Remove attachment', title: 'Remove attachment',
-        onclick: (e) => { e.stopPropagation(); detachAttachment(taskId, item.path); },
-      }, icon(SVG.x)));
   }
 
   function renderNote(t) {
@@ -1500,7 +1562,7 @@
             h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; render(); } }, 'edit'),
             h('button', { class: 'qa-link-btn', type: 'button', onclick: () => sendPatch(t.id, 'note', '', t.note) }, 'delete'))),
         bodyEl,
-        attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => noteAttachmentChip(t.id, a))) : null));
+        attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null));
     } else {
       const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; render(); } },
         '＋ Note to worker · or drop files here');
