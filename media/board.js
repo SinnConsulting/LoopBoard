@@ -1498,6 +1498,7 @@
         placeholder: 'Note to worker — context, constraints, links. Paste an image to attach it.',
       });
       ta.value = u.noteDraft || '';
+      if (u.noteNeedsFocus) { u.noteNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
       const commitNote = () => {
         const d = (u.noteDraft || '').trim();
         if (!d) return;
@@ -1519,11 +1520,6 @@
         u.noteDraft = ta.value;
         sendBtn.disabled = u.noteDraft.trim().length === 0;
       });
-      if (u.pendingNoteFile) {
-        const f = u.pendingNoteFile;
-        u.pendingNoteFile = null;
-        stage(f);
-      }
       const attachBtn = h('button', {
         class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
         onclick: () => {
@@ -1559,21 +1555,13 @@
         h('div', { class: 'qa-note-head' },
           h('div', { class: 'qa-note-meta' }, h('span', { class: 'qa-note-kind' }, 'Note')),
           h('div', { class: 'qa-note-tools' },
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; render(); } }, 'edit'),
+            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; u.noteNeedsFocus = true; render(); } }, 'edit'),
             h('button', { class: 'qa-link-btn', type: 'button', onclick: () => sendPatch(t.id, 'note', '', t.note) }, 'delete'))),
         bodyEl,
         attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null));
     } else {
-      const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; render(); } },
-        '＋ Note to worker · or drop files here');
-      emptyBtn.addEventListener('dragover', (e) => { e.preventDefault(); emptyBtn.classList.add('drag-over'); });
-      emptyBtn.addEventListener('dragleave', () => emptyBtn.classList.remove('drag-over'));
-      emptyBtn.addEventListener('drop', (e) => {
-        e.preventDefault();
-        emptyBtn.classList.remove('drag-over');
-        const files = e.dataTransfer && e.dataTransfer.files;
-        if (files && files.length) { u.noteOpen = true; u.pendingNoteFile = files[0]; render(); }
-      });
+      const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; u.noteNeedsFocus = true; render(); } },
+        '＋ Note to worker');
       wrap.append(emptyBtn);
     }
     return wrap;

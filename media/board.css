@@ -384,7 +384,7 @@ textarea { resize: vertical; }
   border: 1px dashed var(--vscode-panel-border, #454545); border-radius: 4px; padding: 10px;
   background: none; color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 12px; cursor: pointer;
 }
-.qa-note-empty:hover, .qa-note-empty.drag-over { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground, #cccccc); }
+.qa-note-empty:hover { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground, #cccccc); }
 
 .link-btn { font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); background: none; border: none; padding: 0; cursor: pointer; }
 .link-btn:hover { color: var(--vscode-textLink-foreground, #3794ff); }

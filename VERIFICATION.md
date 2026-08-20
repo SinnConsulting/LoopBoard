@@ -158,6 +158,13 @@ New v2 checklist (from REFACTORING.md Phase 8):
     paste would. Removing an answer or feedback attachment chip strips its link from that
     field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
     No image thumbnails anywhere (unchanged from t-b149).
+17. **Note composer drop-hint removal + auto-focus (t-5b29):** the empty note-to-worker button
+    reads just "＋ Note to worker" (no "or drop files here" text) and no longer accepts a file
+    drop directly on it (dragging a file over it does nothing — paste/＋ Attach inside the open
+    composer still work). Click the empty button once → the composer opens AND the caret is
+    already in the textarea, ready to type with no second click. Click "edit" on an existing note
+    → same one-click-to-focused-caret behavior. Opening the composer via a background board
+    refresh (not a click) does not steal focus into the textarea.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
