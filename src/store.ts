@@ -40,9 +40,9 @@ function trimDebugTail(bytes: Uint8Array): Uint8Array {
   return bytes.subarray(cut);
 }
 
-// v1 scope (t-att1, human decision): images only. Size cap is configurable (loopBoard.maxAttachmentSizeMB);
-// this default is only used if a caller doesn't pass one.
-const ALLOWED_ATTACHMENT_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+// t-058e (human decision): any file type, size-capped only — no type allowlist or denylist. Size
+// cap is configurable (loopBoard.maxAttachmentSizeMB); this default is only used if a caller
+// doesn't pass one.
 const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 // Keep only the basename, drop anything not alphanumeric/dot/dash/underscore (blocks path
@@ -288,19 +288,15 @@ export class Store {
     await vscode.workspace.fs.createDirectory(this.tasksDir);
   }
 
-  // Stage an attachment's bytes under .loopboard/cache/<id>/ (t-att1: images only, ephemeral,
-  // cleared on acceptance — see clearAttachments). No task-file grammar change; a returned
-  // markdown link reuses the existing description-link rendering.
+  // Stage an attachment's bytes under .loopboard/cache/<id>/ (any file type, size-capped only —
+  // t-058e; ephemeral, cleared on acceptance — see clearAttachments). No task-file grammar
+  // change; a returned markdown link reuses the existing description-link rendering.
   // `appendToDescription`: true (default) appends the link to the task's Description directly —
   // used when the caller has no specific field open (whole-card drop, or a brand-new draft).
   // false only stages the bytes and returns the path/link, leaving the caller (a description or
   // answer field already open in the webview) to fold it into that field's own value and persist
   // it via the normal field-patch path, so field-scoped inserts land in the right place.
   async stageAttachment(taskId: string, filename: string, bytes: Uint8Array, maxBytes = DEFAULT_MAX_ATTACHMENT_BYTES, appendToDescription = true): Promise<AttachOutcome> {
-    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-    if (!ALLOWED_ATTACHMENT_EXT.includes(ext)) {
-      return { status: 'error', message: `Only image attachments are supported (${ALLOWED_ATTACHMENT_EXT.join(', ')}).` };
-    }
     if (bytes.byteLength > maxBytes) {
       return { status: 'error', message: `Attachment is too large (max ${Math.round(maxBytes / (1024 * 1024))}MB).` };
     }
