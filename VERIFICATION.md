@@ -130,6 +130,13 @@ New v2 checklist (from REFACTORING.md Phase 8):
     body text, and its × removes the file AND strips the link from the note (re-fetch confirms
     no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
     retracts the note entirely (existing behavior, unchanged).
+14. **Composer attachment size cap (t-5f50):** with a small `loopBoard.maxAttachmentSizeMB` set
+    (e.g. 1), drop/paste a file over the cap into the New Story composer → it is rejected
+    immediately with an "Attachment is too large (max 1MB)." toast, is NOT added to the pending
+    list, and no `[name](loopboard-pending:<n>)` placeholder lands in the draft text. An under-cap
+    file still stages normally end to end (chip appears, Save Draft resolves it to a real
+    `.loopboard/cache/<id>/` path). Existing-card surfaces (description/answer/note/whole-card)
+    reject oversized files exactly as before — unchanged.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
