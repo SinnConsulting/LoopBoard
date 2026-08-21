@@ -29,11 +29,12 @@ Storage: everything lives under `.loopboard/` — `TODO.md` (slim task index, gr
 ## Commands
 
 ```
-make install    # npm install in Docker
-make build      # tsc -> out/                 (extension host)
-make test       # tsc tsconfig.test.json -> out-test/, node --test 'test/*.test.js'
-make package    # vsce package -> loopboard-todo-<version>.vsix
-make check      # build + test + package — MUST pass before any commit
+make install         # npm install in Docker
+make build           # tsc -> out/                 (extension host)
+make test            # tsc tsconfig.test.json -> out-test/, node --test 'test/*.test.js'
+make package         # vsce package -> loopboard-todo-<version>.vsix
+make check           # build + test (no .vsix) — MUST pass before any commit
+make check PACKAGE=1 # build + test + package — opt-in packaging check on the same command
 make clean
 ```
 
