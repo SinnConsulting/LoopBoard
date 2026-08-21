@@ -163,6 +163,13 @@ New v2 checklist (from REFACTORING.md Phase 8):
     composer empty (or whitespace-only), the shortcut is a silent no-op (nothing saved, composer
     stays open), matching the disabled Save Draft button. Cmd/Ctrl+Enter does NOT save — a plain
     Enter (with or without Cmd/Ctrl) still just inserts a newline in the textarea.
+18. **Depends-on chip filters instead of jumps (t-a524):** on a card with a `depends on <id>`
+    chip, click it — for a Done target AND for an active (non-Done) target alike, the board
+    switches to that target's own phase tab and the in-tab search box fills with `task:<id>`,
+    filtering the tab down to just that one card (no more jump-and-scroll). This still works for
+    a Done dependency accepted long enough ago to fall outside the newest-50 entries shown on the
+    Done tab. A dependency id that exists nowhere on the board still shows the unchanged
+    "<id> not found" warning toast. The chip's tooltip/aria-label reads "Filter to <id>".
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
