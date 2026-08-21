@@ -79,6 +79,7 @@ export class Controller {
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, this.terminals.status(), enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
+    web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
     // Recomputed on every refresh (and again right after a sync click via the refresh() it
     // triggers) so the pulse reflects live disk state rather than a cached snapshot (t-pul1).
     if (cfg.pulseTemplateSync && !this.store.todoMissing) {
@@ -206,14 +207,18 @@ export class Controller {
           // Stage bytes only (no auto-append) and then resolve the composer's caret-inserted
           // `[name](loopboard-pending:<n>)` placeholders to the real staged cache paths.
           const staged: { token: string; name: string; path: string }[] = [];
+          const removedTokens: string[] = [];
           for (const a of attachments as { filename?: unknown; dataBase64?: unknown; token?: unknown }[]) {
             const filename = String(a?.filename ?? '');
             if (!filename || typeof a?.dataBase64 !== 'string') continue;
             const result = await this.store.stageAttachment(draft.id, filename, base64ToBytes(a.dataBase64), cfg.maxAttachmentSizeMB * 1024 * 1024, false);
-            if (result.status === 'error') this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
-            else if (result.path) staged.push({ token: String(a?.token ?? ''), name: result.path.split('/').pop() ?? filename, path: result.path });
+            if (result.status === 'error') {
+              this.toast('warning', result.message ?? 'Could not attach that file.', draft.id);
+              const token = String(a?.token ?? '');
+              if (token) removedTokens.push(token);
+            } else if (result.path) staged.push({ token: String(a?.token ?? ''), name: result.path.split('/').pop() ?? filename, path: result.path });
           }
-          await this.store.resolvePendingLinks(draft.id, staged);
+          await this.store.resolvePendingLinks(draft.id, staged, removedTokens);
         }
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();

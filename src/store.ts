@@ -340,8 +340,11 @@ export class Store {
   // `[name](loopboard-pending:<n>)` at the caret while typing — no id/path exists until Save
   // Draft stages the bytes) to the real staged cache paths. A placeholder the user deleted from
   // the text gets its link appended at the end instead, so a staged file is never unreferenced.
-  async resolvePendingLinks(taskId: string, files: { token: string; name: string; path: string }[]): Promise<void> {
-    if (!files.length) return;
+  // `removedTokens` (t-5f50): placeholders whose staging failed (e.g. rejected by the size cap)
+  // are stripped entirely rather than left as a dangling `[name](loopboard-pending:<n>)` link
+  // pointing at a file that was never written.
+  async resolvePendingLinks(taskId: string, files: { token: string; name: string; path: string }[], removedTokens: string[] = []): Promise<void> {
+    if (!files.length && !removedTokens.length) return;
     await this.writeLock.run(async () => {
       const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
       const entry = doc.entries.find((e) => e.id === taskId);
@@ -356,11 +359,15 @@ export class Store {
           ? title.replace(linkRe, `[${f.name}](${f.path})`)
           : `${title} [${f.name}](${f.path})`;
       }
+      for (const token of removedTokens) {
+        const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        title = title.replace(new RegExp(`\\s?\\[[^\\]]*\\]\\(${escapedToken}\\)`, 'g'), '');
+      }
       if (title !== entry.title) {
         entry.title = title;
         bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
-        this.debugLog('verbose', 'resolvePendingLinks', `${taskId} -> ${files.length} link(s)`);
+        this.debugLog('verbose', 'resolvePendingLinks', `${taskId} -> ${files.length} link(s), ${removedTokens.length} removed`);
       }
     });
   }

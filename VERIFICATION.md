@@ -170,7 +170,14 @@ New v2 checklist (from REFACTORING.md Phase 8):
     a Done dependency accepted long enough ago to fall outside the newest-50 entries shown on the
     Done tab. A dependency id that exists nowhere on the board still shows the unchanged
     "<id> not found" warning toast. The chip's tooltip/aria-label reads "Filter to <id>".
-19. **Note composer drop-hint removal + auto-focus (t-5b29):** the empty note-to-worker button
+19. **Composer attachment size cap (t-5f50):** with a small `loopBoard.maxAttachmentSizeMB` set
+    (e.g. 1), drop/paste a file over the cap into the New Story composer → it is rejected
+    immediately with an "Attachment is too large (max 1MB)." toast, is NOT added to the pending
+    list, and no `[name](loopboard-pending:<n>)` placeholder lands in the draft text. An under-cap
+    file still stages normally end to end (chip appears, Save Draft resolves it to a real
+    `.loopboard/cache/<id>/` path). Existing-card surfaces (description/answer/note/whole-card)
+    reject oversized files exactly as before — unchanged.
+20. **Note composer drop-hint removal + auto-focus (t-5b29):** the empty note-to-worker button
     reads just "＋ Note to worker" (no "or drop files here" text) and no longer accepts a file
     drop directly on it (dragging a file over it does nothing — paste/＋ Attach inside the open
     composer still work). Click the empty button once → the composer opens AND the caret is
