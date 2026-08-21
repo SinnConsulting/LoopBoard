@@ -910,13 +910,42 @@
   // Attachments area (t-att1 rework): a consistent block on drafts and full cards listing every
   // staged `.loopboard/cache/...` link found in the description — click opens the file, the ×
   // on the right deletes it from the story AND the cache folder (store-owned `detach`).
-  function extractAttachments(description) {
+  // A cache path QUOTED as documentation is not an attachment (t-9e27): the extractor used to run
+  // its regex over the raw text, so prose explaining the link format grew phantom chips whose ×
+  // could delete a real file and mangle the surrounding sentence. Blank out fenced code blocks and
+  // inline code spans first — replacing every non-newline with a space keeps offsets and line
+  // numbers identical to the source, so the caller's later `split(link).join('')` still matches.
+  function maskCodeRegions(text) {
+    const blank = (s) => s.replace(/[^\n]/g, ' ');
+    let fence = null;
+    return String(text || '').split('\n').map((line) => {
+      const f = /^[ \t]*(`{3,}|~{3,})/.exec(line);
+      if (fence) {
+        if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+        return blank(line);
+      }
+      if (f) { fence = f[1]; return blank(line); }
+      return line.replace(/(`+)[^\n]*?\1/g, blank);
+    }).join('\n');
+  }
+  // Second guard, mirroring the store's detach check (src/store.ts:404-408): a chip may only exist
+  // for a path inside THIS card's own cache dir with a bare filename. A doc example citing another
+  // task's cache path renders no chip, so the store guard is no longer the only thing between a
+  // quoted path and fs.delete + a Description rewrite.
+  function isOwnedAttachment(path, ownerId) {
+    const prefix = '.loopboard/cache/' + ownerId + '/';
+    const name = ownerId && path.startsWith(prefix) ? path.slice(prefix.length) : '';
+    return !!name && !name.includes('/') && !name.includes('\\') && !name.includes('..');
+  }
+  function extractAttachments(description, ownerId) {
     const items = [];
     const re = /\[([^\]]+)\]\((\.loopboard\/cache\/[^)\s]+)\)/g;
     let m;
     // Label with the on-disk filename (path basename), not the link label — dedupe may have
     // renamed the staged file (image.png → image-2.png) and the area must show the real name.
-    while ((m = re.exec(String(description || ''))) !== null) items.push({ label: m[2].split('/').pop(), path: m[2] });
+    while ((m = re.exec(maskCodeRegions(description))) !== null) {
+      if (isOwnedAttachment(m[2], ownerId)) items.push({ label: m[2].split('/').pop(), path: m[2] });
+    }
     return items;
   }
   function detachAttachment(taskId, path) {
@@ -949,7 +978,7 @@
   function renderAttachmentsArea(t) {
     // Drafts carry their links in the raw draft text (title); scan the description too for
     // drafts staged before the rework (legacy).
-    const items = extractAttachments(t.isDraft ? (t.title || '') + '\n' + (t.description || '') : t.description);
+    const items = extractAttachments(t.isDraft ? (t.title || '') + '\n' + (t.description || '') : t.description, t.id);
     if (!items.length) return null;
     return h('div', { style: { marginTop: '8px' } },
       h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
@@ -959,8 +988,8 @@
   // t-f51c) — extracts the same `[name](.loopboard/cache/...)` links renderAttachmentsArea does,
   // but removal strips the link out of THAT field's text and repatches it via `commit`, since
   // there is no separate attachment store for these fields.
-  function renderFieldAttachmentsArea(text, commit) {
-    const items = extractAttachments(text);
+  function renderFieldAttachmentsArea(text, commit, ownerId) {
+    const items = extractAttachments(text, ownerId);
     if (!items.length) return null;
     return h('div', { class: 'qa-attachments' }, items.map((it) => attachmentChip(it, () => {
       commit(String(text || '').split('[' + it.label + '](' + it.path + ')').join('').replace(/[ \t]{2,}/g, ' ').trim());
@@ -1439,7 +1468,7 @@
       const attachWrap = h('div', {});
       const refreshAnswerAttachments = (val) => {
         attachWrap.replaceChildren();
-        const area = renderFieldAttachmentsArea(val, (newVal) => { ta.value = newVal; commitAnswer(); });
+        const area = renderFieldAttachmentsArea(val, (newVal) => { ta.value = newVal; commitAnswer(); }, t.id);
         if (area) attachWrap.append(area);
       };
       const commitAnswer = () => {
@@ -1559,7 +1588,7 @@
       feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
-      const feedbackAttachArea = renderFieldAttachmentsArea(t.feedback, (newVal) => sendPatch(t.id, 'feedback', newVal, t.feedback));
+      const feedbackAttachArea = renderFieldAttachmentsArea(t.feedback, (newVal) => sendPatch(t.id, 'feedback', newVal, t.feedback), t.id);
       wrap.append(h('div', { class: 'amber-block' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
         h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText),
@@ -1674,7 +1703,7 @@
           sendBtn));
       wrap.append(composer);
     } else if (t.note) {
-      const attachments = extractAttachments(t.note);
+      const attachments = extractAttachments(t.note, t.id);
       const bodyText = attachments.reduce((s, a) => s.split('[' + a.label + '](' + a.path + ')').join('').trim(), t.note);
       let bodyEl = null;
       if (bodyText) {
