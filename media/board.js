@@ -169,14 +169,19 @@
   // ---- local in-tab search ----
   // `is:unanswered` is a reserved token (namespaced against plain-text hits on the word
   // "unanswered"): it requires the task have at least one blank-answer question, and combines
-  // with any remaining text as an AND.
+  // with any remaining text as an AND. `task:<id>` is a reserved token (t-a524) that matches only
+  // the task whose id equals <id> exactly (case-insensitive) — used to filter a depends-on chip's
+  // target into view instead of jumping/scrolling to it; combines with other tokens as an AND
+  // like `is:unanswered`, though in practice it is applied alone by `revealTask`.
   function matchesQuery(t) {
     const raw = searchQuery.trim().toLowerCase();
     if (!raw) return true;
     const tokens = raw.split(/\s+/);
     const unanswered = tokens.includes('is:unanswered');
-    const q = tokens.filter((tok) => tok !== 'is:unanswered').join(' ');
+    const taskToken = tokens.find((tok) => tok.startsWith('task:'));
+    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== taskToken).join(' ');
     if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
+    if (taskToken && (t.id || '').toLowerCase() !== taskToken.slice('task:'.length)) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
       || (t.title || '').toLowerCase().includes(q)
@@ -700,6 +705,18 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
+    // "Work with" selector (t-827c): which model later WORKS this story once it reaches Backlog
+    // (the `model:` field, Rule 15) — mirrors the groomer select above; same default-unset idiom.
+    const workDefOpt = workerDefaultOpt();
+    const workVal = t.model || workDefOpt;
+    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with' });
+    for (const opt of modelOptions(workDefOpt)) {
+      const o = h('option', { value: opt }, opt);
+      if (opt === workVal) o.selected = true;
+      workSel.append(o);
+    }
+    workSel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, workDefOpt), t.model || ''));
+
     // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
     // markdown links to the draft's task-file ## Description; the shared attachments area lists
     // them with an open link and a remove × each.
@@ -726,9 +743,11 @@
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : attachEl,
-          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
-            groomSel),
+            groomSel,
+            h('span', { class: 'muted-11' }, 'Work with'),
+            workSel),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
@@ -1145,11 +1164,20 @@
     for (const dep of t.dependsOn || []) {
       chips.append(h('button', {
         class: 'chip dep' + (dep.met ? '' : ' unmet'), type: 'button',
-        title: 'Go to ' + dep.id, 'aria-label': 'Go to ' + dep.id,
+        title: 'Filter to ' + dep.id, 'aria-label': 'Filter to ' + dep.id,
         onclick: () => {
-          const exists = board && Object.values(board.phases || {}).some((list) => (list || []).some((c) => c.id === dep.id));
-          if (!exists) { pushToast('warning', dep.id + ' not found'); return; }
-          revealTask(dep.id);
+          // t-a524: filter-instead-of-jump for EVERY dependency target, not just Done ones (human
+          // decision: "make it consistent... for ALL stories in all Phases"). `dep.met` reflects
+          // `doneIds.has(id)` (src/view.ts) independent of the truncated `phases.done` window, so
+          // a Done dependency beyond the newest 50 is still routed correctly without an existence
+          // scan; a non-Done dependency still needs the scan to find its live phase (or "not found").
+          if (dep.met) { revealTask(dep.id, 'done', false, 'task:' + dep.id); return; }
+          let foundPhase = null;
+          for (const key in (board.phases || {})) {
+            if ((board.phases[key] || []).some((c) => c.id === dep.id)) { foundPhase = key; break; }
+          }
+          if (!foundPhase) { pushToast('warning', dep.id + ' not found'); return; }
+          revealTask(dep.id, foundPhase, false, 'task:' + dep.id);
         },
       }, 'depends on ' + dep.id + ' ', h('span', { class: 'codicon codicon-' + (dep.met ? 'check' : 'warning') })));
     }
