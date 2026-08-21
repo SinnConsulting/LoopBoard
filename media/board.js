@@ -92,6 +92,11 @@
   let flashSet = new Set(); // task ids to flash on next render
   let pendingBoard = null;
   let pendingRender = false; // an async/external repaint deferred while a field is focused
+  // Global "gate in flight" guard (t-a9d5): swallows a second gate click (Approve/Accept/Demote)
+  // on ANY card between a click and the confirming board message, so a click landing on a
+  // different card that reflowed into the same screen position during the ~1s round-trip never
+  // fires a second, wrong-card gate action. Cleared in applyBoard when the confirming board lands.
+  let gateInFlight = false;
   // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
   // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
   // The bar is always visible and cannot be dismissed — searchOpen stays true forever.
@@ -164,14 +169,19 @@
   // ---- local in-tab search ----
   // `is:unanswered` is a reserved token (namespaced against plain-text hits on the word
   // "unanswered"): it requires the task have at least one blank-answer question, and combines
-  // with any remaining text as an AND.
+  // with any remaining text as an AND. `task:<id>` is a reserved token (t-a524) that matches only
+  // the task whose id equals <id> exactly (case-insensitive) — used to filter a depends-on chip's
+  // target into view instead of jumping/scrolling to it; combines with other tokens as an AND
+  // like `is:unanswered`, though in practice it is applied alone by `revealTask`.
   function matchesQuery(t) {
     const raw = searchQuery.trim().toLowerCase();
     if (!raw) return true;
     const tokens = raw.split(/\s+/);
     const unanswered = tokens.includes('is:unanswered');
-    const q = tokens.filter((tok) => tok !== 'is:unanswered').join(' ');
+    const taskToken = tokens.find((tok) => tok.startsWith('task:'));
+    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== taskToken).join(' ');
     if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
+    if (taskToken && (t.id || '').toLowerCase() !== taskToken.slice('task:'.length)) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
       || (t.title || '').toLowerCase().includes(q)
@@ -242,7 +252,12 @@
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
       return;
     }
-    root.append(renderTopbar(), renderPane(scrollTop), renderToasts());
+    const paneEl = renderPane(scrollTop);
+    root.append(renderTopbar(), paneEl, renderToasts());
+    // Synchronous restore (t-a9d5): setting scrollTop in the same task as the DOM insertion,
+    // rather than deferred to rAF, kills the one-frame scroll-to-0 flash that used to read as a
+    // jump on every gate-triggered refresh.
+    paneEl.scrollTop = scrollTop;
     // Textareas can only measure their scrollHeight once attached to the DOM.
     requestAnimationFrame(() => {
       root.querySelectorAll('textarea.desc, textarea.field').forEach(autoGrow);
@@ -315,11 +330,37 @@
   // no `data-field`) silently no-ops, leaving focus stranded on the now-tabindex=0 view element
   // instead of released — the "needs a second ESC" bug (t-esc1). Blurring first means
   // captureActiveField() finds nothing to recapture.
-  function exitFieldEdit(clearFn) {
+  function exitFieldEdit(clearFn, container) {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    clearActiveEditor(container);
     clearFn();
     render();
   }
+
+  // ---- shared editable-field exit (t-471a): click-outside COMMITS, ESC CANCELS ----
+  // Every editable field (description/title/draft-text/note toggle between a view and an
+  // editor; answer/feedback are always a textarea) registers itself here while its editor is
+  // open. A single document-level `pointerdown` listener — capture phase, so it resolves before
+  // any button's own pointerdown-commit handler (makeGateButton et al.) runs — detects a click
+  // outside the active editor's container and commits it. This is deliberately NOT a per-field
+  // `blur` handler: render()'s `root.textContent = ''` and the focus-restore round-trip
+  // (restoreActiveField/repaintCard) both fire spurious blur events on every deferred repaint
+  // that a blur handler can't tell apart from a real user exit — only a genuine pointerdown
+  // proves the user actually clicked away. Only one editor is ever active at a time; a click
+  // that opens a DIFFERENT field's editor first commits whichever one was open (its pointerdown
+  // lands outside that container), then opens the new one on the following render — mirroring
+  // ESC's existing "one exit path" semantics rather than adding a second one.
+  let activeEditor = null; // { container, commit }
+  function setActiveEditor(container, commit) { activeEditor = { container, commit }; }
+  function clearActiveEditor(container) {
+    if (activeEditor && (!container || activeEditor.container === container)) activeEditor = null;
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (!activeEditor || activeEditor.container.contains(e.target)) return;
+    const ed = activeEditor;
+    activeEditor = null;
+    ed.commit();
+  }, true);
 
   function renderSearchBar(shownCount, totalCount) {
     const input = h('input', {
@@ -412,7 +453,6 @@
       }
     }
     pane.append(inner);
-    requestAnimationFrame(() => { pane.scrollTop = scrollTop; });
     return pane;
   }
 
@@ -475,6 +515,17 @@
         render();
       });
     };
+    area.addEventListener('keydown', (e) => {
+      // t-471a: the composer previously had no ESC handler at all. ESC cancels (matches every
+      // other field's ESC semantics) — reuses closeComposer(), the same path the Cancel button
+      // takes, so the draft text/model selections/attachments are discarded consistently. Not
+      // wired into the shared click-outside registry (setActiveEditor): click-outside on the
+      // composer already preserves the draft today (switching tabs closes it without clearing
+      // composerText), which already satisfies "typed text is never lost" without the surprise
+      // of auto-creating a task on an incidental outside click.
+      if (e.key === 'Escape') { e.preventDefault(); closeComposer(); return; }
+      if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
+    });
     area.addEventListener('dragover', (e) => e.preventDefault());
     area.addEventListener('drop', (e) => {
       const files = e.dataTransfer && e.dataTransfer.files;
@@ -612,6 +663,7 @@
       ta.value = u.draftText != null ? u.draftText : t.title;
       autoGrow(ta);
       const commitDraft = () => {
+        clearActiveEditor(textEl);
         const val = ta.value.trim();
         u.editingDraft = false;
         u.draftText = null;
@@ -625,13 +677,16 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }, textEl); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
       // t-att1 rework: no caret-insert into the raw draft text (links crammed into the title made
       // it unreadable) — a paste/drop while editing bubbles to the card handler, which stages the
       // image into the description, so it shows in the attachments area like everywhere else.
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
+      // Click-outside commits (t-471a): registering AFTER textEl exists so the container passed
+      // to setActiveEditor is the actual editing wrapper the pointerdown-outside check tests.
+      setActiveEditor(textEl, commitDraft);
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.draftNeedsFocus) { u.draftNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
@@ -649,6 +704,18 @@
       groomSel.append(o);
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
+
+    // "Work with" selector (t-827c): which model later WORKS this story once it reaches Backlog
+    // (the `model:` field, Rule 15) — mirrors the groomer select above; same default-unset idiom.
+    const workDefOpt = workerDefaultOpt();
+    const workVal = t.model || workDefOpt;
+    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with' });
+    for (const opt of modelOptions(workDefOpt)) {
+      const o = h('option', { value: opt }, opt);
+      if (opt === workVal) o.selected = true;
+      workSel.append(o);
+    }
+    workSel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, workDefOpt), t.model || ''));
 
     // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
     // markdown links to the draft's task-file ## Description; the shared attachments area lists
@@ -676,9 +743,11 @@
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : attachEl,
-          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
-            groomSel),
+            groomSel,
+            h('span', { class: 'muted-11' }, 'Work with'),
+            workSel),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
@@ -896,6 +965,7 @@
     else if (variant === 'review') cls += ' review';
     if (u.conflict) cls += ' conflict';
     if (isCollapsedCard) cls += ' collapsed';
+    if (u.acting) cls += ' acting';
     const card = h('div', { class: cls, 'data-task': t.id });
     if (t._flash) card.append(h('div', { class: 'flash-overlay flash' }));
 
@@ -917,6 +987,7 @@
       const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
       const commitTitle = () => {
+        clearActiveEditor(titleWrap);
         const val = input.value.trim();
         u.editingTitle = false;
         u.titleDraft = null;
@@ -930,10 +1001,11 @@
       }, 'Save');
       input.addEventListener('input', (e) => { u.titleDraft = e.target.value; saveBtn.disabled = e.target.value.trim() === t.title; });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }, titleWrap); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
       titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
+      setActiveEditor(titleWrap, commitTitle); // click-outside commits (t-471a)
       requestAnimationFrame(() => input.focus());
     } else {
       titleWrap.append(h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; render(); } }, t.title));
@@ -959,16 +1031,20 @@
       // t-d3dd, t-3042). onclick stays wired for keyboard (Enter/Space) activation, which
       // dispatches a synthetic click with no pointerdown.
       const commitPromote = () => {
+        if (gateInFlight) return;
+        gateInFlight = true;
         // Unanswered questions mean the host may pop a confirm modal before promoting (Rule 1's
-        // override guard) — fading the card immediately would hide it behind that dialog and
-        // then un-hide it on cancel, which reads as a confusing flicker. Only fade optimistically
+        // override guard) — greying the card immediately would hide it behind that dialog and
+        // then un-hide it on cancel, which reads as a confusing flicker. Only grey optimistically
         // on the zero-friction path (no unanswered questions), where promotion is unconditional;
-        // otherwise wait for the host's outcome to arrive via the next board refresh.
+        // otherwise wait for the host's outcome to arrive via the next board refresh. The
+        // in-flight guard above still applies either way, so a second click can't double-post.
         if (t.questions.some((q) => !q.answered)) {
           post({ type: 'gate', taskId: t.id, action: 'promote' });
         } else {
-          card.style.opacity = '0';
-          setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
+          getUi(t.id).acting = true;
+          card.classList.add('acting');
+          post({ type: 'gate', taskId: t.id, action: 'promote' });
         }
       };
       // Double-fire guard (t-02a2, now the shared makeGateButton helper — t-2238): without it, a
@@ -987,7 +1063,13 @@
       head.append(h('button', {
         class: 'btn-sm primary demote-btn', type: 'button',
         'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
-        onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
+        onclick: () => {
+          if (gateInFlight) return;
+          gateInFlight = true;
+          getUi(t.id).acting = true;
+          card.classList.add('acting');
+          post({ type: 'gate', taskId: t.id, action: 'demote' });
+        },
       }, icon(SVG.undo), 'Demote'));
     }
     // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
@@ -997,7 +1079,13 @@
       // onpointerdown+onclick straight to commitAccept with no guard, so a single mouse
       // activation posted the accept gate twice: the second post found the task already moved to
       // DONE.md and surfaced a spurious "not found" toast alongside the real success toast.
-      const commitAccept = () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); };
+      const commitAccept = () => {
+        if (gateInFlight) return;
+        gateInFlight = true;
+        getUi(t.id).acting = true;
+        card.classList.add('acting');
+        post({ type: 'gate', taskId: t.id, action: 'accept' });
+      };
       head.append(makeGateButton({
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
@@ -1011,6 +1099,11 @@
 
     // chips (always shown, even collapsed)
     card.append(renderChips(t));
+
+    // In-flight gate feedback (t-a9d5): shown even collapsed, since the card is greyed/blocked
+    // immediately on click, before the confirming board refresh arrives (reuses the existing
+    // "working" muted/pulse idiom the inprogress variant already uses below).
+    if (u.acting) card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), 'working…'));
 
     if (!isCollapsedCard) {
       // No detail file: since t-6ab4, draft creation eager-scaffolds tasks/<id>.md, so this only
@@ -1071,11 +1164,20 @@
     for (const dep of t.dependsOn || []) {
       chips.append(h('button', {
         class: 'chip dep' + (dep.met ? '' : ' unmet'), type: 'button',
-        title: 'Go to ' + dep.id, 'aria-label': 'Go to ' + dep.id,
+        title: 'Filter to ' + dep.id, 'aria-label': 'Filter to ' + dep.id,
         onclick: () => {
-          const exists = board && Object.values(board.phases || {}).some((list) => (list || []).some((c) => c.id === dep.id));
-          if (!exists) { pushToast('warning', dep.id + ' not found'); return; }
-          revealTask(dep.id);
+          // t-a524: filter-instead-of-jump for EVERY dependency target, not just Done ones (human
+          // decision: "make it consistent... for ALL stories in all Phases"). `dep.met` reflects
+          // `doneIds.has(id)` (src/view.ts) independent of the truncated `phases.done` window, so
+          // a Done dependency beyond the newest 50 is still routed correctly without an existence
+          // scan; a non-Done dependency still needs the scan to find its live phase (or "not found").
+          if (dep.met) { revealTask(dep.id, 'done', false, 'task:' + dep.id); return; }
+          let foundPhase = null;
+          for (const key in (board.phases || {})) {
+            if ((board.phases[key] || []).some((c) => c.id === dep.id)) { foundPhase = key; break; }
+          }
+          if (!foundPhase) { pushToast('warning', dep.id + ' not found'); return; }
+          revealTask(dep.id, foundPhase, false, 'task:' + dep.id);
         },
       }, 'depends on ' + dep.id + ' ', h('span', { class: 'codicon codicon-' + (dep.met ? 'check' : 'warning') })));
     }
@@ -1179,6 +1281,7 @@
       ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
       autoGrow(ta);
       const commitDesc = () => {
+        clearActiveEditor(wrap);
         const val = ta.value;
         u.editingDesc = false;
         u.descDraft = null;
@@ -1192,7 +1295,7 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }, wrap); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
       const stageDesc = wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
@@ -1212,6 +1315,7 @@
       }, '＋ Attach');
       wrap.append(ta, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
         saveBtn, descAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+      setActiveEditor(wrap, commitDesc); // click-outside commits (t-471a) — the bug this story fixes
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.descNeedsFocus) { u.descNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
@@ -1328,6 +1432,7 @@
         if (area) attachWrap.append(area);
       };
       const commitAnswer = () => {
+        clearActiveEditor(editor);
         const val = ta.value;
         sendPatch(t.id, 'answer', val, q.answer, i);
         delete u.answerDrafts[i];
@@ -1361,6 +1466,7 @@
         // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
         // On an already-answered row being edited, Escape also collapses back to the summary.
         if (e.key === 'Escape') {
+          clearActiveEditor(editor);
           ta.value = q.answer;
           delete u.answerDrafts[i];
           autoGrow(ta);
@@ -1372,6 +1478,9 @@
         }
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
       });
+      // Always-textarea field, no view↔edit toggle to key registration off — register when it
+      // gains focus (t-471a), same idiom the note composer uses.
+      ta.addEventListener('focus', () => setActiveEditor(editor, commitAnswer));
       const stageAnswer = wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
@@ -1449,6 +1558,7 @@
     ta.value = u.feedbackDraft || '';
     autoGrow(ta);
     const commitFeedback = () => {
+      clearActiveEditor(feedbackFieldWrap);
       const val = ta.value.trim();
       if (!val) return;
       sendPatch(t.id, 'feedback', val, t.feedback || '');
@@ -1465,9 +1575,12 @@
     ta.addEventListener('keydown', (e) => {
       // Feedback has no separate view mode to close — Escape discards the draft (there is no
       // saved value to revert to) and releases focus (previously a dead key here, t-esc1).
-      if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
+      if (e.key === 'Escape') { clearActiveEditor(feedbackFieldWrap); ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
+    // Always-textarea field, no view↔edit toggle to key registration off — register when it
+    // gains focus (t-471a), same idiom the note composer/answer field use.
+    ta.addEventListener('focus', () => setActiveEditor(feedbackFieldWrap, commitFeedback));
     const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
       insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
       commitFeedback();
@@ -1483,9 +1596,10 @@
         input.click();
       },
     }, '＋ Attach');
-    wrap.append(h('div', {}, ta,
+    const feedbackFieldWrap = h('div', {}, ta,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-        saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'))));
+        saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+    wrap.append(feedbackFieldWrap);
     return wrap;
   }
 
@@ -1500,8 +1614,9 @@
       ta.value = u.noteDraft || '';
       if (u.noteNeedsFocus) { u.noteNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
       const commitNote = () => {
+        clearActiveEditor(composer);
         const d = (u.noteDraft || '').trim();
-        if (!d) return;
+        if (!d) return; // nothing to commit — composer stays open, same as today's Save-disabled state
         u.noteOpen = false;
         u.noteDraft = '';
         sendPatch(t.id, 'note', d, t.note || '');
@@ -1509,9 +1624,15 @@
       };
       ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }, composer); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
       });
+      // The note composer has no auto-focus-on-open (unlike description/draft/composer), so
+      // registering on focus (rather than right after building `composer`, as the other toggle
+      // fields do) is both correct and sufficient — the user must focus `ta` to type anyway, and
+      // commitNote's empty-draft no-op (no render()) means a fresh registration on the next
+      // focus is exactly what's needed to keep click-outside working after that no-op.
+      ta.addEventListener('focus', () => setActiveEditor(composer, commitNote));
       // Stage into the draft text without committing (t-b149): unlike the description/answer
       // fields, the note composer stays open after a paste/drop so more text or attachments can
       // follow — only Send/⌘↵ actually saves.
@@ -1635,6 +1756,11 @@
     pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
     lastSyncTs = Date.now();
+    // The confirming board message is the signal that the pending gate action resolved (moved,
+    // was refused, or a confirm modal was cancelled) — release the global guard and un-grey every
+    // acting card so a stuck/refused action doesn't leave a card permanently blocked.
+    gateInFlight = false;
+    for (const id in ui) ui[id].acting = false;
     // Attach transient flash flags.
     for (const key in board.phases) for (const t of board.phases[key]) t._flash = flashSet.has(t.id);
     render();
