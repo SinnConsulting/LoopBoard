@@ -667,6 +667,18 @@
     }
     groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
 
+    // "Work with" selector (t-827c): which model later WORKS this story once it reaches Backlog
+    // (the `model:` field, Rule 15) — mirrors the groomer select above; same default-unset idiom.
+    const workDefOpt = workerDefaultOpt();
+    const workVal = t.model || workDefOpt;
+    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with' });
+    for (const opt of modelOptions(workDefOpt)) {
+      const o = h('option', { value: opt }, opt);
+      if (opt === workVal) o.selected = true;
+      workSel.append(o);
+    }
+    workSel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, workDefOpt), t.model || ''));
+
     // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
     // markdown links to the draft's task-file ## Description; the shared attachments area lists
     // them with an open link and a remove × each.
@@ -693,9 +705,11 @@
             h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : attachEl,
-          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
-            groomSel),
+            groomSel,
+            h('span', { class: 'muted-11' }, 'Work with'),
+            workSel),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
