@@ -504,6 +504,17 @@
     // (no id/path exists before the draft is saved). The list below the textarea carries a
     // remove × per pending image, which also strips its placeholder from the text.
     const addPendingAttachment = (file) => {
+      // Enforce the size cap at attach time, matching every existing-card surface (t-5f50):
+      // the composer round-trips bytes to the host only on Save Draft, so without this check an
+      // oversized file was silently accepted into the draft and only rejected — with a dangling
+      // unresolved `loopboard-pending:<n>` link — at save. `maxAttachmentSizeMB` rides on the
+      // board payload (set by the controller) so the webview knows the configured cap without a
+      // round-trip; `file.size` is exact bytes, no base64 decoding needed.
+      const capMB = (board && board.maxAttachmentSizeMB) || 10;
+      if (file.size > capMB * 1024 * 1024) {
+        pushToast('warning', 'Attachment is too large (max ' + capMB + 'MB).');
+        return;
+      }
       readAttachmentFile(file, (filename, dataBase64) => {
         const token = 'loopboard-pending:' + attachReqSeq++;
         insertLinkAtCursor(area, '[' + filename + '](' + token + ')');

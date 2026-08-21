@@ -37,6 +37,8 @@ export interface WebBoard {
   todoMissing?: boolean; // set by the controller; offers the scaffold button in the UI
   helpUrl?: string; // set by the controller; sidebar Help button target
   templatesOutOfDate?: boolean; // set by the controller; pulses the sidebar Synchronise Templates row
+  maxAttachmentSizeMB?: number; // set by the controller; lets the composer reject an oversized
+  // attachment at attach time instead of only at Save Draft (t-5f50)
   workspaceName: string;
   defaultWorkerModel: Model; // owns tasks with no model:; labels the board's Model select default
   defaultGroomerModel: Model; // grooms tasks with no groomer:; labels the draft Groom-with default
