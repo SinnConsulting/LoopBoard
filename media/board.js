@@ -330,11 +330,37 @@
   // no `data-field`) silently no-ops, leaving focus stranded on the now-tabindex=0 view element
   // instead of released — the "needs a second ESC" bug (t-esc1). Blurring first means
   // captureActiveField() finds nothing to recapture.
-  function exitFieldEdit(clearFn) {
+  function exitFieldEdit(clearFn, container) {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    clearActiveEditor(container);
     clearFn();
     render();
   }
+
+  // ---- shared editable-field exit (t-471a): click-outside COMMITS, ESC CANCELS ----
+  // Every editable field (description/title/draft-text/note toggle between a view and an
+  // editor; answer/feedback are always a textarea) registers itself here while its editor is
+  // open. A single document-level `pointerdown` listener — capture phase, so it resolves before
+  // any button's own pointerdown-commit handler (makeGateButton et al.) runs — detects a click
+  // outside the active editor's container and commits it. This is deliberately NOT a per-field
+  // `blur` handler: render()'s `root.textContent = ''` and the focus-restore round-trip
+  // (restoreActiveField/repaintCard) both fire spurious blur events on every deferred repaint
+  // that a blur handler can't tell apart from a real user exit — only a genuine pointerdown
+  // proves the user actually clicked away. Only one editor is ever active at a time; a click
+  // that opens a DIFFERENT field's editor first commits whichever one was open (its pointerdown
+  // lands outside that container), then opens the new one on the following render — mirroring
+  // ESC's existing "one exit path" semantics rather than adding a second one.
+  let activeEditor = null; // { container, commit }
+  function setActiveEditor(container, commit) { activeEditor = { container, commit }; }
+  function clearActiveEditor(container) {
+    if (activeEditor && (!container || activeEditor.container === container)) activeEditor = null;
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (!activeEditor || activeEditor.container.contains(e.target)) return;
+    const ed = activeEditor;
+    activeEditor = null;
+    ed.commit();
+  }, true);
 
   function renderSearchBar(shownCount, totalCount) {
     const input = h('input', {
@@ -490,6 +516,14 @@
       });
     };
     area.addEventListener('keydown', (e) => {
+      // t-471a: the composer previously had no ESC handler at all. ESC cancels (matches every
+      // other field's ESC semantics) — reuses closeComposer(), the same path the Cancel button
+      // takes, so the draft text/model selections/attachments are discarded consistently. Not
+      // wired into the shared click-outside registry (setActiveEditor): click-outside on the
+      // composer already preserves the draft today (switching tabs closes it without clearing
+      // composerText), which already satisfies "typed text is never lost" without the surprise
+      // of auto-creating a task on an incidental outside click.
+      if (e.key === 'Escape') { e.preventDefault(); closeComposer(); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
     });
     area.addEventListener('dragover', (e) => e.preventDefault());
@@ -629,6 +663,7 @@
       ta.value = u.draftText != null ? u.draftText : t.title;
       autoGrow(ta);
       const commitDraft = () => {
+        clearActiveEditor(textEl);
         const val = ta.value.trim();
         u.editingDraft = false;
         u.draftText = null;
@@ -642,13 +677,16 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }, textEl); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
       });
       // t-att1 rework: no caret-insert into the raw draft text (links crammed into the title made
       // it unreadable) — a paste/drop while editing bubbles to the card handler, which stages the
       // image into the description, so it shows in the attachments area like everywhere else.
       textEl = h('div', { class: 'field-col' }, ta, saveBtn);
+      // Click-outside commits (t-471a): registering AFTER textEl exists so the container passed
+      // to setActiveEditor is the actual editing wrapper the pointerdown-outside check tests.
+      setActiveEditor(textEl, commitDraft);
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.draftNeedsFocus) { u.draftNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
@@ -949,6 +987,7 @@
       const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
       const commitTitle = () => {
+        clearActiveEditor(titleWrap);
         const val = input.value.trim();
         u.editingTitle = false;
         u.titleDraft = null;
@@ -962,10 +1001,11 @@
       }, 'Save');
       input.addEventListener('input', (e) => { u.titleDraft = e.target.value; saveBtn.disabled = e.target.value.trim() === t.title; });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }, titleWrap); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
       titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
+      setActiveEditor(titleWrap, commitTitle); // click-outside commits (t-471a)
       requestAnimationFrame(() => input.focus());
     } else {
       titleWrap.append(h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; render(); } }, t.title));
@@ -1241,6 +1281,7 @@
       ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
       autoGrow(ta);
       const commitDesc = () => {
+        clearActiveEditor(wrap);
         const val = ta.value;
         u.editingDesc = false;
         u.descDraft = null;
@@ -1254,7 +1295,7 @@
       }, 'Save');
       ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }, wrap); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
       });
       const stageDesc = wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
@@ -1274,6 +1315,7 @@
       }, '＋ Attach');
       wrap.append(ta, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
         saveBtn, descAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+      setActiveEditor(wrap, commitDesc); // click-outside commits (t-471a) — the bug this story fixes
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.descNeedsFocus) { u.descNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
@@ -1390,6 +1432,7 @@
         if (area) attachWrap.append(area);
       };
       const commitAnswer = () => {
+        clearActiveEditor(editor);
         const val = ta.value;
         sendPatch(t.id, 'answer', val, q.answer, i);
         delete u.answerDrafts[i];
@@ -1423,6 +1466,7 @@
         // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
         // On an already-answered row being edited, Escape also collapses back to the summary.
         if (e.key === 'Escape') {
+          clearActiveEditor(editor);
           ta.value = q.answer;
           delete u.answerDrafts[i];
           autoGrow(ta);
@@ -1434,6 +1478,9 @@
         }
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
       });
+      // Always-textarea field, no view↔edit toggle to key registration off — register when it
+      // gains focus (t-471a), same idiom the note composer uses.
+      ta.addEventListener('focus', () => setActiveEditor(editor, commitAnswer));
       const stageAnswer = wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
@@ -1511,6 +1558,7 @@
     ta.value = u.feedbackDraft || '';
     autoGrow(ta);
     const commitFeedback = () => {
+      clearActiveEditor(feedbackFieldWrap);
       const val = ta.value.trim();
       if (!val) return;
       sendPatch(t.id, 'feedback', val, t.feedback || '');
@@ -1527,9 +1575,12 @@
     ta.addEventListener('keydown', (e) => {
       // Feedback has no separate view mode to close — Escape discards the draft (there is no
       // saved value to revert to) and releases focus (previously a dead key here, t-esc1).
-      if (e.key === 'Escape') { ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
+      if (e.key === 'Escape') { clearActiveEditor(feedbackFieldWrap); ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
+    // Always-textarea field, no view↔edit toggle to key registration off — register when it
+    // gains focus (t-471a), same idiom the note composer/answer field use.
+    ta.addEventListener('focus', () => setActiveEditor(feedbackFieldWrap, commitFeedback));
     const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
       insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
       commitFeedback();
@@ -1545,9 +1596,10 @@
         input.click();
       },
     }, '＋ Attach');
-    wrap.append(h('div', {}, ta,
+    const feedbackFieldWrap = h('div', {}, ta,
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-        saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'))));
+        saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+    wrap.append(feedbackFieldWrap);
     return wrap;
   }
 
@@ -1561,8 +1613,9 @@
       });
       ta.value = u.noteDraft || '';
       const commitNote = () => {
+        clearActiveEditor(composer);
         const d = (u.noteDraft || '').trim();
-        if (!d) return;
+        if (!d) return; // nothing to commit — composer stays open, same as today's Save-disabled state
         u.noteOpen = false;
         u.noteDraft = '';
         sendPatch(t.id, 'note', d, t.note || '');
@@ -1570,9 +1623,15 @@
       };
       ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }); return; }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }, composer); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
       });
+      // The note composer has no auto-focus-on-open (unlike description/draft/composer), so
+      // registering on focus (rather than right after building `composer`, as the other toggle
+      // fields do) is both correct and sufficient — the user must focus `ta` to type anyway, and
+      // commitNote's empty-draft no-op (no render()) means a fresh registration on the next
+      // focus is exactly what's needed to keep click-outside working after that no-op.
+      ta.addEventListener('focus', () => setActiveEditor(composer, commitNote));
       // Stage into the draft text without committing (t-b149): unlike the description/answer
       // fields, the note composer stays open after a paste/drop so more text or attachments can
       // follow — only Send/⌘↵ actually saves.
