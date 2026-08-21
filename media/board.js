@@ -92,6 +92,11 @@
   let flashSet = new Set(); // task ids to flash on next render
   let pendingBoard = null;
   let pendingRender = false; // an async/external repaint deferred while a field is focused
+  // Global "gate in flight" guard (t-a9d5): swallows a second gate click (Approve/Accept/Demote)
+  // on ANY card between a click and the confirming board message, so a click landing on a
+  // different card that reflowed into the same screen position during the ~1s round-trip never
+  // fires a second, wrong-card gate action. Cleared in applyBoard when the confirming board lands.
+  let gateInFlight = false;
   // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
   // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
   // The bar is always visible and cannot be dismissed — searchOpen stays true forever.
@@ -247,7 +252,12 @@
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
       return;
     }
-    root.append(renderTopbar(), renderPane(scrollTop), renderToasts());
+    const paneEl = renderPane(scrollTop);
+    root.append(renderTopbar(), paneEl, renderToasts());
+    // Synchronous restore (t-a9d5): setting scrollTop in the same task as the DOM insertion,
+    // rather than deferred to rAF, kills the one-frame scroll-to-0 flash that used to read as a
+    // jump on every gate-triggered refresh.
+    paneEl.scrollTop = scrollTop;
     // Textareas can only measure their scrollHeight once attached to the DOM.
     requestAnimationFrame(() => {
       root.querySelectorAll('textarea.desc, textarea.field').forEach(autoGrow);
@@ -417,7 +427,6 @@
       }
     }
     pane.append(inner);
-    requestAnimationFrame(() => { pane.scrollTop = scrollTop; });
     return pane;
   }
 
@@ -480,6 +489,9 @@
         render();
       });
     };
+    area.addEventListener('keydown', (e) => {
+      if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
+    });
     area.addEventListener('dragover', (e) => e.preventDefault());
     area.addEventListener('drop', (e) => {
       const files = e.dataTransfer && e.dataTransfer.files;
@@ -901,6 +913,7 @@
     else if (variant === 'review') cls += ' review';
     if (u.conflict) cls += ' conflict';
     if (isCollapsedCard) cls += ' collapsed';
+    if (u.acting) cls += ' acting';
     const card = h('div', { class: cls, 'data-task': t.id });
     if (t._flash) card.append(h('div', { class: 'flash-overlay flash' }));
 
@@ -964,16 +977,20 @@
       // t-d3dd, t-3042). onclick stays wired for keyboard (Enter/Space) activation, which
       // dispatches a synthetic click with no pointerdown.
       const commitPromote = () => {
+        if (gateInFlight) return;
+        gateInFlight = true;
         // Unanswered questions mean the host may pop a confirm modal before promoting (Rule 1's
-        // override guard) — fading the card immediately would hide it behind that dialog and
-        // then un-hide it on cancel, which reads as a confusing flicker. Only fade optimistically
+        // override guard) — greying the card immediately would hide it behind that dialog and
+        // then un-hide it on cancel, which reads as a confusing flicker. Only grey optimistically
         // on the zero-friction path (no unanswered questions), where promotion is unconditional;
-        // otherwise wait for the host's outcome to arrive via the next board refresh.
+        // otherwise wait for the host's outcome to arrive via the next board refresh. The
+        // in-flight guard above still applies either way, so a second click can't double-post.
         if (t.questions.some((q) => !q.answered)) {
           post({ type: 'gate', taskId: t.id, action: 'promote' });
         } else {
-          card.style.opacity = '0';
-          setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'promote' }), 150);
+          getUi(t.id).acting = true;
+          card.classList.add('acting');
+          post({ type: 'gate', taskId: t.id, action: 'promote' });
         }
       };
       // Double-fire guard (t-02a2, now the shared makeGateButton helper — t-2238): without it, a
@@ -992,7 +1009,13 @@
       head.append(h('button', {
         class: 'btn-sm primary demote-btn', type: 'button',
         'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
-        onclick: () => post({ type: 'gate', taskId: t.id, action: 'demote' }),
+        onclick: () => {
+          if (gateInFlight) return;
+          gateInFlight = true;
+          getUi(t.id).acting = true;
+          card.classList.add('acting');
+          post({ type: 'gate', taskId: t.id, action: 'demote' });
+        },
       }, icon(SVG.undo), 'Demote'));
     }
     // Accept gate (Rule 1) in the header row, matching New's Approve / Backlog's Demote —
@@ -1002,7 +1025,13 @@
       // onpointerdown+onclick straight to commitAccept with no guard, so a single mouse
       // activation posted the accept gate twice: the second post found the task already moved to
       // DONE.md and surfaced a spurious "not found" toast alongside the real success toast.
-      const commitAccept = () => { card.style.opacity = '0'; setTimeout(() => post({ type: 'gate', taskId: t.id, action: 'accept' }), 150); };
+      const commitAccept = () => {
+        if (gateInFlight) return;
+        gateInFlight = true;
+        getUi(t.id).acting = true;
+        card.classList.add('acting');
+        post({ type: 'gate', taskId: t.id, action: 'accept' });
+      };
       head.append(makeGateButton({
         class: 'btn-sm primary approve-btn', type: 'button',
         'aria-label': 'Approve — accept and archive to DONE.md', title: 'Approve — accept and archive to DONE.md',
@@ -1016,6 +1045,11 @@
 
     // chips (always shown, even collapsed)
     card.append(renderChips(t));
+
+    // In-flight gate feedback (t-a9d5): shown even collapsed, since the card is greyed/blocked
+    // immediately on click, before the confirming board refresh arrives (reuses the existing
+    // "working" muted/pulse idiom the inprogress variant already uses below).
+    if (u.acting) card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), 'working…'));
 
     if (!isCollapsedCard) {
       // No detail file: since t-6ab4, draft creation eager-scaffolds tasks/<id>.md, so this only
@@ -1661,6 +1695,11 @@
     pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
     lastSyncTs = Date.now();
+    // The confirming board message is the signal that the pending gate action resolved (moved,
+    // was refused, or a confirm modal was cancelled) — release the global guard and un-grey every
+    // acting card so a stuck/refused action doesn't leave a card permanently blocked.
+    gateInFlight = false;
+    for (const id in ui) ui[id].acting = false;
     // Attach transient flash flags.
     for (const key in board.phases) for (const t of board.phases[key]) t._flash = flashSet.has(t.id);
     render();

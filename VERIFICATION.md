@@ -158,7 +158,12 @@ New v2 checklist (from REFACTORING.md Phase 8):
     paste would. Removing an answer or feedback attachment chip strips its link from that
     field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
     No image thumbnails anywhere (unchanged from t-b149).
-17. **Depends-on chip filters instead of jumps (t-a524):** on a card with a `depends on <id>`
+17. **Composer save shortcut (t-9b50):** with the New Story composer open and text typed, press
+    Cmd/Ctrl+S → the draft saves (same as clicking Save Draft) and the composer closes. With the
+    composer empty (or whitespace-only), the shortcut is a silent no-op (nothing saved, composer
+    stays open), matching the disabled Save Draft button. Cmd/Ctrl+Enter does NOT save — a plain
+    Enter (with or without Cmd/Ctrl) still just inserts a newline in the textarea.
+18. **Depends-on chip filters instead of jumps (t-a524):** on a card with a `depends on <id>`
     chip, click it — for a Done target AND for an active (non-Done) target alike, the board
     switches to that target's own phase tab and the in-tab search box fills with `task:<id>`,
     filtering the tab down to just that one card (no more jump-and-scroll). This still works for
