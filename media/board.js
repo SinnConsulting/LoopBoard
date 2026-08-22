@@ -1174,7 +1174,7 @@
 
       // working indicator
       if (variant === 'inprogress') {
-        card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), (t.owner || 'Worker') + ' is on it · last activity today'));
+        card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), 'Worker is on it · last activity today'));
       }
 
       // questions: Feedback always; New too, when the groomer left open decisions
@@ -1193,8 +1193,6 @@
   function renderChips(t) {
     const chips = h('div', { class: 'chips' });
     chips.append(idChip(t.id));
-    if (t.owner) chips.append(h('span', { class: 'chip owner' }, icon(SVG.robot), t.owner));
-    else chips.append(h('span', { class: 'chip unassigned' }, 'unassigned'));
     if (t.added) chips.append(h('span', { class: 'chip mono' }, 'added ' + t.added));
     if (t.started) chips.append(h('span', { class: 'chip mono' }, 'started ' + t.started));
     if (t.worklog && t.worklog.length) {

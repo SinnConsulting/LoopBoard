@@ -73,8 +73,7 @@ New v2 checklist (from REFACTORING.md Phase 8):
    refuses without overwriting.
 2. **Draft (t-6ab4, eager scaffold):** add a draft on the board → an index entry appears in
    `.loopboard/TODO.md` AND `.loopboard/tasks/<id>.md` is created immediately with just `## Meta`
-   (`owner: unassigned`, `added: <today>`) and the H1 from the index title — no "No detail file
-   yet" hint on the card.
+   (`added: <today>`) and the H1 from the index title — no "No detail file yet" hint on the card.
 3. **First detail edit:** edit the description on a card → `.loopboard/tasks/<id>.md` gains a
    `## Description` section (H1 stays from the index title).
 3a. **Delete cleanup (t-6ab4, verify-only — already implemented, no source change):** delete a
@@ -184,6 +183,14 @@ New v2 checklist (from REFACTORING.md Phase 8):
     already in the textarea, ready to type with no second click. Click "edit" on an existing note
     → same one-click-to-focused-caret behavior. Opening the composer via a background board
     refresh (not a click) does not steal focus into the textarea.
+21. **`owner:` field removed (t-33cb):** no card's chip row shows a robot-icon owner chip or an
+    "unassigned" chip anymore (both are gone). Move a task to In Progress → the working indicator
+    reads "Worker is on it · last activity today" (no name/attribution). Attempt to delete a task
+    that is In Progress → the confirmation modal still shows the stronger "A loop may be actively
+    working this task…" warning (now keyed off `phase: inprogress` alone, no separate owner
+    check). A pre-existing `.loopboard/tasks/<id>.md` with a stale `- owner: @claude` line does
+    NOT grow an "N unparsed lines" chip on its card and the line is NOT relocated to the bottom of
+    the file on its next save (dropped silently on parse, per `DROPPED_META_KEYS`).
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough

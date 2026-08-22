@@ -9,7 +9,6 @@ export interface WebTask {
   title: string;
   checked: boolean;
   hasDetailFile: boolean;
-  owner: string | null;
   model: Model | null;
   groomer: Model | null;
   added: string | null;
@@ -82,7 +81,6 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     title: t.title,
     checked: t.checked,
     hasDetailFile: t.hasDetailFile,
-    owner: t.owner ?? null,
     model: t.model ?? null,
     groomer: t.groomer ?? null,
     added: t.added ?? null,
@@ -108,7 +106,6 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     title: e.title,
     checked: e.checked,
     hasDetailFile: false,
-    owner: null,
     model: e.model ?? null,
     groomer: e.groomer ?? null,
     added: null,

@@ -1,7 +1,6 @@
 # Add retry logic to the webhook dispatcher (t-cc01)
 
 ## Meta
-- owner: @claude
 - added: 2026-07-07
 - started: 2026-07-08
 - link: https://example.com/pr/141
