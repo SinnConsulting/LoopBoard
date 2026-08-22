@@ -112,5 +112,9 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
 - `DONE.md` may be absent until the first Review acceptance; the store treats missing as
   empty — keep it that way.
 - `media/template-todo.md` + `media/template-loop.md` (scaffold for fresh `.loopboard/`
-  workspaces); `template-loop.md` must mirror `LOOP.md`'s grammar/format prose by hand — known
-  drift hazard, no test catches prose divergence.
+  workspaces). `template-loop.md` is not hand-mirrored: its marked sections are the source
+  `src/sync.ts`'s `syncMarkedSections` pushes into every workspace's `.loopboard/LOOP.md` on Sync
+  and activation auto-heal (`store.syncTemplates`/`store.autoHeal`). Compressing it is scoped by
+  `.claude/rules/template-loop-compress.md` (`paths:` → `media/template-loop.md`) to the
+  `template-loop-compress` skill (`.claude/skills/template-loop-compress/`), which proposes a
+  lossless, token-reduced rewrite for human review — it never writes the file itself.
