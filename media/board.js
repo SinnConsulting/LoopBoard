@@ -1091,8 +1091,8 @@
       // single mouse activation's pointerdown AND click would both reach commitPromote.
       head.append(makeGateButton({
         class: 'btn-sm primary approve-btn', type: 'button',
-        'aria-label': 'Approve — moves to Backlog', title: 'Approve — moves to Backlog',
-      }, commitPromote, icon(SVG.check), 'Approve'));
+        'aria-label': 'Promote to backlog', title: 'Promote to backlog',
+      }, commitPromote, icon(SVG.check), 'Promote'));
     }
     // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
     // Non-negotiable #5): Backlog cards only, an active/owned task must never be yankable out
@@ -1102,7 +1102,7 @@
     if (variant === 'backlog') {
       head.append(h('button', {
         class: 'btn-sm primary demote-btn', type: 'button',
-        'aria-label': 'Demote — moves back to New', title: 'Demote — moves back to New',
+        'aria-label': 'Demote to New', title: 'Demote to New',
         onclick: () => {
           if (gateInFlight) return;
           gateInFlight = true;
