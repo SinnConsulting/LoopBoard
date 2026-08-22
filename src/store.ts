@@ -607,12 +607,11 @@ export class Store {
       // returns — the id a caller needs to immediately act on this draft (e.g. stage an attachment)
       // without a second read/parse round trip.
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
-      // Eager scaffold (t-6ab4): every draft now gets a real tasks/<id>.md from the start (owner
-      // unassigned, added = today, everything else empty and so omitted by serializeTaskFile —
-      // this is exactly what the writer would already canonicalize an empty detail to, so
-      // parse->write stays a fixpoint) instead of leaving consumers to handle a missing file.
+      // Eager scaffold (t-6ab4): every draft now gets a real tasks/<id>.md from the start
+      // (added = today, everything else empty and so omitted by serializeTaskFile — this is
+      // exactly what the writer would already canonicalize an empty detail to, so parse->write
+      // stays a fixpoint) instead of leaving consumers to handle a missing file.
       const skeleton = parseTaskFile('');
-      skeleton.owner = 'unassigned';
       skeleton.added = today;
       await this.atomicWrite(this.taskUri(draft.id), serializeTaskFile(skeleton, draft.title, draft.id));
       this.debugLog('info', 'createDraft', `${draft.id} = ${draft.title}`);

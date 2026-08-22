@@ -14,7 +14,6 @@ function readFix(name) {
 
 test('parses every canonical section', () => {
   const d = parseTaskFile(readFix('taskfile-full.md'));
-  assert.equal(d.owner, '@claude');
   assert.equal(d.added, '2026-07-07');
   assert.equal(d.started, '2026-07-08');
   assert.deepEqual(d.links, ['https://example.com/pr/141']);
@@ -71,16 +70,15 @@ test('H1 is rewritten from the index title on save', () => {
 });
 
 test('meta keys emit in canonical order regardless of input order', () => {
-  const d = parseTaskFile(['# X (t-1)', '', '## Meta', '- completed: 2026-07-10', '- owner: @claude', '- added: 2026-07-01'].join('\n'));
+  const d = parseTaskFile(['# X (t-1)', '', '## Meta', '- completed: 2026-07-10', '- started: 2026-07-02', '- added: 2026-07-01'].join('\n'));
   const out = serializeTaskFile(d, 'X', 't-1');
   const metaLines = out.split('\n').filter((l) => l.startsWith('- '));
-  assert.deepEqual(metaLines, ['- owner: @claude', '- added: 2026-07-01', '- completed: 2026-07-10']);
+  assert.deepEqual(metaLines, ['- added: 2026-07-01', '- started: 2026-07-02', '- completed: 2026-07-10']);
 });
 
 test('unknown headings and unknown meta keys are preserved verbatim + flagged', () => {
-  const src = ['# X (t-1)', '', '## Meta', '- owner: @claude', '- priority: high', '', '## Random Section', '', 'freeform content'].join('\n');
+  const src = ['# X (t-1)', '', '## Meta', '- added: 2026-07-01', '- priority: high', '', '## Random Section', '', 'freeform content'].join('\n');
   const d = parseTaskFile(src);
-  assert.equal(d.owner, '@claude');
   assert.ok(d.unknownLines.includes('- priority: high'), 'unknown meta key flagged');
   assert.ok(d.unknownLines.includes('## Random Section'), 'unknown heading flagged');
   assert.ok(d.unknownLines.includes('freeform content'));
@@ -88,6 +86,15 @@ test('unknown headings and unknown meta keys are preserved verbatim + flagged', 
   const once = serializeTaskFile(d, 'X', 't-1');
   const twice = serializeTaskFile(parseTaskFile(once), 'X', 't-1');
   assert.equal(twice, once);
+});
+
+test('a stale `- owner:` line (t-33cb: removed field) is silently dropped on parse — not unknownLines, never re-emitted', () => {
+  const src = ['# X (t-1)', '', '## Meta', '- owner: @claude', '- added: 2026-07-01'].join('\n');
+  const d = parseTaskFile(src);
+  assert.equal(d.owner, undefined);
+  assert.ok(!d.unknownLines.some((l) => l.includes('owner')), 'owner line must not be flagged as an unknown line');
+  const out = serializeTaskFile(d, 'X', 't-1');
+  assert.ok(!out.includes('owner'), 'owner must never be re-emitted');
 });
 
 test('legacy ## Feedback section is preserved verbatim as unknown content, not parsed', () => {

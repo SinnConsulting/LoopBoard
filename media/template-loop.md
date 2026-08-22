@@ -28,7 +28,8 @@ New → Backlog → In Progress → Review → Done (DONE.md)
 
 - **New** — proposed; groomed in place; leaves only via human `[x]`.
 - **Backlog** — validated, claimable.
-- **In Progress** — active; exactly one owner.
+- **In Progress** — active; the GLOBAL SINGLE-TASK LIMIT (Rule 2) guarantees at most one task
+  board-wide.
 - **Feedback** — paused on human answers; returns to In Progress.
 - **Review** — delivered; awaiting acceptance.
 - **Done** — accepted; index entry lives in `DONE.md`; task file stays in `tasks/`.
@@ -73,7 +74,6 @@ the only `key: value` section (fixed key order as shown). The index owns title, 
 # <Title> (t-3f9a)
 
 ## Meta
-- owner: @claude | unassigned
 - added: YYYY-MM-DD
 - started: YYYY-MM-DD
 - promoted: YYYY-MM-DD
@@ -109,13 +109,13 @@ on first use. Detail remains in `tasks/<id>.md`.
    fires immediately from a button, non-destructive/reversible. Workers perform all other phase
    moves and propose; workers never demote a task themselves.
 2. One worker per task, and a GLOBAL SINGLE-TASK LIMIT: at most ONE task may be
-   `phase: inprogress` across the whole board at any moment, regardless of model. If ANY task
-   (even another model's) is In Progress, no loop starts a Backlog task or resumes a
-   Review/Feedback task — it keeps grooming/reconciling only until nothing is In Progress
-   (grooming New tasks never sets `inprogress`, so it is always allowed). `owner:` lives in the
-   task file's Meta. Missing owner line or `owner: unassigned` → claim: set `owner: @you` +
-   `started: <today>` in the task file and `phase: inprogress` in the index. Owned by another, or
-   present in DONE.md → do not start a parallel copy.
+   `phase: inprogress` across the whole board at any moment, regardless of model — this is the
+   sole one-worker guarantee (two loops can never both be working since only one task can be In
+   Progress at all). If ANY task (even another model's) is In Progress, no loop starts a Backlog
+   task or resumes a Review/Feedback task — it keeps grooming/reconciling only until nothing is
+   In Progress (grooming New tasks never sets `inprogress`, so it is always allowed). Claim by
+   setting `phase: inprogress` in the index plus `started: <today>` in the task file's Meta.
+   Already In Progress, or present in DONE.md → do not start a parallel copy.
 3. Dates live in the task file's Meta: `added:` entered tracker; `started:` work began;
    `promoted:` New → Backlog; `completed:` acceptance. Append `<today>` to `## Worklog` each
    active day.
@@ -135,10 +135,10 @@ on first use. Detail remains in `tasks/<id>.md`.
    commit, open the PR from there (Rule 7).
 10. Resume a Feedback task only when EVERY `question:` on its index entry has a filled
     `answer:`. Any blank answer → leave it parked; do none of its work.
-11. Set `phase: inprogress` (index) plus `owner:`/`started:` (task file) BEFORE any work or
-    research on a task — never investigate a task still in New/Backlog/Feedback. This is the
-    FIRST action of claiming a task: the phase move leads the work, never trails it — never edit
-    code, branch, research, or open a PR while the index still shows the task outside In Progress.
+11. Set `phase: inprogress` (index) plus `started:` (task file) BEFORE any work or research on a
+    task — never investigate a task still in New/Backlog/Feedback. This is the FIRST action of
+    claiming a task: the phase move leads the work, never trails it — never edit code, branch,
+    research, or open a PR while the index still shows the task outside In Progress.
 12. No stranded work: every change from working a task ends in a PR (draft PR if unfinished)
     with its link in the task file before the session ends.
 13. A Review task's `feedback:` sub-bullet(s) (index) = change request, not a gate. Unaddressed
@@ -192,7 +192,7 @@ the standing instructions; editing it changes every running loop's next pass, no
 needed (only the interval is fixed at spawn time).
 
 ```
-Re-read .loopboard/TODO.md (the task index) and reconcile it against the Rules in .loopboard/LOOP.md. A task's phase is its `phase:` field in the index — edit it in place; never cut/paste an entry. Task detail lives in .loopboard/tasks/<id>.md; open a task file only for tasks you act on, and create it with the canonical headings on first write. (1) For each New task the user ticked [x]: set `phase: backlog` and reset to [ ] in the index; set `promoted: <today>` in the task file's Meta. (2) For each Review task the user ticked [x]: set `completed: <today>` in the task file's Meta, add a [x] entry at the TOP of .loopboard/DONE.md's task list with its id/model/groomer and `completed: <today>` (DONE.md is newest-first, matching the board's Accept button; create it with a `## Tasks` section if absent), then delete the entry from the index; the task file stays in tasks/. (3) Append <today> to the ## Worklog of every task you touch. (4) For each Feedback task where EVERY index question has an `answer:`: if nothing else is In Progress (GLOBAL SINGLE-TASK LIMIT, Rule 2), move it back to In Progress and continue it, else leave it parked this pass; leave any task with a blank answer untouched (Rule 10). (5) For each Review task you own with an unaddressed `feedback:` sub-bullet on its index entry: if nothing else is In Progress (Rule 2), move it back to In Progress, address it, return it to Review with an updated ## Delivered and the `feedback:` sub-bullet(s) removed (Rule 13). (6) Apply and then delete any `note:` sub-bullet on the index entry of a task you own (Rule 16). (7) If a referenced path/file/PR/dependency changed since a task was written, update the task file to match reality and log the correction in its Worklog. Then START WORKING (respecting the GLOBAL SINGLE-TASK LIMIT, Rule 2): ONLY if NOTHING anywhere on the board is `phase: inprogress` (any model, not just yours), claim the top Backlog task whose `model:` is yours — or has no `model:`, if you are the default model (Rule 15) — and whose `depends on:` (task file Meta) are satisfied: set `phase: inprogress` in the index FIRST, as a precondition, before touching any code/branch/research/PR — never begin while the index still shows the task in Backlog/Feedback (Rule 11) — then set `owner: @claude`, `started: <today>` and a worklog entry in its task file, and execute it. If something IS already In Progress (any model), do NOT claim, start, or resume any task this pass — emit `something is in progress — skipping prepared task <id/title>` and keep grooming/reconciling only. When finished, open a PR (Rule 7), record its link in the task file's Meta, write ## Delivered, and set `phase: review`. If unsure how to proceed, set `phase: feedback` with index `question:` sub-bullets and stop — never guess. New tasks and DRAFTs are routed by `groomer:`, NOT `model:` (Rule 14): if a New task's `groomer:` matches your model — or it has none and you are the default model — groom it with a subagent of that groomer model, expanding the story into the task file's ## Description and recording human decisions as single-line index `question:` sub-bullets with blank `answer:` lines (not OPEN QUESTIONS prose), adding up to 3 `suggestion:` sub-bullets beneath a question's `answer:` line when its choice is clear-cut and on-target (skip on genuinely open judgment calls); when such a task has any filled `answer:`, re-groom it the same way, fold each incorporated decision into ## Description, and delete the resolved pair from the index — a still-present filled answer means not yet incorporated. Never touch a New task whose `groomer:` names a different model, never promote New tasks yourself (leaving New needs the human's [x], Rule 1). Respect one worker per task: never touch a task owned by someone else or (outside of New) one whose `model:` names a different model, and never tick [x] yourself. Report what changed and what you worked on, referring to every task by its full title — never by its bare id (add the id in parentheses only for disambiguation); if there is nothing to do, reply "no changes".
+Re-read .loopboard/TODO.md (the task index) and reconcile it against the Rules in .loopboard/LOOP.md. A task's phase is its `phase:` field in the index — edit it in place; never cut/paste an entry. Task detail lives in .loopboard/tasks/<id>.md; open a task file only for tasks you act on, and create it with the canonical headings on first write. (1) For each New task the user ticked [x]: set `phase: backlog` and reset to [ ] in the index; set `promoted: <today>` in the task file's Meta. (2) For each Review task the user ticked [x]: set `completed: <today>` in the task file's Meta, add a [x] entry at the TOP of .loopboard/DONE.md's task list with its id/model/groomer and `completed: <today>` (DONE.md is newest-first, matching the board's Accept button; create it with a `## Tasks` section if absent), then delete the entry from the index; the task file stays in tasks/. (3) Append <today> to the ## Worklog of every task you touch. (4) For each Feedback task where EVERY index question has an `answer:`: if nothing else is In Progress (GLOBAL SINGLE-TASK LIMIT, Rule 2), move it back to In Progress and continue it, else leave it parked this pass; leave any task with a blank answer untouched (Rule 10). (5) For each Review task whose `model:` is yours (or has no `model:`, if you are the default model) with an unaddressed `feedback:` sub-bullet on its index entry: if nothing else is In Progress (Rule 2), move it back to In Progress, address it, return it to Review with an updated ## Delivered and the `feedback:` sub-bullet(s) removed (Rule 13). (6) Apply and then delete any `note:` sub-bullet on the index entry of a task whose `model:` is yours (or has no `model:`, if you are the default model) (Rule 16). (7) If a referenced path/file/PR/dependency changed since a task was written, update the task file to match reality and log the correction in its Worklog. Then START WORKING (respecting the GLOBAL SINGLE-TASK LIMIT, Rule 2): ONLY if NOTHING anywhere on the board is `phase: inprogress` (any model, not just yours), claim the top Backlog task whose `model:` is yours — or has no `model:`, if you are the default model (Rule 15) — and whose `depends on:` (task file Meta) are satisfied: set `phase: inprogress` in the index FIRST, as a precondition, before touching any code/branch/research/PR — never begin while the index still shows the task in Backlog/Feedback (Rule 11) — then set `started: <today>` and a worklog entry in its task file, and execute it. If something IS already In Progress (any model), do NOT claim, start, or resume any task this pass — emit `something is in progress — skipping prepared task <id/title>` and keep grooming/reconciling only. When finished, open a PR (Rule 7), record its link in the task file's Meta, write ## Delivered, and set `phase: review`. If unsure how to proceed, set `phase: feedback` with index `question:` sub-bullets and stop — never guess. New tasks and DRAFTs are routed by `groomer:`, NOT `model:` (Rule 14): if a New task's `groomer:` matches your model — or it has none and you are the default model — groom it with a subagent of that groomer model, expanding the story into the task file's ## Description and recording human decisions as single-line index `question:` sub-bullets with blank `answer:` lines (not OPEN QUESTIONS prose), adding up to 3 `suggestion:` sub-bullets beneath a question's `answer:` line when its choice is clear-cut and on-target (skip on genuinely open judgment calls); when such a task has any filled `answer:`, re-groom it the same way, fold each incorporated decision into ## Description, and delete the resolved pair from the index — a still-present filled answer means not yet incorporated. Never touch a New task whose `groomer:` names a different model, never promote New tasks yourself (leaving New needs the human's [x], Rule 1). Respect one worker per task (Rule 2): never touch a task (outside of New) whose `model:` names a different model, and never tick [x] yourself. Report what changed and what you worked on, referring to every task by its full title — never by its bare id (add the id in parentheses only for disambiguation); if there is nothing to do, reply "no changes".
 ```
 
 Notes:

@@ -133,7 +133,6 @@ export interface IndexEntry {
 
 // One `.loopboard/tasks/<id>.md` file — pure content, no frontmatter (§2.2).
 export interface TaskDetail {
-  owner?: string;
   added?: string;
   started?: string;
   promoted?: string;

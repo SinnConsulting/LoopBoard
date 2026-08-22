@@ -9,7 +9,11 @@
 
 import { TaskDetail } from './model';
 
-const META_KEYS = ['owner', 'added', 'started', 'promoted', 'completed', 'link', 'depends on'];
+const META_KEYS = ['added', 'started', 'promoted', 'completed', 'link', 'depends on'];
+// Removed key (t-33cb): a stale `- owner:` line from a pre-removal task file is recognized and
+// silently dropped on parse, never landing in unknownLines/re-emitted — so it can't reintroduce
+// the flagged "unparsed line" chip or get relocated to the bottom of the file.
+const DROPPED_META_KEYS = ['owner'];
 
 function splitList(v: string): string[] {
   return v
@@ -61,10 +65,11 @@ export function parseTaskFile(text: string): TaskDetail {
           if (line.trim() === '') continue;
           const kv = line.match(/^\s*-\s+([A-Za-z][A-Za-z ]*?):\s?([\s\S]*)$/);
           const key = kv ? kv[1].trim().toLowerCase() : '';
-          if (kv && META_KEYS.includes(key)) {
+          if (kv && DROPPED_META_KEYS.includes(key)) {
+            // silently discarded — see DROPPED_META_KEYS
+          } else if (kv && META_KEYS.includes(key)) {
             const v = kv[2].trim();
             switch (key) {
-              case 'owner': detail.owner = v; break;
               case 'added': detail.added = v; break;
               case 'started': detail.started = v; break;
               case 'promoted': detail.promoted = v; break;
@@ -120,7 +125,6 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
   const blocks: string[] = [`# ${title} (${id})`];
 
   const meta: string[] = [];
-  if (detail.owner) meta.push(`- owner: ${detail.owner}`);
   if (detail.added) meta.push(`- added: ${detail.added}`);
   if (detail.started) meta.push(`- started: ${detail.started}`);
   if (detail.promoted) meta.push(`- promoted: ${detail.promoted}`);

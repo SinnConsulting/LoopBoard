@@ -65,8 +65,8 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
 - Emoji canonicalization: index parser strips leading ❓ from question text; task-file parser
   strips ⚠️ from `## Feedback`; writers re-add them.
 - Task file `tasks/<id>.md` is eager-scaffolded on draft create (t-6ab4: `store.createDraft`
-  writes a skeleton — `owner: unassigned`, `added: <today>`, everything else empty and so omitted
-  by `serializeTaskFile`, same shape the writer already canonicalizes an empty detail to). A
+  writes a skeleton — `added: <today>`, everything else empty and so omitted by
+  `serializeTaskFile`, same shape the writer already canonicalizes an empty detail to). A
   missing file (only possible for pre-t-6ab4 entries or one deleted out-of-band) still parses as
   empty detail and the card still shows the "no detail file yet" hint — it just no longer fires
   for ordinary new drafts. The writer rewrites the H1 from the index title on every task-file save

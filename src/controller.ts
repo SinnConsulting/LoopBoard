@@ -463,7 +463,7 @@ export class Controller {
 
   // Native VS Code modal guarding a destructive delete (the sole safety net — deletion is a hard,
   // undoable-only-by-hand removal of source-of-truth markdown). `isDone` = removing an accepted-
-  // history row from DONE.md. The task is looked up in the last board for its title/phase/owner.
+  // history row from DONE.md. The task is looked up in the last board for its title/phase.
   private async confirmDelete(taskId: string, isDone: boolean): Promise<boolean> {
     const task = isDone ? undefined : this.lastBoard?.tasks.find((t) => t.id === taskId);
     const entry = isDone ? this.lastBoard?.done.find((t) => t.id === taskId) : task;
@@ -471,7 +471,7 @@ export class Controller {
     let detail: string;
     if (isDone) {
       detail = 'This permanently removes the accepted-history entry from DONE.md (the task file is kept). This cannot be undone.';
-    } else if (task?.phase === 'inprogress' && task.owner && task.owner !== 'unassigned') {
+    } else if (task?.phase === 'inprogress') {
       detail = 'A loop may be actively working this task. This permanently deletes the task and its task file. This cannot be undone.';
     } else {
       detail = 'This permanently deletes the task and its task file. This cannot be undone.';
