@@ -1,5 +1,7 @@
 # CLAUDE.md — LoopBoard
 
+@.claude/rules/branch.md
+
 VSCode extension: renders the workspace `.loopboard/` tracker as an interactive board, writes
 edits back to markdown, spawns model-specific Claude Code loop terminals. Decisions:
 `DECISIONS.md`; verification status: `VERIFICATION.md`.
