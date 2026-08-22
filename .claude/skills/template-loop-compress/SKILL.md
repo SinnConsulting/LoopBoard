@@ -1,9 +1,20 @@
 ---
 name: template-loop-compress
-description: Propose a token-reduced, meaning-preserving rewrite of media/template-loop.md — LoopBoard's upstream source for the standing loop-worker instructions. Use only when asked to compress, shrink, tighten or reduce the size of media/template-loop.md. Never engages for any other file.
+description: Produce a token-reduced, meaning-preserving rewrite of media/template-loop.md — LoopBoard's upstream source for the standing loop-worker instructions — and land it as a PR once the self-check passes. Always runs in an Opus subagent. Use only when asked to compress, shrink, tighten or reduce the size of media/template-loop.md. Never engages for any other file.
 ---
 
 # template-loop-compress
+
+## Always run this skill in an Opus subagent
+
+Whoever triggers this skill delegates the actual work to a subagent (Agent tool) with
+`model: opus`. Never compress inline in the model currently running — Sonnet, Haiku, or any other
+loop worker that happens to hit this file hands the job off. This mirrors `.loopboard/LOOP.md`
+Rule 14, which routes New-task grooming to a subagent of the task's `groomer:` model instead of
+running it in the main loop.
+
+The subagent does everything below: read the file, compress, run the self-check, and — only on a
+pass — write the file and open the PR.
 
 ## Why this file is different from ordinary docs
 
@@ -43,31 +54,62 @@ never reflowed, reworded, or re-cased.
 
 ## Compression technique
 
-Remove redundancy, repetition, and filler prose only:
-- Collapse restated explanations that say the same thing twice.
-- Tighten wordy transitions and throat-clearing.
-- Merge sentences that separately state the same constraint.
+Terseness rules adapted from the `caveman` skill's "full" intensity tier, applied to the
+**redundant prose only** — the untouchable list above outranks every rule here.
+
+Drop:
+- Articles (a/an/the).
+- Filler: just, really, basically, actually, simply.
+- Pleasantries and hedging.
+- Restated explanations that say the same thing twice; separate sentences stating one constraint
+  merge into one.
+- Wordy transitions and throat-clearing.
+
+Allowed:
+- Sentence fragments.
+- Short synonyms — "big" not "extensive", "fix" not "implement a solution for".
+- Standard well-known tech acronyms (DB, API, HTTP, PR, CLI).
+
+Never:
+- Invent new abbreviations (cfg, impl, req, res, fn). The tokenizer splits them the same as the
+  full word: zero tokens saved, reader still decodes. Full word is cheaper AND clearer.
+- Use causal arrows (→) — own token, saves nothing.
+- Add decorative tables or emoji.
+- Narrate tool calls or add meta-commentary.
+- Add a word to sound terse. Compression only; style never grows output. No inserted pronoun or
+  copula to fake broken grammar. Keep the correct verb form when it costs the same.
 
 Never remove, soften, or reorder:
-- A negation ("never", "not", "no").
+- A negation ("never", "not", "no", "except") — a flipped meaning is worse than any token saved.
 - A scope qualifier ("only", "exactly", "at most", "regardless of").
-- A count, date-field name, literal path, filename, or identifier.
+- A count, unit, date-field name, literal path, filename, or identifier — exact.
+- A technical term — exact.
 - An example that a rule or piece of code depends on for meaning.
 
-Keep output in grammatical English — no telegraphic "caveman-style" prose. Compressing "never
-promote a New task yourself" into "never promote New" is fine; dropping "never" is not.
+Compressing "never promote a New task yourself" into "never promote New" is fine; dropping
+"never" is not.
 
-## Propose-only — never write the file
+## Writing the result: self-check gates a write + PR
 
-This skill never edits `media/template-loop.md` in place, with or without a backup. It always
-emits the candidate compressed text as skill output, for the human to read, compare, and decide
-whether to commit. The file's marked sections are pushed into every user's live
-`.loopboard/LOOP.md` — an unattended rewrite here is an unattended edit of other people's agent
-instructions.
+The self-check below is a hard gate.
 
-## Self-check before proposing output
+**Pass:** write the compressed text to `media/template-loop.md` and land it through the normal
+repo flow — fetch `main`, branch off `main`, commit, `gh pr create`. No chat-level approval
+needed first. `.loopboard/LOOP.md` Rule 7 already requires every change to arrive via PR and
+forbids committing to `main`; the PR review is the human review point, same as every other change
+in this repo.
 
-Before emitting a candidate, verify against the input:
+**Fail:** write nothing. Report the failing check(s) and stop. No partial write, no "mostly
+passing" candidate, no backup-and-overwrite.
+
+The discipline is non-negotiable because of propagation: this file's marked sections are pushed
+into every user's live `.loopboard/LOOP.md` by `store.syncTemplates` / `store.autoHeal`
+(`src/sync.ts`). A bad compression that skips the self-check or skips the PR is an unattended
+edit of other people's agent instructions.
+
+## Self-check before writing
+
+Before writing anything, verify against the input:
 
 - All six marker comments present, unmodified, and in the same order.
 - The `## Automation` heading and its first fenced block are intact, byte-identical, and still
@@ -81,17 +123,26 @@ Before emitting a candidate, verify against the input:
 - Report a bullet-count / line-count delta as a sanity signal (a large unexplained drop in bullet
   count is a smell, per the caveman-compress project's own regression history — see below).
 
-If any check fails, do not emit a "successful" candidate — report the failing check(s) and stop
-rather than paper over the gap. Structural validation (fences/headings/markers preserved) is not
-the same as semantic validation (meaning preserved); this self-check must reason about meaning,
-not just shape.
+If any check fails, do not write the file and do not open a PR — report the failing check(s) and
+stop rather than paper over the gap. Structural validation (fences/headings/markers preserved) is
+not the same as semantic validation (meaning preserved); this self-check must reason about
+meaning, not just shape.
 
 ## Provenance
 
-This skill's technique is informed by a read-only audit of the `caveman-compress` project
+The compression technique above is adapted from the `caveman` skill's "full" intensity tier
+(https://github.com/JuliusBrussee/caveman) — its drop-articles/filler/hedging rules, fragments,
+short synonyms, no-invented-abbreviations reasoning, and no-causal-arrows rule. Adaptation, not a
+vendored dependency: only the terseness rules carry over, layered under this skill's own
+untouchable list, which always wins. Caveman's ultra and wenyan tiers, and its persistence /
+language / boundary machinery, are out of scope — that is a chat-response style skill, this is a
+document compressor.
+
+The validation discipline is informed by a read-only audit of the `caveman-compress` project
 (https://github.com/JuliusBrussee/caveman/tree/main/skills/caveman-compress): its lessons on
 preserving fences/headings/paths, and its recorded false-pass (structural checks passing while
 prose was reordered) and dropped-path regression are the reason the self-check above insists on
-semantic checks, not just structural ones. No code, script, or dependency from that project is
-vendored, installed, or executed — this skill is markdown instructions only, run by the agent
-already in the session, matching this repo's Docker-only, zero-runtime-dependency rules.
+semantic checks, not just structural ones. No code, script, or dependency from either project is
+vendored, installed, or executed — both are technique references only. This skill is markdown
+instructions, run by the Opus subagent, matching this repo's Docker-only,
+zero-runtime-dependency rules.
