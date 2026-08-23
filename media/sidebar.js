@@ -83,6 +83,9 @@
         const id = soleId('new', () => true);
         rows.push({ icon: 'check-all', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
       }
+      if (b.draftCount > 0) {
+        rows.push({ icon: 'wand', text: b.draftCount + ' draft' + (b.draftCount === 1 ? '' : 's') + ' will be groomed', phase: 'new', search: 'is:draft' });
+      }
       for (const r of rows) {
         list.append(h('button', { class: 'attn-row', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: r.phase, search: r.search }) },
           h('span', { class: 'ico codicon codicon-' + r.icon }), h('span', { class: 'txt' }, r.text)));

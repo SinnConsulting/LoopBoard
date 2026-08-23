@@ -172,15 +172,19 @@
   // with any remaining text as an AND. `task:<id>` is a reserved token (t-a524) that matches only
   // the task whose id equals <id> exactly (case-insensitive) — used to filter a depends-on chip's
   // target into view instead of jumping/scrolling to it; combines with other tokens as an AND
-  // like `is:unanswered`, though in practice it is applied alone by `revealTask`.
+  // like `is:unanswered`, though in practice it is applied alone by `revealTask`. `is:draft` is a
+  // reserved token (t-1cdb, namespaced against plain-text hits on the word "draft") that keeps
+  // only tasks whose `isDraft` is true — used by the sidebar's drafts attention row.
   function matchesQuery(t) {
     const raw = searchQuery.trim().toLowerCase();
     if (!raw) return true;
     const tokens = raw.split(/\s+/);
     const unanswered = tokens.includes('is:unanswered');
+    const draft = tokens.includes('is:draft');
     const taskToken = tokens.find((tok) => tok.startsWith('task:'));
-    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== taskToken).join(' ');
+    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== 'is:draft' && tok !== taskToken).join(' ');
     if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
+    if (draft && !t.isDraft) return false;
     if (taskToken && (t.id || '').toLowerCase() !== taskToken.slice('task:'.length)) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
