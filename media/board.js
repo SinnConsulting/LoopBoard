@@ -174,17 +174,22 @@
   // target into view instead of jumping/scrolling to it; combines with other tokens as an AND
   // like `is:unanswered`, though in practice it is applied alone by `revealTask`. `is:draft` is a
   // reserved token (t-1cdb, namespaced against plain-text hits on the word "draft") that keeps
-  // only tasks whose `isDraft` is true — used by the sidebar's drafts attention row.
+  // only tasks whose `isDraft` is true — used by the sidebar's drafts attention row. `is:proposal`
+  // is a reserved token (t-3d42) that keeps only tasks whose `isDraft` is falsy — used by the
+  // sidebar's "N proposals to approve" attention row so its tab shows exactly the groomed New
+  // stories the row counts.
   function matchesQuery(t) {
     const raw = searchQuery.trim().toLowerCase();
     if (!raw) return true;
     const tokens = raw.split(/\s+/);
     const unanswered = tokens.includes('is:unanswered');
     const draft = tokens.includes('is:draft');
+    const proposal = tokens.includes('is:proposal');
     const taskToken = tokens.find((tok) => tok.startsWith('task:'));
-    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== 'is:draft' && tok !== taskToken).join(' ');
+    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== 'is:draft' && tok !== 'is:proposal' && tok !== taskToken).join(' ');
     if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
     if (draft && !t.isDraft) return false;
+    if (proposal && t.isDraft) return false;
     if (taskToken && (t.id || '').toLowerCase() !== taskToken.slice('task:'.length)) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
@@ -382,7 +387,13 @@
     const count = searchQuery.trim()
       ? h('span', { class: 'search-count muted-11' }, shownCount + ' of ' + totalCount + ' match' + (shownCount === 1 ? '' : 'es'))
       : h('span', { class: 'search-count muted-11' }, 'Searching this tab');
-    return h('div', { class: 'search-bar' }, input, count);
+    const clear = searchQuery.trim()
+      ? h('button', {
+          class: 'icon-btn search-clear', type: 'button', 'aria-label': 'Clear filter', title: 'Clear filter',
+          onclick: () => { resetSearch(); saveState(); render(); },
+        }, h('span', { class: 'codicon codicon-close' }))
+      : null;
+    return h('div', { class: 'search-bar' }, input, count, clear);
   }
 
   function renderTopbar() {
@@ -399,9 +410,10 @@
         class: 'tab' + (selected ? ' selected' : '') + (meta.key === 'done' ? ' done-tab' : ''),
         type: 'button',
         'aria-current': selected ? 'true' : 'false',
-        // t-2452: switching tabs no longer clears the filter — it carries across New/Backlog/
-        // In Progress/Review/Feedback/Done so each tab re-filters with the same query.
-        onclick: () => { phase = meta.key; composerOpen = false; saveState(); render(); },
+        // t-3d42: phase navigation (this tab strip, sidebar PHASES rows) always clears the filter —
+        // a tab must open on its raw, unfiltered list. t-2452's vscode.setState persistence of
+        // searchQuery across reloads is unchanged; only navigation clears it.
+        onclick: () => { phase = meta.key; composerOpen = false; resetSearch(); saveState(); render(); },
       });
       tab.append(h('span', { class: 'codicon codicon-split-horizontal tab-icon' }));
       tab.append(h('span', { class: 'tab-label' }, meta.label));
@@ -1845,15 +1857,15 @@
       phase = found;
       composerOpen = false;
       if (search) {
+        // An explicit search installs the custom view's query (sidebar attention row, depends-on
+        // chip), replacing whatever was there.
         searchQuery = search;
         searchNeedsFocus = false;
         searchCaret = null;
-      } else if (taskId) {
-        // Only reset when jumping to a SPECIFIC task with no explicit search (e.g. a disk-wins
-        // conflict toast) — a bare phase-only reveal (the sidebar's phase-count/attention rows,
-        // which post `{type:'reveal', phase}` with no taskId) must not clear an in-progress
-        // filter just because the user switched phases from the sidebar instead of the in-app
-        // tab strip (t-2452 — this was the actual remaining persistence gap).
+      } else {
+        // t-3d42: no explicit search means plain phase navigation (sidebar PHASES row, or an
+        // attention row whose view is the phase alone, e.g. "N tasks awaiting review") — always
+        // clears the filter, whether or not a specific task is being jumped to.
         resetSearch();
       }
       saveState();

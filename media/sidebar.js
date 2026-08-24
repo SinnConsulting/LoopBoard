@@ -80,8 +80,8 @@
         rows.push({ icon: 'eye', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
       }
       if (b.newCount > 0) {
-        const id = soleId('new', () => true);
-        rows.push({ icon: 'check-all', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new' });
+        const id = soleId('new', (t) => !t.isDraft);
+        rows.push({ icon: 'check-all', text: b.newCount + ' proposal' + (b.newCount === 1 ? '' : 's') + ' to approve' + (id ? ' (' + id + ')' : ''), phase: 'new', search: 'is:proposal' });
       }
       if (b.draftCount > 0) {
         rows.push({ icon: 'wand', text: b.draftCount + ' draft' + (b.draftCount === 1 ? '' : 's') + ' will be groomed', phase: 'new', search: 'is:draft' });
