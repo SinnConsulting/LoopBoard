@@ -70,10 +70,10 @@
       const list = h('div', { class: 'attn-list sb-section' });
       const rows = [];
       if (b.feedbackUnanswered > 0) {
-        rows.push({ icon: 'comment-discussion', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' — Feedback', phase: 'feedback', search: 'is:unanswered' });
+        rows.push({ icon: 'comment-discussion', text: b.feedbackUnanswered + ' unanswered question' + (b.feedbackUnanswered === 1 ? '' : 's') + ' (Feedback)', phase: 'feedback', search: 'is:unanswered' });
       }
       if (b.newUnanswered > 0) {
-        rows.push({ icon: 'issues', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' — New', phase: 'new', search: 'is:unanswered' });
+        rows.push({ icon: 'issues', text: b.newUnanswered + ' unanswered question' + (b.newUnanswered === 1 ? '' : 's') + ' (New)', phase: 'new', search: 'is:unanswered' });
       }
       if (b.reviewCount > 0) {
         const id = soleId('review', () => true);
