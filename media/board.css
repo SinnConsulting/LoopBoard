@@ -114,6 +114,7 @@ textarea { resize: vertical; }
 }
 .search-input:focus { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
 .search-count { flex-shrink: 0; white-space: nowrap; }
+.search-clear { flex-shrink: 0; }
 
 .cards { display: flex; flex-direction: column; gap: 12px; }
 

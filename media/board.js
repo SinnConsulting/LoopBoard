@@ -101,11 +101,18 @@
   // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
   // The bar is always visible and cannot be dismissed — searchOpen stays true forever.
   let searchOpen = true;
-  // One shared query across every tab (t-2452): switching tabs no longer clears it (only the New
-  // Story composer opening/closing and revealing a specific task still reset it — those are
-  // genuinely new contexts, not a tab hop). Persisted in vscode state (same blob as `phase`) so
-  // it also survives the webview being hidden/recreated on tab/window switch or a reload.
-  let searchQuery = saved.searchQuery || '';
+  // The filter is TWO LAYERS (t-1cdb), because "clear" means two different things depending on
+  // where the query came from:
+  //   userQuery — what the human typed. Survives phase navigation (tab strip, sidebar PHASES rows).
+  //   viewQuery — the query a CUSTOM VIEW installed (a sidebar attention row, the depends-on chip).
+  //               `null` = no view active; a string (INCLUDING '') = a view is active and wins.
+  // Everything that READS the filter goes through effectiveQuery() — the layering lives in exactly
+  // one expression and no consumer learns about layers. Both layers are persisted in the same
+  // vscode state blob as `phase`, so a hide/recreate or reload restores the query on screen
+  // (t-3d42); a later phase-tab click then drops the view and the typed filter re-surfaces.
+  let userQuery = saved.userQuery || '';
+  let viewQuery = typeof saved.viewQuery === 'string' ? saved.viewQuery : null;
+  function effectiveQuery() { return viewQuery === null ? userQuery : viewQuery; }
   let searchNeedsFocus = false; // refocus the search input after the next full repaint
   let searchCaret = null;       // caret offset to restore into the search input
 
@@ -114,7 +121,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, searchQuery });
+    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery });
   }
 
   // ---- collapse/expand ----
@@ -172,15 +179,24 @@
   // with any remaining text as an AND. `task:<id>` is a reserved token (t-a524) that matches only
   // the task whose id equals <id> exactly (case-insensitive) — used to filter a depends-on chip's
   // target into view instead of jumping/scrolling to it; combines with other tokens as an AND
-  // like `is:unanswered`, though in practice it is applied alone by `revealTask`.
+  // like `is:unanswered`, though in practice it is applied alone by `revealTask`. `is:draft` is a
+  // reserved token (t-1cdb, namespaced against plain-text hits on the word "draft") that keeps
+  // only tasks whose `isDraft` is true — used by the sidebar's drafts attention row. `is:proposal`
+  // is a reserved token (t-3d42) that keeps only tasks whose `isDraft` is falsy — used by the
+  // sidebar's "N proposals to approve" attention row so its tab shows exactly the groomed New
+  // stories the row counts.
   function matchesQuery(t) {
-    const raw = searchQuery.trim().toLowerCase();
+    const raw = effectiveQuery().trim().toLowerCase();
     if (!raw) return true;
     const tokens = raw.split(/\s+/);
     const unanswered = tokens.includes('is:unanswered');
+    const draft = tokens.includes('is:draft');
+    const proposal = tokens.includes('is:proposal');
     const taskToken = tokens.find((tok) => tok.startsWith('task:'));
-    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== taskToken).join(' ');
+    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== 'is:draft' && tok !== 'is:proposal' && tok !== taskToken).join(' ');
     if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
+    if (draft && !t.isDraft) return false;
+    if (proposal && t.isDraft) return false;
     if (taskToken && (t.id || '').toLowerCase() !== taskToken.slice('task:'.length)) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
@@ -188,20 +204,28 @@
       || (t.description || '').toLowerCase().includes(q);
   }
   function filterList(list) {
-    return searchQuery.trim() ? list.filter(matchesQuery) : list;
+    return effectiveQuery().trim() ? list.filter(matchesQuery) : list;
   }
   function openSearch() {
     if (!board || board.todoMissing || composerOpen) return;
     searchOpen = true;
     searchNeedsFocus = true;
-    searchCaret = searchQuery.length;
+    searchCaret = effectiveQuery().length;
     render();
   }
-  // Reset without rendering — for callers (opening/closing the New Story composer, revealing a
-  // specific task) that render themselves. A plain phase-tab switch no longer calls this (t-2452:
-  // the filter persists across tabs) — only these genuinely new contexts clear it.
+  // Reset BOTH layers without rendering — the filter box ends up empty. For callers that render
+  // themselves and are a genuinely new context, not a tab hop: opening/closing the New Story
+  // composer, the search bar's × button, and a reveal that targets a specific task with no
+  // explicit query (t-1cdb — revealing a task the board would then hide is the failure mode
+  // t-2452 documented).
   function resetSearch() {
-    searchQuery = '';
+    userQuery = '';
+    clearView();
+  }
+  // Drop only the custom view, leaving the human's own typed filter to re-surface underneath —
+  // what plain phase navigation does (t-1cdb).
+  function clearView() {
+    viewQuery = null;
     searchNeedsFocus = false;
     searchCaret = null;
   }
@@ -367,18 +391,29 @@
       class: 'search-input', id: 'search-input', type: 'text', 'aria-label': 'Filter tasks in this tab',
       placeholder: 'Filter this tab by id, title or description…',
     });
-    input.value = searchQuery;
+    input.value = effectiveQuery();
     input.addEventListener('input', (e) => {
-      searchQuery = e.target.value;
+      // Typing TAKES OVER (t-1cdb): the box is directly editable, so the moment the human edits it
+      // the text is theirs and whatever view was installed is dropped.
+      userQuery = e.target.value;
+      viewQuery = null;
       searchCaret = e.target.selectionStart;
       searchNeedsFocus = true;
       saveState();
       render();
     });
-    const count = searchQuery.trim()
+    const count = effectiveQuery().trim()
       ? h('span', { class: 'search-count muted-11' }, shownCount + ' of ' + totalCount + ' match' + (shownCount === 1 ? '' : 'es'))
       : h('span', { class: 'search-count muted-11' }, 'Searching this tab');
-    return h('div', { class: 'search-bar' }, input, count);
+    // × clears BOTH layers (t-1cdb): the box shows one query under one label, so one click emptying
+    // it is the only non-surprising behaviour.
+    const clear = effectiveQuery().trim()
+      ? h('button', {
+          class: 'icon-btn search-clear', type: 'button', 'aria-label': 'Clear filter', title: 'Clear filter',
+          onclick: () => { resetSearch(); saveState(); render(); },
+        }, h('span', { class: 'codicon codicon-close' }))
+      : null;
+    return h('div', { class: 'search-bar' }, input, count, clear);
   }
 
   function renderTopbar() {
@@ -395,9 +430,10 @@
         class: 'tab' + (selected ? ' selected' : '') + (meta.key === 'done' ? ' done-tab' : ''),
         type: 'button',
         'aria-current': selected ? 'true' : 'false',
-        // t-2452: switching tabs no longer clears the filter — it carries across New/Backlog/
-        // In Progress/Review/Feedback/Done so each tab re-filters with the same query.
-        onclick: () => { phase = meta.key; composerOpen = false; saveState(); render(); },
+        // t-3d42, as amended by t-1cdb: phase navigation (this tab strip, sidebar PHASES rows)
+        // drops the custom VIEW only — a row's query never leaks into the tab you navigate to,
+        // but the human's own typed filter survives every tab click and re-surfaces underneath.
+        onclick: () => { phase = meta.key; composerOpen = false; clearView(); saveState(); render(); },
       });
       tab.append(h('span', { class: 'codicon codicon-split-horizontal tab-icon' }));
       tab.append(h('span', { class: 'tab-label' }, meta.label));
@@ -447,7 +483,7 @@
       } else {
         const cards = h('div', { class: 'cards' });
         if (full.length === 0) inner.append(h('div', { class: 'muted-11' }, 'Nothing here.'));
-        else if (list.length === 0) inner.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + searchQuery.trim() + '”.'));
+        else if (list.length === 0) inner.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + effectiveQuery().trim() + '”.'));
         for (const t of list) cards.append(t.isDraft ? renderDraft(t) : renderCard(t));
         inner.append(cards);
       }
@@ -589,8 +625,8 @@
 
   function renderDone(list) {
     const wrap = h('div', {});
-    if (list.length === 0 && searchQuery.trim()) {
-      wrap.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + searchQuery.trim() + '”.'));
+    if (list.length === 0 && effectiveQuery().trim()) {
+      wrap.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + effectiveQuery().trim() + '”.'));
       return wrap;
     }
     for (const t of list) {
@@ -1840,17 +1876,22 @@
     if (found) {
       phase = found;
       composerOpen = false;
-      if (search) {
-        searchQuery = search;
+      if (search != null) {
+        // An explicit search installs the custom VIEW's query (sidebar attention row, depends-on
+        // chip) on top of whatever the human typed, which is left untouched underneath. Note the
+        // `!= null` test: '' is a MEANINGFUL value — the "N tasks awaiting review" row installs an
+        // empty view so its tab shows exactly the N cards the row advertises (t-1cdb).
+        viewQuery = search;
         searchNeedsFocus = false;
         searchCaret = null;
       } else if (taskId) {
-        // Only reset when jumping to a SPECIFIC task with no explicit search (e.g. a disk-wins
-        // conflict toast) — a bare phase-only reveal (the sidebar's phase-count/attention rows,
-        // which post `{type:'reveal', phase}` with no taskId) must not clear an in-progress
-        // filter just because the user switched phases from the sidebar instead of the in-app
-        // tab strip (t-2452 — this was the actual remaining persistence gap).
+        // A reveal targeting a specific task with no query of its own (the disk-wins conflict
+        // toast, the sidebar's In Progress row) clears BOTH layers, so the revealed task cannot be
+        // hidden by a filter the human forgot was on (t-1cdb; the t-2452 failure mode).
         resetSearch();
+      } else {
+        // Plain phase navigation (sidebar PHASES row) — drop the view, keep the human's filter.
+        clearView();
       }
       saveState();
     }
