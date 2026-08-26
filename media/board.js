@@ -1073,13 +1073,15 @@
       const commitPromote = () => {
         if (gateInFlight) return;
         gateInFlight = true;
-        // Unanswered questions mean the host may pop a confirm modal before promoting (Rule 1's
-        // override guard) — greying the card immediately would hide it behind that dialog and
-        // then un-hide it on cancel, which reads as a confusing flicker. Only grey optimistically
-        // on the zero-friction path (no unanswered questions), where promotion is unconditional;
-        // otherwise wait for the host's outcome to arrive via the next board refresh. The
-        // in-flight guard above still applies either way, so a second click can't double-post.
-        if (t.questions.some((q) => !q.answered)) {
+        // Any question at all means the host may pop a confirm modal before promoting (Rule 1's
+        // override guard) — blank answers, or answers that are filled but still present and so not
+        // yet folded into the description (t-6936). Greying the card immediately would hide it
+        // behind that dialog and then un-hide it on cancel, which reads as a confusing flicker.
+        // Only grey optimistically on the zero-friction path (no questions), where promotion is
+        // unconditional; otherwise wait for the host's outcome to arrive via the next board
+        // refresh. This predicate must stay the mirror of confirmPromote's — widen both together.
+        // The in-flight guard above still applies either way, so a second click can't double-post.
+        if (t.questions.length > 0) {
           post({ type: 'gate', taskId: t.id, action: 'promote' });
         } else {
           getUi(t.id).acting = true;
@@ -1397,14 +1399,24 @@
       meterSegs.push(seg);
       meter.append(seg);
     });
+    // Re-groom pending badge (t-6936): on a New card whose questions are ALL answered but still
+    // present, Rule 14 says the groomer has not folded those answers into ## Description yet — so
+    // the story is not actually ready to promote, even though the meter is full and the count
+    // reads "N / N answered". The badge sits BESIDE the count rather than replacing it (the count
+    // stays useful) and is driven from updateHead(), which re-runs as each row is saved, so
+    // answering the last question flips it immediately with no board refresh. Feedback cards never
+    // show it — a fully-answered Feedback card means the worker resumes, which is correct.
+    const pendingEl = h('span', { class: 'qa-pending' }, 're-groom pending');
+    pendingEl.title = 'Answers not folded into the story yet — the groomer loop still owes this a pass.';
     const updateHead = () => {
       countEl.textContent = answered + ' / ' + t.questions.length + ' answered';
       meterSegs.forEach((seg, i) => seg.classList.toggle('is-answered', !!t.questions[i].answered));
+      pendingEl.hidden = !(isNew && t.questions.length > 0 && answered === t.questions.length);
     };
     updateHead();
     const headRight = h('div', { class: 'qa-head-right' }, meter);
     head.append(
-      h('div', { class: 'qa-head-left' }, h('span', { class: 'qa-title' }, 'Open questions'), countEl),
+      h('div', { class: 'qa-head-left' }, h('span', { class: 'qa-title' }, 'Open questions'), countEl, pendingEl),
       headRight,
     );
 
