@@ -39,7 +39,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       badge.count > 0
         ? {
             value: badge.count,
-            tooltip: `${badge.newCount} to approve · ${badge.feedbackUnanswered} awaiting your answer · ${badge.reviewCount} to review`,
+            tooltip: `${badge.newCount} to approve · ${badge.draftCount} draft${badge.draftCount === 1 ? '' : 's'} will be groomed · ${badge.feedbackUnanswered} awaiting your answer · ${badge.reviewCount} to review`,
           }
         : undefined;
   }

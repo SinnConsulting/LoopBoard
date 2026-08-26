@@ -306,6 +306,10 @@ export class Controller {
         void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:SinnConsulting.loopboard-todo');
         return;
       case 'reveal':
+        // `search` is forwarded verbatim and its ABSENCE is meaningful (t-1cdb): undefined means
+        // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
+        // present string INCLUDING '' installs a view (an empty view suppresses the typed filter so
+        // an attention row's tab shows exactly the count it advertises). Never coerce '' away.
         this.pendingReveal = { taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer, search: msg.search };
         // Flush inline only if the panel already existed (its webview is live). If openBoard just
         // created the panel, the webview's message listener isn't attached yet — posting now would

@@ -19,7 +19,7 @@ function task(over) {
   );
 }
 
-test('computeBadge = new (incl DRAFTs) + unanswered feedback + review', () => {
+test('computeBadge = new (excl DRAFTs) + drafts + unanswered feedback + review', () => {
   const board = {
     preamble: '', done: [],
     tasks: [
@@ -30,10 +30,26 @@ test('computeBadge = new (incl DRAFTs) + unanswered feedback + review', () => {
     ],
   };
   const b = computeBadge(board);
-  assert.equal(b.newCount, 2);
+  assert.equal(b.newCount, 1);
+  assert.equal(b.draftCount, 1);
   assert.equal(b.feedbackUnanswered, 1);
   assert.equal(b.reviewCount, 1);
   assert.equal(b.count, 4);
+});
+
+test('computeBadge: drafts and groomed New tasks split without double-counting', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [
+      task({ id: 't-1', phase: 'new' }),
+      task({ id: 't-2', phase: 'new' }),
+      ...Array.from({ length: 9 }, (_, i) => task({ id: `t-d${i}`, phase: 'new', isDraft: true })),
+    ],
+  };
+  const b = computeBadge(board);
+  assert.equal(b.newCount, 2);
+  assert.equal(b.draftCount, 9);
+  assert.equal(b.count, 11);
 });
 
 test('computeBadge: newUnanswered counts New tasks with an unanswered question, separate from feedbackUnanswered and not added into count', () => {
