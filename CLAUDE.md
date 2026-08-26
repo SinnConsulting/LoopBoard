@@ -87,6 +87,17 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   → lone Enter after `BOOT_DELAY_MS` (post-TUI-boot, past bracketed-paste detection). Pasting
   into a running REPL (e.g. `/clear`): paste + Enter after `SUBMIT_DELAY_MS`. The short line is
   apostrophe-free (still `'\''`-escaped).
+- Scheduled restarts (t-77d1): the sidebar's ♻ opens a popover (preset minutes + `Custom…`, always
+  MINUTES; `repeat`; `force`) instead of restarting immediately — there is no immediate-restart
+  message any more. Schedule logic is pure (`src/schedule.ts`, unit-tested); the controller owns the
+  per-model schedule map and its `setTimeout`s, SESSION-ONLY (nothing in `globalState`/
+  `workspaceState`/`.loopboard/`, so a reload clears every schedule — matching terminals, which die
+  with the window too). Force consent is a native modal taken ONCE at arm time (a scheduled restart
+  is unattended by definition); fire time is silent and only logged. With `force` off the timer
+  defers instead of firing while that model owns the In-Progress task, and waits indefinitely —
+  it fires on the same idle edge `maybeAutoRecycle` watches, since the tracker is the only signal
+  for "busy". A forced restart leaves the task `phase: inprogress` with no worker, which Rule 2
+  turns into a board-wide block — hence the modal's wording.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
 - Debug trace (`loopBoard.debug` = `off | info | verbose`): any new code that writes a

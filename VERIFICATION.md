@@ -60,6 +60,19 @@ questions, an HTML-comment template) and `index-unknown.md`:
   (before `## Automation`) is not mis-picked. `template-todo.md` scaffold parses to zero entries
   and is a fixpoint.
 
+### Restart schedule — `test/schedule.test.js` (t-77d1)
+- `parseMinutes` accepts a plain positive integer and rejects empty/`0`/negative/signed/decimal/
+  unit-suffixed (`90m`, `2h`)/hex/exponent input, plus anything overflowing `setTimeout`'s
+  signed-32-bit delay — so a value can never be silently reinterpreted or fire instantly.
+- `mayFire` defers only while the schedule's OWN model is In Progress (another model being busy is
+  irrelevant) and ignores In Progress entirely when `force` is on.
+- `deferSchedule` is idempotent — at most one restart is ever pending per model, so a repeating
+  schedule cannot stack deferred fires.
+- `afterFire` disarms a one-shot and re-arms a repeating schedule from the moment it ACTUALLY fired,
+  so a long deferral produces no burst of catch-up restarts.
+- `delayUntilFire` counts down and floors at 0; `describeSchedule` renders the countdown, `repeat`,
+  `force` and the "waiting for task" state.
+
 ## Manual — Extension Development Host (F5)
 
 **PENDING — not executed in this environment** (headless agent session, no interactive VS Code
@@ -221,6 +234,25 @@ New v2 checklist (from REFACTORING.md Phase 8):
     count (the count stays); answering the LAST question makes the badge appear immediately with no
     board refresh, and un-answering a row hides it again. A Feedback card never shows the badge,
     however many of its answers are filled, and a New card with a blank answer never shows it.
+
+23. **Scheduled loop restart (t-77d1):** with a loop running, click ♻ on its sidebar row → a
+    popover opens under that row with preset minute buttons, a `Custom…` field, `Repeat` and
+    `Force` checkboxes; the loop is NOT restarted. Escape, a click outside, and Cancel all dismiss
+    it leaving the loop untouched; clicking ♻ again toggles it closed. Type a bad custom value
+    (`abc`, `0`, `-5`, `1.5`, `90m`) and press Schedule → an in-popover message appears and nothing
+    is armed. Schedule 1 minute with Repeat and Force off → the row shows "restart in 1m", and about
+    a minute later the terminal is disposed and respawned once and the indicator disappears. With
+    Repeat on, it keeps restarting on that interval; Stop on the loop clears the schedule (indicator
+    gone, no further restarts). Re-open ♻ on a loop that already has a schedule → the popover shows
+    its current settings and offers Clear, which removes it. **Deferral:** with Force OFF and a task
+    of that model `phase: inprogress`, let the timer elapse → the terminal is NOT restarted, the row
+    reads "restart waiting for task", and it stays that way indefinitely; move the task out of In
+    Progress (edit `.loopboard/TODO.md`) → the restart fires on the next refresh. **Force:** tick
+    Force and press Schedule → a native modal names the Rule 2 consequence; Cancel arms nothing;
+    confirming arms it, and when it fires mid-task there is NO second prompt. Reload the window with
+    a schedule armed → every indicator is gone (session-only) and nothing about it was written to
+    disk. With `loopBoard.debug: info`, `.loopboard/debug.log` shows `restart-arm`, `restart-fire`,
+    `restart-defer`, `restart-cancel`, and the force modal's `popup`/`popup-choice` pair.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
