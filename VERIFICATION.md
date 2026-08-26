@@ -129,24 +129,34 @@ New v2 checklist (from REFACTORING.md Phase 8):
     body text, and its × removes the file AND strips the link from the note (re-fetch confirms
     no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
     retracts the note entirely (existing behavior, unchanged).
-14. **Filter clears on navigation, survives reload (t-2452, reversed by t-3d42):** type a plain-text
-    filter while on one phase tab, then click through New / Backlog / In Progress / Review /
-    Feedback / Done via the board tab strip — each click lands on that tab's FULL, unfiltered card
-    list with an empty search box (no more carrying the query across tabs). Reload the VS Code
-    window (or switch away and back so the webview is recreated) with a query typed and NOT yet
-    navigated away — the query and its phase are still there after reload (persistence is
-    unchanged); the next phase-tab click then clears it as usual. Click a sidebar attention row
-    that installs a query (e.g. "N unanswered questions") — it lands on that phase WITH that exact
-    query in the search box, replacing any previous one. Click "N tasks awaiting review" or any
-    sidebar PHASES row — it lands on that phase with an EMPTY search box, even if a filter was
-    previously active (this was the actual persistence gap the earlier t-2452 fix targeted; it is
-    now intentionally reversed). Click "N proposals to approve" — it lands on New with
-    `is:proposal` in the search box, showing only groomed (non-DRAFT) proposals, card count
-    matching the row; "N drafts will be groomed" (t-1cdb) still shows exactly the DRAFTs via
-    `is:draft`. Revealing a specific task via a dependency chip (`task:<id>`) still installs that
-    query since it's explicit. Opening the New Story composer, or clicking Cancel/Save Draft to
-    close it, still clears the filter as before. The search bar shows a `×` clear button only while
-    a query is active; clicking it empties the box and restores the full list.
+14. **Two-layer filter: the typed filter survives navigation, view queries do not (t-2452 →
+    t-3d42, amended by t-1cdb):** type a plain-text filter while on one phase tab, then click
+    through New / Backlog / In Progress / Review / Feedback / Done via the board tab strip — the
+    filter STAYS in the box and stays applied on every tab (a tab may legitimately show "No matches
+    in this tab for …"; that is the user's own filter and `×` clears it in one click). Repeat via
+    the sidebar PHASES rows — the typed filter survives those clicks too. Now, with that filter
+    still typed, click a sidebar attention row that installs a query (e.g. "N unanswered
+    questions") — the board lands on that phase showing EXACTLY that row's query and exactly its
+    matching cards, the typed filter hidden underneath. From there click any phase tab — the row's
+    query is gone and the previously typed filter is back in the box and applied. This is the core
+    assertion; the row's query must never leak into a navigated-to tab (the t-3d42 repro:
+    navigating to Review after a Feedback-row detour must never show "No matches in this tab for
+    "is:unanswered"" while the sidebar reports tasks awaiting review). Reload the VS Code window
+    (or switch away and back so the webview is recreated) with a view active — the same phase AND
+    the same query on screen come back; a subsequent phase-tab click then drops to the typed filter
+    underneath. Click "N tasks awaiting review" — it lands on Review with an EMPTY search box
+    (an explicit empty view) showing exactly the N cards the row counts, even if a filter was
+    typed. Click "N proposals to approve" — it lands on New with `is:proposal` in the search box,
+    showing only groomed (non-DRAFT) proposals, card count matching the row; "N drafts will be
+    groomed" (t-1cdb) still shows exactly the DRAFTs via `is:draft`; neither double-counts the
+    other and the activity-bar badge total is unchanged. A dependency chip (`task:<id>`) still
+    installs its query, still filters, and a phase-tab click afterwards restores the typed filter
+    rather than clearing everything. A disk-wins conflict toast's "Review" action clears BOTH
+    layers so the revealed task cannot be hidden. Typing into the box while a view is active takes
+    over — the text becomes the user's own filter and the view is dropped. Opening the New Story
+    composer, or clicking Cancel/Save Draft to close it, still clears the box entirely. The search
+    bar shows a `×` clear button (aria-label "Clear filter") only while a query is active; clicking
+    it empties BOTH layers and restores the full list.
 15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
     terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
     row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no

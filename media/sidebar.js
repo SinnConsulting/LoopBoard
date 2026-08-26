@@ -77,7 +77,10 @@
       }
       if (b.reviewCount > 0) {
         const id = soleId('review', () => true);
-        rows.push({ icon: 'eye', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review' });
+        // search: '' is an EXPLICIT EMPTY VIEW (t-1cdb), not "no search" — the row advertises a
+        // count, so its tab must show exactly those N cards with any typed filter suppressed,
+        // the same parity rule `is:proposal` and `is:draft` follow.
+        rows.push({ icon: 'eye', text: b.reviewCount + ' task' + (b.reviewCount === 1 ? '' : 's') + ' awaiting review' + (id ? ' (' + id + ')' : ''), phase: 'review', search: '' });
       }
       if (b.newCount > 0) {
         const id = soleId('new', (t) => !t.isDraft);
