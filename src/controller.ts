@@ -445,23 +445,35 @@ export class Controller {
     return this.refresh();
   }
 
-  // Native VS Code modal guarding a New→Backlog promote when the story still has one or more
-  // unanswered questions (Rule 10 only parks Feedback on blank answers, so nothing else stops a
-  // half-groomed New story from advancing). Mirrors the Synchronise Templates precedent above.
-  // Review→DONE acceptance is intentionally NOT guarded — a Review task has feedback: sub-bullets,
-  // not questions.
+  // Native VS Code modal guarding a New→Backlog promote, in two cases (Rule 10 only parks Feedback
+  // on blank answers, so nothing else stops a half-groomed New story from advancing):
+  //   1. Some question is still BLANK — the story was never fully answered (t-oqg1).
+  //   2. Every question is answered but the pairs are STILL PRESENT — Rule 14 says a still-present
+  //      filled answer means the groomer has not folded it into ## Description yet, so promoting
+  //      now ships a story whose description is knowingly stale (t-6936). This case is the more
+  //      deceptive one: the card looks finished (full meter, "N / N answered").
+  // A story with no questions at all promotes with zero friction. Review→DONE acceptance is
+  // intentionally NOT guarded — a Review task has feedback: sub-bullets, not questions.
+  // Mirrors the Synchronise Templates precedent above.
   private async confirmPromote(taskId: string): Promise<boolean> {
     const task = this.lastBoard?.tasks.find((t) => t.id === taskId);
-    const hasUnanswered = !!task && task.questions.some((q) => q.answer.trim().length === 0);
-    if (!hasUnanswered) return true;
-    this.store.debugLog('info', 'popup', `confirm — This story has unanswered questions — promote anyway? (${taskId})`);
+    if (!task || task.questions.length === 0) return true;
+    const hasUnanswered = task.questions.some((q) => q.answer.trim().length === 0);
+    const message = hasUnanswered
+      ? 'This story has unanswered questions — promote anyway?'
+      : "These answers haven't been folded into the story yet — promote anyway?";
+    const detail = hasUnanswered
+      ? undefined
+      : 'The groomer loop still owes this story a re-groom: it will incorporate the answers into the description and clear the questions. Promoting now hands a worker a description that does not yet contain your decisions.';
+    this.store.debugLog('info', 'popup', `confirm — ${message} (${taskId})`);
     const choice = await vscode.window.showWarningMessage(
-      'This story has unanswered questions — promote anyway?',
-      { modal: true },
+      message,
+      { modal: true, detail },
       'Promote anyway'
     );
     const accepted = choice === 'Promote anyway';
-    this.store.debugLog('info', 'popup-choice', `confirm-promote ${taskId} -> ${accepted ? 'accepted' : 'cancelled'}`);
+    const which = hasUnanswered ? 'unanswered' : 'regroom-pending';
+    this.store.debugLog('info', 'popup-choice', `confirm-promote ${which} ${taskId} -> ${accepted ? 'accepted' : 'cancelled'}`);
     return accepted;
   }
 
