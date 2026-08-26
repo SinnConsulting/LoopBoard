@@ -156,7 +156,14 @@ New v2 checklist (from REFACTORING.md Phase 8):
     over — the text becomes the user's own filter and the view is dropped. Opening the New Story
     composer, or clicking Cancel/Save Draft to close it, still clears the box entirely. The search
     bar shows a `×` clear button (aria-label "Clear filter") only while a query is active; clicking
-    it empties BOTH layers and restores the full list.
+    it empties BOTH layers and restores the full list. **Typing is debounced (t-1cdb feedback):** on
+    the New tab (the busiest one), type a multi-word query at normal speed — every character appears
+    in the box immediately with no trailing lag, and the card list plus the "N of M matches" counter
+    settle once, shortly after you stop, rather than repainting per keystroke. The caret stays where
+    you put it, including when editing in the middle of an existing query. Type a query and, without
+    pausing, immediately click a phase tab or a card field — the click lands normally (no
+    mid-repaint glitch) and the filter is not lost. Type a query and hit ⌘R / reload while the list
+    is still settling — the query comes back after the reload.
 15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
     terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
     row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
