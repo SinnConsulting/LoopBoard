@@ -13,6 +13,7 @@ const {
   patchTarget,
   currentFieldValue,
   normalizeModel,
+  normalizeGroomer,
 } = require('../out-test/merge.js');
 
 const FIX = path.join(process.cwd(), 'test', 'fixtures');
@@ -121,4 +122,24 @@ test('normalizeModel', () => {
   assert.equal(normalizeModel('opus'), 'opus');
   assert.equal(normalizeModel('default (opus)'), undefined);
   assert.equal(normalizeModel(''), undefined);
+  assert.equal(normalizeModel('none'), undefined, 'the hold sentinel is not a worker model');
+});
+
+// t-65a2: the groomer field additionally accepts the on-hold sentinel.
+test('normalizeGroomer keeps none, otherwise normalizes like a model', () => {
+  assert.equal(normalizeGroomer('none'), 'none');
+  assert.equal(normalizeGroomer(' none '), 'none');
+  assert.equal(normalizeGroomer('opus'), 'opus');
+  assert.equal(normalizeGroomer('default (opus)'), undefined);
+  assert.equal(normalizeGroomer(''), undefined);
+});
+
+test('a groomer patch writes the on-hold sentinel, and clearing it takes the task off hold', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const id = doc.entries[0].id;
+  assert.equal(applyPatch(doc, { taskId: id, field: 'groomer', value: 'none', base: doc.entries[0].groomer || '' }).status, 'applied');
+  assert.equal(doc.entries.find((e) => e.id === id).groomer, 'none');
+
+  assert.equal(applyPatch(doc, { taskId: id, field: 'groomer', value: 'default (opus)', base: 'none' }).status, 'applied');
+  assert.equal(doc.entries.find((e) => e.id === id).groomer, undefined);
 });

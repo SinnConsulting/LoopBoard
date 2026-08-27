@@ -251,6 +251,15 @@
   function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || []); }
   function normModelValue(v, leadOpt) { return v === leadOpt ? '' : v; }
 
+  // "Groom with" additionally offers an explicit On hold option (t-65a2) stored as `groomer: none`:
+  // a held New/DRAFT task belongs to no loop and is never groomed until the human picks a real
+  // groomer again. The worker-model select has no such option — hold is a grooming-axis choice.
+  const GROOMER_HOLD = 'none';
+  const GROOMER_HOLD_OPT = 'On hold';
+  function groomerOptions(leadOpt) { return modelOptions(leadOpt).concat([GROOMER_HOLD_OPT]); }
+  function groomerSelectValue(groomer, leadOpt) { return groomer === GROOMER_HOLD ? GROOMER_HOLD_OPT : (groomer || leadOpt); }
+  function normGroomerValue(v, leadOpt) { return v === GROOMER_HOLD_OPT ? GROOMER_HOLD : normModelValue(v, leadOpt); }
+
   // ---- field patch helper ----
   function sendPatch(taskId, field, value, base, questionIndex) {
     if (value === base) return; // no-op
@@ -500,14 +509,15 @@
     });
     area.value = composerText;
     // Groomer + worker model selectors ('' = default model), mirroring the card selects.
-    const modelSelect = (label, value, defOpt, onchange) => {
+    const modelSelect = (label, value, defOpt, onchange, isGroomer) => {
       const sel = h('select', { class: 'model-select', 'aria-label': label });
-      for (const opt of modelOptions(defOpt)) {
+      const selectedOpt = isGroomer ? groomerSelectValue(value, defOpt) : (value || defOpt);
+      for (const opt of (isGroomer ? groomerOptions(defOpt) : modelOptions(defOpt))) {
         const o = h('option', { value: opt }, opt);
-        if (opt === (value || defOpt)) o.selected = true;
+        if (opt === selectedOpt) o.selected = true;
         sel.append(o);
       }
-      sel.addEventListener('change', (e) => onchange(normModelValue(e.target.value, defOpt)));
+      sel.addEventListener('change', (e) => onchange(isGroomer ? normGroomerValue(e.target.value, defOpt) : normModelValue(e.target.value, defOpt)));
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
@@ -617,7 +627,7 @@
         saveBtn,
         h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; saveState(); render(); } }, 'Cancel'),
         attachBtn,
-        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }),
+        modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }, true),
         modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed. ⌘V pastes screenshots.'))
     );
@@ -743,14 +753,14 @@
     }
     // "Groom with" selector: which model expands this draft into a story (absent = default).
     const groomDefOpt = groomerDefaultOpt();
-    const groomVal = t.groomer || groomDefOpt;
+    const groomVal = groomerSelectValue(t.groomer, groomDefOpt);
     const groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with' });
-    for (const opt of modelOptions(groomDefOpt)) {
+    for (const opt of groomerOptions(groomDefOpt)) {
       const o = h('option', { value: opt }, opt);
       if (opt === groomVal) o.selected = true;
       groomSel.append(o);
     }
-    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normModelValue(e.target.value, groomDefOpt), t.groomer || ''));
+    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normGroomerValue(e.target.value, groomDefOpt), t.groomer || ''));
 
     // "Work with" selector (t-827c): which model later WORKS this story once it reaches Backlog
     // (the `model:` field, Rule 15) — mirrors the groomer select above; same default-unset idiom.
@@ -787,7 +797,10 @@
           h('div', { class: 'draft-head-row', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
             h('span', { class: 'draft-badge' }, 'Draft'),
             idChip(t.id),
-            h('span', { class: 'muted-11' }, 'the loop will structure this into a story')),
+            holdBadge(t),
+            h('span', { class: 'muted-11' }, t.groomer === GROOMER_HOLD
+              ? 'on hold — pick a groomer to have the loop structure this into a story'
+              : 'the loop will structure this into a story')),
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : attachEl,
           isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
@@ -1228,9 +1241,20 @@
     return card;
   }
 
+  // "On hold" badge (t-65a2): a New/DRAFT task with `groomer: none` belongs to no loop and is
+  // never groomed, so the state has to be visible without opening the Groom-with select.
+  function holdBadge(t) {
+    if (t.groomer !== GROOMER_HOLD || (t.phase !== 'new' && !t.isDraft)) return null;
+    const el = h('span', { class: 'qa-pending' }, 'on hold — not groomed');
+    el.title = 'No groomer: loops skip this story entirely. Pick a groomer to take it off hold.';
+    return el;
+  }
+
   function renderChips(t) {
     const chips = h('div', { class: 'chips' });
     chips.append(idChip(t.id));
+    const hold = holdBadge(t);
+    if (hold) chips.append(hold);
     if (t.added) chips.append(h('span', { class: 'chip mono' }, 'added ' + t.added));
     if (t.started) chips.append(h('span', { class: 'chip mono' }, 'started ' + t.started));
     if (t.worklog && t.worklog.length) {

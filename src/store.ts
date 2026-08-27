@@ -9,7 +9,7 @@ import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
-import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
+import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
 import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
 import { Mutex } from './serialize';
@@ -595,7 +595,7 @@ export class Store {
         checked: false,
         isDraft: true,
         model: normalizeModel(model ?? ''),
-        groomer: normalizeModel(groomer ?? ''),
+        groomer: normalizeGroomer(groomer ?? ''), // accepts the on-hold sentinel too (t-65a2)
         questions: [],
         notes: [],
         feedback: [],
