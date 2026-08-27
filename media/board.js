@@ -115,6 +115,20 @@
   function effectiveQuery() { return viewQuery === null ? userQuery : viewQuery; }
   let searchNeedsFocus = false; // refocus the search input after the next full repaint
   let searchCaret = null;       // caret offset to restore into the search input
+  // Typing is debounced (t-1cdb feedback: "when I type in the search bar it lags"). There is no
+  // cheap repaint on this board — render() wipes #root and rebuilds the topbar and every matching
+  // card (markdown re-rendered, textareas re-measured, focus + caret restored across two rAFs), so
+  // doing that per keystroke makes the input visibly trail the typist. The typed text itself never
+  // waits: the native input holds it and userQuery is assigned synchronously, so effectiveQuery()
+  // is correct the instant it is read. Only the repaint that re-filters the list, updates the match
+  // counter and persists state is deferred to one pass after typing settles.
+  let searchRepaintTimer = null;
+  const SEARCH_REPAINT_DELAY_MS = 120;
+  function cancelSearchRepaint() {
+    if (searchRepaintTimer === null) return;
+    clearTimeout(searchRepaintTimer);
+    searchRepaintTimer = null;
+  }
 
   function getUi(id) {
     if (!ui[id]) ui[id] = {};
@@ -265,6 +279,10 @@
 
   // ============ RENDER ============
   function render() {
+    // Any repaint supersedes a deferred search repaint, and clearing the timer FIRST is what makes
+    // the input's blur handler safe: wiping #root below blurs the focused search box, and without
+    // this the handler would re-enter render() mid-repaint (t-1cdb).
+    cancelSearchRepaint();
     const root = document.getElementById('root');
     const scrollPane = root.querySelector('.pane');
     const scrollTop = scrollPane ? scrollPane.scrollTop : 0;
@@ -399,6 +417,22 @@
       viewQuery = null;
       searchCaret = e.target.selectionStart;
       searchNeedsFocus = true;
+      // Coalesce a burst of keystrokes into ONE repaint (see SEARCH_REPAINT_DELAY_MS above).
+      // saveState() rides the same timer: persisting the in-progress filter matters for a reload,
+      // not for each individual character.
+      cancelSearchRepaint();
+      searchRepaintTimer = setTimeout(() => {
+        searchRepaintTimer = null;
+        saveState();
+        render();
+      }, SEARCH_REPAINT_DELAY_MS);
+    });
+    // A pending repaint must never outlive the field it was scheduled for: blurring commits it now,
+    // so leaving the box can't drop the filter the user just typed.
+    input.addEventListener('blur', () => {
+      if (searchRepaintTimer === null) return;
+      cancelSearchRepaint();
+      searchNeedsFocus = false;
       saveState();
       render();
     });
