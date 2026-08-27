@@ -214,6 +214,26 @@ New v2 checklist (from REFACTORING.md Phase 8):
     NOT grow an "N unparsed lines" chip on its card and the line is NOT relocated to the bottom of
     the file on its next save (dropped silently on parse, per `DROPPED_META_KEYS`).
 
+22. **Two-case promote guard + re-groom-pending badge (t-6936):** on a New card with at least one
+    BLANK answer, click Promote → the existing "This story has unanswered questions — promote
+    anyway?" modal appears unchanged (no detail text); Cancel leaves the task in New with the card
+    NOT stuck greyed out. On a New card whose questions are ALL answered but still present, click
+    Promote → a DIFFERENT modal appears, "These answers haven't been folded into the story yet —
+    promote anyway?", with detail text about the groomer still owing a re-groom; Cancel likewise
+    restores the card, "Promote anyway" promotes exactly as before. On a New card with NO questions
+    at all, Promote fires with no modal and the card fades optimistically. `.loopboard/debug.log`
+    (with `loopBoard.debug: info`) shows both modals and both choices, the `popup-choice` lines
+    distinguishable via `unanswered` vs `regroom-pending`. Card badge: a New card whose questions
+    are all answered but still present shows a "RE-GROOM PENDING" badge beside the "N / N answered"
+    count (the count stays); answering the LAST question makes the badge appear immediately with no
+    board refresh, and un-answering a row hides it again. A Feedback card never shows the badge,
+    however many of its answers are filled, and a New card with a blank answer never shows it.
+23. **Topbar heading + last-synced slot (t-c3b7):** the board topbar heading reads just the
+    workspace name — no `TODO — ` prefix anywhere. The `last synced Ns ago` text is gone from
+    under the title and renders at the right of the topbar, immediately left of the New Story
+    button, still ticking every second. Let the counter cross 9→10, 99→100 (and, with the board
+    left open, 999→1000): the tabs, Collapse all and New Story stay put on every digit change.
+
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.

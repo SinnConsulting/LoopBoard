@@ -29,7 +29,13 @@ textarea { resize: vertical; }
 }
 .tb-heading { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .rail-title { font-size: 13px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rail-sync { font-size: 11px; line-height: 1.3; color: var(--vscode-descriptionForeground, #9d9d9d); }
+/* t-c3b7: fixed-width slot at the right of the topbar — tabular figures plus a min-width sized to
+   the longest expected string keep the counter's digit growth inside the slot. */
+.rail-sync {
+  font-size: 11px; line-height: 1.3; color: var(--vscode-descriptionForeground, #9d9d9d);
+  min-width: 132px; text-align: right; white-space: nowrap; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
 
 .tabs { display: flex; align-items: center; gap: 4px; flex: 1; flex-wrap: wrap; }
 .tab {
@@ -261,6 +267,11 @@ textarea { resize: vertical; }
 .qa-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .qa-title { font-size: 12px; font-weight: 600; }
 .qa-count { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground, #9d9d9d); }
+/* t-6936: New card whose answers are all filled but not yet folded into the description. Sits
+   beside .qa-count, never replaces it. `hidden` needs the !important because .qa-head-left's
+   flex children would otherwise still lay it out. */
+.qa-pending { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; white-space: nowrap; color: var(--vscode-inputValidation-warningForeground, var(--vscode-editorWarning-foreground, #cca700)); background: var(--vscode-inputValidation-warningBackground, transparent); border: 1px solid var(--vscode-editorWarning-foreground, #cca700); }
+.qa-pending[hidden] { display: none !important; }
 .qa-head-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .qa-meter { display: flex; gap: 3px; }
 .qa-meter span { width: 18px; height: 4px; border-radius: 2px; background: var(--vscode-editorLineNumber-foreground, #6e6e6e); opacity: 0.5; }
