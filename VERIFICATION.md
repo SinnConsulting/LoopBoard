@@ -221,6 +221,11 @@ New v2 checklist (from REFACTORING.md Phase 8):
     count (the count stays); answering the LAST question makes the badge appear immediately with no
     board refresh, and un-answering a row hides it again. A Feedback card never shows the badge,
     however many of its answers are filled, and a New card with a blank answer never shows it.
+23. **Topbar heading + last-synced slot (t-c3b7):** the board topbar heading reads just the
+    workspace name — no `TODO — ` prefix anywhere. The `last synced Ns ago` text is gone from
+    under the title and renders at the right of the topbar, immediately left of the New Story
+    button, still ticking every second. Let the counter cross 9→10, 99→100 (and, with the board
+    left open, 999→1000): the tabs, Collapse all and New Story stay put on every digit change.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
