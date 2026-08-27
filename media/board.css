@@ -29,7 +29,13 @@ textarea { resize: vertical; }
 }
 .tb-heading { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .rail-title { font-size: 13px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rail-sync { font-size: 11px; line-height: 1.3; color: var(--vscode-descriptionForeground, #9d9d9d); }
+/* t-c3b7: fixed-width slot at the right of the topbar — tabular figures plus a min-width sized to
+   the longest expected string keep the counter's digit growth inside the slot. */
+.rail-sync {
+  font-size: 11px; line-height: 1.3; color: var(--vscode-descriptionForeground, #9d9d9d);
+  min-width: 132px; text-align: right; white-space: nowrap; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
 
 .tabs { display: flex; align-items: center; gap: 4px; flex: 1; flex-wrap: wrap; }
 .tab {

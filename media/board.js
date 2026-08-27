@@ -419,8 +419,7 @@
   function renderTopbar() {
     const bar = h('div', { class: 'topbar' });
     bar.append(h('div', { class: 'tb-heading' },
-      h('div', { class: 'rail-title' }, 'TODO — ' + board.workspaceName),
-      h('div', { class: 'rail-sync', id: 'sync-line' }, syncText())));
+      h('div', { class: 'rail-title' }, board.workspaceName)));
 
     const tabs = h('div', { class: 'tabs' });
     for (const meta of PHASE_META) {
@@ -450,6 +449,10 @@
       class: 'btn-secondary tb-collapse-all', type: 'button',
       onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
     }, collapsedDefault ? 'Expand all' : 'Collapse all'));
+
+    // t-c3b7: the last-synced counter sits in a fixed-width, right-aligned slot next to New Story
+    // so a digit gained by the seconds number never nudges the tabs or the buttons.
+    bar.append(h('div', { class: 'rail-sync', id: 'sync-line' }, syncText()));
 
     // Reopen the composer WITHOUT clearing its draft: a non-empty composerText only ever survives
     // as a genuinely-unsaved draft (Cancel and Save draft both reset it), so wiping here would lose
