@@ -297,6 +297,23 @@ New v2 checklist (from REFACTORING.md Phase 8):
     New task survives pass after pass ungroomed — its `## Description` and questions are untouched,
     including when one of its answers is filled.
 
+26. **Workspace custom rules (t-4a04):** with `.loopboard/` present, set
+    `"loopBoard.customRules": ["There must be a PR after a task has been completed"]` in workspace
+    settings → within a moment (no reload, no terminal recycle) `.loopboard/LOOP.md` gains a
+    `<!-- loopboard:custom:begin -->` block after the last `loopboard:sync:*:end` marker, holding
+    `## Custom rules (workspace)`, the lead-in with the precedence sentence, and
+    `1. There must be a PR … <!-- loopboard:custom-rule:… -->`. Rules 1-17 and every
+    `loopboard:sync:*` pair are byte-identical. Add a second entry → it appears as `2.`; remove the
+    first → the remaining rule renumbers to `1.`; clear the setting entirely → every marked line is
+    gone but the block, its heading and lead-in remain. Add a rule by hand as an unmarked list item
+    and edit the lead-in prose → both survive every subsequent reconcile, including one that
+    removes setting-owned rules. Hand-reword a marked line → its marker is dropped (the line is now
+    yours) and the setting's original wording reappears as a new marked line at the end. Run
+    **Synchronise Templates** → the custom block is byte-identical afterwards. Reload the window
+    with the setting unchanged → `.loopboard/debug.log` shows `custom-rules unchanged, no write`
+    at `verbose` and LOOP.md's mtime does not move (no refresh storm); a real change logs
+    `custom-rules wrote LOOP.md — N added, N removed, N adopted` at `info`.
+
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.

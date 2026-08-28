@@ -78,6 +78,7 @@ export class Controller {
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
+      customRules: c.get<string[]>('customRules', []),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
@@ -518,6 +519,23 @@ export class Controller {
   async autoHeal(): Promise<void> {
     const { todoText, loopText } = await this.readTemplates();
     await this.store.autoHeal(todoText, loopText);
+    await this.applyCustomRules();
+  }
+
+  // Renders `loopBoard.customRules` into LOOP.md's custom block (t-4a04). Called on activation,
+  // after a Sync, and from the configuration listener. A no-op reconcile performs no write, so
+  // calling it on every one of those is cheap.
+  async applyCustomRules(): Promise<void> {
+    await this.store.applyCustomRules(this.config().customRules);
+  }
+
+  // Registered by extension.ts. `loopBoard.customRules` is the only setting with a live listener —
+  // everything else is read on demand at spawn/refresh time, and a rule edit has to reach running
+  // loops (which re-read LOOP.md every pass) without a terminal recycle.
+  onConfigChange(e: vscode.ConfigurationChangeEvent): void {
+    if (!e.affectsConfiguration('loopBoard.customRules')) return;
+    this.store.debugLog('info', 'custom-rules', 'setting changed — reconciling LOOP.md');
+    void this.applyCustomRules().then(() => this.refresh('custom-rules'));
   }
 
   // First-run (and every subsequent activation) Getting Started prompt, gated on a globalState
@@ -578,6 +596,9 @@ export class Controller {
     this.store.debugLog('info', 'popup-choice', `sync-templates -> ${choice ?? 'cancelled'}`);
     if (choice !== 'Sync') return;
     const outcome = await this.store.syncTemplates(todoText, loopText);
+    // Sync never overwrites the custom block (different marker namespace), but a Sync that
+    // recreated a missing/empty LOOP.md wholesale leaves no block at all — re-render it.
+    if (outcome.status === 'applied') await this.applyCustomRules();
     if (outcome.status === 'applied') {
       this.store.debugLog('info', 'popup', 'info — LoopBoard: synced .loopboard/ to the current templates.');
       void vscode.window.showInformationMessage('LoopBoard: synced .loopboard/ to the current templates.');
