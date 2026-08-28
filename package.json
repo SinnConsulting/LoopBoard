@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Less prompting. No babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
-  "version": "2.56.0",
+  "version": "2.57.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
@@ -101,7 +101,7 @@
             "type": "boolean",
             "order": 10,
             "default": true,
-            "description": "Show the Opus slot in the Loops overview and the board's model selects."
+            "markdownDescription": "**Opus slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot."
           },
           "loopBoard.models.opus.model": {
             "type": "string",
@@ -133,7 +133,7 @@
             "type": "boolean",
             "order": 20,
             "default": true,
-            "description": "Show the Sonnet slot in the Loops overview and the board's model selects."
+            "markdownDescription": "**Sonnet slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot."
           },
           "loopBoard.models.sonnet.model": {
             "type": "string",
@@ -165,7 +165,7 @@
             "type": "boolean",
             "order": 30,
             "default": true,
-            "description": "Show the Fable slot in the Loops overview and the board's model selects."
+            "markdownDescription": "**Fable slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot."
           },
           "loopBoard.models.fable.model": {
             "type": "string",
@@ -185,6 +185,13 @@
             "order": 32,
             "default": "high",
             "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Fable slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
+          },
+          "loopBoard.models.fable.groomConcurrency": {
+            "type": "number",
+            "minimum": 1,
+            "order": 33,
+            "default": 3,
+            "markdownDescription": "Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with."
           }
         }
       },
@@ -196,42 +203,53 @@
             "type": "string",
             "order": 1,
             "default": "1m",
-            "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`)."
+            "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
           },
-          "loopBoard.models.fable.groomConcurrency": {
-            "type": "number",
-            "minimum": 1,
-            "order": 33,
-            "default": 3,
-            "markdownDescription": "Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass \u2014 nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (\u267b): a running loop keeps the cap it was spawned with."
-          },
-          "loopBoard.autoRecycle": {
-            "type": "boolean",
+          "loopBoard.afterTask": {
+            "type": "string",
+            "enum": [
+              "none",
+              "clear",
+              "recycle"
+            ],
+            "enumDescriptions": [
+              "Leave the terminal alone — the next task continues in the same conversation (default).",
+              "Soft: send /clear to the terminal so the next task starts on a fresh conversation. The terminal keeps running.",
+              "Hard: close the terminal and open a new one. Fully fresh, but the loop is briefly down while it restarts."
+            ],
             "order": 2,
-            "default": false,
-            "description": "When a model finishes a task, restart its loop terminal (close it and open a new one) so the next task starts fresh. The heavier of the two fresh-context options. Off by default; restart manually with ♻."
+            "default": "none",
+            "markdownDescription": "What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). You can always restart a loop by hand with ♻."
           },
-          "loopBoard.clearSessionAfterTask": {
-            "type": "boolean",
-            "order": 3,
-            "default": false,
-            "description": "When a model finishes a task, send /clear to its loop terminal so the next task starts fresh. Same result as Auto Recycle but lighter: the terminal keeps running, only the conversation is cleared. Off by default. Ignored when Auto Recycle is on (a restart already clears everything)."
+          "loopBoard.permissionMode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "acceptEdits",
+              "bypassPermissions",
+              "dontAsk",
+              "default",
+              "plan"
+            ],
+            "order": 4,
+            "default": "auto",
+            "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
           },
           "loopBoard.pulseTemplateSync": {
             "type": "boolean",
-            "order": 4,
+            "order": 5,
             "default": true,
             "description": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
           "loopBoard.nudgeLoops": {
             "type": "boolean",
-            "order": 5,
+            "order": 3,
             "default": true,
             "description": "When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
           },
           "loopBoard.customRules": {
             "type": "array",
-            "order": 5,
+            "order": 6,
             "items": {
               "type": "string"
             },
@@ -250,36 +268,30 @@
               "Key lifecycle events only: activation, promote/accept/demote gates, loop spawn/recycle/stop, same-field disk-wins conflicts.",
               "Everything, including every field patch/save, attachment, template scaffold/heal/sync, config read, and webview message dispatch."
             ],
-            "order": 5,
+            "order": 7,
             "default": "off",
             "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
           },
           "loopBoard.maxAttachmentSizeMB": {
             "type": "number",
-            "order": 6,
+            "order": 8,
             "default": 10,
             "minimum": 1,
             "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
-          }
-        }
-      },
-      {
-        "title": "LoopBoard: Permissions",
-        "order": 3,
-        "properties": {
-          "loopBoard.permissionMode": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "acceptEdits",
-              "bypassPermissions",
-              "dontAsk",
-              "default",
-              "plan"
-            ],
-            "order": 1,
-            "default": "auto",
-            "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal."
+          },
+          "loopBoard.autoRecycle": {
+            "type": "boolean",
+            "order": 90,
+            "default": false,
+            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this.",
+            "description": "Deprecated: when a model finishes a task, restart its loop terminal so the next task starts fresh."
+          },
+          "loopBoard.clearSessionAfterTask": {
+            "type": "boolean",
+            "order": 91,
+            "default": false,
+            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this.",
+            "description": "Deprecated: when a model finishes a task, send /clear to its loop terminal so the next task starts fresh."
           }
         }
       }

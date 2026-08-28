@@ -96,6 +96,30 @@ export function readModelsConfig(get: <T>(key: string, dflt: T) => T): ModelsCon
   return cfg;
 }
 
+// What a loop does with its terminal once the model's task leaves In Progress (t-1f1e).
+// One 3-state mode replaces the old `autoRecycle` + `clearSessionAfterTask` boolean pair, whose
+// interaction was already hard-coded (a recycle always won, making `clear` moot).
+//   none    — leave the terminal and its conversation alone
+//   clear   — soft: send /clear, the terminal keeps running
+//   recycle — hard: close the terminal and open a new one
+export type AfterTask = 'none' | 'clear' | 'recycle';
+export const AFTER_TASK_MODES: AfterTask[] = ['none', 'clear', 'recycle'];
+
+// Resolve the mode, falling back to the deprecated booleans when `afterTask` is unset — the same
+// read-both shape `readModelsConfig` uses for its legacy slot form. The new key always wins, and
+// nothing is ever written back to user config. The legacy mapping is lossless because
+// `autoRecycle` already suppressed `clearSessionAfterTask` at the only call site.
+export function resolveAfterTask(
+  afterTask: string | undefined,
+  legacyAutoRecycle = false,
+  legacyClearSession = false,
+): AfterTask {
+  if (typeof afterTask === 'string' && (AFTER_TASK_MODES as string[]).includes(afterTask)) return afterTask as AfterTask;
+  if (legacyAutoRecycle) return 'recycle';
+  if (legacyClearSession) return 'clear';
+  return 'none';
+}
+
 // A model slot after applying user config: the actual spawn string + whether it is active.
 export interface ResolvedModel {
   id: Model;

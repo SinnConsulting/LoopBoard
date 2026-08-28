@@ -13,6 +13,8 @@ const {
   sanitizeGroomConcurrency,
   EFFORT_LEVELS,
   isValidEffort,
+  AFTER_TASK_MODES,
+  resolveAfterTask,
 } = require('../out-test/model.js');
 
 test('the built-in model slots are exactly opus/sonnet/fable', () => {
@@ -137,4 +139,35 @@ test('readModelsConfig reads the per-slot groomConcurrency key', () => {
   const cfg = readModelsConfig((k, d) => (k in settings ? settings[k] : d));
   assert.equal(cfg.opus.groomConcurrency, 7);
   assert.equal(cfg.sonnet.groomConcurrency, 3, 'unset slots take the default');
+});
+
+// ---- afterTask: one 3-state mode replacing the recycle boolean pair (t-1f1e) ----
+
+test('the after-task modes are exactly none/clear/recycle', () => {
+  assert.deepEqual(AFTER_TASK_MODES, ['none', 'clear', 'recycle']);
+});
+
+test('an explicitly set afterTask always wins over the deprecated booleans', () => {
+  assert.equal(resolveAfterTask('none', true, true), 'none');
+  assert.equal(resolveAfterTask('clear', true, false), 'clear');
+  assert.equal(resolveAfterTask('recycle', false, false), 'recycle');
+});
+
+test('with afterTask unset the legacy booleans map losslessly', () => {
+  assert.equal(resolveAfterTask(undefined, false, false), 'none');
+  assert.equal(resolveAfterTask(undefined, false, true), 'clear');
+  assert.equal(resolveAfterTask(undefined, true, false), 'recycle');
+  // autoRecycle already suppressed clearSessionAfterTask at the only call site, so the combination
+  // has always meant "recycle" — the merge loses nothing.
+  assert.equal(resolveAfterTask(undefined, true, true), 'recycle');
+});
+
+test('an unrecognized afterTask value falls back rather than disabling the feature', () => {
+  assert.equal(resolveAfterTask('RECYCLE', true, false), 'recycle');
+  assert.equal(resolveAfterTask('', false, true), 'clear');
+  assert.equal(resolveAfterTask('nonsense', false, false), 'none');
+});
+
+test('afterTask defaults to none with no config at all', () => {
+  assert.equal(resolveAfterTask(undefined), 'none');
 });
