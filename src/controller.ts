@@ -8,8 +8,8 @@ import { toWebviewBoard, WebBoard } from './view';
 import { Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS } from './model';
 import { FieldPatch } from './merge';
 import {
-  RestartSchedule, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
-  describeSchedule, parseMinutes,
+  RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
+  describeSchedule, parseMinutes, isLoopAction, supportsForce,
 } from './schedule';
 
 function today(): string {
@@ -92,7 +92,7 @@ export class Controller {
     for (const l of loops) {
       const s = this.restartSchedules.get(l.id);
       l.restart = s
-        ? { minutes: s.minutes, repeat: s.repeat, force: s.force, pending: s.pending, label: describeSchedule(s, now) }
+        ? { action: s.action, minutes: s.minutes, repeat: s.repeat, force: s.force, pending: s.pending, label: describeSchedule(s, now) }
         : null;
     }
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);
@@ -193,11 +193,13 @@ export class Controller {
 
   // Arms (or replaces) a model's schedule and starts its timer. Force consent is taken by the
   // caller, once, BEFORE this runs — fire time is silent.
-  private armRestart(model: Model, minutes: number, repeat: boolean, force: boolean): void {
-    const schedule = armSchedule(model, minutes, repeat, force, Date.now());
+  private armRestart(model: Model, action: LoopAction, minutes: number, repeat: boolean, force: boolean): void {
+    const schedule = armSchedule(model, action, minutes, repeat, force, Date.now());
+    // One schedule per model, whichever button armed it: "start in 5m" and "stop in 10m" on the
+    // same loop are contradictory, so arming either replaces the other.
     this.restartSchedules.set(model, schedule);
     this.startRestartTimer(schedule);
-    this.store.debugLog('info', 'restart-arm', `${model} in ${minutes}m repeat=${repeat} force=${force}`);
+    this.store.debugLog('info', 'restart-arm', `${model} ${action} in ${minutes}m repeat=${repeat} force=${schedule.force}`);
   }
 
   private startRestartTimer(schedule: RestartSchedule): void {
@@ -242,10 +244,12 @@ export class Controller {
   private fireRestart(schedule: RestartSchedule): void {
     const model = schedule.model;
     this.clearRestartTimer(model);
-    this.store.debugLog('info', 'restart-fire', `${model}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
-    // preserveFocus: an automatic restart must never steal focus from whatever the user is doing —
-    // same reasoning as the auto-recycle call above.
-    this.terminals.recycle(model, true);
+    this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
+    // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
+    // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
+    if (schedule.action === 'start') this.terminals.spawn(model, true);
+    else if (schedule.action === 'stop') this.terminals.stop(model);
+    else this.terminals.recycle(model, true);
     const next = afterFire(schedule, Date.now());
     if (next) {
       this.restartSchedules.set(model, next);
@@ -272,39 +276,46 @@ export class Controller {
   private async onArmRestart(msg: any): Promise<void> {
     if (!isKnownModel(msg.model)) return;
     const model = msg.model as Model;
+    // Absent action = the original ♻-only shape; keep restart as the default so an older webview
+    // payload still arms what it meant.
+    const action: LoopAction = isLoopAction(msg.action) ? msg.action : 'restart';
     const minutes = parseMinutes(String(msg.minutes ?? ''));
     if (minutes === null) {
-      this.toast('warning', 'Restart delay must be a whole number of minutes.');
+      this.toast('warning', 'Schedule delay must be a whole number of minutes.');
       return;
     }
     const repeat = !!msg.repeat;
-    const force = !!msg.force;
-    if (force && !(await this.confirmForcedRestart(model))) {
-      this.store.debugLog('info', 'gate-cancelled', `restart-force ${model}`);
+    const force = supportsForce(action) && !!msg.force;
+    if (force && !(await this.confirmForcedRestart(model, action))) {
+      this.store.debugLog('info', 'gate-cancelled', `restart-force ${model} ${action}`);
       return this.refresh('restart-arm');
     }
-    this.armRestart(model, minutes, repeat, force);
-    this.toast('success', repeat ? `Restarting ${model} every ${minutes}m.` : `Restarting ${model} in ${minutes}m.`, undefined, 'check');
+    this.armRestart(model, action, minutes, repeat, force);
+    const verb = action === 'start' ? 'Starting' : action === 'stop' ? 'Stopping' : 'Restarting';
+    this.toast('success', repeat ? `${verb} ${model} every ${minutes}m.` : `${verb} ${model} in ${minutes}m.`, undefined, 'check');
     return this.refresh('restart-arm');
   }
 
-  // Native modal naming the real consequence of a forced restart: the extension never edits a task's
-  // `phase:` (the loop writes it), so killing a worker mid-task leaves the task `inprogress` in
-  // `.loopboard/TODO.md` with nobody on it — and LOOP.md Rule 2's global single-task limit means
-  // that stale entry then blocks EVERY loop from claiming work until a human fixes it.
-  private async confirmForcedRestart(model: Model): Promise<boolean> {
-    const message = `Force-restart ${model} even while it is working on a task?`;
+  // Native modal naming the real consequence of a forced restart or stop: the extension never edits
+  // a task's `phase:` (the loop writes it), so killing a worker mid-task leaves the task
+  // `inprogress` in `.loopboard/TODO.md` with nobody on it — and LOOP.md Rule 2's global
+  // single-task limit means that stale entry then blocks EVERY loop from claiming work until a
+  // human fixes it. Only reachable for the two actions that can kill a working terminal.
+  private async confirmForcedRestart(model: Model, action: LoopAction): Promise<boolean> {
+    const verb = action === 'stop' ? 'stop' : 'restart';
+    const message = `Force-${verb} ${model} even while it is working on a task?`;
+    const confirmLabel = `Arm forced ${verb}`;
     this.store.debugLog('info', 'popup', `confirm — ${message}`);
     const choice = await vscode.window.showWarningMessage(
       message,
       {
         modal: true,
-        detail: 'A forced restart kills the session mid-task. The task stays `phase: inprogress` in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Confirming now also covers the restart itself — it fires later without asking again.',
+        detail: `A forced ${verb} kills the session mid-task. The task stays \`phase: inprogress\` in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Confirming now also covers the ${verb} itself — it fires later without asking again.`,
       },
-      'Arm forced restart'
+      confirmLabel
     );
-    const accepted = choice === 'Arm forced restart';
-    this.store.debugLog('info', 'popup-choice', `confirm-force-restart ${model} -> ${accepted ? 'accepted' : 'cancelled'}`);
+    const accepted = choice === confirmLabel;
+    this.store.debugLog('info', 'popup-choice', `confirm-force-${verb} ${model} -> ${accepted ? 'accepted' : 'cancelled'}`);
     return accepted;
   }
 
@@ -379,6 +390,12 @@ export class Controller {
         return;
       case 'revealTerminal':
         if (isKnownModel(msg.model)) this.terminals.reveal(msg.model);
+        return;
+      case 'recycleLoop':
+        // Left-click ♻ — restart right now. The scheduling popover is right-click (t-77d1
+        // feedback); an armed schedule is left alone, since restarting now says nothing about
+        // whether the user still wants the later one.
+        if (isKnownModel(msg.model)) this.terminals.recycle(msg.model);
         return;
       case 'stopLoop':
         if (isKnownModel(msg.model)) {

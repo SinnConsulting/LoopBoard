@@ -17,8 +17,25 @@ export const PRESET_MINUTES: number[] = [15, 30, 60, 120, 240];
 export const MAX_DELAY_MS = 2147483647;
 export const MAX_MINUTES = Math.floor(MAX_DELAY_MS / 60000);
 
+// Which of the three row buttons armed this schedule. Each button's LEFT-click still acts
+// immediately; right-click schedules the same action for later.
+export type LoopAction = 'start' | 'restart' | 'stop';
+
+export const LOOP_ACTIONS: readonly LoopAction[] = ['start', 'restart', 'stop'];
+
+export function isLoopAction(value: unknown): value is LoopAction {
+  return typeof value === 'string' && (LOOP_ACTIONS as readonly string[]).includes(value);
+}
+
+// `force` only means something for the two actions that can kill a working terminal; a scheduled
+// start interrupts nothing, so the popover hides the checkbox and the value is forced to false.
+export function supportsForce(action: LoopAction): boolean {
+  return action !== 'start';
+}
+
 export interface RestartSchedule {
   model: Model;
+  action: LoopAction;
   minutes: number;
   repeat: boolean;
   force: boolean;
@@ -43,12 +60,21 @@ export function parseMinutes(raw: string): number | null {
 
 export function armSchedule(
   model: Model,
+  action: LoopAction,
   minutes: number,
   repeat: boolean,
   force: boolean,
   now: number
 ): RestartSchedule {
-  return { model, minutes, repeat, force, nextFireAt: now + minutes * 60000, pending: false };
+  return {
+    model,
+    action,
+    minutes,
+    repeat,
+    force: supportsForce(action) && force,
+    nextFireAt: now + minutes * 60000,
+    pending: false,
+  };
 }
 
 // Milliseconds from `now` until the schedule's next fire, floored at 0 so a schedule armed in the
@@ -62,6 +88,9 @@ export function delayUntilFire(schedule: RestartSchedule, now: number): number {
 // from the tracker (terminal output can never be read), so `inProgressModels` is derived from
 // `.loopboard/TODO.md` by the caller, with an absent `model:` already resolved to the default.
 export function mayFire(schedule: RestartSchedule, inProgressModels: readonly Model[]): boolean {
+  // A scheduled start has no worker to cut off — spawning a terminal for a model whose task is
+  // In Progress is exactly what a human would want, so it never defers.
+  if (!supportsForce(schedule.action)) return true;
   if (schedule.force) return true;
   return !inProgressModels.includes(schedule.model);
 }
@@ -84,8 +113,9 @@ export function afterFire(schedule: RestartSchedule, now: number): RestartSchedu
 // One-line summary for the sidebar row's armed/pending indicator. Kept here rather than in the
 // webview so the wording is unit-tested and the webview stays a renderer.
 export function describeSchedule(schedule: RestartSchedule, now: number): string {
+  const verb = schedule.action;
   const suffix = schedule.repeat ? ` · every ${schedule.minutes}m` : '';
-  if (schedule.pending) return `restart waiting for task${suffix}`;
+  if (schedule.pending) return `${verb} waiting for task${suffix}`;
   const mins = Math.max(0, Math.ceil((schedule.nextFireAt - now) / 60000));
-  return `restart in ${mins}m${suffix}${schedule.force ? ' · force' : ''}`;
+  return `${verb} in ${mins}m${suffix}${schedule.force ? ' · force' : ''}`;
 }

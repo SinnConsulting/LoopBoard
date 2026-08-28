@@ -60,7 +60,14 @@ questions, an HTML-comment template) and `index-unknown.md`:
   (before `## Automation`) is not mis-picked. `template-todo.md` scaffold parses to zero entries
   and is a fixpoint.
 
-### Restart schedule — `test/schedule.test.js` (t-77d1)
+### Loop-action schedule — `test/schedule.test.js` (t-77d1)
+- `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
+  payload value (the webview's `action` is never trusted).
+- `supportsForce` is false for `start` only; `armSchedule` coerces a start's `force` to false even
+  when asked for it, and `mayFire` lets a start fire while its own model is In Progress (there is
+  no worker to cut off) while a stop defers exactly like a restart.
+- `describeSchedule` names the scheduled action (`start in 60m`, `stop in 60m · force`,
+  `stop waiting for task · every 15m`).
 - `parseMinutes` accepts a plain positive integer and rejects empty/`0`/negative/signed/decimal/
   unit-suffixed (`90m`, `2h`)/hex/exponent input, plus anything overflowing `setTimeout`'s
   signed-32-bit delay — so a value can never be silently reinterpreted or fire instantly.
@@ -235,15 +242,21 @@ New v2 checklist (from REFACTORING.md Phase 8):
     board refresh, and un-answering a row hides it again. A Feedback card never shows the badge,
     however many of its answers are filled, and a New card with a blank answer never shows it.
 
-23. **Scheduled loop restart (t-77d1):** with a loop running, click ♻ on its sidebar row → a
-    popover opens under that row with preset minute buttons, a `Custom…` field, `Repeat` and
-    `Force` checkboxes; the loop is NOT restarted. Escape, a click outside, and Cancel all dismiss
-    it leaving the loop untouched; clicking ♻ again toggles it closed. Type a bad custom value
+23. **Scheduled loop actions (t-77d1):** LEFT-click still acts immediately on all three row
+    buttons — ▶ spawns, ♻ disposes and respawns, ■ disposes — and opens no popover. RIGHT-click a
+    button → a popover opens under that row scheduling THAT action, with preset minute buttons, a
+    `Custom…` field, `Repeat`, and a `Force` checkbox on ♻/■ only (▶ shows none); nothing happens
+    to the loop and the host's own context menu does not appear. Right-click ▶ while stopped →
+    "Start <model>" with a `Schedule start` button; right-click ■ while running → "Stop <model>".
+    Arming from one button while another action is armed replaces it (one schedule per loop), and
+    re-opening a different button's popover starts from defaults rather than the armed values.
+    Escape, a click outside, and Cancel all dismiss
+    it leaving the loop untouched; right-clicking the same button again toggles it closed. Type a bad custom value
     (`abc`, `0`, `-5`, `1.5`, `90m`) and press Schedule → an in-popover message appears and nothing
     is armed. Schedule 1 minute with Repeat and Force off → the row shows "restart in 1m", and about
     a minute later the terminal is disposed and respawned once and the indicator disappears. With
     Repeat on, it keeps restarting on that interval; Stop on the loop clears the schedule (indicator
-    gone, no further restarts). Re-open ♻ on a loop that already has a schedule → the popover shows
+    gone, no further restarts). Right-click ♻ on a loop that already has a schedule → the popover shows
     its current settings and offers Clear, which removes it. **Deferral:** with Force OFF and a task
     of that model `phase: inprogress`, let the timer elapse → the terminal is NOT restarted, the row
     reads "restart waiting for task", and it stays that way indefinitely; move the task out of In

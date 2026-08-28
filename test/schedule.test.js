@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   PRESET_MINUTES, MAX_MINUTES, parseMinutes, armSchedule, delayUntilFire,
-  mayFire, deferSchedule, afterFire, describeSchedule,
+  mayFire, deferSchedule, afterFire, describeSchedule, LOOP_ACTIONS, isLoopAction, supportsForce,
 } = require('../out-test/schedule');
 
 const NOW = 1000000;
@@ -35,15 +35,15 @@ test('parseMinutes rejects a value that would overflow setTimeout', () => {
 });
 
 test('armSchedule sets nextFireAt N minutes out and starts un-pending', () => {
-  const s = armSchedule('opus', 15, false, false, NOW);
+  const s = armSchedule('opus', 'restart', 15, false, false, NOW);
   assert.deepStrictEqual(s, {
-    model: 'opus', minutes: 15, repeat: false, force: false,
+    model: 'opus', action: 'restart', minutes: 15, repeat: false, force: false,
     nextFireAt: NOW + 15 * 60000, pending: false,
   });
 });
 
 test('delayUntilFire counts down and floors at 0 once due', () => {
-  const s = armSchedule('opus', 10, false, false, NOW);
+  const s = armSchedule('opus', 'restart', 10, false, false, NOW);
   assert.strictEqual(delayUntilFire(s, NOW), 10 * 60000);
   assert.strictEqual(delayUntilFire(s, NOW + 4 * 60000), 6 * 60000);
   // Armed in the past (e.g. the main thread stalled) fires on the next tick, never negative.
@@ -51,19 +51,19 @@ test('delayUntilFire counts down and floors at 0 once due', () => {
 });
 
 test('mayFire defers a non-forced restart only while its own model is In Progress', () => {
-  const s = armSchedule('opus', 30, false, false, NOW);
+  const s = armSchedule('opus', 'restart', 30, false, false, NOW);
   assert.strictEqual(mayFire(s, []), true);
   assert.strictEqual(mayFire(s, ['sonnet']), true, 'another model being busy is irrelevant');
   assert.strictEqual(mayFire(s, ['opus']), false);
 });
 
 test('mayFire ignores In Progress entirely when force is on', () => {
-  const forced = armSchedule('opus', 30, false, true, NOW);
+  const forced = armSchedule('opus', 'restart', 30, false, true, NOW);
   assert.strictEqual(mayFire(forced, ['opus']), true);
 });
 
 test('deferSchedule marks pending and is idempotent', () => {
-  const s = armSchedule('opus', 30, true, false, NOW);
+  const s = armSchedule('opus', 'restart', 30, true, false, NOW);
   const once = deferSchedule(s);
   assert.strictEqual(once.pending, true);
   // At most one restart is ever pending per model — deferring again must not stack or re-create.
@@ -71,11 +71,11 @@ test('deferSchedule marks pending and is idempotent', () => {
 });
 
 test('afterFire disarms a one-shot schedule', () => {
-  assert.strictEqual(afterFire(armSchedule('opus', 15, false, false, NOW), NOW + 15 * 60000), null);
+  assert.strictEqual(afterFire(armSchedule('opus', 'restart', 15, false, false, NOW), NOW + 15 * 60000), null);
 });
 
 test('afterFire re-arms a repeating schedule from the moment it actually fired', () => {
-  const s = deferSchedule(armSchedule('opus', 15, true, false, NOW));
+  const s = deferSchedule(armSchedule('opus', 'restart', 15, true, false, NOW));
   // Fired late (deferred while the task ran): the next interval starts now, not from the original
   // slot, so a long deferral can never produce a burst of catch-up restarts.
   const late = NOW + 60 * 60000;
@@ -86,14 +86,49 @@ test('afterFire re-arms a repeating schedule from the moment it actually fired',
 });
 
 test('describeSchedule reports the countdown, repeat and force', () => {
-  const one = armSchedule('opus', 60, false, false, NOW);
+  const one = armSchedule('opus', 'restart', 60, false, false, NOW);
   assert.strictEqual(describeSchedule(one, NOW), 'restart in 60m');
   assert.strictEqual(describeSchedule(one, NOW + 30 * 60000), 'restart in 30m');
-  assert.strictEqual(describeSchedule(armSchedule('opus', 60, true, false, NOW), NOW), 'restart in 60m · every 60m');
-  assert.strictEqual(describeSchedule(armSchedule('opus', 60, false, true, NOW), NOW), 'restart in 60m · force');
+  assert.strictEqual(describeSchedule(armSchedule('opus', 'restart', 60, true, false, NOW), NOW), 'restart in 60m · every 60m');
+  assert.strictEqual(describeSchedule(armSchedule('opus', 'restart', 60, false, true, NOW), NOW), 'restart in 60m · force');
 });
 
 test('describeSchedule says it is waiting once deferred', () => {
-  const s = deferSchedule(armSchedule('opus', 15, true, false, NOW));
+  const s = deferSchedule(armSchedule('opus', 'restart', 15, true, false, NOW));
   assert.strictEqual(describeSchedule(s, NOW + 99 * 60000), 'restart waiting for task · every 15m');
+});
+
+test('LOOP_ACTIONS covers the three row buttons and isLoopAction gates the message payload', () => {
+  assert.deepStrictEqual([...LOOP_ACTIONS], ['start', 'restart', 'stop']);
+  for (const a of LOOP_ACTIONS) assert.strictEqual(isLoopAction(a), true);
+  for (const bad of ['', 'START', 'recycle', null, undefined, 1, {}]) {
+    assert.strictEqual(isLoopAction(bad), false, `expected ${JSON.stringify(bad)} to be rejected`);
+  }
+});
+
+test('force applies only to the actions that can kill a working terminal', () => {
+  assert.strictEqual(supportsForce('start'), false);
+  assert.strictEqual(supportsForce('restart'), true);
+  assert.strictEqual(supportsForce('stop'), true);
+  // A start cannot be armed as forced even if the webview asks for it.
+  assert.strictEqual(armSchedule('opus', 'start', 15, false, true, NOW).force, false);
+  assert.strictEqual(armSchedule('opus', 'stop', 15, false, true, NOW).force, true);
+});
+
+test('a scheduled start never defers — it has no worker to cut off', () => {
+  const s = armSchedule('opus', 'start', 15, false, false, NOW);
+  assert.strictEqual(mayFire(s, ['opus']), true);
+});
+
+test('a scheduled stop defers like a restart while its own model is In Progress', () => {
+  const s = armSchedule('opus', 'stop', 15, false, false, NOW);
+  assert.strictEqual(mayFire(s, ['opus']), false);
+  assert.strictEqual(mayFire(s, ['sonnet']), true);
+});
+
+test('describeSchedule names the scheduled action', () => {
+  assert.strictEqual(describeSchedule(armSchedule('opus', 'start', 60, false, false, NOW), NOW), 'start in 60m');
+  assert.strictEqual(describeSchedule(armSchedule('opus', 'stop', 60, false, true, NOW), NOW), 'stop in 60m · force');
+  const pending = deferSchedule(armSchedule('opus', 'stop', 15, true, false, NOW));
+  assert.strictEqual(describeSchedule(pending, NOW), 'stop waiting for task · every 15m');
 });
