@@ -5,12 +5,28 @@ import { TerminalManager, isKnownModel } from './terminals';
 import { BoardPanel } from './panel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
-import { Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS } from './model';
+import {
+  Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS,
+  AfterTask, resolveAfterTask,
+} from './model';
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
+
+// `loopBoard.afterTask` (t-1f1e) with a read-both fallback to the deprecated boolean pair. The
+// default in package.json is 'none', so `get()` alone could never tell "unset" from "explicitly
+// none" — hence `inspect()`, which reports only values a user actually set.
+function readAfterTask(c: vscode.WorkspaceConfiguration): AfterTask {
+  const i = c.inspect<string>('afterTask');
+  const set = i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue;
+  return resolveAfterTask(
+    set,
+    c.get<boolean>('autoRecycle', false),
+    c.get<boolean>('clearSessionAfterTask', false),
+  );
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -74,8 +90,7 @@ export class Controller {
       interval: c.get<string>('loopInterval', '1m'),
       defaultWorkerModel: readDefaultModel(c, 'defaultWorkerModel'),
       defaultGroomerModel: readDefaultModel(c, 'defaultGroomerModel'),
-      autoRecycle: c.get<boolean>('autoRecycle', false),
-      clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
+      afterTask: readAfterTask(c),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
       customRules: c.get<string[]>('customRules', []),
@@ -146,7 +161,7 @@ export class Controller {
 
   // Auto-recycle: when a model's task leaves In Progress and it has none left, recycle its terminal.
   private maybeAutoRecycle(prev: Board | undefined, next: Board): void {
-    if (!prev || !this.config().autoRecycle) return;
+    if (!prev || this.config().afterTask !== 'recycle') return;
     const inProgressBy = (b: Board, model: Model): number =>
       b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? this.config().defaultWorkerModel) === model).length;
     for (const model of BUILTIN_MODEL_IDS) {
@@ -163,11 +178,12 @@ export class Controller {
 
   // Clear-after-task: when a model's task leaves In Progress and it has none left, send /clear to its
   // terminal to reset the conversation context (terminal stays open). Runs after store.load() has
-  // re-read the just-written TODO.md, so the tracker is persisted before we clear. Opt-in; skipped
-  // when autoRecycle is on, since recycling already yields a fresh context.
+  // re-read the just-written TODO.md, so the tracker is persisted before we clear. The 'recycle'
+  // mode never reaches here — the modes are exclusive by construction now, where the old boolean
+  // pair needed an explicit skip.
   private maybeClearSession(prev: Board | undefined, next: Board): void {
     const cfg = this.config();
-    if (!prev || !cfg.clearSessionAfterTask || cfg.autoRecycle) return;
+    if (!prev || cfg.afterTask !== 'clear') return;
     const inProgressBy = (b: Board, model: Model): number =>
       b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? cfg.defaultWorkerModel) === model).length;
     for (const model of BUILTIN_MODEL_IDS) {

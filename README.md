@@ -121,8 +121,7 @@ since all state lives in `.loopboard/`.
 | `loopBoard.defaultGroomerModel` | `opus` | model that grooms tasks/drafts with no `groomer:` field |
 | `loopBoard.permissionMode` | `auto` | `--permission-mode` passed to the claude CLI |
 | `loopBoard.loopInterval` | `1m` | interval passed to the injected `/loop` line |
-| `loopBoard.autoRecycle` | `false` | restart a model's terminal after it finishes a task (fresh context) |
-| `loopBoard.clearSessionAfterTask` | `false` | lighter alternative — send `/clear` after a task instead of restarting |
+| `loopBoard.afterTask` | `none` | what to do with a model's terminal once it finishes a task: `none` / `clear` (send `/clear`) / `recycle` (restart it) |
 | `loopBoard.models.<slot>` | — | per-slot overrides: `.enabled`, `.model`, `.effort` (see below) |
 | `loopBoard.customRules` | `[]` | extra standing instructions for this workspace's loops (see below) |
 

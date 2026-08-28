@@ -314,6 +314,17 @@ New v2 checklist (from REFACTORING.md Phase 8):
     at `verbose` and LOOP.md's mtime does not move (no refresh storm); a real change logs
     `custom-rules wrote LOOP.md — N added, N removed, N adopted` at `info`.
 
+27. **Restructured settings (t-1f1e):** open Settings → Extensions → LoopBoard. **Models** reads as
+    two defaults then three slot blocks (Opus/Sonnet/Fable, each *enabled → custom model → effort*);
+    **Loop Behavior** reads interval, After Task, permission mode, pulse, custom rules, debug, max
+    attachment size — no separate "Permissions" group, and no two rows fighting over the same
+    position. `loopBoard.afterTask` renders as a dropdown with three described options; the two old
+    booleans appear struck through with their deprecation notice. Migration: with `afterTask` UNSET
+    and `loopBoard.autoRecycle` on, finishing a task still recycles that model's terminal; swap to
+    `clearSessionAfterTask` and it sends `/clear` instead; then set `afterTask` explicitly and it
+    wins over both. `.loopboard/debug.log` (`debug: verbose`) still shows the `config-read` line and
+    `auto-recycle` / `clear-session` at `info` exactly as before.
+
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.
