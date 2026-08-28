@@ -60,6 +60,29 @@ questions, an HTML-comment template) and `index-unknown.md`:
   (before `## Automation`) is not mis-picked. `template-todo.md` scaffold parses to zero entries
   and is a fixpoint.
 
+### Loop-action schedule — `test/schedule.test.js` (t-77d1)
+- `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
+  payload value (the webview's `action` is never trusted).
+- `appliesTo` gates the fire path on the loop's CURRENT state: `start` applies only while stopped,
+  `restart`/`stop` only while running — so a restart armed for a since-stopped loop is swallowed
+  rather than silently starting it.
+- `supportsForce` is false for `start` only; `armSchedule` coerces a start's `force` to false even
+  when asked for it, and `mayFire` lets a start fire while its own model is In Progress (there is
+  no worker to cut off) while a stop defers exactly like a restart.
+- `describeSchedule` names the scheduled action (`start in 60m`, `stop in 60m · force`,
+  `stop waiting for task · every 15m`).
+- `parseMinutes` accepts a plain positive integer and rejects empty/`0`/negative/signed/decimal/
+  unit-suffixed (`90m`, `2h`)/hex/exponent input, plus anything overflowing `setTimeout`'s
+  signed-32-bit delay — so a value can never be silently reinterpreted or fire instantly.
+- `mayFire` defers only while the schedule's OWN model is In Progress (another model being busy is
+  irrelevant) and ignores In Progress entirely when `force` is on.
+- `deferSchedule` is idempotent — at most one restart is ever pending per model, so a repeating
+  schedule cannot stack deferred fires.
+- `afterFire` disarms a one-shot and re-arms a repeating schedule from the moment it ACTUALLY fired,
+  so a long deferral produces no burst of catch-up restarts.
+- `delayUntilFire` counts down and floors at 0; `describeSchedule` renders the countdown, `repeat`,
+  `force` and the "waiting for task" state.
+
 ## Manual — Extension Development Host (F5)
 
 **PENDING — not executed in this environment** (headless agent session, no interactive VS Code
@@ -233,6 +256,63 @@ New v2 checklist (from REFACTORING.md Phase 8):
     under the title and renders at the right of the topbar, immediately left of the New Story
     button, still ticking every second. Let the counter cross 9→10, 99→100 (and, with the board
     left open, 999→1000): the tabs, Collapse all and New Story stay put on every digit change.
+
+24. **Scheduled loop actions (t-77d1):** LEFT-click still acts immediately on all three row
+    buttons — ▶ spawns, ♻ disposes and respawns, ■ disposes — and opens no popover. RIGHT-click a
+    button → a popover opens under that row scheduling THAT action, with preset minute buttons, a
+    `Custom…` field, `Repeat`, and a `Force` checkbox on ♻/■ only (▶ shows none); nothing happens
+    to the loop and the host's own context menu does not appear. Right-click ▶ while stopped →
+    "Start <model>" with a `Schedule start` button; right-click ■ while running → "Stop <model>".
+    Arming from one button while another action is armed replaces it (one schedule per loop), and
+    re-opening a different button's popover starts from defaults rather than the armed values.
+    **Right-click works on a greyed-out button too** — right-click ■ on a STOPPED loop and the stop
+    popover still opens (left-click on it does nothing, as before); same for ♻ while stopped and ▶
+    while running. **Swallowing:** schedule a 1-minute restart, then stop the loop by hand before it
+    fires → nothing starts, the indicator clears (or the repeat re-arms), and `.loopboard/debug.log`
+    carries a `restart-skip` line at `info`.
+    Escape, a click outside, and Cancel all dismiss
+    it leaving the loop untouched; right-clicking the same button again toggles it closed. Type a bad custom value
+    (`abc`, `0`, `-5`, `1.5`, `90m`) and press Schedule → an in-popover message appears and nothing
+    is armed. Schedule 1 minute with Repeat and Force off → the row shows "restart in 1m", and about
+    a minute later the terminal is disposed and respawned once and the indicator disappears. With
+    Repeat on, it keeps restarting on that interval; Stop on the loop clears the schedule (indicator
+    gone, no further restarts). Right-click ♻ on a loop that already has a schedule → the popover shows
+    its current settings and offers Clear, which removes it. **Deferral:** with Force OFF and a task
+    of that model `phase: inprogress`, let the timer elapse → the terminal is NOT restarted, the row
+    reads "restart waiting for task", and it stays that way indefinitely; move the task out of In
+    Progress (edit `.loopboard/TODO.md`) → the restart fires on the next refresh. **Force:** tick
+    Force and press Schedule → a native modal names the Rule 2 consequence; Cancel arms nothing;
+    confirming arms it, and when it fires mid-task there is NO second prompt. Reload the window with
+    a schedule armed → every indicator is gone (session-only) and nothing about it was written to
+    disk. With `loopBoard.debug: info`, `.loopboard/debug.log` shows `restart-arm`, `restart-fire`,
+    `restart-defer`, `restart-cancel`, and the force modal's `popup`/`popup-choice` pair.
+25. **"Groom with: On hold" (t-65a2):** the New Story composer's and a draft card's **Groom with**
+    select each offer `On hold` after the model ids (the **Work with** select does NOT). Picking it
+    on a draft writes `- groomer: none` into that entry in `.loopboard/TODO.md` and the card shows
+    an amber "on hold — not groomed" badge, with the draft hint changed to the on-hold wording;
+    picking `default (<model>)` again removes the `groomer:` line entirely and the badge disappears.
+    Creating a new draft with On hold selected in the composer writes `groomer: none` from the
+    start. A New (non-draft) card whose entry has `groomer: none` shows the same badge in its chip
+    row; a Backlog/In Progress/Review/Done card never shows it. With a real loop running, a held
+    New task survives pass after pass ungroomed — its `## Description` and questions are untouched,
+    including when one of its answers is filled.
+
+26. **Workspace custom rules (t-4a04):** with `.loopboard/` present, set
+    `"loopBoard.customRules": ["There must be a PR after a task has been completed"]` in workspace
+    settings → within a moment (no reload, no terminal recycle) `.loopboard/LOOP.md` gains a
+    `<!-- loopboard:custom:begin -->` block after the last `loopboard:sync:*:end` marker, holding
+    `## Custom rules (workspace)`, the lead-in with the precedence sentence, and
+    `1. There must be a PR … <!-- loopboard:custom-rule:… -->`. Rules 1-17 and every
+    `loopboard:sync:*` pair are byte-identical. Add a second entry → it appears as `2.`; remove the
+    first → the remaining rule renumbers to `1.`; clear the setting entirely → every marked line is
+    gone but the block, its heading and lead-in remain. Add a rule by hand as an unmarked list item
+    and edit the lead-in prose → both survive every subsequent reconcile, including one that
+    removes setting-owned rules. Hand-reword a marked line → its marker is dropped (the line is now
+    yours) and the setting's original wording reappears as a new marked line at the end. Run
+    **Synchronise Templates** → the custom block is byte-identical afterwards. Reload the window
+    with the setting unchanged → `.loopboard/debug.log` shows `custom-rules unchanged, no write`
+    at `verbose` and LOOP.md's mtime does not move (no refresh storm); a real change logs
+    `custom-rules wrote LOOP.md — N added, N removed, N adopted` at `info`.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough

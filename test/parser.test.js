@@ -171,6 +171,31 @@ test('model + groomer serialize on drafts (model before groomer) and round-trip'
   assert.equal(serializeTodo(doc2), text, 'fixpoint');
 });
 
+// t-65a2: `groomer: none` is the explicit on-hold sentinel. It must parse as a VALUE (not fall
+// through to unknownLines, which reads as absent = default groomer — the opposite of hold).
+test('groomer: none parses as the on-hold sentinel and round-trips verbatim', () => {
+  const src = ['# TODO', '', '## Tasks', '', '- [ ] Held story', '  - id: t-hold', '  - phase: new', '  - groomer: none'].join('\n');
+  const doc = parseTodo(src);
+  assert.equal(doc.entries[0].groomer, 'none');
+  assert.deepEqual(doc.entries[0].unknownLines, [], 'not treated as an unknown line');
+
+  const text = serializeTodo(doc);
+  assert.match(text, /- groomer: none/);
+  const doc2 = parseTodo(text);
+  assert.equal(doc2.entries[0].groomer, 'none', 'survives a second parse');
+  assert.equal(serializeTodo(doc2), text, 'fixpoint');
+});
+
+test('groomer: none round-trips on a DRAFT too', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const draft = doc.entries.find((x) => x.isDraft);
+  draft.groomer = 'none';
+  const text = serializeTodo(doc);
+  const doc2 = parseTodo(text);
+  assert.equal(doc2.entries.find((x) => x.isDraft).groomer, 'none');
+  assert.equal(serializeTodo(doc2), text, 'fixpoint');
+});
+
 test('an unrecognized model: (e.g. the removed haiku slot) lands in unknownLines, not entry.model', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] Haiku task', '  - id: t-hk01', '  - phase: backlog', '  - model: haiku', '  - groomer: haiku'].join('\n');
   const doc = parseTodo(src);

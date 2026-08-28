@@ -9,9 +9,10 @@ import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone, serializeEntry } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
-import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel } from './merge';
+import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
 import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
+import { reconcileCustomRules } from './customrules';
 import { Mutex } from './serialize';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
@@ -595,7 +596,7 @@ export class Store {
         checked: false,
         isDraft: true,
         model: normalizeModel(model ?? ''),
-        groomer: normalizeModel(groomer ?? ''),
+        groomer: normalizeGroomer(groomer ?? ''), // accepts the on-hold sentinel too (t-65a2)
         questions: [],
         notes: [],
         feedback: [],
@@ -727,6 +728,35 @@ export class Store {
         await this.atomicWrite(this.loopUri, loopTemplate);
         this.debugLog('info', 'autoHeal', 'recreated LOOP.md');
       }
+    });
+  }
+
+  // Custom loop rules (t-4a04): render `loopBoard.customRules` into LOOP.md's `loopboard:custom`
+  // block. Runs on activation, on Sync, and whenever the setting changes — workers re-read LOOP.md
+  // every pass, so the new text reaches running loops without a terminal recycle.
+  //
+  // Writes ONLY when the reconciled text actually differs from what was read: the file watcher
+  // covers `.loopboard/**/*.md`, so an unconditional write would turn every activation and every
+  // config read into a board-refresh storm.
+  async applyCustomRules(rules: string[]): Promise<void> {
+    return this.writeLock.run(async () => {
+      const loopText = await this.readFile(this.loopUri);
+      // Nothing to reconcile against: a missing/empty LOOP.md is autoHeal's job, and the pure
+      // reconciler additionally refuses a file with no sync markers (legacy full-replace guard).
+      if (isEmptyOrMissing(loopText)) return;
+      const result = reconcileCustomRules(loopText as string, rules);
+      if (result.text === loopText) {
+        this.debugLog('verbose', 'custom-rules', 'unchanged, no write');
+        return;
+      }
+      await this.atomicWrite(this.loopUri, result.text);
+      // Removal is a destructive-looking edit to a hand-editable file, so the whole outcome is
+      // info-level, not verbose.
+      this.debugLog(
+        'info',
+        'custom-rules',
+        `wrote LOOP.md — ${result.added.length} added, ${result.removed.length} removed, ${result.adopted.length} adopted`
+      );
     });
   }
 

@@ -88,6 +88,17 @@ test('hasDetailFile flows to the webview payload', () => {
   assert.equal(web.phases.new[0].hasDetailFile, false);
 });
 
+// t-65a2: the board needs the hold state to render its "on hold — not groomed" badge, so the
+// sentinel must reach the payload as-is rather than being coerced to null (= default groomer).
+test('groomer: none reaches the webview payload uncoerced', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-1', phase: 'new', groomer: 'none' })],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(web.phases.new[0].groomer, 'none');
+});
+
 test('note maps from notes[] joined with newlines', () => {
   const board = {
     preamble: '', done: [],
