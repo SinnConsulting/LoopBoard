@@ -202,6 +202,13 @@
             "default": true,
             "description": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
+          "loopBoard.customRules": {
+            "type": "array",
+            "order": 5,
+            "items": { "type": "string" },
+            "default": [],
+            "markdownDescription": "Extra standing instructions for the loop workers in THIS workspace, one per entry. They are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`, which workers re-read every pass — so an edit reaches running loops with no terminal recycle. The block is hand-editable and Synchronise Templates never touches it: the extension only reconciles the lines carrying its own `loopboard:custom-rule:` marker, so removing an entry here removes its line while rules you add by hand are left alone. Custom Rules are numbered in their own sequence (\"Custom Rule 1\", \"Custom Rule 2\", …), separate from the predefined Rules 1-17, and where a Custom Rule contradicts a predefined Rule the Custom Rule wins in this workspace."
+          },
           "loopBoard.debug": {
             "type": "string",
             "enum": [

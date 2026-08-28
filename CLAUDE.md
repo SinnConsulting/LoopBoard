@@ -107,6 +107,19 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   it fires on the same idle edge `maybeAutoRecycle` watches, since the tracker is the only signal
   for "busy". A forced restart leaves the task `phase: inprogress` with no worker, which Rule 2
   turns into a board-wide block — hence the modal's wording.
+- Workspace custom rules (t-4a04): `loopBoard.customRules` (array of strings) renders into a
+  `<!-- loopboard:custom:begin/end -->` block in `.loopboard/LOOP.md` — the `custom:` namespace is
+  invisible to `sync.ts` (its scanner matches only `loopboard:sync:` and only rewrites ids found in
+  the TEMPLATE), so Sync cannot overwrite it. Reconciliation is PER LINE via an inline
+  `<!-- loopboard:custom-rule:<hash> -->` marker: unmarked = the human's (untouched), marker whose
+  id no longer hashes to its own text = adopted (marker stripped, never deleted), marked + in the
+  setting = kept, marked + absent = deleted; then append missing and renumber from 1. Pure logic in
+  `src/customrules.ts` (`reconcileCustomRules`, in `tsconfig.test.json`); `store.applyCustomRules`
+  writes ONLY when the text differs (the `.loopboard/**/*.md` watcher would otherwise storm).
+  Triggered from activation auto-heal, after Sync, and `onDidChangeConfiguration` — the ONLY config
+  listener in `src/` (everything else is read on demand). The reconciler refuses a LOOP.md with no
+  `loopboard:sync:` markers, so the block can never live in a file the legacy full-replace path
+  would overwrite.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
 - Debug trace (`loopBoard.debug` = `off | info | verbose`): any new code that writes a

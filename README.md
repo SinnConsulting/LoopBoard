@@ -124,8 +124,39 @@ since all state lives in `.loopboard/`.
 | `loopBoard.autoRecycle` | `false` | restart a model's terminal after it finishes a task (fresh context) |
 | `loopBoard.clearSessionAfterTask` | `false` | lighter alternative — send `/clear` after a task instead of restarting |
 | `loopBoard.models.<slot>` | — | per-slot overrides: `.enabled`, `.model`, `.effort` (see below) |
+| `loopBoard.customRules` | `[]` | extra standing instructions for this workspace's loops (see below) |
 
 See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
+
+### Workspace custom rules (`loopBoard.customRules`)
+
+Extra standing instructions for the loop workers in **this** workspace — one single-line rule per
+array entry:
+
+```jsonc
+"loopBoard.customRules": [
+  "There must be a PR after a task has been completed"
+]
+```
+
+They are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`. Workers
+re-read that file on every pass, so an edit reaches running loops immediately — no terminal
+recycle.
+
+- **Numbered separately.** Custom Rules get their own sequence — "Custom Rule 1", "Custom Rule 2",
+  … — disjoint from the predefined Rules 1-17 under `## Rules`, which this feature never reads,
+  renumbers or rewrites. Numbers are positional, so removing one renumbers those below it.
+- **A Custom Rule wins** over a predefined Rule it contradicts, in this workspace. That is how a
+  workspace re-tightens something the shipped template relaxes. It is prose the worker reads, not
+  something the extension enforces or validates.
+- **Synchronise Templates never touches the block** — it lives in the `loopboard:custom` marker
+  namespace, which the template sync machinery does not see.
+- **The block is yours to edit.** The extension reconciles only the lines carrying its own
+  `loopboard:custom-rule:` marker: removing an entry from the setting removes exactly its line, and
+  clearing the setting removes every marked line while leaving the block, its lead-in prose and any
+  rules you added by hand. Editing a marked line by hand *adopts* it — the marker is dropped and
+  the line becomes yours (the setting's original wording then reappears as a new marked line, so
+  prefer editing the setting).
 
 ### Configuring models (`loopBoard.models.<slot>`)
 
