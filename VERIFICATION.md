@@ -257,7 +257,7 @@ New v2 checklist (from REFACTORING.md Phase 8):
     button, still ticking every second. Let the counter cross 9→10, 99→100 (and, with the board
     left open, 999→1000): the tabs, Collapse all and New Story stay put on every digit change.
 
-23. **Scheduled loop actions (t-77d1):** LEFT-click still acts immediately on all three row
+24. **Scheduled loop actions (t-77d1):** LEFT-click still acts immediately on all three row
     buttons — ▶ spawns, ♻ disposes and respawns, ■ disposes — and opens no popover. RIGHT-click a
     button → a popover opens under that row scheduling THAT action, with preset minute buttons, a
     `Custom…` field, `Repeat`, and a `Force` checkbox on ♻/■ only (▶ shows none); nothing happens
@@ -286,6 +286,16 @@ New v2 checklist (from REFACTORING.md Phase 8):
     a schedule armed → every indicator is gone (session-only) and nothing about it was written to
     disk. With `loopBoard.debug: info`, `.loopboard/debug.log` shows `restart-arm`, `restart-fire`,
     `restart-defer`, `restart-cancel`, and the force modal's `popup`/`popup-choice` pair.
+25. **"Groom with: On hold" (t-65a2):** the New Story composer's and a draft card's **Groom with**
+    select each offer `On hold` after the model ids (the **Work with** select does NOT). Picking it
+    on a draft writes `- groomer: none` into that entry in `.loopboard/TODO.md` and the card shows
+    an amber "on hold — not groomed" badge, with the draft hint changed to the on-hold wording;
+    picking `default (<model>)` again removes the `groomer:` line entirely and the badge disappears.
+    Creating a new draft with On hold selected in the composer writes `groomer: none` from the
+    start. A New (non-draft) card whose entry has `groomer: none` shows the same badge in its chip
+    row; a Backlog/In Progress/Review/Done card never shows it. With a real loop running, a held
+    New task survives pass after pass ungroomed — its `## Description` and questions are untouched,
+    including when one of its answers is filled.
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough

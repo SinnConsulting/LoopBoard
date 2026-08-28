@@ -1,6 +1,6 @@
 // Board -> lean webview payload, plus attention/badge computation. No vscode imports
 // (takes primitives) so it stays easy to reason about.
-import { Board, DoneEntry, Task, Phase, Model } from './model';
+import { Board, DoneEntry, Task, Phase, Model, GroomerValue } from './model';
 
 export interface WebTask {
   id: string;
@@ -10,7 +10,7 @@ export interface WebTask {
   checked: boolean;
   hasDetailFile: boolean;
   model: Model | null;
-  groomer: Model | null;
+  groomer: GroomerValue | null; // 'none' = on hold (t-65a2): no loop grooms this task
   added: string | null;
   started: string | null;
   completed: string | null;

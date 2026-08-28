@@ -23,6 +23,13 @@ export const BUILTIN_MODELS: { id: Model; label: string; model: string }[] = [
 
 export const BUILTIN_MODEL_IDS: Model[] = BUILTIN_MODELS.map((m) => m.id);
 
+// "On hold" sentinel for the `groomer:` field (t-65a2). Absent still means "default groomer";
+// this explicit value means NO groomer — no loop may groom, re-groom or answer-fold the task
+// until the human picks a real groomer again. It is a value of the existing routing field rather
+// than a new key, so a task can never be held and routed at the same time.
+export const GROOMER_HOLD = 'none';
+export type GroomerValue = Model | typeof GROOMER_HOLD;
+
 // Strict allowlist for any `--model` string that reaches the loop terminal shell line; admits the
 // `[1m]` 1M-context suffix (e.g. `opus[1m]`). A configured override failing this is ignored and the
 // built-in default is used instead — the shell line never carries an unvalidated value.
@@ -121,7 +128,7 @@ export interface IndexEntry {
   checked: boolean;
   isDraft: boolean;
   model?: Model;
-  groomer?: Model; // which model grooms this task (absent = default model)
+  groomer?: GroomerValue; // which model grooms this task (absent = default model; 'none' = on hold)
   rev?: number; // monotonic per-task change marker; bumped by the writer only when content changes
   questions: Question[];
   notes: string[]; // unprocessed human worker-notes (Rule 16): applied then deleted, index-only

@@ -4,7 +4,7 @@
 // v2 routes patches by destination file: index fields patch `.loopboard/TODO.md`, detail fields
 // patch `.loopboard/tasks/<id>.md`. Both keep today's base/conflict semantics (disk wins).
 
-import { IndexDoc, IndexEntry, TaskDetail, Model, BUILTIN_MODEL_IDS } from './model';
+import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS } from './model';
 
 export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'note' | 'feedback';
 export type DetailField = 'description';
@@ -41,6 +41,12 @@ export function normalizeModel(value: string): Model | undefined {
   return undefined; // '', 'default (opus)', 'default' -> no model field
 }
 
+// The groomer field additionally accepts the on-hold sentinel (t-65a2); everything else
+// normalizes exactly like a model value, so '' / 'default (opus)' still clears the field.
+export function normalizeGroomer(value: string): GroomerValue | undefined {
+  return value.trim() === GROOMER_HOLD ? GROOMER_HOLD : normalizeModel(value);
+}
+
 // Current on-disk value of an index field, as a plain string (matches what the webview renders).
 export function currentFieldValue(entry: IndexEntry, field: IndexField, questionIndex?: number): string {
   switch (field) {
@@ -70,7 +76,7 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
       entry.model = normalizeModel(value);
       break;
     case 'groomer':
-      entry.groomer = normalizeModel(value);
+      entry.groomer = normalizeGroomer(value);
       break;
     case 'answer':
       if (questionIndex !== undefined && entry.questions[questionIndex]) {

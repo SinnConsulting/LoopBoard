@@ -14,7 +14,7 @@
 //     - id: t-3f9a               (assigned on write if missing; identity anchor)
 //     - phase: new | backlog | inprogress | feedback | review   (omitted for DRAFTs = new)
 //     - model: opus | sonnet | fable        (optional)
-//     - groomer: opus | sonnet | fable      (optional)
+//     - groomer: opus | sonnet | fable | none  (optional; `none` = on hold, no groomer)
 //     - rev: <n>                             (optional; monotonic change marker, writer-managed)
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
@@ -26,7 +26,7 @@
 //   `completed:` is canonical in DONE.md entries only.
 // ========================================================================================
 
-import { IndexDoc, IndexEntry, Phase, Question, Model, BUILTIN_MODEL_IDS } from './model';
+import { IndexDoc, IndexEntry, Phase, Question, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS } from './model';
 
 const TASKS_HEADING_RE = /^##\s+Tasks\b/i;
 const TASK_RE = /^- \[([ xX])\]\s?(.*)$/;
@@ -77,7 +77,10 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
         else return false;
         return true;
       case 'groomer':
-        if (KNOWN_MODELS.includes(v as Model)) entry.groomer = v as Model;
+        // `none` is the explicit on-hold sentinel (t-65a2) and must be recognized here: an
+        // unrecognized value falls through to unknownLines, which reads as "absent" = DEFAULT
+        // groomer — the exact opposite of hold.
+        if (v === GROOMER_HOLD || KNOWN_MODELS.includes(v as Model)) entry.groomer = v as GroomerValue;
         else return false;
         return true;
       case 'rev':
