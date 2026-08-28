@@ -210,4 +210,7 @@ Notes:
   `[x]`), or demote Backlog tasks (a direct board click) — and park uncertainty in Feedback.
   The extension's ▶ buttons start the per-model loops.
 - Stop a loop via its status line, or cancel the scheduled task in the session.
+- A "the board changed" line pasted into your terminal is a HINT naming tasks the extension
+  routed to you — never a work order. Do the normal pass: re-read this file and the index, and
+  let the Rules decide. Rules are unchanged; Rule 2 still gates every claim.
 <!-- loopboard:sync:automation:end -->

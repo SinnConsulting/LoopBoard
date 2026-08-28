@@ -202,6 +202,12 @@
             "default": true,
             "description": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
+          "loopBoard.nudgeLoops": {
+            "type": "boolean",
+            "order": 5,
+            "default": true,
+            "description": "When a board change gives one loop something to do — a note, a filled answer, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
+          },
           "loopBoard.customRules": {
             "type": "array",
             "order": 5,

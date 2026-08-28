@@ -11,6 +11,7 @@ import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
+import { computeNudges, formatNudge, NudgeItem } from './nudge';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -51,6 +52,12 @@ export class Controller {
   // a schedule outliving its terminal would be meaningless — a reload clears every schedule.
   private restartSchedules = new Map<Model, RestartSchedule>();
   private restartTimers = new Map<Model, ReturnType<typeof setTimeout>>();
+  // Nudges routed to a model whose loop terminal is not running (t-068e): held here and delivered
+  // on the next refresh that finds a terminal — a spawn/recycle fires onDidChangeStatus, which
+  // refreshes. Session-only for the same reason the restart schedules are: the terminals die with
+  // the window. Held items merge and de-duplicate, so a model that stays down for ten board edits
+  // gets ONE line naming each task once, not ten lines.
+  private pendingNudges = new Map<Model, NudgeItem[]>();
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -78,6 +85,7 @@ export class Controller {
       clearSessionAfterTask: c.get<boolean>('clearSessionAfterTask', false),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
+      nudgeLoops: c.get<boolean>('nudgeLoops', true),
       customRules: c.get<string[]>('customRules', []),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
@@ -119,6 +127,7 @@ export class Controller {
     const board = await this.store.load();
     this.maybeAutoRecycle(this.lastBoard, board);
     this.maybeClearSession(this.lastBoard, board);
+    this.maybeNudge(this.lastBoard, board);
     this.lastBoard = board;
     // A deferred restart fires on the same idle signal auto-recycle uses — the freshly loaded board
     // is the only place "is this model busy?" is knowable (terminal output can never be read).
@@ -141,6 +150,31 @@ export class Controller {
     if (this.pendingReveal && this.lastBoard) {
       BoardPanel.current?.post({ type: 'reveal', ...this.pendingReveal });
       this.pendingReveal = undefined;
+    }
+  }
+
+  // Steering (t-068e): route each CHANGED task to the one loop that now has something to do and
+  // paste a line naming it into that loop's terminal. The nudge SUPPLEMENTS the every-pass board
+  // re-read, which stays the source of truth — a nudge that is never delivered costs correctness
+  // nothing, so nothing here throws, retries or blocks a refresh.
+  private maybeNudge(prev: Board | undefined, next: Board): void {
+    const cfg = this.config();
+    if (!cfg.nudgeLoops) return;
+    const routes = computeNudges(prev?.tasks, next.tasks, {
+      worker: cfg.defaultWorkerModel,
+      groomer: cfg.defaultGroomerModel,
+    });
+    for (const route of routes) {
+      const held = this.pendingNudges.get(route.model) ?? [];
+      // De-duplicate on task id: a task edited twice while its loop was down is named once, and
+      // the newest reason for it wins.
+      const merged = held.filter((h) => !route.items.some((i) => i.taskId === h.taskId)).concat(route.items);
+      this.pendingNudges.set(route.model, merged);
+      this.store.debugLog('verbose', 'nudge-route', `${route.model} <- ${route.items.map((i) => `${i.taskId}:${i.reason}`).join(',')}`);
+    }
+    for (const [model, items] of [...this.pendingNudges]) {
+      if (this.terminals.nudge(model, formatNudge(items))) this.pendingNudges.delete(model);
+      else this.store.debugLog('verbose', 'nudge-hold', `${model} — no terminal, ${items.length} task(s) held for next spawn`);
     }
   }
 
