@@ -3,8 +3,8 @@
 @.claude/rules/branch.md
 
 VSCode extension: renders workspace `.loopboard/` tracker as interactive board, writes edits back
-to markdown, spawns model-specific Claude Code loop terminals. Decisions: `DECISIONS.md`;
-verification status: `VERIFICATION.md`.
+to markdown, spawns model-specific Claude Code loop terminals. Decisions: `decisions/` (index
+`DECISIONS.md`); verification status: `VERIFICATION.md`.
 
 Storage: everything under `.loopboard/` — `TODO.md` (slim task index, grammar v5), `DONE.md`
 (accepted, lazy), `LOOP.md` (rules + loop worker instructions), `tasks/<id>.md` (per-task detail).
@@ -139,8 +139,9 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   `.loopboard/` file IO align) — extension is not nested. Missing `.loopboard/` → board shows init
   empty-state; `LoopBoard: Initialize Workspace` / `loopboard.init` scaffolds it and refuses if it
   already exists.
-- Record notable implementation decisions as one-liners in `DECISIONS.md`; update `VERIFICATION.md`
-  when the verification story changes.
+- Record notable implementation decisions as one-liners in the matching `decisions/<category>.md`
+  (index: `DECISIONS.md`; append at the bottom); update `VERIFICATION.md` when the verification
+  story changes.
 - Manual checklist (M3–M6, F5 Extension Development Host) lives in `VERIFICATION.md`; headless
   sessions cannot run it — say so, never claim it done.
 - `DONE.md` may be absent until first Review acceptance; store treats missing as empty — keep it
