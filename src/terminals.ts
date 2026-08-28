@@ -203,4 +203,20 @@ export class TerminalManager {
       if (this.find(model) === terminal) terminal.sendText('', true);
     }, SUBMIT_DELAY_MS);
   }
+
+  // Steering nudge (t-068e): paste one line naming what changed into a model's running loop.
+  // Delivery is IMMEDIATE and cannot interrupt work in flight — the text only seeds the REPL
+  // input, exactly like /clear, and is submitted by the same lone Enter after the paste-detection
+  // window closes. Returns false when that model has no terminal, so the caller can hold the
+  // nudge for the next spawn rather than losing it; a missing terminal is never an error.
+  nudge(model: Model, text: string): boolean {
+    const terminal = this.find(model);
+    if (!terminal) return false;
+    this.log('info', 'loop-nudge', `${model} — ${text}`);
+    terminal.sendText(text, false);
+    setTimeout(() => {
+      if (this.find(model) === terminal) terminal.sendText('', true);
+    }, SUBMIT_DELAY_MS);
+    return true;
+  }
 }
