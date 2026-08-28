@@ -249,34 +249,33 @@
         // Each of the three buttons keeps its original LEFT-click meaning — act now (t-77d1
         // feedback) — and schedules the same action on RIGHT-click (contextmenu). Keyboard users
         // reach it the way they reach any context menu (Menu key / Shift+F10 while focused).
-        // A disabled button fires no mouse events, but that matches the actions anyway: you can
-        // only schedule a start while stopped, and a restart/stop while running.
+        //
+        // Scheduling is available on ALL THREE buttons whatever the loop's current state, because
+        // a schedule is armed against the state it will be in LATER ("stop it in 4h" on a loop you
+        // are about to start). That is why an inapplicable button uses `aria-disabled` + `.off`
+        // rather than the real `disabled` attribute: a disabled button fires no mouse events at
+        // all, which would take the right-click away with the left. The left-click stays inert
+        // exactly as before, and the host swallows a scheduled action that no longer applies when
+        // its timer elapses (`appliesTo` in src/schedule.ts).
         const armedFor = (action) => (l.restart && l.restart.action === action ? l.restart : null);
         const withSchedule = (base, action) => {
           const armed = armedFor(action);
           return (armed ? 'Scheduled ' + action + ' — ' + armed.label : base) + ' (right-click to schedule)';
         };
+        const actionBtn = (action, enabled, label, message, glyph) => {
+          const btn = h('button', {
+            class: 'icon-btn' + (armedFor(action) ? ' armed' : '') + (enabled ? '' : ' off'),
+            type: 'button', 'aria-label': label, title: label,
+            'aria-disabled': enabled ? null : 'true',
+            onclick: enabled ? () => vscode.postMessage({ type: message, model: l.id }) : null,
+          }, icon(glyph));
+          bindScheduleMenu(btn, l, action);
+          return btn;
+        };
 
-        const playLabel = withSchedule(spawnLabel, 'start');
-        const playBtn = h('button', {
-          class: 'icon-btn' + (armedFor('start') ? ' armed' : ''), type: 'button', 'aria-label': playLabel, title: playLabel, disabled: l.running,
-          onclick: l.running ? null : () => vscode.postMessage({ type: 'spawnLoop', model: l.id }),
-        }, icon(SVG.play));
-        if (!l.running) bindScheduleMenu(playBtn, l, 'start');
-
-        const restartLabel = withSchedule('Restart with fresh context', 'restart');
-        const recycleBtn = h('button', {
-          class: 'icon-btn' + (armedFor('restart') ? ' armed' : ''), type: 'button', 'aria-label': restartLabel, title: restartLabel, disabled: !l.running,
-          onclick: l.running ? () => vscode.postMessage({ type: 'recycleLoop', model: l.id }) : null,
-        }, icon(SVG.recycle));
-        if (l.running) bindScheduleMenu(recycleBtn, l, 'restart');
-
-        const stopLabel = withSchedule('Stop loop', 'stop');
-        const stopBtn = h('button', {
-          class: 'icon-btn' + (armedFor('stop') ? ' armed' : ''), type: 'button', 'aria-label': stopLabel, title: stopLabel, disabled: !l.running,
-          onclick: l.running ? () => vscode.postMessage({ type: 'stopLoop', model: l.id }) : null,
-        }, icon(SVG.stop));
-        if (l.running) bindScheduleMenu(stopBtn, l, 'stop');
+        const playBtn = actionBtn('start', !l.running, withSchedule(spawnLabel, 'start'), 'spawnLoop', SVG.play);
+        const recycleBtn = actionBtn('restart', l.running, withSchedule('Restart with fresh context', 'restart'), 'recycleLoop', SVG.recycle);
+        const stopBtn = actionBtn('stop', l.running, withSchedule('Stop loop', 'stop'), 'stopLoop', SVG.stop);
 
         const row = h('div', { class: 'sb-row loop' }, body, playBtn, recycleBtn, stopBtn);
         // The popover is anchored inside the row's wrapper so it sits under its own button row.

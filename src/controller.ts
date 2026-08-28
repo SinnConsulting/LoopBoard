@@ -9,7 +9,7 @@ import { Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_M
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
-  describeSchedule, parseMinutes, isLoopAction, supportsForce,
+  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
 
 function today(): string {
@@ -240,16 +240,25 @@ export class Controller {
     this.fireRestart(schedule);
   }
 
-  // Performs the restart and either re-arms (repeat) or disarms (one-shot).
+  // Performs the action and either re-arms (repeat) or disarms (one-shot). An action that no longer
+  // applies to the loop's CURRENT state is swallowed — the schedule still fires (so a one-shot
+  // disarms and a repeat keeps its cadence), it just does nothing. A schedule is armed against a
+  // state that can change before the timer elapses, and doing something else instead (starting a
+  // loop the user has since stopped) would be worse than doing nothing.
   private fireRestart(schedule: RestartSchedule): void {
     const model = schedule.model;
     this.clearRestartTimer(model);
-    this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
-    // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
-    // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
-    if (schedule.action === 'start') this.terminals.spawn(model, true);
-    else if (schedule.action === 'stop') this.terminals.stop(model);
-    else this.terminals.recycle(model, true);
+    const running = this.terminals.status().some((l) => l.id === model && l.running);
+    if (!appliesTo(schedule.action, running)) {
+      this.store.debugLog('info', 'restart-skip', `${model} ${schedule.action} — loop is ${running ? 'already running' : 'not running'}, nothing to do`);
+    } else {
+      this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
+      // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
+      // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
+      if (schedule.action === 'start') this.terminals.spawn(model, true);
+      else if (schedule.action === 'stop') this.terminals.stop(model);
+      else this.terminals.recycle(model, true);
+    }
     const next = afterFire(schedule, Date.now());
     if (next) {
       this.restartSchedules.set(model, next);

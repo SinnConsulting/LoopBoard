@@ -63,8 +63,10 @@ body {
 }
 .icon-btn:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
 .icon-btn:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
-.icon-btn[disabled] { cursor: not-allowed; opacity: 0.4; }
-.icon-btn[disabled]:hover { background: transparent; }
+/* `.off` is the loop-row buttons' inapplicable state (t-77d1): it must LOOK disabled but still
+   receive contextmenu, since scheduling stays available whatever the loop is doing right now. */
+.icon-btn[disabled], .icon-btn.off { cursor: not-allowed; opacity: 0.4; }
+.icon-btn[disabled]:hover, .icon-btn.off:hover { background: transparent; }
 .ico-svg { display: inline-flex; }
 .loop-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .loop-dot.on { background: var(--vscode-testing-iconPassed, #73c991); }

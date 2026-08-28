@@ -63,6 +63,9 @@ questions, an HTML-comment template) and `index-unknown.md`:
 ### Loop-action schedule — `test/schedule.test.js` (t-77d1)
 - `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
   payload value (the webview's `action` is never trusted).
+- `appliesTo` gates the fire path on the loop's CURRENT state: `start` applies only while stopped,
+  `restart`/`stop` only while running — so a restart armed for a since-stopped loop is swallowed
+  rather than silently starting it.
 - `supportsForce` is false for `start` only; `armSchedule` coerces a start's `force` to false even
   when asked for it, and `mayFire` lets a start fire while its own model is In Progress (there is
   no worker to cut off) while a stop defers exactly like a restart.
@@ -250,6 +253,11 @@ New v2 checklist (from REFACTORING.md Phase 8):
     "Start <model>" with a `Schedule start` button; right-click ■ while running → "Stop <model>".
     Arming from one button while another action is armed replaces it (one schedule per loop), and
     re-opening a different button's popover starts from defaults rather than the armed values.
+    **Right-click works on a greyed-out button too** — right-click ■ on a STOPPED loop and the stop
+    popover still opens (left-click on it does nothing, as before); same for ♻ while stopped and ▶
+    while running. **Swallowing:** schedule a 1-minute restart, then stop the loop by hand before it
+    fires → nothing starts, the indicator clears (or the repeat re-arms), and `.loopboard/debug.log`
+    carries a `restart-skip` line at `info`.
     Escape, a click outside, and Cancel all dismiss
     it leaving the loop untouched; right-clicking the same button again toggles it closed. Type a bad custom value
     (`abc`, `0`, `-5`, `1.5`, `90m`) and press Schedule → an in-popover message appears and nothing

@@ -33,6 +33,15 @@ export function supportsForce(action: LoopAction): boolean {
   return action !== 'start';
 }
 
+// Whether a scheduled action still means anything by the time its timer elapses. A schedule is
+// armed against a state that may well have changed since — the loop can be started or stopped by
+// hand, or its terminal closed from the terminal panel — so the fire path checks this and SWALLOWS
+// an action that no longer applies rather than doing something surprising (a `restart` armed for a
+// loop that is now stopped must NOT silently start it).
+export function appliesTo(action: LoopAction, running: boolean): boolean {
+  return action === 'start' ? !running : running;
+}
+
 export interface RestartSchedule {
   model: Model;
   action: LoopAction;

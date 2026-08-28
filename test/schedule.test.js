@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   PRESET_MINUTES, MAX_MINUTES, parseMinutes, armSchedule, delayUntilFire,
-  mayFire, deferSchedule, afterFire, describeSchedule, LOOP_ACTIONS, isLoopAction, supportsForce,
+  mayFire, deferSchedule, afterFire, describeSchedule, LOOP_ACTIONS, isLoopAction, supportsForce, appliesTo,
 } = require('../out-test/schedule');
 
 const NOW = 1000000;
@@ -131,4 +131,16 @@ test('describeSchedule names the scheduled action', () => {
   assert.strictEqual(describeSchedule(armSchedule('opus', 'stop', 60, false, true, NOW), NOW), 'stop in 60m · force');
   const pending = deferSchedule(armSchedule('opus', 'stop', 15, true, false, NOW));
   assert.strictEqual(describeSchedule(pending, NOW), 'stop waiting for task · every 15m');
+});
+
+test('appliesTo swallows an action that no longer matches the loop state', () => {
+  // A schedule is armed against the state the loop will be in later, so the fire path re-checks.
+  assert.strictEqual(appliesTo('start', false), true, 'start a stopped loop');
+  assert.strictEqual(appliesTo('start', true), false, 'already running — nothing to start');
+  // The human's example: a restart armed for a loop that is already stopped must do NOTHING
+  // rather than silently starting it.
+  assert.strictEqual(appliesTo('restart', false), false);
+  assert.strictEqual(appliesTo('restart', true), true);
+  assert.strictEqual(appliesTo('stop', false), false, 'already stopped — nothing to stop');
+  assert.strictEqual(appliesTo('stop', true), true);
 });

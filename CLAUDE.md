@@ -92,9 +92,12 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   suppressed) opens a popover scheduling that same action (preset minutes + `Custom…`, always
   MINUTES; `repeat`; `force` on restart/stop only — a start interrupts nothing, and `armSchedule`
   forces it false). ONE schedule per model whatever armed it (`start`/`restart`/`stop` are
-  contradictory), so arming replaces. A disabled button fires no mouse events, which matches the
-  actions: start is schedulable only while stopped, restart/stop only while running.
-  Schedule logic is pure (`src/schedule.ts`, unit-tested); the controller owns the
+  contradictory), so arming replaces. Scheduling is available on all three buttons in ANY loop
+  state — hence `aria-disabled` + `.off` instead of the real `disabled` attribute, which would fire
+  no mouse events and take the right-click away with the left. `appliesTo` re-checks at fire time
+  and SWALLOWS an action that no longer matches (a `restart` armed for a since-stopped loop does
+  nothing, never a silent start); the schedule still fires, so a one-shot disarms and a repeat
+  keeps its cadence. Schedule logic is pure (`src/schedule.ts`, unit-tested); the controller owns the
   per-model schedule map and its `setTimeout`s, SESSION-ONLY (nothing in `globalState`/
   `workspaceState`/`.loopboard/`, so a reload clears every schedule — matching terminals, which die
   with the window too). Force consent is a native modal taken ONCE at arm time (a scheduled action
