@@ -1,6 +1,6 @@
 ---
 name: template-loop-compress
-description: Produce a token-reduced, meaning-preserving rewrite of media/template-loop.md — LoopBoard's upstream source for the standing loop-worker instructions — and land it as a PR once the self-check passes. Always runs in an Opus subagent. Use only when asked to compress, shrink, tighten or reduce the size of media/template-loop.md. Never engages for any other file.
+description: Produce a token-reduced, meaning-preserving rewrite of media/template-loop.md — LoopBoard's upstream source for the standing loop-worker instructions — and land it on a task branch once the self-check passes. Always runs in an Opus subagent. Use only when asked to compress, shrink, tighten or reduce the size of media/template-loop.md. Never engages for any other file.
 ---
 
 # template-loop-compress
@@ -14,7 +14,7 @@ Rule 14, which routes New-task grooming to a subagent of the task's `groomer:` m
 running it in the main loop.
 
 The subagent does everything below: read the file, compress, run the self-check, and — only on a
-pass — write the file and open the PR.
+pass — write the file and land it on a `task/**` branch (a PR is optional, Rule 7).
 
 ## Why this file is different from ordinary docs
 
@@ -89,23 +89,29 @@ Never remove, soften, or reorder:
 Compressing "never promote a New task yourself" into "never promote New" is fine; dropping
 "never" is not.
 
-## Writing the result: self-check gates a write + PR
+## Writing the result: the self-check gates the write
 
-The self-check below is a hard gate.
+The self-check below is a SOFT, pre-commit-style step — advisory, run before committing, enforced
+by no hook and no CI — but it is a HARD gate on this skill's own write.
 
 **Pass:** write the compressed text to `media/template-loop.md` and land it through the normal
-repo flow — fetch `main`, branch off `main`, commit, `gh pr create`. No chat-level approval
-needed first. `.loopboard/LOOP.md` Rule 7 already requires every change to arrive via PR and
-forbids committing to `main`; the PR review is the human review point, same as every other change
-in this repo.
+repo flow — fetch `main`, branch off `main`, commit and push to a `task/**` branch. No chat-level
+approval needed first. `.loopboard/LOOP.md` Rule 7 forbids committing to `main` and makes the PR
+OPTIONAL: open one when review or a CI artifact comment is wanted, otherwise the branch is the
+delivery.
 
 **Fail:** write nothing. Report the failing check(s) and stop. No partial write, no "mostly
 passing" candidate, no backup-and-overwrite.
 
 The discipline is non-negotiable because of propagation: this file's marked sections are pushed
 into every user's live `.loopboard/LOOP.md` by `store.syncTemplates` / `store.autoHeal`
-(`src/sync.ts`). A bad compression that skips the self-check or skips the PR is an unattended
-edit of other people's agent instructions.
+(`src/sync.ts`). A bad compression is an unattended edit of other people's agent instructions.
+State this plainly rather than assuming it away: the PR used to be mandatory precisely because it
+was the human review point for that exposure. With Rule 7 relaxed, the self-check is the only
+automated gate before the branch, and human review shifts to whenever the branch is reviewed or
+merged to `main`. What still holds it: the self-check remains a hard write gate (fail → write
+nothing), and marked sections reach OTHER workspaces only after a release plus a manual Sync
+(activation auto-heal is create-only).
 
 ## Self-check before writing
 
@@ -123,8 +129,8 @@ Before writing anything, verify against the input:
 - Report a bullet-count / line-count delta as a sanity signal (a large unexplained drop in bullet
   count is a smell, per the caveman-compress project's own regression history — see below).
 
-If any check fails, do not write the file and do not open a PR — report the failing check(s) and
-stop rather than paper over the gap. Structural validation (fences/headings/markers preserved) is
+If any check fails, do not write the file and do not commit anything — report the failing
+check(s) and stop rather than paper over the gap. Structural validation (fences/headings/markers preserved) is
 not the same as semantic validation (meaning preserved); this self-check must reason about
 meaning, not just shape.
 
