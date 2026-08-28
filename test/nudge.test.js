@@ -54,9 +54,19 @@ test('groomer: none is ON HOLD — never nudged, whatever changed on it', () => 
   );
 });
 
-test('a New task with a filled answer routes to its groomer as a re-groom', () => {
-  const e = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one')] });
+test('a New task whose questions are ALL answered routes to its groomer as a re-groom', () => {
+  const e = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one'), q('and this', 'that')] });
   assert.deepStrictEqual(routeEntry(e, DEFAULTS), { model: 'fable', reason: 'regroom' });
+});
+
+test('a New task answered only in part is NOT pushed into a loop — one blank answer parks it', () => {
+  const e = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one'), q('and this')] });
+  assert.strictEqual(routeEntry(e, DEFAULTS), null);
+});
+
+test('a DRAFT with a half-answered question stays a groom, never a partial re-groom', () => {
+  const e = entry({ phase: 'new', isDraft: true, groomer: 'fable', questions: [q('pick one', 'this one'), q('and this')] });
+  assert.deepStrictEqual(routeEntry(e, DEFAULTS), { model: 'fable', reason: 'groom' });
 });
 
 test('a groomed New task with only blank answers is waiting on the human, not a loop', () => {

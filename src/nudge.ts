@@ -12,7 +12,7 @@ import { IndexEntry, Model, GROOMER_HOLD } from './model';
 // Why a loop was nudged. Mirrors the Rules the loop will apply once it looks:
 //   note     — an unprocessed `note:` sub-bullet (Rule 16)
 //   groom    — a DRAFT waiting to be expanded into a story (Rule 14)
-//   regroom  — a New task with a filled `answer:` not yet folded into the story (Rule 14)
+//   regroom  — a New task whose questions are ALL answered, not yet folded into the story (Rule 14)
 //   backlog  — a claimable Backlog task (Rules 2/15)
 //   answers  — a Feedback task whose every question now has an answer (Rule 10)
 //   feedback — a Review task carrying an unaddressed `feedback:` sub-bullet (Rule 13)
@@ -49,7 +49,10 @@ export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model:
     if (entry.groomer === GROOMER_HOLD) return null;
     const model = (entry.groomer as Model | undefined) ?? defaults.groomer;
     if (entry.notes.length > 0) return { model, reason: 'note' };
-    if (entry.questions.some(answered)) return { model, reason: 'regroom' };
+    // Questions must be FULLY answered before the change is pushed into a loop: one blank answer
+    // means the human is still filling the form in, and a re-groom on a half-answered story would
+    // fold in half a decision and re-ask the rest. Mirrors the Rule 10 gate Feedback already uses.
+    if (entry.questions.length > 0 && entry.questions.every(answered)) return { model, reason: 'regroom' };
     if (entry.isDraft) return { model, reason: 'groom' };
     // A groomed New task with open questions is waiting on the HUMAN, not on a loop.
     return null;
