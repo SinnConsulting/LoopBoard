@@ -30,6 +30,18 @@ export interface LoopStatus {
   name: string;
   running: boolean;
   hint: string; // e.g. "model: <custom>" when the slot has a configured override; '' otherwise
+  // Scheduled-restart state (t-77d1), filled in by the controller from its in-memory schedule map —
+  // session-only, never persisted. `restart` is null when nothing is armed; otherwise it carries the
+  // settings so re-opening that button's popover shows them, plus a rendered one-line indicator.
+  // One schedule per model — arming from any of the three buttons replaces whatever was armed.
+  restart?: {
+    action: 'start' | 'restart' | 'stop'; // which button armed it
+    minutes: number;
+    repeat: boolean;
+    force: boolean;
+    pending: boolean; // fired but held back — this model owns the In-Progress task (force off)
+    label: string;    // e.g. "restart in 30m · every 30m", from describeSchedule()
+  } | null;
 }
 
 export interface WebBoard {
