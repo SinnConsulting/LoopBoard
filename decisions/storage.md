@@ -1,0 +1,21 @@
+# Decisions — Storage, store & gates
+
+One line each: what, why. Newest at the bottom. Index: [../DECISIONS.md](../DECISIONS.md).
+
+- Extension lives at repo root (package.json/src/media/test here), not a nested `loopboard/` dir — the workspace this operates on IS this repo, so `workspaceContains:TODO.md` activation and workspace-root file IO line up.
+- Pure field-patch + conflict logic lives in `merge.ts` (no vscode) so the merge protocol is unit-tested in Docker; `store.ts` will consume it.
+- Writing review `feedback:` from the board is a **field patch**, not a phase move — the board only performs the two human gates (New→Backlog, Review→Done); the loop moves a Review task back to In Progress on its next pass per Rule 13. The mockup's optimistic auto-move was prototype-only.
+- Pure gate transforms (`gates.ts`) and the pure loop-command builder (`loop.ts`) are split out of `store.ts`/`terminals.ts` (which import vscode) so both are unit-tested in Docker.
+- Fresh workspaces get a "Create TODO.md & DONE.md" button (sidebar + board empty state): the initial tracker ships as `media/todo-template.md` (test-pinned: parses empty, fixpoint, `{MODEL}` block present); `Store.createInitialFiles` never overwrites existing files. Works pre-TODO.md because contributed views activate the extension implicitly (`onView`).
+- v2.0.0 storage split (REFACTORING.md): `TODO.md`/`LOOP.md`/`DONE.md`/`tasks/<id>.md` all live under `.loopboard/`; breaking, no migration. The slim index (`TODO.md`, grammar v4) carries only id/phase/model/groomer/questions per entry — every removed key (owner/dates/worklog/link/depends on/description/note/feedback/DELIVERED) becomes an `unknownLines` entry (preserved + flagged), except `completed:` which is canonical in `DONE.md` only (parser gets an `allowCompleted` flag). Detail lives in `tasks/<id>.md`.
+- Field patches route by destination file (`merge.patchTarget`): index fields (title/model/groomer/answer) patch `TODO.md`; detail fields (description/note/feedback) patch `tasks/<id>.md` via `applyDetailPatch`; both keep the disk-wins conflict rule. The board's note textarea edits the whole `## Notes` section as one newline-joined value (split on save, empties dropped) — owner/dates/links/depends-on stay loop-written only.
+- Gates stay pure by mutating the in-memory `IndexEntry`/`TaskDetail` they're handed; the store orchestrates the per-file writes. Promote = index patch (phase→backlog, uncheck) then detail patch (`promoted:` + worklog). Accept = detail patch (`completed:` + worklog) → **write DONE.md first**, then remove the index entry, so a crash between them leaves a visible duplicate rather than a lost task; the task file stays in `tasks/`. Delete = drop the index entry AND `tasks/<id>.md` (unaccepted tasks only). Loop command builder (`loop.ts`) now takes `store.loopText` and slices the `## Automation` section before matching a fence — LOOP.md has several earlier fences, so the old first-fence regex would pick the wrong block.
+- Init: `loopboard.init` (command) and the board empty-state button share `Controller.onCreateFiles`, which reads `media/template-todo.md` + `media/template-loop.md` and calls `store.createInitialFiles` — scaffolds `.loopboard/TODO.md` + `LOOP.md` + empty `tasks/`, no DONE.md (lazy), refuses (returns false, warns) if `.loopboard/` already exists. Activation moved to `workspaceContains:.loopboard/TODO.md`; a root `TODO.md` is ignored. `REFACTORING.md` added to `.vscodeignore` (it leaked into the vsix at 33 files → back to 32).
+- Task-file lifecycle (t-6ab4): `store.createDraft` now eager-scaffolds `tasks/<id>.md` at
+  creation time (`added: <today>`, built via `parseTaskFile('')` + field-set so it's exactly what
+  `serializeTaskFile` already canonicalizes an empty detail to — no fixpoint change), replacing
+  the old lazy-create-on-first-write behavior, so a consumer never has to special-case a missing
+  file for an ordinary new draft. Deletion needed no change:
+  `store.deleteTask` already removed the index entry, `tasks/<id>.md`, and the attachment cache
+  dir in one path for drafts and groomed tasks alike (verified by reading, not by a new test —
+  `store.ts` imports vscode, so this is manual-F5-only).
