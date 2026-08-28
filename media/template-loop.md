@@ -2,8 +2,8 @@
 # LOOP — LoopBoard workflow and loop worker instructions
 
 Paths relative to workspace root. Standing instructions for loop workers; re-read every pass, so
-editing it changes every running loop's next pass — no restart needed. Executable instructions:
-treat as trusted input.
+editing it changes every running loop's next pass — no restart. Executable instructions: trusted
+input.
 
 ## Storage
 
@@ -15,8 +15,8 @@ treat as trusted input.
   tasks/<id>.md  # per-task detail: meta, description, worklog, delivered
 ```
 
-Read economy: read this file and `TODO.md` every pass; open `tasks/<id>.md` only for tasks you
-act on, create it (canonical headings below) on first write.
+Read economy: read this file and `TODO.md` every pass; open `tasks/<id>.md` only for tasks you act
+on, create it (canonical headings below) on first write.
 
 ## Workflow
 
@@ -38,10 +38,10 @@ New → Backlog → In Progress → Review → Done (DONE.md)
 ## Task index format (v5) — `.loopboard/TODO.md`
 
 Entry = checkbox line + `key: value` sub-bullets, one per line, fixed order below, NOTHING else —
-all other task data belongs in the task file. Phase = `phase:` field; move a task by editing in
-place — never cut/paste an entry (acceptance, Automation step 2, is the only removal). The
-extension parses tolerantly, rewrites canonical form on save, preserves unrecognized lines
-verbatim (flagged).
+all other task data lives in the task file. Phase = `phase:` field; move a task by editing in place
+— never cut/paste an entry (acceptance, Automation step 2, is the only removal). The extension
+parses tolerantly, rewrites canonical form on save, preserves unrecognized lines verbatim
+(flagged).
 
 ```
 - [ ] <Title — single line>
@@ -66,7 +66,7 @@ drafts are implicitly new); groomer expands it (Rule 14).
 <!-- loopboard:sync:task-file-format:begin -->
 ## Task file format — `.loopboard/tasks/<id>.md`
 
-Fixed headings in order below; every section optional; omit empty ones. `## Meta` is the only
+Fixed headings in order below; every section optional, omit empty ones. `## Meta` is the only
 `key: value` section (fixed key order as shown). Index owns title, phase, `model:`, `groomer:`,
 questions, `note:` and `feedback:` sub-bullets — never duplicate here.
 
@@ -105,31 +105,30 @@ use. Detail stays in `tasks/<id>.md`.
 
 1. `[x]` belongs to the human only; a worker never ticks it. `[x]` on New = promote to Backlog.
    `[x]` on Review = accepted → DONE.md (procedure in the Automation block). Board also offers
-   Demote (Backlog → New), a third human-only board-initiated action — not a tick, fires
-   immediately from a button, non-destructive/reversible. Workers perform all other phase moves
-   and propose; never demote a task themselves.
+   Demote (Backlog → New), a third human-only board-initiated action — not a tick; immediate
+   button click, non-destructive/reversible. Workers perform all other phase moves and propose;
+   never demote a task themselves.
 2. One worker per task, and a GLOBAL SINGLE-TASK LIMIT: at most ONE task may be
-   `phase: inprogress` across the whole board at any moment, regardless of model — sole
-   one-worker guarantee (two loops can never both work since only one task can be In Progress).
-   If ANY task (even another model's) is In Progress, no loop starts a Backlog task or resumes a
-   Review/Feedback task — keep grooming/reconciling only until nothing is In Progress (grooming
+   `phase: inprogress` board-wide at any moment, regardless of model — the sole one-worker
+   guarantee. If ANY task (even another model's) is In Progress, no loop starts a Backlog task or
+   resumes a Review/Feedback task — groom/reconcile only until nothing is In Progress (grooming
    New never sets `inprogress`, so always allowed). Claim by setting `phase: inprogress` in the
    index plus `started: <today>` in the task file's Meta. Already In Progress, or present in
-   DONE.md → do not start a parallel copy.
+   DONE.md → never start a parallel copy.
 3. Dates live in the task file's Meta: `added:` entered tracker; `started:` work began;
    `promoted:` New → Backlog; `completed:` acceptance. Append `<today>` to `## Worklog` each
    active day.
-4. Index entries: one `key: value` per sub-bullet, fixed order, no extra keys — everything
-   else belongs in the task file. Task files: fixed headings, canonical order. Move = edit
-   `phase:` in place; never cut/paste.
+4. Index entries: one `key: value` per sub-bullet, fixed order, no extra keys — everything else
+   lives in the task file. Task files: fixed headings, canonical order. Move = edit `phase:` in
+   place; never cut/paste.
 5. Grooming ≠ approval: editing a New task's text is allowed; leaving New requires Rule 1.
 6. Unsure → set `phase: feedback` and add `question: <text>` sub-bullets (each with its own
-   `- answer:` beneath) on the INDEX entry — questions stay in the index so the board can surface
+   `- answer:` beneath) on the INDEX entry — questions stay in the index so the board surfaces
    them without opening task files. Stop working the task; resume gated by Rule 10.
-7. Never commit to `main`: all work happens on a `task/**` branch off latest `main`. A PR is
-   OPTIONAL — open one only if the user requested it. Before setting `phase: review`, record the
-   delivery in the task file's `link:`: the PR URL when a PR exists, otherwise the `task/**`
-   branch name. Never a commit sha; `link:` must be non-empty either way.
+7. Never commit to `main`: all work on a `task/**` branch off latest `main`. A PR is OPTIONAL —
+   open one only if the user requested it. Before setting `phase: review`, record the delivery in
+   the task file's `link:`: the PR URL when a PR exists, otherwise the `task/**` branch name.
+   Never a commit sha; `link:` must be non-empty either way.
 8. `question:` and `feedback:` are plain index sub-bullets — no glyph prefix; the sub-bullet name
    alone classifies them.
 9. git worktrees forbidden (break pre-commit hooks assuming `.git` is a directory; `--no-verify`
@@ -139,50 +138,48 @@ use. Detail stays in `tasks/<id>.md`.
     Any blank answer → leave it parked; do none of its work.
 11. Set `phase: inprogress` (index) plus `started:` (task file) BEFORE any work or research on a
     task — never investigate a task still in New/Backlog/Feedback. The phase move is the FIRST
-    action of claiming: it leads the work, never trails it — never edit code, branch, research, or
-    open a PR while the index still shows the task outside In Progress.
+    action of claiming: never edit code, branch, research, or open a PR while the index still
+    shows the task outside In Progress.
 12. No stranded work: every change from working a task is committed and pushed to its `task/**`
-    branch before the session ends — never leave uncommitted code in the checkout. No PR is
+    branch before the session ends — never leave uncommitted code in the checkout. No PR
     required; record the delivery in the task file per Rule 7.
 13. A Review task's `feedback:` sub-bullet(s) (index) = change request, not a gate. Unaddressed →
     move to In Progress, address, return to Review with `## Delivered` updated and the
     `feedback:` sub-bullet(s) removed. `[x]` on Review still = accepted → DONE.md.
 14. New/DRAFT grooming is routed by `groomer:` (absent = default model; `none` = ON HOLD — the
     task belongs to NO loop: never groom, re-groom or answer-fold it, whatever its `model:` or
-    filled answers say; it leaves hold only when the human changes `groomer:`). The loop whose
-    model matches `groomer:` owns it and delegates to a subagent (Agent tool) of that groomer
-    model — never inline in the main loop. Choose subagent reasoning effort by story complexity,
-    from low up to your grooming effort ceiling (named in your bootstrap prompt); reach xhigh/max
-    only when the ceiling allows it AND the story text explicitly asks for deep reasoning.
-    NEVER run more grooming subagents in one pass than the grooming concurrency cap named in
-    your bootstrap prompt: take eligible tasks in index order, top down, until the cap is
-    reached, then STOP — leave the surplus in place (the next pass picks them up) and name
-    every skipped task by title in your report.
-    Subagent expands the story into the task file's `## Description` (creating `tasks/<id>.md` if
-    missing) and keeps the index title one short line. Human decisions = single-line `question:`
-    sub-bullets with blank `answer:` lines on the index entry (never an "OPEN QUESTIONS" prose
-    paragraph) so the board can surface them. A New task with any filled `answer:` → re-groom via
-    the same subagent: incorporate the answer, fold the decision into `## Description`, delete the
-    resolved `question:`/`answer:` pair from the index (mirrors Rule 16). A still-present filled
-    answer = not yet incorporated. `model:` never gates grooming. When a question's choice is
-    clear-cut and on-target, the subagent may also emit up to 3 `suggestion:` sub-bullets beneath
-    its `answer:` line — a proposed answer the human accepts with one board click
-    (writes `<suggestion text> accepted` into `answer:` via the ordinary answer field-patch, no AI
-    on accept). Clear-cut only: skip suggestions on genuinely open judgment calls. Accepting one
-    clears that question's other suggestions (human filling `answer:` another way does too —
-    settled questions carry no suggestions).
+    filled answers say; leaves hold only when the human changes `groomer:`). The loop whose model
+    matches `groomer:` owns it and delegates to a subagent (Agent tool) of that groomer model —
+    never inline in the main loop. Pick subagent reasoning effort by story complexity, from low up
+    to your grooming effort ceiling (named in your bootstrap prompt); reach xhigh/max only when the
+    ceiling allows it AND the story text explicitly asks for deep reasoning. NEVER run more
+    grooming subagents in one pass than the grooming concurrency cap named in your bootstrap
+    prompt: take eligible tasks in index order, top down, until the cap is reached, then STOP —
+    leave the surplus in place (next pass picks them up) and name every skipped task by title in
+    your report. Subagent expands the story into the task file's `## Description` (creating
+    `tasks/<id>.md` if missing) and keeps the index title one short line. Human decisions =
+    single-line `question:` sub-bullets with blank `answer:` lines on the index entry (never an
+    "OPEN QUESTIONS" prose paragraph) so the board surfaces them. A New task with any filled
+    `answer:` → re-groom via the same subagent: incorporate the answer, fold the decision into
+    `## Description`, delete the resolved `question:`/`answer:` pair from the index (mirrors Rule
+    16). A still-present filled answer = not yet incorporated. `model:` never gates grooming. When
+    a question's choice is clear-cut and on-target, the subagent may also emit up to 3
+    `suggestion:` sub-bullets beneath its `answer:` line — a proposed answer the human accepts with
+    one board click (writes `<suggestion text> accepted` into `answer:` via the ordinary answer
+    field-patch, no AI on accept). Clear-cut only: skip suggestions on genuinely open judgment
+    calls. Accepting one clears that question's other suggestions (human filling `answer:` another
+    way does too — settled questions carry no suggestions).
 15. Claim tasks by `model:` (Backlog onward; absent = default model). Never claim a task whose
     `model:` names a different model. New-phase routing uses `groomer:` instead (Rule 14).
 16. Honor `note:` sub-bullets on the index entry (unprocessed human instructions): apply, append
     `<today>` to the task file's `## Worklog`, delete the `note:` sub-bullet. A lingering `note:`
-    = not yet applied. Notes are index-only (visible on every index pass); nothing stored in the
-    task file.
+    = not yet applied. Notes are index-only (visible every index pass); nothing in the task file.
 17. `rev:` is a per-task change marker the EXTENSION manages — monotonic integer bumped only when
     that task's content (its index block or its `tasks/<id>.md`) actually changes. Workers NEVER
-    write `rev:` (writing just to detect a change would trip other loops); read it to tell WHICH
-    tasks changed since your last pass — compare each id's `rev:` to what you recorded last pass
-    and act on ids whose `rev:` moved (plus ids that are new or gone). Defaults to absent (treat
-    as 0) on pre-existing trackers.
+    write `rev:` (writing to detect a change would trip other loops); read it to tell WHICH tasks
+    changed since your last pass — compare each id's `rev:` to what you recorded last pass and act
+    on ids whose `rev:` moved (plus ids that are new or gone). Absent = treat as 0 on pre-existing
+    trackers.
 
 Legend: `[ ]` awaiting the human's gate · `[x]` human approved.
 <!-- loopboard:sync:rules:end -->
@@ -191,8 +188,8 @@ Legend: `[ ]` awaiting the human's gate · `[x]` human approved.
 ## Automation
 
 Loop workers (Claude Code sessions in the workspace root) re-read this file and the index,
-reconcile, and pick up work every pass. The extension spawns one loop terminal per model as a
-single command — `claude --permission-mode auto --model opus '/loop 1m You are running as
+reconcile, and pick up work every pass. The extension spawns one loop terminal per model as one
+command — `claude --permission-mode auto --model opus '/loop 1m You are running as
 model opus. Open .loopboard/LOOP.md, read the loop worker instructions in its Automation
 section, and follow them exactly for this and every pass.'` — so the fenced block below IS the
 standing instructions; only the interval is fixed at spawn time.
@@ -205,10 +202,10 @@ Notes:
 - Interval comes from `loopBoard.loopInterval` (default 1m) and rides in the spawn command, so
   changing it means recycling the terminal — everything else above is re-read live each pass.
 - Human gates hold: loops never promote New tasks, accept Review tasks (both need the human's
-  `[x]`), or demote Backlog tasks (a direct board click) — and park uncertainty in Feedback.
-  The extension's ▶ buttons start the per-model loops.
+  `[x]`), or demote Backlog tasks (a direct board click) — and park uncertainty in Feedback. The
+  extension's ▶ buttons start the per-model loops.
 - Stop a loop via its status line, or cancel the scheduled task in the session.
-- A "the board changed" line pasted into your terminal is a HINT naming tasks the extension
-  routed to you — never a work order. Do the normal pass: re-read this file and the index, and
-  let the Rules decide. Rules are unchanged; Rule 2 still gates every claim.
+- A "the board changed" line pasted into your terminal is a HINT naming tasks the extension routed
+  to you — never a work order. Do the normal pass: re-read this file and the index, let the Rules
+  decide. Rules are unchanged; Rule 2 still gates every claim.
 <!-- loopboard:sync:automation:end -->
