@@ -54,9 +54,23 @@ export interface ModelConfigObject {
   enabled?: boolean; // default true; false hides the slot from the Loops overview + board selects
   model?: string; // custom `--model` string; empty/invalid => the built-in default (REPLACE when set)
   effort?: string; // grooming effort ceiling for this slot; invalid/absent => 'high'
+  groomConcurrency?: number; // max grooming subagents per pass; invalid/absent => 3
 }
 export type ModelConfigEntry = string | ModelConfigObject;
 export type ModelsConfig = Record<string, ModelConfigEntry | undefined>;
+
+// Cap on grooming subagents one loop pass may run in parallel (t-23ce). There is deliberately NO
+// `0 = unlimited` sentinel: unbounded fan-out is the defect this cap exists to remove, so it must
+// not stay reachable through configuration. The value is spliced into the bootstrap prompt's shell
+// line, so anything non-integer, below the minimum or out of range falls back to the default rather
+// than reaching the terminal raw.
+export const DEFAULT_GROOM_CONCURRENCY = 3;
+export const MAX_GROOM_CONCURRENCY = 99;
+export function sanitizeGroomConcurrency(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return DEFAULT_GROOM_CONCURRENCY;
+  if (value < 1 || value > MAX_GROOM_CONCURRENCY) return DEFAULT_GROOM_CONCURRENCY;
+  return value;
+}
 
 // Normalize either accepted shape to the object form.
 function asConfigObject(entry: ModelConfigEntry | undefined): ModelConfigObject {
@@ -76,6 +90,7 @@ export function readModelsConfig(get: <T>(key: string, dflt: T) => T): ModelsCon
       enabled: get<boolean>(`models.${id}.enabled`, true),
       model: get<string>(`models.${id}.model`, ''),
       effort: get<string>(`models.${id}.effort`, 'high'),
+      groomConcurrency: get<number>(`models.${id}.groomConcurrency`, DEFAULT_GROOM_CONCURRENCY),
     };
   }
   return cfg;
@@ -88,6 +103,7 @@ export interface ResolvedModel {
   model: string; // validated `--model` string to spawn
   enabled: boolean;
   effort: Effort; // validated grooming effort ceiling (Rule 14); defaults to 'high'
+  groomConcurrency: number; // validated cap on grooming subagents per pass; defaults to 3
 }
 
 // Merge the built-in slots with user config: a slot may be disabled, and its `--model` string may
@@ -99,7 +115,8 @@ export function resolveModels(config?: ModelsConfig): ResolvedModel[] {
     const override = typeof c.model === 'string' ? c.model.trim() : '';
     const model = override && isValidModelString(override) ? override : m.model;
     const effort = typeof c.effort === 'string' && isValidEffort(c.effort) ? c.effort : 'high';
-    return { id: m.id, label: m.label, model, enabled: c.enabled !== false, effort };
+    const groomConcurrency = sanitizeGroomConcurrency(c.groomConcurrency);
+    return { id: m.id, label: m.label, model, enabled: c.enabled !== false, effort, groomConcurrency };
   });
 }
 

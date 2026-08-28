@@ -123,7 +123,7 @@ since all state lives in `.loopboard/`.
 | `loopBoard.loopInterval` | `1m` | interval passed to the injected `/loop` line |
 | `loopBoard.autoRecycle` | `false` | restart a model's terminal after it finishes a task (fresh context) |
 | `loopBoard.clearSessionAfterTask` | `false` | lighter alternative — send `/clear` after a task instead of restarting |
-| `loopBoard.models.<slot>` | — | per-slot overrides: `.enabled`, `.model`, `.effort` (see below) |
+| `loopBoard.models.<slot>` | — | per-slot overrides: `.enabled`, `.model`, `.effort`, `.groomConcurrency` (see below) |
 
 See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
 
@@ -136,6 +136,9 @@ three keys:
 - `loopBoard.models.<slot>.enabled` — show/hide the slot in the Loops overview and the board's model selects.
 - `loopBoard.models.<slot>.model` — the actual string passed as `claude --model <string>` (e.g. `opus[1m]` or a dated snapshot). Empty falls back to the slot's built-in default; anything outside `[A-Za-z0-9._\[\]-]` is rejected before it reaches the terminal.
 - `loopBoard.models.<slot>.effort` — grooming-subagent reasoning-effort ceiling (`low`…`max`) for that slot, per Rule 14 in `LOOP.md`.
+- `loopBoard.models.<slot>.groomConcurrency` — how many grooming subagents that slot's loop may run in parallel in one pass (default `3`, minimum `1`; there is no unlimited setting). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass.
+
+The `.effort` and `.groomConcurrency` ceilings ride the loop's bootstrap prompt, so a change to either takes effect the **next time that slot's loop is started or restarted (♻)** — a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
 
 ```jsonc
 // Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.
