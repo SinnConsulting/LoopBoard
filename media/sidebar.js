@@ -40,6 +40,123 @@
     { key: 'feedback', label: 'Feedback' }, { key: 'review', label: 'Review' }, { key: 'done', label: 'Done' },
   ];
 
+  // ---- scheduled loop restart (t-77d1) ----
+  // Mirrors PRESET_MINUTES in src/schedule.ts. The webview cannot import from src/ (vanilla JS, no
+  // bundler), so the list is duplicated; the host re-validates every armed value regardless, so a
+  // drift here can only affect which one-click choices are offered, never what gets armed.
+  const PRESET_MINUTES = [15, 30, 60, 120, 240];
+  // Popover draft state, kept OUTSIDE render() because render() rebuilds #root from scratch on
+  // every board message — without this the popover would vanish mid-edit on any refresh.
+  // null = closed; otherwise { model, action, minutes, custom, repeat, force, error }.
+  let restartDraft = null;
+
+  // Wording per scheduled action. `force` only exists for the two that can kill a working
+  // terminal — a scheduled start interrupts nothing, so its checkbox is not rendered at all.
+  const ACTION_COPY = {
+    start: { title: 'Start', arm: 'Schedule start', force: null },
+    restart: { title: 'Restart', arm: 'Schedule restart', force: 'Force (restart even mid-task)' },
+    stop: { title: 'Stop', arm: 'Schedule stop', force: 'Force (stop even mid-task)' },
+  };
+
+  function openRestartPopover(loop, action) {
+    // Only prefill from the armed schedule when it belongs to the button being right-clicked;
+    // one schedule exists per loop, so opening a different action starts from defaults.
+    const armed = loop.restart && loop.restart.action === action ? loop.restart : null;
+    restartDraft = {
+      model: loop.id,
+      action: action,
+      // Re-opening a loop that already has a schedule shows its current settings (the story's
+      // "re-opening the popover shows its current settings and offers to clear it").
+      minutes: armed ? armed.minutes : PRESET_MINUTES[0],
+      custom: armed && PRESET_MINUTES.indexOf(armed.minutes) === -1 ? String(armed.minutes) : '',
+      repeat: !!(armed && armed.repeat),
+      force: !!(armed && armed.force),
+      error: '',
+    };
+    render();
+  }
+  // Right-click on any of the three row buttons: toggle that button's scheduling popover.
+  function bindScheduleMenu(btn, loop, action) {
+    btn.addEventListener('contextmenu', (e) => {
+      // Suppress the host's own menu so the popover is the only thing that opens.
+      e.preventDefault();
+      const open = restartDraft && restartDraft.model === loop.id && restartDraft.action === action;
+      if (open) closeRestartPopover(); else openRestartPopover(loop, action);
+    });
+  }
+  function closeRestartPopover() {
+    if (!restartDraft) return;
+    restartDraft = null;
+    render();
+  }
+  // Custom… is selected by having a non-empty custom field; otherwise a preset is active.
+  function draftMinutes(d) {
+    if (d.custom.trim() === '') return d.minutes;
+    return /^\d+$/.test(d.custom.trim()) ? Number(d.custom.trim()) : NaN;
+  }
+
+  function renderRestartPopover(loop) {
+    const d = restartDraft;
+    const copy = ACTION_COPY[d.action];
+    const pop = h('div', { class: 'restart-pop', role: 'dialog', 'aria-label': 'Schedule a ' + d.action + ' for ' + loop.name });
+    pop.append(h('div', { class: 'restart-title' }, copy.title + ' ' + loop.name));
+
+    const presets = h('div', { class: 'restart-presets' });
+    for (const m of PRESET_MINUTES) {
+      const active = d.custom.trim() === '' && d.minutes === m;
+      presets.append(h('button', {
+        class: 'restart-preset' + (active ? ' selected' : ''), type: 'button', 'aria-pressed': active ? 'true' : 'false',
+        onclick: () => { d.minutes = m; d.custom = ''; d.error = ''; render(); },
+      }, m + 'm'));
+    }
+    pop.append(presets);
+
+    const custom = h('input', {
+      class: 'restart-custom', type: 'text', inputmode: 'numeric', placeholder: 'Custom… minutes',
+      'aria-label': 'Custom delay in minutes',
+    });
+    custom.value = d.custom;
+    // No re-render per keystroke — that would rebuild the popover and drop the caret.
+    custom.addEventListener('input', (e) => { d.custom = e.target.value; d.error = ''; });
+    pop.append(custom);
+
+    pop.append(checkRow('Repeat', d.repeat, (v) => { d.repeat = v; }));
+    if (copy.force) pop.append(checkRow(copy.force, d.force, (v) => { d.force = v; }));
+    if (d.error) pop.append(h('div', { class: 'restart-error' }, d.error));
+
+    const actions = h('div', { class: 'restart-actions' });
+    actions.append(h('button', {
+      class: 'btn-sm primary', type: 'button',
+      onclick: () => {
+        const minutes = draftMinutes(d);
+        // Validated here for an immediate in-popover message; the host re-validates before arming.
+        if (!Number.isInteger(minutes) || minutes < 1) {
+          d.error = 'Enter a whole number of minutes.';
+          render();
+          return;
+        }
+        vscode.postMessage({ type: 'armRestart', model: d.model, action: d.action, minutes: String(minutes), repeat: d.repeat, force: copy.force ? d.force : false });
+        closeRestartPopover();
+      },
+    }, loop.restart && loop.restart.action === d.action ? 'Update' : copy.arm));
+    if (loop.restart) {
+      actions.append(h('button', {
+        class: 'btn-sm secondary', type: 'button',
+        onclick: () => { vscode.postMessage({ type: 'clearRestart', model: d.model }); closeRestartPopover(); },
+      }, 'Clear'));
+    }
+    actions.append(h('button', { class: 'btn-sm secondary', type: 'button', onclick: closeRestartPopover }, 'Cancel'));
+    pop.append(actions);
+    return pop;
+  }
+
+  function checkRow(label, checked, onChange) {
+    const box = h('input', { type: 'checkbox' });
+    box.checked = checked;
+    box.addEventListener('change', (e) => onChange(e.target.checked));
+    return h('label', { class: 'restart-check' }, box, h('span', {}, label));
+  }
+
   function render() {
     const root = document.getElementById('root');
     root.textContent = '';
@@ -129,19 +246,46 @@
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', model: l.id }); }
           });
         }
-        loops.append(h('div', { class: 'sb-row loop' }, body,
-          h('button', {
-            class: 'icon-btn', type: 'button', 'aria-label': spawnLabel, title: spawnLabel, disabled: l.running,
-            onclick: l.running ? null : () => vscode.postMessage({ type: 'spawnLoop', model: l.id }),
-          }, icon(SVG.play)),
-          h('button', {
-            class: 'icon-btn', type: 'button', 'aria-label': 'Restart with fresh context', title: 'Restart with fresh context', disabled: !l.running,
-            onclick: l.running ? () => vscode.postMessage({ type: 'recycleLoop', model: l.id }) : null,
-          }, icon(SVG.recycle)),
-          h('button', {
-            class: 'icon-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop loop', disabled: !l.running,
-            onclick: l.running ? () => vscode.postMessage({ type: 'stopLoop', model: l.id }) : null,
-          }, icon(SVG.stop))));
+        // Each of the three buttons keeps its original LEFT-click meaning — act now (t-77d1
+        // feedback) — and schedules the same action on RIGHT-click (contextmenu). Keyboard users
+        // reach it the way they reach any context menu (Menu key / Shift+F10 while focused).
+        //
+        // Scheduling is available on ALL THREE buttons whatever the loop's current state, because
+        // a schedule is armed against the state it will be in LATER ("stop it in 4h" on a loop you
+        // are about to start). That is why an inapplicable button uses `aria-disabled` + `.off`
+        // rather than the real `disabled` attribute: a disabled button fires no mouse events at
+        // all, which would take the right-click away with the left. The left-click stays inert
+        // exactly as before, and the host swallows a scheduled action that no longer applies when
+        // its timer elapses (`appliesTo` in src/schedule.ts).
+        const armedFor = (action) => (l.restart && l.restart.action === action ? l.restart : null);
+        const withSchedule = (base, action) => {
+          const armed = armedFor(action);
+          return (armed ? 'Scheduled ' + action + ' — ' + armed.label : base) + ' (right-click to schedule)';
+        };
+        const actionBtn = (action, enabled, label, message, glyph) => {
+          const btn = h('button', {
+            class: 'icon-btn' + (armedFor(action) ? ' armed' : '') + (enabled ? '' : ' off'),
+            type: 'button', 'aria-label': label, title: label,
+            'aria-disabled': enabled ? null : 'true',
+            onclick: enabled ? () => vscode.postMessage({ type: message, model: l.id }) : null,
+          }, icon(glyph));
+          bindScheduleMenu(btn, l, action);
+          return btn;
+        };
+
+        const playBtn = actionBtn('start', !l.running, withSchedule(spawnLabel, 'start'), 'spawnLoop', SVG.play);
+        const recycleBtn = actionBtn('restart', l.running, withSchedule('Restart with fresh context', 'restart'), 'recycleLoop', SVG.recycle);
+        const stopBtn = actionBtn('stop', l.running, withSchedule('Stop loop', 'stop'), 'stopLoop', SVG.stop);
+
+        const row = h('div', { class: 'sb-row loop' }, body, playBtn, recycleBtn, stopBtn);
+        // The popover is anchored inside the row's wrapper so it sits under its own button row.
+        const wrap = h('div', { class: 'loop-wrap' }, row);
+        // An armed or pending restart is never invisible — the row states it for the whole wait.
+        if (l.restart) {
+          wrap.append(h('div', { class: 'restart-indicator' + (l.restart.pending ? ' pending' : '') }, l.restart.label));
+        }
+        if (restartDraft && restartDraft.model === l.id) wrap.append(renderRestartPopover(l));
+        loops.append(wrap);
       }
       // Global single-task limit (LOOP.md Rule 2): surface when a task is In Progress so a human
       // sees the limit holding back prepared work — or being breached (>1 In Progress at once).
@@ -203,6 +347,19 @@
 
   window.addEventListener('message', (event) => {
     if (event.data.type === 'board') { board = event.data.board; render(); }
+  });
+
+  // Popover dismissal (t-77d1): Escape anywhere, or a pointer press outside it. Bound once on the
+  // document rather than per-render, since render() rebuilds every node it would otherwise hang on.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && restartDraft) { e.preventDefault(); closeRestartPopover(); }
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (!restartDraft) return;
+    // The ♻ button toggles the popover itself; letting this handler also close it would make the
+    // click reopen-then-close and the popover would never appear.
+    if (e.target.closest('.restart-pop') || e.target.closest('.icon-btn')) return;
+    closeRestartPopover();
   });
   render();
   vscode.postMessage({ type: 'ready' });

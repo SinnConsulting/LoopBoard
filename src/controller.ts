@@ -7,6 +7,10 @@ import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import { Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS } from './model';
 import { FieldPatch } from './merge';
+import {
+  RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
+  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
+} from './schedule';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -42,6 +46,11 @@ export function readDefaultModel(c: vscode.WorkspaceConfiguration, key: string):
 export class Controller {
   private lastBoard: Board | undefined;
   private pendingReveal: { taskId?: string; phase?: string; composer?: boolean; search?: string } | undefined;
+  // Scheduled loop restarts (t-77d1). SESSION-ONLY BY DESIGN: nothing here is persisted to
+  // globalState, workspaceState or `.loopboard/`. The terminals themselves die with the window, so
+  // a schedule outliving its terminal would be meaningless — a reload clears every schedule.
+  private restartSchedules = new Map<Model, RestartSchedule>();
+  private restartTimers = new Map<Model, ReturnType<typeof setTimeout>>();
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -76,7 +85,17 @@ export class Controller {
   private async buildWebBoard(board: Board): Promise<WebBoard> {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
-    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, this.terminals.status(), enabledIds, cfg.defaultGroomerModel);
+    const loops = this.terminals.status();
+    // Decorate each loop row with its armed/pending restart (t-77d1) — recomputed per refresh so
+    // the countdown and the "waiting for task" state stay live without extra plumbing.
+    const now = Date.now();
+    for (const l of loops) {
+      const s = this.restartSchedules.get(l.id);
+      l.restart = s
+        ? { action: s.action, minutes: s.minutes, repeat: s.repeat, force: s.force, pending: s.pending, label: describeSchedule(s, now) }
+        : null;
+    }
+    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
     web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
@@ -100,6 +119,9 @@ export class Controller {
     this.maybeAutoRecycle(this.lastBoard, board);
     this.maybeClearSession(this.lastBoard, board);
     this.lastBoard = board;
+    // A deferred restart fires on the same idle signal auto-recycle uses — the freshly loaded board
+    // is the only place "is this model busy?" is knowable (terminal output can never be read).
+    this.flushPendingRestarts(board);
     const web = await this.buildWebBoard(board);
     BoardPanel.current?.post({ type: 'board', board: web });
     this.sidebar.post({ type: 'board', board: web });
@@ -155,6 +177,155 @@ export class Controller {
         this.terminals.clearSession(model);
       }
     }
+  }
+
+  // ---- scheduled loop restarts (t-77d1) ----
+
+  // Which models currently own an In-Progress task, with an absent `model:` resolved to the default
+  // — the same test maybeAutoRecycle uses. This is the ONLY signal for "busy"; terminal output can
+  // never be read (CLAUDE.md, src/terminals.ts).
+  private inProgressModels(board: Board): Model[] {
+    const dflt = this.config().defaultWorkerModel;
+    const busy = new Set<Model>();
+    for (const t of board.tasks) if (t.phase === 'inprogress') busy.add(t.model ?? dflt);
+    return [...busy];
+  }
+
+  // Arms (or replaces) a model's schedule and starts its timer. Force consent is taken by the
+  // caller, once, BEFORE this runs — fire time is silent.
+  private armRestart(model: Model, action: LoopAction, minutes: number, repeat: boolean, force: boolean): void {
+    const schedule = armSchedule(model, action, minutes, repeat, force, Date.now());
+    // One schedule per model, whichever button armed it: "start in 5m" and "stop in 10m" on the
+    // same loop are contradictory, so arming either replaces the other.
+    this.restartSchedules.set(model, schedule);
+    this.startRestartTimer(schedule);
+    this.store.debugLog('info', 'restart-arm', `${model} ${action} in ${minutes}m repeat=${repeat} force=${schedule.force}`);
+  }
+
+  private startRestartTimer(schedule: RestartSchedule): void {
+    this.clearRestartTimer(schedule.model);
+    const timer = setTimeout(() => {
+      this.restartTimers.delete(schedule.model);
+      this.onRestartDue(schedule.model);
+    }, delayUntilFire(schedule, Date.now()));
+    this.restartTimers.set(schedule.model, timer);
+  }
+
+  private clearRestartTimer(model: Model): void {
+    const timer = this.restartTimers.get(model);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.restartTimers.delete(model);
+  }
+
+  // Cancels a model's schedule entirely — the popover's Clear button, and stopLoop.
+  private cancelRestart(model: Model, reason: string): void {
+    if (!this.restartSchedules.has(model)) return;
+    this.clearRestartTimer(model);
+    this.restartSchedules.delete(model);
+    this.store.debugLog('info', 'restart-cancel', `${model} (${reason})`);
+  }
+
+  // The timer elapsed. Either restart now, or mark the schedule pending and wait — indefinitely —
+  // for the model to go idle. A pending restart is never dropped or expired.
+  private onRestartDue(model: Model): void {
+    const schedule = this.restartSchedules.get(model);
+    if (!schedule) return;
+    if (!this.lastBoard || !mayFire(schedule, this.inProgressModels(this.lastBoard))) {
+      this.restartSchedules.set(model, deferSchedule(schedule));
+      this.store.debugLog('info', 'restart-defer', `${model} — task in progress, waiting for idle`);
+      void this.refresh('restart-defer');
+      return;
+    }
+    this.fireRestart(schedule);
+  }
+
+  // Performs the action and either re-arms (repeat) or disarms (one-shot). An action that no longer
+  // applies to the loop's CURRENT state is swallowed — the schedule still fires (so a one-shot
+  // disarms and a repeat keeps its cadence), it just does nothing. A schedule is armed against a
+  // state that can change before the timer elapses, and doing something else instead (starting a
+  // loop the user has since stopped) would be worse than doing nothing.
+  private fireRestart(schedule: RestartSchedule): void {
+    const model = schedule.model;
+    this.clearRestartTimer(model);
+    const running = this.terminals.status().some((l) => l.id === model && l.running);
+    if (!appliesTo(schedule.action, running)) {
+      this.store.debugLog('info', 'restart-skip', `${model} ${schedule.action} — loop is ${running ? 'already running' : 'not running'}, nothing to do`);
+    } else {
+      this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
+      // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
+      // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
+      if (schedule.action === 'start') this.terminals.spawn(model, true);
+      else if (schedule.action === 'stop') this.terminals.stop(model);
+      else this.terminals.recycle(model, true);
+    }
+    const next = afterFire(schedule, Date.now());
+    if (next) {
+      this.restartSchedules.set(model, next);
+      this.startRestartTimer(next);
+    } else {
+      this.restartSchedules.delete(model);
+    }
+    void this.refresh('restart-fire');
+  }
+
+  // Called after every board load: any restart that was held back fires as soon as its model has no
+  // In-Progress task left.
+  private flushPendingRestarts(board: Board): void {
+    if (this.restartSchedules.size === 0) return;
+    const busy = this.inProgressModels(board);
+    for (const schedule of [...this.restartSchedules.values()]) {
+      if (schedule.pending && mayFire(schedule, busy)) this.fireRestart(schedule);
+    }
+  }
+
+  // Arm request from the sidebar popover. Validates in the host too (never trust the webview), and
+  // takes force consent ONCE here — a scheduled restart is unattended by definition, so prompting
+  // at fire time would either block the restart the user asked for or pop over unrelated work.
+  private async onArmRestart(msg: any): Promise<void> {
+    if (!isKnownModel(msg.model)) return;
+    const model = msg.model as Model;
+    // Absent action = the original ♻-only shape; keep restart as the default so an older webview
+    // payload still arms what it meant.
+    const action: LoopAction = isLoopAction(msg.action) ? msg.action : 'restart';
+    const minutes = parseMinutes(String(msg.minutes ?? ''));
+    if (minutes === null) {
+      this.toast('warning', 'Schedule delay must be a whole number of minutes.');
+      return;
+    }
+    const repeat = !!msg.repeat;
+    const force = supportsForce(action) && !!msg.force;
+    if (force && !(await this.confirmForcedRestart(model, action))) {
+      this.store.debugLog('info', 'gate-cancelled', `restart-force ${model} ${action}`);
+      return this.refresh('restart-arm');
+    }
+    this.armRestart(model, action, minutes, repeat, force);
+    const verb = action === 'start' ? 'Starting' : action === 'stop' ? 'Stopping' : 'Restarting';
+    this.toast('success', repeat ? `${verb} ${model} every ${minutes}m.` : `${verb} ${model} in ${minutes}m.`, undefined, 'check');
+    return this.refresh('restart-arm');
+  }
+
+  // Native modal naming the real consequence of a forced restart or stop: the extension never edits
+  // a task's `phase:` (the loop writes it), so killing a worker mid-task leaves the task
+  // `inprogress` in `.loopboard/TODO.md` with nobody on it — and LOOP.md Rule 2's global
+  // single-task limit means that stale entry then blocks EVERY loop from claiming work until a
+  // human fixes it. Only reachable for the two actions that can kill a working terminal.
+  private async confirmForcedRestart(model: Model, action: LoopAction): Promise<boolean> {
+    const verb = action === 'stop' ? 'stop' : 'restart';
+    const message = `Force-${verb} ${model} even while it is working on a task?`;
+    const confirmLabel = `Arm forced ${verb}`;
+    this.store.debugLog('info', 'popup', `confirm — ${message}`);
+    const choice = await vscode.window.showWarningMessage(
+      message,
+      {
+        modal: true,
+        detail: `A forced ${verb} kills the session mid-task. The task stays \`phase: inprogress\` in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Confirming now also covers the ${verb} itself — it fires later without asking again.`,
+      },
+      confirmLabel
+    );
+    const accepted = choice === confirmLabel;
+    this.store.debugLog('info', 'popup-choice', `confirm-force-${verb} ${model} -> ${accepted ? 'accepted' : 'cancelled'}`);
+    return accepted;
   }
 
   // Every toast is captured here so it survives past the webview (t-0143) — warnings are what
@@ -230,10 +401,26 @@ export class Controller {
         if (isKnownModel(msg.model)) this.terminals.reveal(msg.model);
         return;
       case 'recycleLoop':
+        // Left-click ♻ — restart right now. The scheduling popover is right-click (t-77d1
+        // feedback); an armed schedule is left alone, since restarting now says nothing about
+        // whether the user still wants the later one.
         if (isKnownModel(msg.model)) this.terminals.recycle(msg.model);
         return;
       case 'stopLoop':
-        if (isKnownModel(msg.model)) this.terminals.stop(msg.model);
+        if (isKnownModel(msg.model)) {
+          // Stopping a loop clears any schedule it had — restarting a terminal the user just
+          // stopped would be the opposite of what they asked for.
+          this.cancelRestart(msg.model, 'loop stopped');
+          this.terminals.stop(msg.model);
+        }
+        return;
+      case 'armRestart':
+        return this.onArmRestart(msg);
+      case 'clearRestart':
+        if (isKnownModel(msg.model)) {
+          this.cancelRestart(msg.model, 'cleared from the popover');
+          return this.refresh('restart-clear');
+        }
         return;
       case 'createFiles':
         return this.onCreateFiles();
