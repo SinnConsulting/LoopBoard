@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Less prompting. No babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
-  "version": "2.53.0",
+  "version": "2.56.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
@@ -210,19 +210,25 @@
               "default",
               "plan"
             ],
-            "order": 3,
+            "order": 4,
             "default": "auto",
             "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
           },
           "loopBoard.pulseTemplateSync": {
             "type": "boolean",
-            "order": 4,
+            "order": 5,
             "default": true,
             "description": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
+          "loopBoard.nudgeLoops": {
+            "type": "boolean",
+            "order": 3,
+            "default": true,
+            "description": "When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
+          },
           "loopBoard.customRules": {
             "type": "array",
-            "order": 5,
+            "order": 6,
             "items": {
               "type": "string"
             },
@@ -241,13 +247,13 @@
               "Key lifecycle events only: activation, promote/accept/demote gates, loop spawn/recycle/stop, same-field disk-wins conflicts.",
               "Everything, including every field patch/save, attachment, template scaffold/heal/sync, config read, and webview message dispatch."
             ],
-            "order": 6,
+            "order": 7,
             "default": "off",
             "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
           },
           "loopBoard.maxAttachmentSizeMB": {
             "type": "number",
-            "order": 7,
+            "order": 8,
             "default": 10,
             "minimum": 1,
             "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."

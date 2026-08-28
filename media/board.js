@@ -81,11 +81,42 @@
   // state budget; pending images live only as long as the webview does.
   let composerAttachments = [];
   const ui = {}; // per-task UI state, keyed by task id
-  // Collapse state: `collapsedDefault` covers cards with no explicit entry (so global
-  // collapse-all/expand-all applies to future cards too); `collapsed` holds per-card overrides
-  // set by the per-card toggle. Persisted via vscode.getState/setState (same blob as `phase`).
-  let collapsedDefault = !!saved.collapsedDefault;
-  let collapsed = Object.assign({}, saved.collapsed);
+  // Collapse state, scoped PER PHASE TAB (t-7679): `collapsedDefault[phaseKey]` covers that tab's
+  // cards with no explicit entry (so collapse-all/expand-all applies to future cards in that tab
+  // too); `collapsed[phaseKey]` holds that tab's per-card overrides set by the per-card toggle.
+  // Scoping is what lets Backlog stay collapsed while Review stays expanded, and stops a
+  // collapse-all in one tab from wiping the cards a user opened in another. Persisted via
+  // vscode.getState/setState (same blob as `phase`). Ids of accepted/deleted tasks are
+  // deliberately never pruned from these maps: the blob is small, per-window UI state and a stale
+  // id is inert (nothing looks it up once the card is gone).
+  let collapsedDefault = migrateCollapsedDefault(saved);
+  let collapsed = migrateCollapsed(saved);
+  // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
+  // `collapsed` map): seed the old values into every phase bucket so an upgrade keeps the view the
+  // user left behind. Anything unrecognized falls back to "everything expanded".
+  function migrateCollapsedDefault(s) {
+    const out = {};
+    if (s.collapsedDefault && typeof s.collapsedDefault === 'object') {
+      for (const k of Object.keys(s.collapsedDefault)) out[k] = !!s.collapsedDefault[k];
+      return out;
+    }
+    if (s.collapsedDefault) for (const p of PHASE_META) out[p.key] = true;
+    return out;
+  }
+  function migrateCollapsed(s) {
+    const out = {};
+    const src = s.collapsed;
+    if (!src || typeof src !== 'object') return out;
+    const nested = Object.keys(src).some((k) => src[k] && typeof src[k] === 'object');
+    if (nested) {
+      for (const k of Object.keys(src)) {
+        if (src[k] && typeof src[k] === 'object') out[k] = Object.assign({}, src[k]);
+      }
+      return out;
+    }
+    for (const p of PHASE_META) out[p.key] = Object.assign({}, src);
+    return out;
+  }
   let toasts = [];
   let toastSeq = 1;
   let lastSyncTs = Date.now();
@@ -138,26 +169,34 @@
     vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery });
   }
 
-  // ---- collapse/expand ----
+  // ---- collapse/expand (per phase tab — the current `phase` is the implicit key) ----
+  function phaseDefaultCollapsed() {
+    return !!collapsedDefault[phase];
+  }
+  function phaseOverrides() {
+    if (!collapsed[phase]) collapsed[phase] = {};
+    return collapsed[phase];
+  }
   function isCollapsed(id) {
-    return Object.prototype.hasOwnProperty.call(collapsed, id) ? collapsed[id] : collapsedDefault;
+    const over = collapsed[phase];
+    return over && Object.prototype.hasOwnProperty.call(over, id) ? over[id] : phaseDefaultCollapsed();
   }
   function toggleCollapse(id) {
-    collapsed[id] = !isCollapsed(id);
+    phaseOverrides()[id] = !isCollapsed(id);
+    saveState();
+    render();
+  }
+  function setPhaseCollapsed(value) {
+    collapsedDefault[phase] = value;
+    collapsed[phase] = {};
     saveState();
     render();
   }
   function collapseAll() {
-    collapsedDefault = true;
-    collapsed = {};
-    saveState();
-    render();
+    setPhaseCollapsed(true);
   }
   function expandAll() {
-    collapsedDefault = false;
-    collapsed = {};
-    saveState();
-    render();
+    setPhaseCollapsed(false);
   }
   function post(msg) {
     vscode.postMessage(msg);
@@ -490,8 +529,10 @@
 
     bar.append(h('button', {
       class: 'btn-secondary tb-collapse-all', type: 'button',
-      onclick: () => (collapsedDefault ? expandAll() : collapseAll()),
-    }, collapsedDefault ? 'Expand all' : 'Collapse all'));
+      // Acts on the CURRENT tab only (t-7679), and its label reads that tab's default — a
+      // board-wide button would keep wiping the other tabs' per-card overrides.
+      onclick: () => (phaseDefaultCollapsed() ? expandAll() : collapseAll()),
+    }, phaseDefaultCollapsed() ? 'Expand all' : 'Collapse all'));
 
     // t-c3b7: the last-synced counter sits in a fixed-width, right-aligned slot next to New Story
     // so a digit gained by the seconds number never nudges the tabs or the buttons.
