@@ -15,6 +15,7 @@ import {
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
 import { computeNudges, formatNudge, NudgeItem } from './nudge';
+import { selectWorkspaceRules } from './customrules';
 
 // `loopBoard.afterTask` (t-1f1e) with a read-both fallback to the deprecated boolean pair. The
 // default in package.json is 'none', so `get()` alone could never tell "unset" from "explicitly
@@ -101,7 +102,6 @@ export class Controller {
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
-      customRules: c.get<string[]>('customRules', []),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
@@ -574,9 +574,16 @@ export class Controller {
 
   // Renders `loopBoard.customRules` into LOOP.md's custom block (t-4a04). Called on activation,
   // after a Sync, and from the configuration listener. A no-op reconcile performs no write, so
-  // calling it on every one of those is cheap.
+  // calling it on every one of those is cheap. Workspace-only (t-22ad): the setting writes files
+  // into the workspace, so a User-level value is never applied — otherwise one Settings-UI edit
+  // would rewrite every open LoopBoard workspace's LOOP.md.
   async applyCustomRules(): Promise<void> {
-    await this.store.applyCustomRules(this.config().customRules);
+    const c = vscode.workspace.getConfiguration('loopBoard');
+    const sel = selectWorkspaceRules(c.inspect<string[]>('customRules'));
+    if (sel.ignoredGlobal) {
+      this.store.debugLog('info', 'custom-rules', 'user-level (global) value present but ignored — workspace-only setting');
+    }
+    await this.store.applyCustomRules(sel.rules);
   }
 
   // Registered by extension.ts. `loopBoard.customRules` is the only setting with a live listener —

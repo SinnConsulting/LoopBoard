@@ -229,11 +229,12 @@
           "loopBoard.customRules": {
             "type": "array",
             "order": 6,
+            "scope": "resource",
             "items": {
               "type": "string"
             },
             "default": [],
-            "markdownDescription": "Extra standing instructions for the loop workers in THIS workspace, one per entry. They are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`, which workers re-read every pass — so an edit reaches running loops with no terminal recycle. The block is hand-editable and Synchronise Templates never touches it: the extension only reconciles the lines carrying its own `loopboard:custom-rule:` marker, so removing an entry here removes its line while rules you add by hand are left alone. Custom Rules are numbered in their own sequence (\"Custom Rule 1\", \"Custom Rule 2\", …), separate from the predefined Rules 1-17, and where a Custom Rule contradicts a predefined Rule the Custom Rule wins in this workspace."
+            "markdownDescription": "Extra standing instructions for the loop workers in THIS workspace, one per entry. Workspace-only: set it in Workspace settings — a User-level (global) value is ignored, because this setting writes into the workspace's `.loopboard/LOOP.md` and a global value would edit every open LoopBoard workspace at once. Entries are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`, which workers re-read every pass — so an edit reaches running loops with no terminal recycle. The block is hand-editable and Synchronise Templates never touches it: the extension only reconciles the lines carrying its own `loopboard:custom-rule:` marker, so removing an entry here removes its line while rules you add by hand are left alone. Custom Rules are numbered in their own sequence (\"Custom Rule 1\", \"Custom Rule 2\", …), separate from the predefined Rules 1-17, and where a Custom Rule contradicts a predefined Rule the Custom Rule wins in this workspace."
           },
           "loopBoard.debug": {
             "type": "string",
