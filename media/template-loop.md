@@ -158,7 +158,10 @@ use. Detail stays in `tasks/<id>.md`.
     missing) and keeps the index title one short line. Human decisions = single-line `question:`
     sub-bullets with blank `answer:` lines on the index entry (never an "OPEN QUESTIONS" prose
     paragraph) so the board can surface them. A New task with any filled `answer:` → re-groom via
-    the same subagent: incorporate the answer, fold the decision into `## Description`, delete the
+    the same subagent: resume the subagent that originally groomed it when your session still
+    holds it (via SendMessage, where available); any resume failure — recycled or cleared
+    session, no SendMessage, unknown agent id — silently falls back to a fresh groomer subagent
+    as above. Incorporate the answer, fold the decision into `## Description`, delete the
     resolved `question:`/`answer:` pair from the index (mirrors Rule 16). A still-present filled
     answer = not yet incorporated. `model:` never gates grooming. When a question's choice is
     clear-cut and on-target, the subagent may also emit up to 3 `suggestion:` sub-bullets beneath
