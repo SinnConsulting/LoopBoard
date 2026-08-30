@@ -153,3 +153,30 @@ test('a duplicate setting entry renders once', () => {
   const r = reconcileCustomRules(LOOP, ['A rule', 'A  rule ']);
   assert.deepStrictEqual(ruleTexts(r.text), ['A rule'], 'normalized to the same id');
 });
+
+// Workspace-only value selection (t-22ad): a User-level value must never apply.
+const { selectWorkspaceRules } = require('../out-test/customrules');
+
+test('selectWorkspaceRules: no inspect result → no rules, nothing ignored', () => {
+  assert.deepStrictEqual(selectWorkspaceRules(undefined), { rules: [], ignoredGlobal: false });
+});
+
+test('selectWorkspaceRules: global value alone is ignored and flagged', () => {
+  const r = selectWorkspaceRules({ globalValue: ['G'] });
+  assert.deepStrictEqual(r, { rules: [], ignoredGlobal: true });
+});
+
+test('selectWorkspaceRules: workspace value applies; global still flagged, never merged', () => {
+  const r = selectWorkspaceRules({ globalValue: ['G'], workspaceValue: ['W'] });
+  assert.deepStrictEqual(r, { rules: ['W'], ignoredGlobal: true });
+});
+
+test('selectWorkspaceRules: workspace-folder value wins over workspace value', () => {
+  const r = selectWorkspaceRules({ workspaceValue: ['W'], workspaceFolderValue: ['F'] });
+  assert.deepStrictEqual(r, { rules: ['F'], ignoredGlobal: false });
+});
+
+test('selectWorkspaceRules: empty workspace array is respected, not treated as absent', () => {
+  const r = selectWorkspaceRules({ globalValue: ['G'], workspaceValue: [] });
+  assert.deepStrictEqual(r, { rules: [], ignoredGlobal: true });
+});

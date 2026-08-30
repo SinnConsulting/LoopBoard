@@ -205,3 +205,26 @@ export function reconcileCustomRules(loopText: string, rules: string[]): Reconci
   const text = next.join('\n');
   return { text, added, removed: result.removed, adopted: result.adopted };
 }
+
+// Workspace-only value selection (t-22ad). `loopBoard.customRules` writes files INTO the
+// workspace, so a User-level (global) value must never apply — it would rewrite every open
+// LoopBoard workspace's LOOP.md at once. Mirrors the shape of vscode's
+// `WorkspaceConfiguration.inspect()` without importing vscode (pure module).
+export interface CustomRulesInspect {
+  globalValue?: string[];
+  workspaceValue?: string[];
+  workspaceFolderValue?: string[];
+}
+
+export interface WorkspaceRulesSelection {
+  rules: string[];
+  // True when a User-level value exists — it is never applied, only logged by the caller.
+  ignoredGlobal: boolean;
+}
+
+export function selectWorkspaceRules(inspect: CustomRulesInspect | undefined): WorkspaceRulesSelection {
+  return {
+    rules: inspect?.workspaceFolderValue ?? inspect?.workspaceValue ?? [],
+    ignoredGlobal: inspect?.globalValue !== undefined,
+  };
+}
