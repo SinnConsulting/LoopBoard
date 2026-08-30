@@ -325,6 +325,17 @@ New v2 checklist (from REFACTORING.md Phase 8):
     wins over both. `.loopboard/debug.log` (`debug: verbose`) still shows the `config-read` line and
     `auto-recycle` / `clear-session` at `info` exactly as before.
 
+28. **Instant echo on composer saves (t-ff54):** on a card with an existing note, click **edit**,
+    change the text and press ⌘S — the card shows the NEW note in the same frame (previously the
+    old, shorter one). Add a note to a card that has none → the note card appears instantly, not
+    the `＋ Note to worker` button. Click the note's **delete** → the note disappears at once.
+    Repeat each with a click-outside commit (⌘S replaced by clicking into another card field, so a
+    field is focused when the confirming refresh lands): the saved text still stands, and does not
+    revert to the old value while that field stays focused. Same for a description edit and, on a
+    Review card, a feedback save (the amber "Your pending feedback" block appears immediately) and
+    an answer save. Conflict path unchanged: edit the same field on disk between opening the editor
+    and saving → the "changed on disk" toast still wins and the card shows the disk value.
+
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.

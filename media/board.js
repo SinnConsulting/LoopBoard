@@ -319,6 +319,20 @@
     post({ type: 'patch', patch: { taskId, field, value, base, questionIndex } });
   }
 
+  // Optimistic local echo (t-ff54): a patch is fire-and-forget, so the repaint that follows a
+  // commit still reads the PRE-save `board` snapshot and paints the OLD value (or the empty
+  // state). The confirming refresh does arrive promptly, but if any field is focused when it
+  // lands, `pendingBoard` parks it until the next focusout — so the stale text can stay on screen
+  // indefinitely. Writing the committed value into the live board object (`target[key]`, the same
+  // object the renderer reads) before the repaint makes the saved text paint in the same frame.
+  // The confirming board still reconciles, and on a same-field conflict disk wins as before —
+  // the conflict toast plus the refreshed board replace the echo.
+  function commitPatch(taskId, field, value, base, target, key, questionIndex) {
+    if (value === base) return; // no-op — nothing sent, nothing to echo
+    target[key] = value;
+    sendPatch(taskId, field, value, base, questionIndex);
+  }
+
   // Explicit-save model (Rule: no field patches on blur or on typing) — every editable field
   // commits only via its Save button or this Cmd/Ctrl+S shortcut while the field is focused.
   function isSaveShortcut(e) {
@@ -1463,7 +1477,7 @@
         const val = ta.value;
         u.editingDesc = false;
         u.descDraft = null;
-        sendPatch(t.id, 'description', val, t.description || '');
+        commitPatch(t.id, 'description', val, t.description || '', t, 'description');
         render();
       };
       const saveBtn = h('button', {
@@ -1622,7 +1636,7 @@
       const commitAnswer = () => {
         clearActiveEditor(editor);
         const val = ta.value;
-        sendPatch(t.id, 'answer', val, q.answer, i);
+        commitPatch(t.id, 'answer', val, q.answer, q, 'answer', i);
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
         // Targeted in-place update (no render()): a full repaint here would destroy the
@@ -1749,10 +1763,11 @@
       clearActiveEditor(feedbackFieldWrap);
       const val = ta.value.trim();
       if (!val) return;
-      sendPatch(t.id, 'feedback', val, t.feedback || '');
+      commitPatch(t.id, 'feedback', val, t.feedback || '', t, 'feedback');
       u.feedbackDraft = '';
       ta.value = '';
       saveBtn.disabled = true;
+      render(); // paint the echoed feedback into the amber block now, not on the confirming refresh
     };
     const saveBtn = h('button', {
       class: 'btn-sm primary field-save-btn', type: 'button',
@@ -1807,7 +1822,7 @@
         if (!d) return; // nothing to commit — composer stays open, same as today's Save-disabled state
         u.noteOpen = false;
         u.noteDraft = '';
-        sendPatch(t.id, 'note', d, t.note || '');
+        commitPatch(t.id, 'note', d, t.note || '', t, 'note');
         render();
       };
       ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
@@ -1865,7 +1880,7 @@
           h('div', { class: 'qa-note-meta' }, h('span', { class: 'qa-note-kind' }, 'Note')),
           h('div', { class: 'qa-note-tools' },
             h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; u.noteNeedsFocus = true; render(); } }, 'edit'),
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => sendPatch(t.id, 'note', '', t.note) }, 'delete'))),
+            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { commitPatch(t.id, 'note', '', t.note, t, 'note'); render(); } }, 'delete'))),
         bodyEl,
         attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null));
     } else {
