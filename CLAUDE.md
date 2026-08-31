@@ -111,7 +111,8 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   `loopBoard.customRules` + per-line-marker machinery was removed after human rejection; do not
   reintroduce it). The extension never reads or writes the section; it survives Sync by
   construction because `sync.ts` matches only the `loopboard:sync:` namespace (regression test in
-  `test/sync.test.js`). Caveat: a LOOP.md with NO sync markers at all is legacy-replaced wholesale
+  `test/sync.test.js`). `media/template-loop.md` ends with the EMPTY section outside every sync
+  marker: fresh workspaces scaffold it, Sync never adds it to existing files. Caveat: a LOOP.md with NO sync markers at all is legacy-replaced wholesale
   on Sync (backed up to `LOOP.md.bkp`). `src/` has no `onDidChangeConfiguration` listener anywhere
   — configuration is read on demand.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;

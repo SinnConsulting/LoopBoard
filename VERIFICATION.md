@@ -303,7 +303,10 @@ New v2 checklist (from REFACTORING.md Phase 8):
     `<!-- loopboard:custom:begin/end -->` section with free text to `.loopboard/LOOP.md` (shape in
     README's "Workspace custom rules"), then run **Synchronise Templates** → the section is
     byte-identical afterwards; reload the window → still untouched (the extension never reads or
-    writes it, so no `custom-rules` events appear in `.loopboard/debug.log` at any level).
+    writes it, so no `custom-rules` events appear in `.loopboard/debug.log` at any level). In a
+    fresh workspace, **LoopBoard: Initialize Workspace** scaffolds a LOOP.md whose tail already
+    carries the empty custom section (it rides in the template, outside every sync marker), while
+    Sync in an existing workspace without the section never adds it.
 
 27. **Restructured settings (t-1f1e):** open Settings → Extensions → LoopBoard. **Models** reads as
     two defaults then three slot blocks (Opus/Sonnet/Fable, each *enabled → custom model → effort*);

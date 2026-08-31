@@ -200,7 +200,9 @@ See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for c
 ### Workspace custom rules (edit `.loopboard/LOOP.md` directly)
 
 Extra standing instructions for the loop workers in **this** workspace live as a hand-written
-section in `.loopboard/LOOP.md` itself — free-form markdown, no setting involved. Add it yourself:
+section in `.loopboard/LOOP.md` itself — free-form markdown, no setting involved. Freshly
+initialized workspaces already carry the empty section (it ships in the template); in an older
+workspace, add it yourself:
 
 ```markdown
 <!-- loopboard:custom:begin -->
