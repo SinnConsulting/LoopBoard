@@ -188,7 +188,6 @@ ordered exactly as VSCode's own settings page renders them.
 | `loopBoard.nudgeLoops` | `true` | When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before. |
 | `loopBoard.permissionMode` | `auto` | `--permission-mode` passed to the `claude` CLI when spawning a loop terminal. Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻. |
 | `loopBoard.pulseTemplateSync` | `true` | Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way). |
-| `loopBoard.customRules` | `[]` | Extra standing instructions for the loop workers in THIS workspace, one per entry. Workspace-only: set it in Workspace settings — a User-level (global) value is ignored, because this setting writes into the workspace's `.loopboard/LOOP.md` and a global value would edit every open LoopBoard workspace at once. Entries are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`, which workers re-read every pass — so an edit reaches running loops with no terminal recycle. The block is hand-editable and Synchronise Templates never touches it: the extension only reconciles the lines carrying its own `loopboard:custom-rule:` marker, so removing an entry here removes its line while rules you add by hand are left alone. Custom Rules are numbered in their own sequence ("Custom Rule 1", "Custom Rule 2", …), separate from the predefined Rules 1-17, and where a Custom Rule contradicts a predefined Rule the Custom Rule wins in this workspace. |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 | `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
 | `loopBoard.autoRecycle` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this. |
@@ -198,35 +197,34 @@ ordered exactly as VSCode's own settings page renders them.
 
 See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
 
-### Workspace custom rules (`loopBoard.customRules`)
+### Workspace custom rules (edit `.loopboard/LOOP.md` directly)
 
-Extra standing instructions for the loop workers in **this** workspace — one single-line rule per
-array entry:
+Extra standing instructions for the loop workers in **this** workspace live as a hand-written
+section in `.loopboard/LOOP.md` itself — free-form markdown, no setting involved. Add it yourself:
 
-```jsonc
-"loopBoard.customRules": [
-  "There must be a PR after a task has been completed"
-]
+```markdown
+<!-- loopboard:custom:begin -->
+## Custom rules (workspace)
+
+Standing instructions for THIS workspace — free text, edited here; where they contradict a
+Rule above, they win in this workspace.
+
+1. PRs must be created before moving to in review. Otherwise task not done.
+<!-- loopboard:custom:end -->
 ```
 
-They are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`. Workers
-re-read that file on every pass, so an edit reaches running loops immediately — no terminal
-recycle.
-
-- **Numbered separately.** Custom Rules get their own sequence — "Custom Rule 1", "Custom Rule 2",
-  … — disjoint from the predefined Rules 1-17 under `## Rules`, which this feature never reads,
-  renumbers or rewrites. Numbers are positional, so removing one renumbers those below it.
-- **A Custom Rule wins** over a predefined Rule it contradicts, in this workspace. That is how a
-  workspace re-tightens something the shipped template relaxes. It is prose the worker reads, not
-  something the extension enforces or validates.
-- **Synchronise Templates never touches the block** — it lives in the `loopboard:custom` marker
-  namespace, which the template sync machinery does not see.
-- **The block is yours to edit.** The extension reconciles only the lines carrying its own
-  `loopboard:custom-rule:` marker: removing an entry from the setting removes exactly its line, and
-  clearing the setting removes every marked line while leaving the block, its lead-in prose and any
-  rules you added by hand. Editing a marked line by hand *adopts* it — the marker is dropped and
-  the line becomes yours (the setting's original wording then reappears as a new marked line, so
-  prefer editing the setting).
+- **The file is the feature.** Workers re-read `LOOP.md` on every pass, so an edit reaches running
+  loops immediately — no terminal recycle, no extension involvement. The extension never parses,
+  rewrites or validates the section; what you save is exactly what stays.
+- **Workspace-isolated by construction.** The text lives in this workspace's `.loopboard/LOOP.md`
+  and can apply nowhere else.
+- **Synchronise Templates never touches it.** Sync rewrites only `loopboard:sync:`-marked template
+  blocks; the `loopboard:custom` markers (and any other text outside sync markers) survive
+  verbatim. The one caveat: a `LOOP.md` with **no** `loopboard:sync:` markers at all is treated as
+  legacy and replaced wholesale on Sync (backed up to `LOOP.md.bkp` first) — any modern `LOOP.md`
+  has those markers.
+- **Precedence is prose.** A custom rule that contradicts a predefined Rule wins in this workspace
+  because the lead-in says so and workers read it — nothing is enforced by the extension.
 
 ### Configuring models (`loopBoard.models.<slot>`)
 

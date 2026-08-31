@@ -40,8 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('loopBoard.openBoard', () => controller.openBoard()),
     vscode.commands.registerCommand('loopBoard.refresh', () => controller.refresh()),
     vscode.commands.registerCommand('loopBoard.spawnLoop', (model: Model) => terminals.spawn(model)),
-    vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles()),
-    vscode.workspace.onDidChangeConfiguration((e) => controller.onConfigChange(e))
+    vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles())
   );
 
   store.debugLog('info', 'activate', folder.name);

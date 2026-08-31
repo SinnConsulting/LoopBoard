@@ -226,16 +226,6 @@
             "default": true,
             "description": "When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
           },
-          "loopBoard.customRules": {
-            "type": "array",
-            "order": 6,
-            "scope": "resource",
-            "items": {
-              "type": "string"
-            },
-            "default": [],
-            "markdownDescription": "Extra standing instructions for the loop workers in THIS workspace, one per entry. Workspace-only: set it in Workspace settings — a User-level (global) value is ignored, because this setting writes into the workspace's `.loopboard/LOOP.md` and a global value would edit every open LoopBoard workspace at once. Entries are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`, which workers re-read every pass — so an edit reaches running loops with no terminal recycle. The block is hand-editable and Synchronise Templates never touches it: the extension only reconciles the lines carrying its own `loopboard:custom-rule:` marker, so removing an entry here removes its line while rules you add by hand are left alone. Custom Rules are numbered in their own sequence (\"Custom Rule 1\", \"Custom Rule 2\", …), separate from the predefined Rules 1-17, and where a Custom Rule contradicts a predefined Rule the Custom Rule wins in this workspace."
-          },
           "loopBoard.debug": {
             "type": "string",
             "enum": [
