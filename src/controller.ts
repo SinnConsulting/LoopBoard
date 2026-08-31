@@ -15,7 +15,6 @@ import {
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
 import { computeNudges, formatNudge, NudgeItem } from './nudge';
-import { selectWorkspaceRules } from './customrules';
 
 // `loopBoard.afterTask` (t-1f1e) with a read-both fallback to the deprecated boolean pair. The
 // default in package.json is 'none', so `get()` alone could never tell "unset" from "explicitly
@@ -569,30 +568,6 @@ export class Controller {
   async autoHeal(): Promise<void> {
     const { todoText, loopText } = await this.readTemplates();
     await this.store.autoHeal(todoText, loopText);
-    await this.applyCustomRules();
-  }
-
-  // Renders `loopBoard.customRules` into LOOP.md's custom block (t-4a04). Called on activation,
-  // after a Sync, and from the configuration listener. A no-op reconcile performs no write, so
-  // calling it on every one of those is cheap. Workspace-only (t-22ad): the setting writes files
-  // into the workspace, so a User-level value is never applied — otherwise one Settings-UI edit
-  // would rewrite every open LoopBoard workspace's LOOP.md.
-  async applyCustomRules(): Promise<void> {
-    const c = vscode.workspace.getConfiguration('loopBoard');
-    const sel = selectWorkspaceRules(c.inspect<string[]>('customRules'));
-    if (sel.ignoredGlobal) {
-      this.store.debugLog('info', 'custom-rules', 'user-level (global) value present but ignored — workspace-only setting');
-    }
-    await this.store.applyCustomRules(sel.rules);
-  }
-
-  // Registered by extension.ts. `loopBoard.customRules` is the only setting with a live listener —
-  // everything else is read on demand at spawn/refresh time, and a rule edit has to reach running
-  // loops (which re-read LOOP.md every pass) without a terminal recycle.
-  onConfigChange(e: vscode.ConfigurationChangeEvent): void {
-    if (!e.affectsConfiguration('loopBoard.customRules')) return;
-    this.store.debugLog('info', 'custom-rules', 'setting changed — reconciling LOOP.md');
-    void this.applyCustomRules().then(() => this.refresh('custom-rules'));
   }
 
   // First-run (and every subsequent activation) Getting Started prompt, gated on a globalState
@@ -653,9 +628,6 @@ export class Controller {
     this.store.debugLog('info', 'popup-choice', `sync-templates -> ${choice ?? 'cancelled'}`);
     if (choice !== 'Sync') return;
     const outcome = await this.store.syncTemplates(todoText, loopText);
-    // Sync never overwrites the custom block (different marker namespace), but a Sync that
-    // recreated a missing/empty LOOP.md wholesale leaves no block at all — re-render it.
-    if (outcome.status === 'applied') await this.applyCustomRules();
     if (outcome.status === 'applied') {
       this.store.debugLog('info', 'popup', 'info — LoopBoard: synced .loopboard/ to the current templates.');
       void vscode.window.showInformationMessage('LoopBoard: synced .loopboard/ to the current templates.');

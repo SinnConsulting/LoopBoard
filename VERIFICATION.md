@@ -297,22 +297,16 @@ New v2 checklist (from REFACTORING.md Phase 8):
     New task survives pass after pass ungroomed — its `## Description` and questions are untouched,
     including when one of its answers is filled.
 
-26. **Workspace custom rules (t-4a04):** with `.loopboard/` present, set
-    `"loopBoard.customRules": ["There must be a PR after a task has been completed"]` in workspace
-    settings → within a moment (no reload, no terminal recycle) `.loopboard/LOOP.md` gains a
-    `<!-- loopboard:custom:begin -->` block after the last `loopboard:sync:*:end` marker, holding
-    `## Custom rules (workspace)`, the lead-in with the precedence sentence, and
-    `1. There must be a PR … <!-- loopboard:custom-rule:… -->`. Rules 1-17 and every
-    `loopboard:sync:*` pair are byte-identical. Add a second entry → it appears as `2.`; remove the
-    first → the remaining rule renumbers to `1.`; clear the setting entirely → every marked line is
-    gone but the block, its heading and lead-in remain. Add a rule by hand as an unmarked list item
-    and edit the lead-in prose → both survive every subsequent reconcile, including one that
-    removes setting-owned rules. Hand-reword a marked line → its marker is dropped (the line is now
-    yours) and the setting's original wording reappears as a new marked line at the end. Run
-    **Synchronise Templates** → the custom block is byte-identical afterwards. Reload the window
-    with the setting unchanged → `.loopboard/debug.log` shows `custom-rules unchanged, no write`
-    at `verbose` and LOOP.md's mtime does not move (no refresh storm); a real change logs
-    `custom-rules wrote LOOP.md — N added, N removed, N adopted` at `info`.
+26. **Workspace custom rules are hand-owned (t-4a04, redesigned):** `loopBoard.customRules` no
+    longer exists — Settings → Extensions → LoopBoard shows no such row, and a leftover value in
+    settings.json is ignored as an unknown key (no toast, no log line). Hand-add a
+    `<!-- loopboard:custom:begin/end -->` section with free text to `.loopboard/LOOP.md` (shape in
+    README's "Workspace custom rules"), then run **Synchronise Templates** → the section is
+    byte-identical afterwards; reload the window → still untouched (the extension never reads or
+    writes it, so no `custom-rules` events appear in `.loopboard/debug.log` at any level). In a
+    fresh workspace, **LoopBoard: Initialize Workspace** scaffolds a LOOP.md whose tail already
+    carries the empty custom section (it rides in the template, outside every sync marker), while
+    Sync in an existing workspace without the section never adds it.
 
 27. **Restructured settings (t-1f1e):** open Settings → Extensions → LoopBoard. **Models** reads as
     two defaults then three slot blocks (Opus/Sonnet/Fable, each *enabled → custom model → effort*);

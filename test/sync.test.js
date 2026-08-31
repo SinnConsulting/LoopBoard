@@ -62,6 +62,29 @@ test('syncMarkedSections preserves user content outside the markers', () => {
   assert.match(text, /new A/);
 });
 
+test('syncMarkedSections leaves a hand-owned loopboard:custom block byte-identical (t-4a04)', () => {
+  const customBlock = [
+    '<!-- loopboard:custom:begin -->',
+    '## Custom rules (workspace)',
+    '',
+    'Standing instructions for THIS workspace — free text, edited here.',
+    '',
+    '1. PRs must be created before moving to in review. Otherwise task not done.',
+    '<!-- loopboard:custom:end -->',
+  ].join('\n');
+  const current = [
+    '<!-- loopboard:sync:a:begin -->',
+    'old A',
+    '<!-- loopboard:sync:a:end -->',
+    '',
+    customBlock,
+  ].join('\n');
+  const template = ['<!-- loopboard:sync:a:begin -->', 'new A', '<!-- loopboard:sync:a:end -->'].join('\n');
+  const { text, changedIds } = syncMarkedSections(current, template);
+  assert.deepEqual(changedIds, ['a']);
+  assert.ok(text.includes(customBlock), 'custom block survives Sync byte-identical');
+});
+
 test('syncMarkedSections inserts a template id the current (already-marked) file lacks, next to its nearest neighbor', () => {
   const current = ['<!-- loopboard:sync:a:begin -->', 'old A', '<!-- loopboard:sync:a:end -->'].join('\n');
   const template = [

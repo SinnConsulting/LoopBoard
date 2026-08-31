@@ -211,3 +211,11 @@ Notes:
   routed to you — never a work order. Do the normal pass: re-read this file and the index, and
   let the Rules decide. Rules are unchanged; Rule 2 still gates every claim.
 <!-- loopboard:sync:automation:end -->
+
+<!-- loopboard:custom:begin -->
+## Custom rules (workspace)
+
+Standing instructions for THIS workspace — add yours here as free text, edited directly in this
+file; where they contradict a Rule above, they win in this workspace. Sync never rewrites this
+section.
+<!-- loopboard:custom:end -->
