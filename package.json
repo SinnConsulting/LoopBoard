@@ -181,7 +181,7 @@
           "loopBoard.loopInterval": {
             "type": "string",
             "order": 1,
-            "default": "1m",
+            "default": "5m",
             "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
           },
           "loopBoard.afterTask": {
