@@ -1,5 +1,5 @@
 // Pure loop-command builder. No vscode imports so it is unit-testable in Docker.
-import { Model, isValidEffort } from './model';
+import { Model, isValidEffort, sanitizeGroomConcurrency } from './model';
 
 // Allowlist for `--permission-mode`, mirroring the `loopBoard.permissionMode` enum in package.json.
 // This value is spliced UNQUOTED into the loop terminal shell command (buildClaudeBase). package.json's
@@ -40,11 +40,21 @@ export function buildClaudeBase(permissionMode: string, modelString: string): st
 // `.loopboard/LOOP.md`'s ## Automation section on every pass (so editing that section retunes
 // running loops). The effort ceiling rides here (like loopInterval) because it is per-slot and
 // only used at grooming time (Rule 14) — changing it needs a terminal recycle, same as interval.
+// The grooming concurrency cap (t-23ce) rides the same channel for the same reason: the sync path
+// copies template blocks byte-for-byte with no interpolation, so LOOP.md cannot carry a configured
+// NUMBER — only the prompt can. LOOP.md carries the BEHAVIOUR, phrased against "the grooming cap
+// named in your bootstrap prompt", so the two halves stay in step without duplicating the value.
 //
 // LOOP.md contains several fenced blocks (layout, workflow, grammars), so we must NOT grab the
 // first fence: slice from the `## Automation` heading to the next `## ` heading (or EOF), and
 // require a fenced block inside that slice. No block -> undefined (caller warns).
-export function buildLoopCommand(loopText: string, model: Model, interval: string, effort: string = 'high'): string | undefined {
+export function buildLoopCommand(
+  loopText: string,
+  model: Model,
+  interval: string,
+  effort: string = 'high',
+  groomConcurrency?: number
+): string | undefined {
   const lines = loopText.split('\n');
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -65,8 +75,10 @@ export function buildLoopCommand(loopText: string, model: Model, interval: strin
   if (!/```[^\n]*\n[\s\S]*?```/.test(section)) return undefined;
 
   const groomEffort = isValidEffort(effort) ? effort : 'high';
+  const groomCap = sanitizeGroomConcurrency(groomConcurrency);
   return (
-    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model} with a grooming effort ceiling of ${groomEffort}. ` +
+    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model} with a grooming effort ceiling of ${groomEffort} ` +
+    `and a grooming concurrency cap of ${groomCap}. ` +
     `Open .loopboard/LOOP.md, read the loop worker instructions in its Automation section, and follow them exactly for this and every pass.`
   );
 }

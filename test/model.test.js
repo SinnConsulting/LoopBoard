@@ -10,6 +10,7 @@ const {
   enabledModels,
   resolveModelString,
   readModelsConfig,
+  sanitizeGroomConcurrency,
   EFFORT_LEVELS,
   isValidEffort,
   AFTER_TASK_MODES,
@@ -105,6 +106,39 @@ test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig
   assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');
   assert.equal(r.find((m) => m.id === 'sonnet').enabled, false);
   assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'fable']);
+});
+
+// ---- grooming concurrency cap (t-23ce) ----
+
+test('resolveModels defaults groomConcurrency to 3 on every slot', () => {
+  for (const m of resolveModels()) assert.equal(m.groomConcurrency, 3);
+});
+
+test('a valid per-slot groomConcurrency REPLACES the default; invalid falls back to 3', () => {
+  const r = resolveModels({
+    opus: { groomConcurrency: 6 },
+    sonnet: { groomConcurrency: 0 },     // below the minimum
+    fable: { groomConcurrency: 2.5 },    // not an integer
+  });
+  assert.equal(r.find((m) => m.id === 'opus').groomConcurrency, 6);
+  assert.equal(r.find((m) => m.id === 'sonnet').groomConcurrency, 3);
+  assert.equal(r.find((m) => m.id === 'fable').groomConcurrency, 3);
+});
+
+test('sanitizeGroomConcurrency rejects everything that is not a plain in-range integer', () => {
+  assert.equal(sanitizeGroomConcurrency(1), 1);
+  assert.equal(sanitizeGroomConcurrency(99), 99);
+  // No `0 = unlimited` sentinel: unbounded fan-out is the defect the cap removes.
+  for (const bad of [0, -1, 1.5, 100, NaN, Infinity, '3', null, undefined, {}]) {
+    assert.equal(sanitizeGroomConcurrency(bad), 3, `expected ${JSON.stringify(bad)} -> 3`);
+  }
+});
+
+test('readModelsConfig reads the per-slot groomConcurrency key', () => {
+  const settings = { 'models.opus.groomConcurrency': 7 };
+  const cfg = readModelsConfig((k, d) => (k in settings ? settings[k] : d));
+  assert.equal(cfg.opus.groomConcurrency, 7);
+  assert.equal(cfg.sonnet.groomConcurrency, 3, 'unset slots take the default');
 });
 
 // ---- afterTask: one 3-state mode replacing the recycle boolean pair (t-1f1e) ----

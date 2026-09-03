@@ -172,12 +172,15 @@ ordered exactly as VSCode's own settings page renders them.
 | `loopBoard.models.opus.enabled` | `true` | **Opus slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
 | `loopBoard.models.opus.model` | `""` | Custom `--model` string spawned for the Opus slot (e.g. `opus[1m]`). Empty = `opus`. Invalid strings are ignored. |
 | `loopBoard.models.opus.effort` | `high` | Grooming-subagent reasoning-effort ceiling for the Opus slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. |
+| `loopBoard.models.opus.groomConcurrency` | `3` | Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with. |
 | `loopBoard.models.sonnet.enabled` | `true` | **Sonnet slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
 | `loopBoard.models.sonnet.model` | `""` | Custom `--model` string spawned for the Sonnet slot (e.g. `sonnet[1m]`). Empty = `sonnet`. Invalid strings are ignored. |
 | `loopBoard.models.sonnet.effort` | `high` | Grooming-subagent reasoning-effort ceiling for the Sonnet slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. |
+| `loopBoard.models.sonnet.groomConcurrency` | `3` | Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with. |
 | `loopBoard.models.fable.enabled` | `true` | **Fable slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
 | `loopBoard.models.fable.model` | `""` | Custom `--model` string spawned for the Fable slot. Empty = `fable`. Invalid strings are ignored. |
 | `loopBoard.models.fable.effort` | `high` | Grooming-subagent reasoning-effort ceiling for the Fable slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. |
+| `loopBoard.models.fable.groomConcurrency` | `3` | Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with. |
 
 ### LoopBoard: Loop Behavior
 
@@ -237,6 +240,9 @@ three keys:
 - `loopBoard.models.<slot>.enabled` — show/hide the slot in the Loops overview and the board's model selects.
 - `loopBoard.models.<slot>.model` — the actual string passed as `claude --model <string>` (e.g. `opus[1m]` or a dated snapshot). Empty falls back to the slot's built-in default; anything outside `[A-Za-z0-9._\[\]-]` is rejected before it reaches the terminal.
 - `loopBoard.models.<slot>.effort` — grooming-subagent reasoning-effort ceiling (`low`…`max`) for that slot, per Rule 14 in `LOOP.md`.
+- `loopBoard.models.<slot>.groomConcurrency` — how many grooming subagents that slot's loop may run in parallel in one pass (default `3`, minimum `1`; there is no unlimited setting). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass.
+
+The `.effort` and `.groomConcurrency` ceilings ride the loop's bootstrap prompt, so a change to either takes effect the **next time that slot's loop is started or restarted (♻)** — a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
 
 ```jsonc
 // Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.

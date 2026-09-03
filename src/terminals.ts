@@ -1,7 +1,7 @@
 // Loop terminals: plain VSCode terminals, one per model. Spawn/reuse/status/recycle
 // + /loop injection. No external deps (no tmux/node-pty); output is never read.
 import * as vscode from 'vscode';
-import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString } from './model';
+import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString, sanitizeGroomConcurrency } from './model';
 import { LoopStatus } from './view';
 import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval } from './loop';
 
@@ -145,13 +145,19 @@ export class TerminalManager {
     }
     // The bootstrap prompt names the LOGICAL slot (model), so the worker claims `model: <slot>`
     // tasks; the terminal itself spawns with the resolved (possibly 1M-suffixed) --model string.
-    // `resolved.effort` is already validated (resolveModels defaults invalid/absent to 'high').
-    const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval, resolved?.effort);
+    // `resolved.effort` and `resolved.groomConcurrency` are already validated (resolveModels
+    // defaults invalid/absent to 'high' / 3). Both are frozen at spawn: a settings change reaches
+    // this slot only on its next start/restart (♻), exactly like the interval.
+    const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval, resolved?.effort, resolved?.groomConcurrency);
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show(preserveFocus);
     this.revealedModel = model;
     const base = buildClaudeBase(cfg.permissionMode, modelString);
-    this.log('info', 'loop-spawn', `${model} -> --model ${modelString}`);
+    this.log(
+      'info',
+      'loop-spawn',
+      `${model} -> --model ${modelString} (effort ${resolved?.effort ?? 'high'}, groom cap ${sanitizeGroomConcurrency(resolved?.groomConcurrency)})`
+    );
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the
       // delay note above). Single-quoted; the prompt is one short line built by buildLoopCommand.

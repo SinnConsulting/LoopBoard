@@ -122,6 +122,13 @@
             "default": "high",
             "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Opus slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
           },
+          "loopBoard.models.opus.groomConcurrency": {
+            "type": "number",
+            "minimum": 1,
+            "order": 13,
+            "default": 3,
+            "markdownDescription": "Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass \u2014 nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (\u267b): a running loop keeps the cap it was spawned with."
+          },
           "loopBoard.models.sonnet.enabled": {
             "type": "boolean",
             "order": 20,
@@ -147,6 +154,13 @@
             "default": "high",
             "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Sonnet slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
           },
+          "loopBoard.models.sonnet.groomConcurrency": {
+            "type": "number",
+            "minimum": 1,
+            "order": 23,
+            "default": 3,
+            "markdownDescription": "Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass \u2014 nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (\u267b): a running loop keeps the cap it was spawned with."
+          },
           "loopBoard.models.fable.enabled": {
             "type": "boolean",
             "order": 30,
@@ -171,6 +185,13 @@
             "order": 32,
             "default": "high",
             "markdownDescription": "Grooming-subagent reasoning-effort ceiling for the Fable slot (Rule 14 in `LOOP.md`) — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
+          },
+          "loopBoard.models.fable.groomConcurrency": {
+            "type": "number",
+            "minimum": 1,
+            "order": 33,
+            "default": 3,
+            "markdownDescription": "Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with."
           }
         }
       },

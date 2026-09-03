@@ -149,3 +149,39 @@ test('template-todo.md scaffold parses to zero entries and is a fixpoint', () =>
   const twice = serializeTodo(parseTodo(once));
   assert.equal(twice, once, 'fixpoint');
 });
+
+// ---- grooming concurrency cap (t-23ce) ----
+// The cap rides the bootstrap prompt because the sync path copies template blocks byte-for-byte
+// with no interpolation — LOOP.md can carry the BEHAVIOUR but never a configured NUMBER.
+
+test('buildLoopCommand: the grooming concurrency cap is spliced into the prompt', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'high', 5);
+  assert.ok(cmd.includes('grooming concurrency cap of 5'), 'cap injected');
+  assert.ok(!cmd.includes("'"), 'still apostrophe-free');
+  assert.ok(!cmd.includes('\n'), 'still a single line');
+  assert.ok(cmd.length < 300, 'still inside the bootstrap line budget');
+});
+
+test('buildLoopCommand: the cap defaults to 3 when omitted', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m');
+  assert.ok(cmd.includes('grooming concurrency cap of 3'));
+});
+
+test('buildLoopCommand: a hostile or out-of-range cap falls back to 3, never reaching the line raw', () => {
+  // The value is spliced into a shell line, so anything not a plain in-range integer must not
+  // survive. There is deliberately no `0 = unlimited` sentinel.
+  for (const bad of ['5; rm -rf /', 0, -1, 1.5, NaN, Infinity, 100, null, undefined, {}]) {
+    const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'high', bad);
+    assert.ok(cmd.includes('grooming concurrency cap of 3'), `expected ${JSON.stringify(bad)} -> 3`);
+    assert.ok(!cmd.includes('rm -rf'));
+  }
+});
+
+test('the template states the cap behaviour without embedding a number', () => {
+  // LOOP.md must never hard-code the cap: it is per-slot and configurable, and the sync path
+  // would copy the constant into every workspace identically.
+  const tpl = readMedia('template-loop.md');
+  assert.ok(tpl.includes('grooming concurrency cap named in your bootstrap prompt'));
+  assert.ok(tpl.includes('index order'), 'names the tie-break');
+  assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
+});
