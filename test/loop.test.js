@@ -18,6 +18,15 @@ function readMedia(name) {
   return fs.readFileSync(path.join(process.cwd(), 'media', name), 'utf8');
 }
 
+// The standing worker instructions are the FIRST fence of the ## Automation section — not the
+// first fence in the file (LOOP.md has several earlier ones), which is the same slice
+// buildLoopCommand performs.
+function automationFence(text) {
+  const fence = text.slice(text.indexOf('## Automation')).split('```')[1];
+  assert.ok(fence, 'Automation section has a fenced block');
+  return fence;
+}
+
 test('buildLoopCommand: bootstrap prompt names model + interval + effort ceiling, points at .loopboard/LOOP.md', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 'xhigh');
   assert.ok(cmd, 'a loop command was built from the shipped LOOP.md template');
@@ -35,13 +44,25 @@ test('buildLoopCommand: bootstrap prompt names model + interval + effort ceiling
 // interrupted worker leaves a Review task whose branch is missing or stale. Pin the ordered
 // clause so a later compression pass cannot silently drop it (t-16d2).
 test('template Automation block states the strict finishing order (Review move LAST)', () => {
-  const text = readMedia('template-loop.md');
-  const fence = text.slice(text.indexOf('## Automation')).split('```')[1];
-  assert.ok(fence, 'Automation section has a fenced block');
+  const fence = automationFence(readMedia('template-loop.md'));
   assert.match(fence, /LAST action, set `phase: review`/, 'Review move named as the last action');
   assert.ok(
     fence.indexOf('commit and push') < fence.indexOf('set `phase: review`'),
     'commit and push is ordered before the Review move',
+  );
+});
+
+// The extension cannot read terminal output, so "do not idle until the next tick while eligible
+// work remains" can only live in the instructions. Pin the clause and its terminator (t-ff77).
+test('template Automation block tells a finished worker to start the pass over', () => {
+  const fence = automationFence(readMedia('template-loop.md'));
+  assert.match(fence, /does NOT end the pass/, 'a task leaving In Progress does not end the pass');
+  assert.match(fence, /START OVER from the top of this block in the same pass/, 'restart is named');
+  assert.match(fence, /nothing claimed and nothing reconciled/, 'loop-until-idle terminator');
+  assert.match(fence, /NEVER idle until the next tick/, 'stated in NEVER terms');
+  assert.ok(
+    fence.indexOf('does NOT end the pass') > fence.indexOf('set `phase: review`'),
+    'the restart clause follows the delivery and the Feedback-parking sentences it covers',
   );
 });
 
