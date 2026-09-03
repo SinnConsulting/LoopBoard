@@ -31,6 +31,20 @@ test('buildLoopCommand: bootstrap prompt names model + interval + effort ceiling
   assert.ok(cmd.length < 300, 'bootstrap prompt stays tiny');
 });
 
+// The finishing order is a guarantee, not prose: if `phase: review` is set before the push, an
+// interrupted worker leaves a Review task whose branch is missing or stale. Pin the ordered
+// clause so a later compression pass cannot silently drop it (t-16d2).
+test('template Automation block states the strict finishing order (Review move LAST)', () => {
+  const text = readMedia('template-loop.md');
+  const fence = text.slice(text.indexOf('## Automation')).split('```')[1];
+  assert.ok(fence, 'Automation section has a fenced block');
+  assert.match(fence, /LAST action, set `phase: review`/, 'Review move named as the last action');
+  assert.ok(
+    fence.indexOf('commit and push') < fence.indexOf('set `phase: review`'),
+    'commit and push is ordered before the Review move',
+  );
+});
+
 test('buildLoopCommand: effort defaults to high when omitted', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m');
   assert.ok(cmd.includes('grooming effort ceiling of high'));

@@ -1,0 +1,11 @@
+# Decisions — Toolchain, CI & packaging
+
+One line each: what, why. Newest at the bottom. Index: [../DECISIONS.md](../DECISIONS.md).
+
+- Tests are plain CommonJS `.js` under `test/`, requiring compiled modules from `out-test/` — keeps devDependencies to `typescript` + `@types/vscode` only (no `@types/node`), per the non-negotiable.
+- `tsconfig.test.json` compiles only the pure modules (parser/writer/model/merge) with `types: []` so they never depend on node/vscode typings; the vscode-touching modules are built by the main `tsconfig.json` into `out/`.
+- `make test` runs `node --test 'test/*.test.js'` (glob, not a bare dir) because Node 22 treats a bare `test/` argument as a module path.
+- Main `tsconfig.json` adds the `DOM` lib (not `@types/node`) to get `setTimeout`/`TextDecoder`/`TextEncoder` in the extension host without violating the "typescript + @types/vscode only" devDependency rule.
+- Added `.vscodeignore` so the packaged `.vsix` ships only `out/` + `media/` + manifest/README (26 files) — source, tests, docs, and the design bundle are excluded.
+- Release pipeline (t-9c4e) ports ClockClock's semantic-release setup: `.releaserc.json` with the commit-analyzer/release-notes-generator/github plugin trio, `release.yml` with a `release` job (cycjimmy/semantic-release-action@v4, GITHUB_TOKEN) and a gated `vsix` job that builds (npm ci + tsc + node --test on Node 22 — CI runners aren't the host, so the Docker-only rule doesn't apply) and packages with `vsce package <version> --no-dependencies --no-git-tag-version --no-update-package-json` — version is injected into the vsix manifest only; package.json's version stays frozen in git (no bot bump commits). Artifact goes to the GitHub Release via `gh release upload`; Marketplace publish deliberately deferred (t-a37f follow-up). `environment: All` omitted (ClockClock-specific). `.github/**` + `.releaserc.json` added to `.vscodeignore` (they leaked into the vsix, 30→32 files).
+- Marketplace publish is automated as the LAST step of release.yml's `vsix` job (`vsce publish --packagePath` with the repo-level VSCE_PAT) rather than a `release`-event workflow — GITHUB_TOKEN-created releases don't trigger other workflows. It runs after the asset upload and version-bump commit so a Marketplace flake can't block them; `publish.yml` (workflow_dispatch) stays as the manual retry path.

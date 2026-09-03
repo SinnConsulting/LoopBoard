@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Less prompting. No babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
-  "version": "2.57.0",
+  "version": "3.1.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
@@ -202,7 +202,7 @@
           "loopBoard.loopInterval": {
             "type": "string",
             "order": 1,
-            "default": "1m",
+            "default": "5m",
             "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
           },
           "loopBoard.afterTask": {
@@ -246,15 +246,6 @@
             "order": 3,
             "default": true,
             "description": "When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
-          },
-          "loopBoard.customRules": {
-            "type": "array",
-            "order": 6,
-            "items": {
-              "type": "string"
-            },
-            "default": [],
-            "markdownDescription": "Extra standing instructions for the loop workers in THIS workspace, one per entry. They are rendered into a `## Custom rules (workspace)` block in `.loopboard/LOOP.md`, which workers re-read every pass — so an edit reaches running loops with no terminal recycle. The block is hand-editable and Synchronise Templates never touches it: the extension only reconciles the lines carrying its own `loopboard:custom-rule:` marker, so removing an entry here removes its line while rules you add by hand are left alone. Custom Rules are numbered in their own sequence (\"Custom Rule 1\", \"Custom Rule 2\", …), separate from the predefined Rules 1-17, and where a Custom Rule contradicts a predefined Rule the Custom Rule wins in this workspace."
           },
           "loopBoard.debug": {
             "type": "string",

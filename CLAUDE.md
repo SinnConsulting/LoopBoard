@@ -3,8 +3,8 @@
 @.claude/rules/branch.md
 
 VSCode extension: renders workspace `.loopboard/` tracker as interactive board, writes edits back
-to markdown, spawns model-specific Claude Code loop terminals. Decisions: `DECISIONS.md`;
-verification status: `VERIFICATION.md`.
+to markdown, spawns model-specific Claude Code loop terminals. Decisions: `decisions/` (index
+`DECISIONS.md`); verification status: `VERIFICATION.md`.
 
 Storage: everything under `.loopboard/` — `TODO.md` (slim task index, grammar v5), `DONE.md`
 (accepted, lazy), `LOOP.md` (rules + loop worker instructions), `tasks/<id>.md` (per-task detail).
@@ -106,19 +106,15 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   watches, since the tracker is the only signal for "busy". A forced restart leaves the task
   `phase: inprogress` with no worker, which Rule 2 turns into a board-wide block — hence the modal's
   wording.
-- Workspace custom rules (t-4a04): `loopBoard.customRules` (array of strings) renders into a
-  `<!-- loopboard:custom:begin/end -->` block in `.loopboard/LOOP.md` — the `custom:` namespace is
-  invisible to `sync.ts` (its scanner matches only `loopboard:sync:` and only rewrites ids found in
-  the TEMPLATE), so Sync cannot overwrite it. Reconciliation is PER LINE via an inline
-  `<!-- loopboard:custom-rule:<hash> -->` marker: unmarked = the human's (untouched), marker whose
-  id no longer hashes to its own text = adopted (marker stripped, never deleted), marked + in the
-  setting = kept, marked + absent = deleted; then append missing and renumber from 1. Pure logic in
-  `src/customrules.ts` (`reconcileCustomRules`, in `tsconfig.test.json`); `store.applyCustomRules`
-  writes ONLY when the text differs (the `.loopboard/**/*.md` watcher would otherwise storm).
-  Triggered from activation auto-heal, after Sync, and `onDidChangeConfiguration` — the ONLY config
-  listener in `src/` (everything else is read on demand). Reconciler refuses a LOOP.md with no
-  `loopboard:sync:` markers, so the block can never live in a file the legacy full-replace path
-  would overwrite.
+- Workspace custom rules (t-4a04): a hand-owned `<!-- loopboard:custom:begin/end -->` free-text
+  section in `.loopboard/LOOP.md` — NO setting, NO reconciler, NO config listener (the earlier
+  `loopBoard.customRules` + per-line-marker machinery was removed after human rejection; do not
+  reintroduce it). The extension never reads or writes the section; it survives Sync by
+  construction because `sync.ts` matches only the `loopboard:sync:` namespace (regression test in
+  `test/sync.test.js`). `media/template-loop.md` ends with the EMPTY section outside every sync
+  marker: fresh workspaces scaffold it, Sync never adds it to existing files. Caveat: a LOOP.md with NO sync markers at all is legacy-replaced wholesale
+  on Sync (backed up to `LOOP.md.bkp`). `src/` has no `onDidChangeConfiguration` listener anywhere
+  — configuration is read on demand.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
 - Debug trace (`loopBoard.debug` = `off | info | verbose`): any new code that writes a
@@ -139,8 +135,9 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   `.loopboard/` file IO align) — extension is not nested. Missing `.loopboard/` → board shows init
   empty-state; `LoopBoard: Initialize Workspace` / `loopboard.init` scaffolds it and refuses if it
   already exists.
-- Record notable implementation decisions as one-liners in `DECISIONS.md`; update `VERIFICATION.md`
-  when the verification story changes.
+- Record notable implementation decisions as one-liners in the matching `decisions/<category>.md`
+  (index: `DECISIONS.md`; append at the bottom); update `VERIFICATION.md` when the verification
+  story changes.
 - Manual checklist (M3–M6, F5 Extension Development Host) lives in `VERIFICATION.md`; headless
   sessions cannot run it — say so, never claim it done.
 - `DONE.md` may be absent until first Review acceptance; store treats missing as empty — keep it
