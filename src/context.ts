@@ -28,12 +28,34 @@ export function encodeProjectDir(absPath: string): string {
   return absPath.replace(/[\\/:]/g, '-');
 }
 
-// Context window of a slot, derived from the `--model` string we spawned it with — the transcript
-// records the model but never its window size. `[1m]` suffix = the 1M-token window, else 200k.
+// Context window of a slot. Nothing on disk records it — Claude Code computes it in-process from
+// its own model registry — so it has to be derived from the model id, and the `[1m]` SUFFIX alone
+// is not enough: the 5-series models carry a 1M window natively with no suffix (observed against a
+// live `--model sonnet` loop whose CLI status line read `61k/1000k`, and against the registry
+// entries inside the 2.1.261 CLI: opus-4-6/4-7/4-8, opus-5, sonnet-4-6, sonnet-5 and fable-5 are
+// all 1e6, while opus-4-1/4-5 and sonnet-4-0/4-5 are 200k). Getting this wrong is not cosmetic —
+// a 200k assumption on a 1M model reports 5x the real percentage and trips a threshold restart
+// four times too early.
 export const DEFAULT_WINDOW = 200000;
 export const LARGE_WINDOW = 1000000;
-export function windowSizeFor(modelString: string): number {
-  return /\[1m\]/i.test(modelString) ? LARGE_WINDOW : DEFAULT_WINDOW;
+// Model ids known to carry the 1M window natively, matched as substrings of the transcript's
+// `message.model` (e.g. `claude-sonnet-5`) or of the configured `--model` string (e.g. `sonnet`).
+// A model missing from this list falls back to 200k, which is the conservative direction for the
+// INDICATOR but the eager one for the threshold — hence the list is kept explicit and is checked
+// against the CLI whenever a new model ships.
+const LARGE_WINDOW_MODELS = ['opus-5', 'sonnet-5', 'fable-5', 'opus-4-6', 'opus-4-7', 'opus-4-8', 'sonnet-4-6'];
+
+// `transcriptModel` is the model id of the line we actually measured (`message.model`) and is
+// preferred when present: it is what ran, whereas the configured `--model` string may be an alias
+// (`sonnet`), an org name, or simply out of date relative to a still-running terminal.
+export function windowSizeFor(modelString: string, transcriptModel?: string): number {
+  const id = (transcriptModel || modelString || '').toLowerCase();
+  if (/\[1m\]/i.test(modelString) || /\[1m\]/i.test(id)) return LARGE_WINDOW;
+  // A bare alias resolves through the same list: `sonnet` alone is today's Sonnet 5 (1M), and the
+  // slot ids LoopBoard spawns (`opus`/`sonnet`/`fable`) are exactly those aliases.
+  const alias = { opus: 'opus-5', sonnet: 'sonnet-5', fable: 'fable-5' }[id];
+  const needle = alias || id;
+  return LARGE_WINDOW_MODELS.some((m) => needle.includes(m)) ? LARGE_WINDOW : DEFAULT_WINDOW;
 }
 
 // What a `~/.claude/sessions/<pid>.json` tells us. Only these three fields are load-bearing; the

@@ -28,10 +28,29 @@ test('encodeProjectDir folds every separator to a dash', () => {
   assert.equal(encodeProjectDir('C:\\Users\\x\\LoopBoard'), 'C--Users-x-LoopBoard');
 });
 
-test('window size comes from the --model string, not the transcript', () => {
-  assert.equal(windowSizeFor('opus'), DEFAULT_WINDOW);
-  assert.equal(windowSizeFor('opus[1m]'), LARGE_WINDOW);
+// The window is nowhere on disk, so it is derived from the model id — and the `[1m]` suffix alone
+// is NOT the test: a live `--model sonnet` loop reported `61k/1000k`, because the 5-series models
+// are natively 1M. Assuming 200k there reported 24% for a real 6% and would have tripped a
+// threshold restart four times too early (t-2b89 review feedback).
+test('window size: 5-series models are 1M with no suffix, older ones are 200k', () => {
+  assert.equal(windowSizeFor('sonnet'), LARGE_WINDOW, 'the bare alias is today Sonnet 5');
+  assert.equal(windowSizeFor('opus'), LARGE_WINDOW);
+  assert.equal(windowSizeFor('fable'), LARGE_WINDOW);
+  assert.equal(windowSizeFor('claude-sonnet-4-5'), DEFAULT_WINDOW);
+  assert.equal(windowSizeFor('claude-opus-4-1'), DEFAULT_WINDOW);
+  assert.equal(windowSizeFor('haiku-4-5'), DEFAULT_WINDOW);
+});
+
+test('an explicit [1m] suffix always means the 1M window', () => {
+  assert.equal(windowSizeFor('claude-sonnet-4-5[1m]'), LARGE_WINDOW);
   assert.equal(windowSizeFor('sonnet[1M]'), LARGE_WINDOW);
+});
+
+test("the transcript's own model id wins over the configured --model string", () => {
+  // The slot spawned as `sonnet`; the line we measured says what actually ran.
+  assert.equal(windowSizeFor('sonnet', 'claude-sonnet-4-5'), DEFAULT_WINDOW);
+  assert.equal(windowSizeFor('some-org-alias', 'claude-opus-5'), LARGE_WINDOW);
+  assert.equal(windowSizeFor('some-org-alias', ''), DEFAULT_WINDOW, 'an unknown id stays conservative');
 });
 
 test('parseSessionPointer keeps identity fields and rejects anything else', () => {

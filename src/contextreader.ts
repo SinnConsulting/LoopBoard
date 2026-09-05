@@ -108,7 +108,8 @@ export class ContextReader {
     if (!sessionId) return undefined;
     const usage = await this.readUsage(dir, sessionId);
     if (!usage) return undefined;
-    const window = windowSizeFor(modelString);
+    // The transcript's own model id wins over the configured --model string (see windowSizeFor).
+    const window = windowSizeFor(modelString, usage.model);
     const percent = contextPercent(usage.used, window);
     this.log('verbose', 'context-read', `${model} ${usage.used}/${window} (${percent}%) session ${sessionId}`);
     return { sessionId, used: usage.used, window, percent };

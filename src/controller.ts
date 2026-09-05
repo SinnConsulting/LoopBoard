@@ -91,6 +91,9 @@ export class Controller {
   private contextTripped = new Map<Model, string>();
   private contextPending = new Set<Model>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
+  // Guards against overlapping polls: the interval and every refresh both trigger one, and each
+  // awaits file IO.
+  private contextPolling = false;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -184,6 +187,11 @@ export class Controller {
     // is the only place "is this model busy?" is knowable (terminal output can never be read).
     this.flushPendingRestarts(board);
     this.flushPendingContext(board);
+    // Re-measure on every refresh as well as on the interval (t-2b89 review feedback): a loop's
+    // turn ends by writing `.loopboard/` markdown, which is exactly what triggers a refresh — so
+    // the bar tracks the conversation instead of trailing it by up to a poll. Cheap: each read is
+    // stat-gated, and this never awaits the repaint below.
+    void this.pollContext();
     const web = await this.buildWebBoard(board);
     BoardPanel.current?.post({ type: 'board', board: web });
     this.sidebar.post({ type: 'board', board: web });
@@ -274,6 +282,16 @@ export class Controller {
   // Re-measure every running slot, then act on anything that crossed the threshold. Nothing here
   // ever throws: a slot with no session file or no readable transcript simply loses its reading.
   private async pollContext(): Promise<void> {
+    if (!this.contextReader || this.contextPolling) return;
+    this.contextPolling = true;
+    try {
+      await this.pollContextOnce();
+    } finally {
+      this.contextPolling = false;
+    }
+  }
+
+  private async pollContextOnce(): Promise<void> {
     if (!this.contextReader) return;
     const cfg = this.config();
     let changed = false;
