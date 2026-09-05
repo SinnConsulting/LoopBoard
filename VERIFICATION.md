@@ -333,3 +333,19 @@ New v2 checklist (from REFACTORING.md Phase 8):
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.
+
+30. **Batched answer saves (t-5e6d):** open a New story with three questions. Answer the first and
+    Save → the row collapses with an amber rail and a `held` tag, the count reads `1 / 3 answered`
+    with a tooltip saying answers are held until all three are filled, and `.loopboard/TODO.md` is
+    UNCHANGED on disk (no `rev:` bump, and with `loopBoard.debug: verbose` no `patch` line and no
+    nudge). Same for the second. Answer the third → exactly ONE `patch … answers … applied rev+`
+    line appears, all three answers are in the index, and the groomer loop is nudged once. Repeat
+    using **Save All** and using a suggestion's **Accept** — same result. Hide the panel and
+    re-open it (and **Developer: Reload Webviews**) with two answers held: they are still shown as
+    held; close the window and they are gone. Conflict path: hold two answers, edit one of that
+    story's `answer:` lines directly in `TODO.md`, then answer the last question — the
+    "changed on disk" toast fires, nothing partial is written, and the held answers stay in the
+    card so you can save again. Re-groom path: hold an answer, then change that question's TEXT in
+    `TODO.md` — the next refresh drops the held answer with an info toast naming the story. Repeat
+    the first walkthrough on a **Feedback** card: identical batching, with the worker-resumes
+    tooltip wording.

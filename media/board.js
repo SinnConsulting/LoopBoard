@@ -89,6 +89,10 @@
   // vscode.getState/setState (same blob as `phase`). Ids of accepted/deleted tasks are
   // deliberately never pruned from these maps: the blob is small, per-window UI state and a stale
   // id is inert (nothing looks it up once the card is gone).
+  // Answers saved on a story that still has a blank question (t-5e6d) — held here instead of
+  // being written, keyed by task id then question index. Persisted in the setState blob; see the
+  // held-answer helpers below saveState().
+  let heldAnswers = saved.heldAnswers && typeof saved.heldAnswers === 'object' ? saved.heldAnswers : {};
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
   // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
@@ -166,7 +170,54 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery });
+    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers });
+  }
+
+  // ---- held answers (t-5e6d) ----
+  // A story is complete only when EVERY question is answered — a 2/3 index state helps nobody and
+  // costs a write, a `rev:` bump and a nudge that sends the groomer at a half-answered story.
+  // So a saved answer is HELD here — `{ [taskId]: { [qIndex]: { text, q } } }`, `q` being the
+  // question text the answer was given to — until the last blank question is filled; then the
+  // whole set flushes as ONE `answers` field patch. Held answers ride the `vscode.setState` blob
+  // beside the composer text, so they survive panel hide/reveal and a webview reload and are
+  // discarded on window close; nothing reaches the host or disk until the flush.
+  function heldFor(taskId) { return heldAnswers[taskId] || null; }
+  function heldAnswer(taskId, i) {
+    const held = heldAnswers[taskId];
+    return held && held[i] ? held[i].text : null;
+  }
+  function holdAnswer(taskId, i, questionText, value) {
+    if (!heldAnswers[taskId]) heldAnswers[taskId] = {};
+    heldAnswers[taskId][i] = { text: value, q: questionText };
+    saveState();
+  }
+  // Drop held answers that no longer describe reality. Called on every incoming board: an answer
+  // is kept only while its task still exists, is still New/Feedback, and its question still has
+  // the SAME text and a blank answer on disk. A landed answer (the flush succeeded) prunes itself
+  // that way; a held answer whose question was rewritten or removed by a re-groom is dropped with
+  // a toast, since silently keeping it would attach it to a different question. A held answer
+  // whose flush CONFLICTED stays put — disk answers are still blank — so the human can re-save.
+  function pruneHeldAnswers(incoming) {
+    const stale = [];
+    for (const taskId of Object.keys(heldAnswers)) {
+      const t = ['new', 'feedback'].reduce((found, key) =>
+        found || (incoming.phases[key] || []).find((x) => x.id === taskId), null);
+      const held = heldAnswers[taskId];
+      if (!t) { delete heldAnswers[taskId]; continue; } // gone, promoted, accepted — nothing to say
+      for (const i of Object.keys(held)) {
+        const q = t.questions[i];
+        if (q && q.text === held[i].q && !q.answered) continue;
+        // Only a question that CHANGED is worth telling the human about; one that simply landed
+        // on disk (the flush succeeded) is the normal path and says nothing.
+        if (!q || q.text !== held[i].q) stale.push(t.title);
+        delete held[i];
+      }
+      if (Object.keys(held).length === 0) delete heldAnswers[taskId];
+    }
+    saveState();
+    for (const title of [...new Set(stale)]) {
+      pushToast('info', 'Held answers for “' + title + '” were dropped — its questions changed.');
+    }
   }
 
   // ---- collapse/expand (per phase tab — the current `phase` is the implicit key) ----
@@ -1541,13 +1592,21 @@
     const list = h('div', { class: 'qa-list' });
     panel.append(head, list);
 
+    // An answer is "given" whether it is on disk or only held (t-5e6d) — the meter and the count
+    // track the human's progress through the story, not what has been written yet.
+    const answerAt = (j) => {
+      const held = heldAnswer(t.id, j);
+      return held != null ? held : t.questions[j].answer;
+    };
+    const isGiven = (j) => answerAt(j).trim().length > 0;
+    const isHeld = (j) => heldAnswer(t.id, j) != null;
     let answered = 0;
-    for (const q of t.questions) if (q.answered) answered++;
+    for (let j = 0; j < t.questions.length; j++) if (isGiven(j)) answered++;
     const countEl = h('span', { class: 'qa-count' }, '');
     const meterSegs = [];
     const meter = h('div', { class: 'qa-meter', title: 'Progress' });
-    t.questions.forEach((q) => {
-      const seg = h('span', { class: q.answered ? 'is-answered' : '' });
+    t.questions.forEach((q, j) => {
+      const seg = h('span', { class: isGiven(j) ? 'is-answered' : '' });
       meterSegs.push(seg);
       meter.append(seg);
     });
@@ -1560,10 +1619,18 @@
     // show it — a fully-answered Feedback card means the worker resumes, which is correct.
     const pendingEl = h('span', { class: 'qa-pending' }, 're-groom pending');
     pendingEl.title = 'Answers not folded into the story yet — the groomer loop still owes this a pass.';
+    // Tooltip while anything is still blank (t-5e6d): the count is exactly where a human asks
+    // "why has nothing happened yet?", and the answer is that the board is holding the saved ones.
+    const WAIT_TIP = isNew
+      ? 'The groomer waits until every question is answered — answers are held on the board and written to the index only when all ' + t.questions.length + ' are filled.'
+      : 'The worker resumes only when every question is answered — answers are held on the board until then.';
     const updateHead = () => {
       countEl.textContent = answered + ' / ' + t.questions.length + ' answered';
-      meterSegs.forEach((seg, i) => seg.classList.toggle('is-answered', !!t.questions[i].answered));
+      meterSegs.forEach((seg, i) => seg.classList.toggle('is-answered', isGiven(i)));
       pendingEl.hidden = !(isNew && t.questions.length > 0 && answered === t.questions.length);
+      const waiting = answered < t.questions.length;
+      countEl.title = waiting ? WAIT_TIP : '';
+      meter.title = waiting ? WAIT_TIP : 'Progress';
     };
     updateHead();
     const headRight = h('div', { class: 'qa-head-right' }, meter);
@@ -1590,8 +1657,25 @@
       headRight.append(saveAllBtn);
     }
 
+    // The batched write (t-5e6d): ONE `answers` patch carrying the whole set, positional and
+    // newline-joined, with the on-disk set as its base — so it is still a single field patch on a
+    // single file, one `rev:` bump and one nudge. The local echo mirrors the same values into the
+    // live board object (t-ff54's idiom) and repaints; held answers are NOT cleared here — the
+    // prune on the confirming board drops them once they land, which is what leaves them intact
+    // (and re-savable) if the flush comes back a disk-wins conflict.
+    const flushAnswers = (values) => {
+      const base = t.questions.map((q) => q.answer).join('\n');
+      const value = values.join('\n');
+      if (value !== base) post({ type: 'patch', patch: { taskId: t.id, field: 'answers', value, base } });
+      t.questions.forEach((q, j) => { q.answer = values[j]; q.answered = values[j].trim().length > 0; });
+      const u2 = getUi(t.id);
+      u2.answerDrafts = {};
+      u2.qaEditOpen = {};
+      render();
+    };
+
     t.questions.forEach((q, i) => {
-      const item = h('div', { class: 'qa-item' + (q.answered ? ' is-answered' : '') });
+      const item = h('div', { class: 'qa-item' + (isGiven(i) ? ' is-answered' : '') + (isHeld(i) ? ' is-held' : '') });
       const rail = h('div', { class: 'qa-rail' });
       const body = h('div', { class: 'qa-body' });
       item.append(rail, body);
@@ -1607,15 +1691,19 @@
       const ta = h('textarea', { class: 'field qa-input', 'data-field': 'answer', 'data-qindex': String(i), rows: '2', placeholder: isNew
         ? 'Type your answer — it guides how this story is groomed and executed.'
         : 'Type your answer — the worker resumes when every question is answered.' });
-      ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : q.answer;
+      ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : answerAt(i);
       autoGrow(ta);
 
-      const summaryText = h('span', { class: 'qa-answer-text' }, q.answer);
-      const summary = h('div', { class: 'qa-answer' }, h('span', { class: 'qa-answer-check codicon codicon-check' }), summaryText);
+      const summaryText = h('span', { class: 'qa-answer-text' }, answerAt(i));
+      // A held row says so: it looks saved (collapsed summary) but is not on disk yet, and
+      // pretending otherwise is exactly the confusion this feature has to avoid.
+      const heldTag = h('span', { class: 'qa-held-tag', title: WAIT_TIP }, 'held');
+      heldTag.hidden = !isHeld(i);
+      const summary = h('div', { class: 'qa-answer' }, h('span', { class: 'qa-answer-check codicon codicon-check' }), summaryText, heldTag);
 
       const editBtn = h('button', { class: 'qa-link-btn', type: 'button' }, 'edit');
       const posMarker = h('span', { class: 'qa-pos' }, (i + 1) + ' of ' + t.questions.length);
-      qLine.append(q.answered ? editBtn : posMarker);
+      qLine.append(isGiven(i) ? editBtn : posMarker);
 
       const setCollapsed = (collapsed) => {
         summary.style.display = collapsed ? '' : 'none';
@@ -1636,46 +1724,56 @@
       const commitAnswer = () => {
         clearActiveEditor(editor);
         const val = ta.value;
-        commitPatch(t.id, 'answer', val, q.answer, q, 'answer', i);
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
+        // The whole set as it stands after this save. Every question filled → write once;
+        // anything still blank → hold this one on the board and write nothing (t-5e6d).
+        const values = t.questions.map((q2, j) => (j === i ? val : answerAt(j)));
+        if (values.every((v) => v.trim().length > 0)) {
+          holdAnswer(t.id, i, q.text, val);
+          flushAnswers(values);
+          return;
+        }
+        holdAnswer(t.id, i, q.text, val);
         // Targeted in-place update (no render()): a full repaint here would destroy the
         // still-focused textarea/caret, which is exactly what the isEditing()/pendingBoard
         // deferral exists to prevent — see t-2b96.
-        const isAnswered = val.trim().length > 0;
-        if (isAnswered !== q.answered) {
-          q.answered = isAnswered;
-          answered += isAnswered ? 1 : -1;
-          updateHead();
-          item.classList.toggle('is-answered', isAnswered);
-          if (isAnswered && qLine.contains(posMarker)) qLine.replaceChild(editBtn, posMarker);
-          else if (!isAnswered && qLine.contains(editBtn)) qLine.replaceChild(posMarker, editBtn);
+        const given = val.trim().length > 0;
+        const wasGiven = qLine.contains(editBtn);
+        if (given !== wasGiven) {
+          answered += given ? 1 : -1;
+          item.classList.toggle('is-answered', given);
+          if (given) qLine.replaceChild(editBtn, posMarker);
+          else qLine.replaceChild(posMarker, editBtn);
         }
+        updateHead();
+        item.classList.add('is-held');
+        heldTag.hidden = false;
         summaryText.textContent = val;
         u.qaEditOpen[i] = false;
-        setCollapsed(isAnswered);
+        setCollapsed(given);
         updateSaveAll();
         refreshAnswerAttachments(val);
       };
       const saveBtn = h('button', {
         class: 'qa-btn', type: 'button',
-        disabled: ta.value === q.answer,
+        disabled: ta.value === answerAt(i),
         title: 'Save (Cmd/Ctrl+S)', onclick: commitAnswer,
       }, 'Save');
-      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === q.answer; updateSaveAll(); });
+      ta.addEventListener('input', () => { u.answerDrafts[i] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === answerAt(i); updateSaveAll(); });
       ta.addEventListener('keydown', (e) => {
         // Answer has no separate view mode to close — Escape discards the unsaved draft back to
         // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
         // On an already-answered row being edited, Escape also collapses back to the summary.
         if (e.key === 'Escape') {
           clearActiveEditor(editor);
-          ta.value = q.answer;
+          ta.value = answerAt(i);
           delete u.answerDrafts[i];
           autoGrow(ta);
           saveBtn.disabled = true;
           updateSaveAll();
           ta.blur();
-          if (q.answered) { u.qaEditOpen[i] = false; setCollapsed(true); }
+          if (isGiven(i)) { u.qaEditOpen[i] = false; setCollapsed(true); }
           return;
         }
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
@@ -1698,7 +1796,7 @@
           input.click();
         },
       }, '＋ Attach');
-      commits.push({ commit: commitAnswer, isDirty: () => ta.value !== q.answer });
+      commits.push({ commit: commitAnswer, isDirty: () => ta.value !== answerAt(i) });
 
       // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
       // click, no AI in the loop — accept just fills the textarea and reuses commitAnswer, i.e. the
@@ -1706,7 +1804,7 @@
       // question's suggestions once it has an answer (merge.ts), so they naturally disappear on the
       // next board refresh. Restyled (t-2394) as full-width buttons under a "SUGGESTED" label —
       // one-click Accept semantics unchanged.
-      if (!q.answered && q.suggestions && q.suggestions.length) {
+      if (!isGiven(i) && q.suggestions && q.suggestions.length) {
         const suggWrap = h('div', { class: 'qa-suggest' }, h('div', { class: 'qa-suggest-label' }, 'Suggested'));
         q.suggestions.forEach((s) => {
           const acceptSuggestion = () => { ta.value = s + ' accepted'; commitAnswer(); suggWrap.remove(); };
@@ -1727,9 +1825,9 @@
       }
 
       editor.append(ta, h('div', { class: 'qa-editor-foot' }, answerAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'), saveBtn));
-      refreshAnswerAttachments(q.answer);
+      refreshAnswerAttachments(answerAt(i));
       body.append(summary, editor, attachWrap);
-      setCollapsed(q.answered);
+      setCollapsed(isGiven(i));
       list.append(item);
     });
     return panel;
@@ -1956,6 +2054,9 @@
     // A freshly applied board supersedes any board that was deferred while editing;
     // otherwise the stale snapshot gets flushed on the next focusout and clobbers newer state.
     pendingBoard = null;
+    // Reconcile held answers against what the tracker now says (t-5e6d): landed ones are dropped,
+    // ones whose question changed underneath are dropped with a toast, the rest survive.
+    pruneHeldAnswers(incoming);
     pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
     lastSyncTs = Date.now();

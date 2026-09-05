@@ -301,6 +301,12 @@ textarea { resize: vertical; }
 .qa-answer { display: flex; align-items: flex-start; gap: 6px; }
 .qa-answer-check { line-height: 1.6; font-size: 12px; color: var(--vscode-charts-green, var(--vscode-testing-iconPassed, #73c991)); }
 .qa-answer-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; word-break: break-word; color: var(--vscode-descriptionForeground, #9d9d9d); }
+/* Held answers (t-5e6d): saved on the board but deliberately not written to the index until every
+   question on the story is answered. The row still reads as answered (green rail, collapsed
+   summary) — the amber rail and the `held` tag are what say "not on disk yet". */
+.qa-item.is-held.is-answered .qa-rail { background: var(--vscode-editorWarning-foreground, #cca700); }
+.qa-held-tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 5px; border-radius: 3px; white-space: nowrap; align-self: center; color: var(--vscode-editorWarning-foreground, #cca700); border: 1px solid var(--vscode-editorWarning-foreground, #cca700); }
+.qa-held-tag[hidden] { display: none !important; }
 
 .qa-suggest { display: flex; flex-direction: column; gap: 4px; }
 .qa-suggest-label {

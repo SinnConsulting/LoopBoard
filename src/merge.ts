@@ -6,7 +6,7 @@
 
 import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS } from './model';
 
-export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'note' | 'feedback';
+export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'answers' | 'note' | 'feedback';
 export type DetailField = 'description';
 export type PatchField = IndexField | DetailField;
 
@@ -28,7 +28,7 @@ export interface DetailMergeResult {
 }
 
 const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
-const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'note', 'feedback'];
+const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'answers', 'note', 'feedback'];
 
 // Which file a field patch targets.
 export function patchTarget(field: PatchField): 'index' | 'detail' {
@@ -60,6 +60,11 @@ export function currentFieldValue(entry: IndexEntry, field: IndexField, question
       return questionIndex !== undefined && entry.questions[questionIndex]
         ? entry.questions[questionIndex].answer
         : '';
+    case 'answers':
+      // The WHOLE answer set as one value, one line per question in index order (the same
+      // newline-joined idiom `note:`/`feedback:` use). This is what makes the board's batched
+      // save (t-5e6d) a single field patch on a single file rather than N writes.
+      return entry.questions.map((q) => q.answer).join('\n');
     case 'note':
       return entry.notes.join('\n');
     case 'feedback':
@@ -86,6 +91,18 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
         entry.questions[questionIndex].suggestions = [];
       }
       break;
+    case 'answers': {
+      // Positional, so empties are NOT dropped: line i is question i's answer. applyPatch has
+      // already rejected a line-count mismatch, so this cannot silently shift answers.
+      const lines = value.split('\n');
+      entry.questions.forEach((q, i) => {
+        q.answer = lines[i] ?? '';
+        // Same settling rule as the single-answer patch: an answered question's suggestions no
+        // longer apply.
+        q.suggestions = [];
+      });
+      break;
+    }
     case 'note':
       // The board's note field edits the whole set as one value: split on newlines, drop empties.
       entry.notes = value
@@ -125,6 +142,12 @@ export function applyPatch(doc: IndexDoc, patch: FieldPatch): MergeResult {
 
   const current = currentFieldValue(entry, patch.field as IndexField, patch.questionIndex);
   if (current !== patch.base && current !== patch.value) {
+    return { status: 'conflict', entry };
+  }
+  // A batched `answers` patch is positional, so a value whose line count no longer matches the
+  // entry's questions cannot be applied without shifting answers onto the wrong questions — that
+  // means the questions changed underneath the board (a re-groom), so disk wins.
+  if (patch.field === 'answers' && patch.value.split('\n').length !== entry.questions.length) {
     return { status: 'conflict', entry };
   }
   setFieldValue(entry, patch.field as IndexField, patch.value, patch.questionIndex);
