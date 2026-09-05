@@ -22,7 +22,7 @@ function readFix(name) {
 }
 
 test('patchTarget routes fields to the right file', () => {
-  for (const f of ['title', 'model', 'groomer', 'answer', 'note', 'feedback']) assert.equal(patchTarget(f), 'index', f);
+  for (const f of ['title', 'model', 'groomer', 'answer', 'answers', 'note', 'feedback']) assert.equal(patchTarget(f), 'index', f);
   for (const f of ['description']) assert.equal(patchTarget(f), 'detail', f);
 });
 
@@ -142,4 +142,55 @@ test('a groomer patch writes the on-hold sentinel, and clearing it takes the tas
 
   assert.equal(applyPatch(doc, { taskId: id, field: 'groomer', value: 'default (opus)', base: 'none' }).status, 'applied');
   assert.equal(doc.entries.find((e) => e.id === id).groomer, undefined);
+});
+
+// ---- batched answer set (t-5e6d) ----
+// The board holds per-question saves off disk until every question is answered, then writes the
+// whole set as ONE patch — so this field is positional and its line count is load-bearing.
+
+const CC01_ANSWERS = 'Exponential with jitter, cap at 5 attempts.\n';
+
+test('currentFieldValue(answers) is every answer, one line per question, in index order', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const entry = doc.entries.find((e) => e.id === 't-cc01');
+  assert.equal(currentFieldValue(entry, 'answers'), CC01_ANSWERS);
+});
+
+test('an answers patch fills every question at once and clears their suggestions', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, {
+    taskId: 't-cc01', field: 'answers',
+    value: 'Exponential with jitter, cap at 5 attempts.\nDead-letter to a DB table.',
+    base: CC01_ANSWERS,
+  });
+  assert.equal(r.status, 'applied');
+  const qs = doc.entries.find((e) => e.id === 't-cc01').questions;
+  assert.equal(qs[0].answer, 'Exponential with jitter, cap at 5 attempts.');
+  assert.equal(qs[1].answer, 'Dead-letter to a DB table.');
+  assert.deepEqual(qs[1].suggestions, [], 'an answered question keeps no suggestions');
+});
+
+test('an answers patch is rejected when the answers on disk moved under the board', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, {
+    taskId: 't-cc01', field: 'answers',
+    value: 'a\nb',
+    base: 'SOMETHING ELSE\n',
+  });
+  assert.equal(r.status, 'conflict');
+  assert.equal(doc.entries.find((e) => e.id === 't-cc01').questions[1].answer, '', 'nothing partial was written');
+});
+
+test('an answers patch whose line count no longer matches the questions is a conflict', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  // A re-groom added or removed a question since the board rendered: applying positionally would
+  // attach an answer to the wrong question, so disk wins instead.
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answers', value: 'only one line', base: CC01_ANSWERS });
+  assert.equal(r.status, 'conflict');
+  assert.equal(doc.entries.find((e) => e.id === 't-cc01').questions[0].answer, 'Exponential with jitter, cap at 5 attempts.');
+});
+
+test('an answers patch for an unknown task is notfound', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  assert.equal(applyPatch(doc, { taskId: 't-zzzz', field: 'answers', value: 'a', base: '' }).status, 'notfound');
 });
