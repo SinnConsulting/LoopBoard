@@ -42,6 +42,18 @@ export interface LoopStatus {
     pending: boolean; // fired but held back — this model owns the In-Progress task (force off)
     label: string;    // e.g. "restart in 30m · every 30m", from describeSchedule()
   } | null;
+  // Context usage of this slot's live Claude session (t-2b89), filled in by the controller from its
+  // poll. Absent/null whenever there is no measurement — the loop is stopped, or its session file
+  // or transcript could not be located — so the row shows nothing rather than a "0%" lie.
+  // `pending` = the threshold tripped while this slot owns the In-Progress task, so the restart is
+  // waiting for the idle edge (an automatic restart is NEVER forced).
+  context?: {
+    used: number;
+    window: number;
+    percent: number;
+    pending: boolean;
+    label: string; // e.g. "ctx 56k / 200k · 28%", from describeContext()
+  } | null;
 }
 
 export interface WebBoard {

@@ -3,6 +3,7 @@ import { Store, DebugLevel } from './store';
 import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
 import { Controller } from './controller';
+import { ContextReader } from './contextreader';
 import { Model, resolveModels, readModelsConfig } from './model';
 
 // Held for deactivate() so the debug sink's buffered tail is flushed on a clean shutdown (t-2901).
@@ -31,11 +32,19 @@ export function activate(context: vscode.ExtensionContext): void {
     (level, event, detail) => store.debugLog(level, event, detail)
   );
   const sidebar = new SidebarProvider(context.extensionUri);
-  controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState);
+  // Context-usage reader (t-2b89): reads `~/.claude/` outside the workspace, so it is its own
+  // module rather than part of the `.loopboard/`-owning store. The cwd is what matches a loop
+  // terminal's session file to its slot.
+  const contextReader = new ContextReader(
+    () => folder.uri.fsPath,
+    (level, event, detail) => store.debugLog(level, event, detail)
+  );
+  controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState, contextReader);
 
   context.subscriptions.push(
     { dispose: () => store.dispose() },
     { dispose: () => terminals.dispose() },
+    { dispose: () => controller.dispose() },
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewId, sidebar),
     vscode.commands.registerCommand('loopBoard.openBoard', () => controller.openBoard()),
     vscode.commands.registerCommand('loopBoard.refresh', () => controller.refresh()),

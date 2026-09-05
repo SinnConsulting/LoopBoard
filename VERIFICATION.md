@@ -333,3 +333,19 @@ New v2 checklist (from REFACTORING.md Phase 8):
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.
+
+29. **Context-usage bar + threshold restart (t-2b89):** with `loopBoard.contextLimit.percent` at its
+    `0` default, start a loop from the sidebar ▶ and let it take a turn — within ~30 s its row grows
+    a thin bar plus `ctx <n>k / 200k · <n>%` under the label, and the number climbs as the
+    conversation grows. Nothing restarts. Stop the loop → the bar disappears entirely (no "0%"
+    row). Set `loopBoard.models.opus.model` to `opus[1m]`, restart that loop with ♻, and the label
+    now reads `/ 1000k`. Then set `loopBoard.contextLimit.percent` to a value just under the running
+    loop's current percentage: with NOTHING In Progress, that loop is restarted (or `/clear`ed when
+    `loopBoard.contextLimit.action` is `clear`) within one poll, once — it must not restart again on
+    the following polls. Repeat while that model owns the In-Progress task: the row instead reads
+    `· restart waiting for task` and the terminal is left alone until the task leaves In Progress,
+    at which point the restart fires. With `loopBoard.debug: info`, `.loopboard/debug.log` carries
+    `context-trip`, then either `context-fire` or `context-defer` + a later `context-fire`, plus
+    `context-clear` when you restart that loop by hand first. A workspace with no `claude` session
+    running (or `CLAUDE_CONFIG_DIR` pointed at an empty directory) shows no bar and logs nothing but
+    `verbose` reads — never an error popup.

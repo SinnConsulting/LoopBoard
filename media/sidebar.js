@@ -280,6 +280,17 @@
         const row = h('div', { class: 'sb-row loop' }, body, playBtn, recycleBtn, stopBtn);
         // The popover is anchored inside the row's wrapper so it sits under its own button row.
         const wrap = h('div', { class: 'loop-wrap' }, row);
+        // Context usage (t-2b89): a thin bar + the host-rendered label. Only present when the host
+        // actually measured this loop's session — a stopped loop, or one whose transcript cannot be
+        // located, shows nothing at all rather than a misleading 0%.
+        if (l.context) {
+          const bar = h('div', { class: 'ctx-bar' + (l.context.pending ? ' pending' : '') });
+          const fill = h('div', { class: 'ctx-fill' });
+          fill.style.width = l.context.percent + '%';
+          bar.append(fill);
+          wrap.append(h('div', { class: 'ctx-wrap', title: l.context.label },
+            bar, h('span', { class: 'ctx-label' }, l.context.label)));
+        }
         // An armed or pending restart is never invisible — the row states it for the whole wait.
         if (l.restart) {
           wrap.append(h('div', { class: 'restart-indicator' + (l.restart.pending ? ' pending' : '') }, l.restart.label));

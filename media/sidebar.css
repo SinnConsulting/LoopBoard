@@ -95,6 +95,21 @@ body {
   color: var(--vscode-descriptionForeground, #9d9d9d);
 }
 .restart-indicator.pending { color: var(--vscode-inputValidation-warningBorder, #cca700); }
+/* Context usage (t-2b89) — same 40px left inset as the restart indicator so both line up under
+   the loop row's label. */
+.ctx-wrap { display: flex; align-items: center; gap: 6px; padding: 0 16px 4px 40px; }
+/* The track is the widget border colour (a theme-neutral "empty" tone); only the fill carries the
+   progress colour, so the bar reads correctly in light and dark themes alike. */
+.ctx-bar {
+  flex: 1; height: 3px; border-radius: 2px; overflow: hidden;
+  background: var(--vscode-widget-border, #454545);
+}
+.ctx-fill { height: 100%; background: var(--vscode-progressBar-background, #0e70c0); }
+.ctx-bar.pending .ctx-fill { background: var(--vscode-inputValidation-warningBorder, #cca700); }
+.ctx-label {
+  font-size: 11px; line-height: 1.3; white-space: nowrap;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
 .restart-pop {
   position: absolute; right: 8px; top: 100%; z-index: 10; width: 210px;
   display: flex; flex-direction: column; gap: 8px; padding: 10px;

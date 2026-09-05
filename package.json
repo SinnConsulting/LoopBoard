@@ -221,6 +221,28 @@
             "default": "none",
             "markdownDescription": "What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). You can always restart a loop by hand with ♻."
           },
+          "loopBoard.contextLimit.percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "order": 9,
+            "default": 0,
+            "markdownDescription": "Restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is derived from the slot's `--model` string (`[1m]` = 1,000,000 tokens, otherwise 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle."
+          },
+          "loopBoard.contextLimit.action": {
+            "type": "string",
+            "enum": [
+              "clear",
+              "recycle"
+            ],
+            "enumDescriptions": [
+              "Soft: send /clear to the terminal so the loop continues on a fresh conversation.",
+              "Hard: close the terminal and open a new one (default)."
+            ],
+            "order": 10,
+            "default": "recycle",
+            "markdownDescription": "What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size."
+          },
           "loopBoard.permissionMode": {
             "type": "string",
             "enum": [
