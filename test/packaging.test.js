@@ -19,35 +19,63 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
 
-// Pinned here, deliberately: reading the list only out of the shell script would make deleting an
-// entry from BOTH files a green test, and dropping e.g. codicon.ttf ships a working build with
-// broken webview icons. The script is cross-checked against this list below instead.
-const REQUIRED = [
-  'package.json',
-  'README.md',
-  'LICENSE',
-  'out/extension.js',
-  'media/board.html',
-  'media/board.css',
-  'media/board.js',
-  'media/sidebar.html',
-  'media/sidebar.css',
-  'media/sidebar.js',
-  'media/codicon/codicon.css',
-  'media/codicon/codicon.ttf',
-  'media/icon.svg',
-  'media/icon-dark.svg',
-  'media/icon-light.svg',
-  'media/loopboard-icon-128.png',
-  'media/template-todo.md',
-  'media/template-loop.md',
-];
+const sources = () => fs.readdirSync(path.join(root, 'src')).filter((f) => f.endsWith('.ts'));
 
-function scriptRequiredPaths() {
-  const script = read('scripts', 'assert-vsix-contents.sh');
-  const block = /REQUIRED='([^']*)'/.exec(script);
-  assert.ok(block, 'scripts/assert-vsix-contents.sh must define a single-quoted REQUIRED list');
-  return block[1].split('\n').map((l) => l.trim()).filter(Boolean);
+// The shipped-file list lives in .vscodeignore and NOWHERE else: scripts/assert-vsix-contents.sh
+// derives its `vsce ls` assertion from the negation lines. So this file must not keep a copy
+// either — a hand-written duplicate is just a second place to forget. Instead every asset below is
+// re-derived from the code that actually loads it, which turns "someone deleted a negation" (which
+// would otherwise delete the assertion along with it) back into a failing test.
+function referencedAssets() {
+  // Not extension assets but vsce/Marketplace requirements: the manifest, the listing body, the
+  // licence. Nothing in the code references them, so there is nothing to derive them from.
+  const assets = new Set(['package.json', 'README.md', 'LICENSE']);
+
+  // package.json — "icon" (Marketplace tile) and every contributes.* icon (activity-bar container).
+  (function collectIcons(node) {
+    if (Array.isArray(node)) return void node.forEach(collectIcons);
+    if (!node || typeof node !== 'object') return;
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'icon' && typeof value === 'string' && value.startsWith('media/')) assets.add(value);
+      else collectIcons(value);
+    }
+  })(JSON.parse(read('package.json')));
+
+  // src/panel.ts — the editor-tab iconPath pair, written as joinPath(uri, 'media', '<file>').
+  for (const m of read('src', 'panel.ts').matchAll(/'media',\s*'([^']+)'/g)) assets.add('media/' + m[1]);
+
+  // src/webview.ts builds each page from media/<page>.{html,css,js}; the pages are whatever the
+  // callers pass to renderHtml (BoardPanel -> 'board', the sidebar view -> 'sidebar').
+  for (const file of sources()) {
+    for (const m of read('src', file).matchAll(/renderHtml\([^)]*'([a-z-]+)'\s*\)/g)) {
+      for (const ext of ['html', 'css', 'js']) assets.add(`media/${m[1]}.${ext}`);
+    }
+  }
+
+  // src/webview.ts injects the codicon stylesheet, which in turn @font-faces its own .ttf.
+  for (const m of read('src', 'webview.ts').matchAll(/'codicon',\s*'([^']+)'/g)) {
+    assets.add('media/codicon/' + m[1]);
+  }
+  for (const m of read('media', 'codicon', 'codicon.css').matchAll(/url\(["']?([^"')?#]+)/g)) {
+    assets.add('media/codicon/' + path.basename(m[1]));
+  }
+
+  // src/controller.ts readTemplates() loads these from the INSTALLED extension.
+  for (const m of read('src', 'controller.ts').matchAll(/read\('(template-[^']+)'\)/g)) {
+    assets.add('media/' + m[1]);
+  }
+
+  return [...assets];
+}
+
+// The concrete (non-glob) paths .vscodeignore re-includes — exactly what the shell script derives.
+function ignoreRequiredPaths() {
+  return read('.vscodeignore')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('!'))
+    .map((l) => l.slice(1))
+    .filter((l) => !/[*?]/.test(l));
 }
 
 // Minimal glob → RegExp: `**` spans directories, `*` stops at a separator, and `/**/` may match
@@ -91,38 +119,54 @@ test('.vscodeignore is an allowlist that ignores everything by default', () => {
   assert.equal(patterns[0], '**', '.vscodeignore must start by ignoring everything (allowlist)');
 });
 
-test('the packaging script asserts exactly the pinned required-file list', () => {
-  assert.deepEqual(scriptRequiredPaths(), REQUIRED);
+test('the packaging script derives its required list from .vscodeignore, never its own copy', () => {
+  const script = read('scripts', 'assert-vsix-contents.sh');
+  assert.match(
+    script,
+    /REQUIRED=\$\(sed\b[^\n]*\.vscodeignore/,
+    'the script must read the shipped-file list out of .vscodeignore.',
+  );
+  assert.doesNotMatch(
+    script,
+    /REQUIRED='[^']*\n/,
+    'the script must not restate the file list — .vscodeignore is the single source of truth.',
+  );
 });
 
-test('every required file survives .vscodeignore', () => {
+test('every asset the extension references at runtime survives .vscodeignore', () => {
   const negations = ignoreNegations();
-  for (const file of REQUIRED) {
+  for (const file of referencedAssets()) {
     assert.ok(
       negations.some((re) => re.test(file)),
-      file + ' is required at runtime but no .vscodeignore negation re-includes it — it would be ' +
+      file + ' is loaded at runtime but no .vscodeignore negation re-includes it — it would be ' +
       'dropped from the .vsix.',
     );
   }
 });
 
-test('every required file still exists in the repo', () => {
+test('every path .vscodeignore re-includes still exists in the repo', () => {
   // Renaming or deleting one of these is a change the script cannot catch until packaging, and for
   // the two templates it is a .md-only change, which build.yml skips via paths-ignore — so the
   // first failure would land in release.yml's vsix job, after the release job already tagged.
-  for (const file of REQUIRED.filter((f) => !f.startsWith('out/'))) {
+  for (const file of ignoreRequiredPaths()) {
     assert.ok(
       fs.existsSync(path.join(root, file)),
-      file + ' is required in the .vsix but is missing from the repo.',
+      file + ' is re-included by .vscodeignore but is missing from the repo.',
     );
   }
 });
 
 test('the templates the extension reads at runtime are explicitly re-included', () => {
-  for (const template of ['media/template-todo.md', 'media/template-loop.md']) {
+  // The sharpest edge, so it gets its own named test: readTemplates() loads these from the
+  // INSTALLED extension, and dropping one fails in the user's editor, never in the build.
+  const templates = [...read('src', 'controller.ts').matchAll(/read\('(template-[^']+)'\)/g)]
+    .map((m) => 'media/' + m[1]);
+  assert.deepEqual(templates.sort(), ['media/template-loop.md', 'media/template-todo.md']);
+  const negations = ignoreNegations();
+  for (const template of templates) {
     assert.ok(
-      REQUIRED.includes(template),
-      template + ' must stay in the required-files list — src/controller.ts reads it from the ' +
+      negations.some((re) => re.test(template)),
+      template + ' must stay negated in .vscodeignore — src/controller.ts reads it from the ' +
       'installed extension for init, auto-heal and Sync Templates.',
     );
   }

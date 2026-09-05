@@ -1,7 +1,12 @@
 # ALLOWLIST (t-e1d7): ignore everything, then re-add exactly the files the extension needs at
 # runtime. A new top-level file can no longer leak into the .vsix, and a broad ignore pattern can
-# no longer silently drop a shipped file. Guarded by scripts/assert-vsix-contents.sh (run by
-# `make package` and by release.yml before publish) and by test/packaging.test.js.
+# no longer silently drop a shipped file.
+#
+# THIS FILE IS THE SINGLE SOURCE OF TRUTH for what ships: scripts/assert-vsix-contents.sh derives
+# its `vsce ls` assertion from the negation lines below (run by `make package`, build.yml and
+# release.yml before publish), and test/packaging.test.js checks the negations against the code
+# that actually loads each asset. Add a file here and it is shipped AND asserted; nothing restates
+# the list anywhere else.
 **
 
 !package.json

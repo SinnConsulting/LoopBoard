@@ -1,37 +1,29 @@
 #!/bin/sh
 # Assert the .vsix contains exactly what the extension needs at runtime, and nothing private.
 #
-# .vscodeignore is an ALLOWLIST (`**` + negations), so a missing negation silently drops a shipped
-# file and nothing else in the build notices: src/controller.ts readTemplates() reads
-# media/template-{todo,loop}.md from the INSTALLED extension, so a dropped template only fails in
-# the user's editor, at init / auto-heal / Sync Templates time. This script is the guard.
+# SINGLE SOURCE OF TRUTH: .vscodeignore. It is an ALLOWLIST (`**` + one negation per shipped path)
+# and this script DERIVES the required-file list from those negation lines — nothing here restates
+# it, so the shipped-file list lives in exactly one file. That matters because a missing negation
+# silently drops a shipped file and nothing else in the build notices: src/controller.ts
+# readTemplates() reads media/template-{todo,loop}.md from the INSTALLED extension, so a dropped
+# template only fails in the user's editor, at init / auto-heal / Sync Templates time.
 #
-# Single source of truth for that list: test/packaging.test.js parses REQUIRED below and asserts
-# .vscodeignore negates every entry, so the two files cannot drift apart.
+# Deleting a negation therefore also deletes the assertion — so test/packaging.test.js re-derives
+# what must be re-included from the code that reads it (package.json's icons, src/panel.ts,
+# src/webview.ts's page assets, src/controller.ts's templates, src/*.ts) and fails if .vscodeignore
+# stops negating any of it. Neither file carries a hand-written copy of the list.
 #
-# Run from the repo root with @vscode/vsce reachable via npx. Callers: `make package` and
-# .github/workflows/release.yml (before publishing).
+# Run from the repo root with @vscode/vsce reachable via npx. Callers: `make package`,
+# .github/workflows/build.yml and .github/workflows/release.yml (before publishing).
 set -eu
 
-# List A — every path that MUST be in the package.
-REQUIRED='package.json
-README.md
-LICENSE
-out/extension.js
-media/board.html
-media/board.css
-media/board.js
-media/sidebar.html
-media/sidebar.css
-media/sidebar.js
-media/codicon/codicon.css
-media/codicon/codicon.ttf
-media/icon.svg
-media/icon-dark.svg
-media/icon-light.svg
-media/loopboard-icon-128.png
-media/template-todo.md
-media/template-loop.md'
+# Every concrete path .vscodeignore re-includes. Glob negations (e.g. !out/**/*.js) name no single
+# file, so they are expanded from their real source further down instead.
+REQUIRED=$(sed -n 's/^[[:space:]]*!//p' .vscodeignore | grep -v '[*?]' || true)
+if [ -z "$REQUIRED" ]; then
+  echo "ERROR: no concrete negation lines found in .vscodeignore — is it still an allowlist?" >&2
+  exit 1
+fi
 
 listing=$(npx --yes @vscode/vsce ls --no-dependencies)
 
