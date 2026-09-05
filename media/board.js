@@ -191,12 +191,27 @@
     heldAnswers[taskId][i] = { text: value, q: questionText };
     saveState();
   }
+  function dropHeld(taskId, i) {
+    const held = heldAnswers[taskId];
+    if (!held || !held[i]) return;
+    delete held[i];
+    if (Object.keys(held).length === 0) delete heldAnswers[taskId];
+    saveState();
+  }
+  function clearHeldFor(taskId) {
+    if (!heldAnswers[taskId]) return;
+    delete heldAnswers[taskId];
+    saveState();
+  }
   // Drop held answers that no longer describe reality. Called on every incoming board: an answer
-  // is kept only while its task still exists, is still New/Feedback, and its question still has
-  // the SAME text and a blank answer on disk. A landed answer (the flush succeeded) prunes itself
-  // that way; a held answer whose question was rewritten or removed by a re-groom is dropped with
-  // a toast, since silently keeping it would attach it to a different question. A held answer
-  // whose flush CONFLICTED stays put — disk answers are still blank — so the human can re-save.
+  // is kept only while its task still exists, is still New/Feedback, its question still has the
+  // SAME text, and the answer ON DISK still differs from what is held. That last test is what
+  // makes the three outcomes work out: a LANDED answer now equals disk and prunes itself; a
+  // CONFLICTED flush left disk untouched, so the value stays held and re-savable; and an edit to
+  // a question that was ALREADY answered on disk also stays held (an earlier `!q.answered` test
+  // deleted exactly that case, silently losing the edit — t-5e6d review). A held answer whose
+  // question was rewritten or removed by a re-groom is dropped with a toast, since keeping it
+  // would attach it to a different question.
   function pruneHeldAnswers(incoming) {
     const stale = [];
     for (const taskId of Object.keys(heldAnswers)) {
@@ -206,7 +221,7 @@
       if (!t) { delete heldAnswers[taskId]; continue; } // gone, promoted, accepted — nothing to say
       for (const i of Object.keys(held)) {
         const q = t.questions[i];
-        if (q && q.text === held[i].q && !q.answered) continue;
+        if (q && q.text === held[i].q && q.answer !== held[i].text) continue;
         // Only a question that CHANGED is worth telling the human about; one that simply landed
         // on disk (the flush succeeded) is the normal path and says nothing.
         if (!q || q.text !== held[i].q) stale.push(t.title);
@@ -1651,7 +1666,11 @@
         class: 'qa-btn is-secondary', type: 'button',
         disabled: true,
         title: 'Save every question whose answer changed',
-        onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.commit()); updateSaveAll(); },
+        // Stage EVERY dirty row first, then take the flush decision once (t-5e6d review): fanning
+        // out per-row commits made each one test completeness against the other rows' unsaved
+        // drafts, so a fully-answered card flushed on the first row — writing that row's neighbours
+        // at their stale values — and flushed again on the next.
+        onclick: () => { commits.filter((c) => c.isDirty()).forEach((c) => c.stage()); maybeFlush(); updateSaveAll(); },
       }, 'Save All');
       updateSaveAll = function () { saveAllBtn.disabled = commits.filter((c) => c.isDirty()).length < 1; };
       headRight.append(saveAllBtn);
@@ -1660,18 +1679,35 @@
     // The batched write (t-5e6d): ONE `answers` patch carrying the whole set, positional and
     // newline-joined, with the on-disk set as its base — so it is still a single field patch on a
     // single file, one `rev:` bump and one nudge. The local echo mirrors the same values into the
-    // live board object (t-ff54's idiom) and repaints; held answers are NOT cleared here — the
-    // prune on the confirming board drops them once they land, which is what leaves them intact
-    // (and re-savable) if the flush comes back a disk-wins conflict.
-    const flushAnswers = (values) => {
+    // live board object (t-ff54's idiom) and repaints.
+    //
+    // The value is POSITIONAL, so a newline inside one answer would shift every later answer onto
+    // the wrong question — the host rejects that as a conflict, which surfaced as an unexplained
+    // "changed on disk" toast on every save of a multi-line answer (t-5e6d review). Answers are
+    // single-line by the index grammar, so the newlines are folded to spaces at the join and the
+    // SAME folded values are echoed locally, so the card shows exactly what was written.
+    const flushAnswers = (raw) => {
+      const values = raw.map((v) => v.replace(/\s*\n+\s*/g, ' '));
       const base = t.questions.map((q) => q.answer).join('\n');
       const value = values.join('\n');
+      // Held answers are NOT cleared when a patch goes out — the prune on the confirming board
+      // drops them once they land, which is what leaves them intact (and re-savable) if the flush
+      // comes back a disk-wins conflict. When there is nothing to write, though, no board message
+      // follows, so nothing would ever prune them and the row would wear its `held` tag forever.
       if (value !== base) post({ type: 'patch', patch: { taskId: t.id, field: 'answers', value, base } });
+      else clearHeldFor(t.id);
       t.questions.forEach((q, j) => { q.answer = values[j]; q.answered = values[j].trim().length > 0; });
       const u2 = getUi(t.id);
       u2.answerDrafts = {};
       u2.qaEditOpen = {};
       render();
+    };
+
+    // One decision for the whole card, taken after any number of rows have been staged: write the
+    // set only once every question has an answer.
+    const maybeFlush = () => {
+      const values = t.questions.map((q2, j) => answerAt(j));
+      if (values.every((v) => v.trim().length > 0)) flushAnswers(values);
     };
 
     t.questions.forEach((q, i) => {
@@ -1721,20 +1757,26 @@
         const area = renderFieldAttachmentsArea(val, (newVal) => { ta.value = newVal; commitAnswer(); }, t.id);
         if (area) attachWrap.append(area);
       };
-      const commitAnswer = () => {
+      // Stage this row's value WITHOUT deciding whether to write: the caller (a per-row save, or
+      // Save All after staging every dirty row) then takes the flush decision once for the card.
+      // Splitting the two is what stops Save All from flushing per row against its neighbours'
+      // unsaved drafts (t-5e6d review).
+      const stageRow = () => {
         clearActiveEditor(editor);
         const val = ta.value;
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
-        // The whole set as it stands after this save. Every question filled → write once;
-        // anything still blank → hold this one on the board and write nothing (t-5e6d).
-        const values = t.questions.map((q2, j) => (j === i ? val : answerAt(j)));
-        if (values.every((v) => v.trim().length > 0)) {
+        // Clearing an answer that IS on disk is a retraction, and holding a blank could never
+        // reach the index (a blank keeps the set incomplete, so no flush ever carries it) — the
+        // human's deletion would silently revert on the next refresh. Retractions therefore keep
+        // the old single-question path and write straight through (t-5e6d review).
+        const isRetraction = val.trim().length === 0 && q.answer.trim().length > 0;
+        if (isRetraction) {
+          dropHeld(t.id, i);
+          commitPatch(t.id, 'answer', val, q.answer, q, 'answer', i);
+        } else {
           holdAnswer(t.id, i, q.text, val);
-          flushAnswers(values);
-          return;
         }
-        holdAnswer(t.id, i, q.text, val);
         // Targeted in-place update (no render()): a full repaint here would destroy the
         // still-focused textarea/caret, which is exactly what the isEditing()/pendingBoard
         // deferral exists to prevent — see t-2b96.
@@ -1747,14 +1789,15 @@
           else qLine.replaceChild(posMarker, editBtn);
         }
         updateHead();
-        item.classList.add('is-held');
-        heldTag.hidden = false;
+        item.classList.toggle('is-held', !isRetraction);
+        heldTag.hidden = isRetraction;
         summaryText.textContent = val;
         u.qaEditOpen[i] = false;
         setCollapsed(given);
         updateSaveAll();
         refreshAnswerAttachments(val);
       };
+      const commitAnswer = () => { stageRow(); maybeFlush(); };
       const saveBtn = h('button', {
         class: 'qa-btn', type: 'button',
         disabled: ta.value === answerAt(i),
@@ -1796,7 +1839,7 @@
           input.click();
         },
       }, '＋ Attach');
-      commits.push({ commit: commitAnswer, isDirty: () => ta.value !== answerAt(i) });
+      commits.push({ commit: commitAnswer, stage: stageRow, isDirty: () => ta.value !== answerAt(i) });
 
       // Groomer suggestions (Rule 14): a clear-cut proposed answer the human can accept with one
       // click, no AI in the loop — accept just fills the textarea and reuses commitAnswer, i.e. the

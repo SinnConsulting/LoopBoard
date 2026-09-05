@@ -349,3 +349,14 @@ and likewise cannot be verified headless.
     `TODO.md` — the next refresh drops the held answer with an info toast naming the story. Repeat
     the first walkthrough on a **Feedback** card: identical batching, with the worker-resumes
     tooltip wording.
+
+    Review round 2 (t-5e6d): on a story with one answer already on disk and one blank, **edit the
+    answered question** and Save → the row stays held with the new text and, after the next board
+    refresh, still shows YOUR text (it must not revert to the old on-disk answer). **Clear** an
+    answered question to blank and Save → the blank is written straight through (`patch … answer
+    … applied rev+`), the count drops and the retraction survives a refresh. On a fully answered
+    story, edit two answers and press **Save All** → exactly ONE `answers` patch, carrying both new
+    values (not one stale). Save an answer containing a **newline** as the last blank → the flush
+    succeeds with the newline folded to a space; no "Task changed on disk" toast. Finally, save a
+    row whose value equals what is already on disk as the last blank → no patch is posted and the
+    `held` tag disappears immediately rather than sticking.
