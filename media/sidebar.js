@@ -285,10 +285,21 @@
         // located, shows nothing at all rather than a misleading 0%.
         if (l.context) {
           const bar = h('div', { class: 'ctx-bar' + (l.context.pending ? ' pending' : '') });
+          // The orange restart zone: everything from the configured threshold rightwards, so the
+          // row shows where the session gets restarted, not just how full it is. Only drawn when
+          // loopBoard.contextLimit.percent is configured — at 0 there is no such point.
+          if (l.context.threshold > 0) {
+            const zone = h('div', { class: 'ctx-zone', title: l.context.thresholdLabel });
+            zone.style.left = l.context.threshold + '%';
+            bar.append(zone);
+          }
           const fill = h('div', { class: 'ctx-fill' });
           fill.style.width = l.context.percent + '%';
           bar.append(fill);
-          wrap.append(h('div', { class: 'ctx-wrap', title: l.context.label },
+          const title = l.context.thresholdLabel
+            ? l.context.label + ' · ' + l.context.thresholdLabel
+            : l.context.label;
+          wrap.append(h('div', { class: 'ctx-wrap', title },
             bar, h('span', { class: 'ctx-label' }, l.context.label)));
         }
         // An armed or pending restart is never invisible — the row states it for the whole wait.

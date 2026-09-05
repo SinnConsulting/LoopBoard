@@ -101,10 +101,20 @@ body {
 /* The track is the widget border colour (a theme-neutral "empty" tone); only the fill carries the
    progress colour, so the bar reads correctly in light and dark themes alike. */
 .ctx-bar {
+  position: relative;
   flex: 1; height: 3px; border-radius: 2px; overflow: hidden;
   background: var(--vscode-widget-border, #454545);
 }
-.ctx-fill { height: 100%; background: var(--vscode-progressBar-background, #0e70c0); }
+/* The restart zone: from loopBoard.contextLimit.percent to the end of the track. Left inset is set
+   inline from the configured threshold. Semi-transparent so it reads as a region of the track
+   rather than a second bar, and so the fill stays legible where the two overlap. */
+.ctx-zone {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  background: var(--vscode-charts-orange, #d18616); opacity: 0.5;
+}
+/* Positioned so it paints over the zone: once the fill reaches the threshold the overlap is the
+   fill's own colour, which is what "it is about to restart" looks like. */
+.ctx-fill { position: relative; height: 100%; background: var(--vscode-progressBar-background, #0e70c0); }
 .ctx-bar.pending .ctx-fill { background: var(--vscode-inputValidation-warningBorder, #cca700); }
 .ctx-label {
   font-size: 11px; line-height: 1.3; white-space: nowrap;

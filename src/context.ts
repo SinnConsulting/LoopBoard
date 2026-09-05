@@ -151,6 +151,14 @@ export function describeContext(used: number, window: number, pending = false): 
   return `ctx ${k(used)} / ${k(window)} · ${contextPercent(used, window)}%${pending ? ' · restart waiting for task' : ''}`;
 }
 
+// The wording for the configured threshold, shown as the orange zone's tooltip on the bar so the
+// zone is never an unexplained colour. Empty when the feature is off (`percent: 0`) — the bar then
+// carries no zone at all, because there is no point at which the session would be restarted.
+export function describeThreshold(threshold: number, action: ContextAction): string {
+  if (threshold <= 0) return '';
+  return `${action === 'clear' ? '/clear' : 'restart'} at ${threshold}%`;
+}
+
 // What to do with a loop whose context crossed the threshold — the same two verbs
 // `loopBoard.afterTask` exposes. A hard `stop` is deliberately not offered: an automatic action
 // must never leave a slot silently dead.

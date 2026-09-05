@@ -16,7 +16,7 @@ import {
 } from './schedule';
 import { computeNudges, formatNudge, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
-import { ContextAction, describeContext, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
+import { ContextAction, describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -161,12 +161,14 @@ export class Controller {
       // no row content at all, never a "0%".
       const u = l.running ? this.contextUsage.get(l.id) : undefined;
       const pending = this.contextPending.has(l.id);
+      const threshold = cfg.contextPercent;
+      const thresholdLabel = describeThreshold(threshold, cfg.contextAction);
       l.context = u
-        ? { used: u.used, window: u.window, percent: u.percent, pending, label: describeContext(u.used, u.window, pending) }
+        ? { used: u.used, window: u.window, percent: u.percent, pending, label: describeContext(u.used, u.window, pending), threshold, thresholdLabel }
         // A deferred trip must stay visible even with no reading to draw a bar from, or the row
         // silently says nothing while a restart is queued behind the In-Progress task.
         : pending && l.running
-          ? { used: 0, window: 0, percent: 0, pending, label: 'restart waiting for task' }
+          ? { used: 0, window: 0, percent: 0, pending, label: 'restart waiting for task', threshold, thresholdLabel }
           : null;
     }
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);

@@ -341,7 +341,12 @@ and likewise cannot be verified headless.
     row). BOTH numbers must match what that loop's own status line reports: a 5-series model reads
     `/ 1000k` with NO `[1m]` suffix configured, and the used figure tracks the loop's last turn
     rather than the one before it. Set `loopBoard.models.opus.model` to an older 200k model (e.g.
-    `claude-sonnet-4-5`), restart that loop with ♻, and the label reads `/ 200k`. Then set `loopBoard.contextLimit.percent` to a value just under the running
+    `claude-sonnet-4-5`), restart that loop with ♻, and the label reads `/ 200k`. At the `0` default
+    the bar has NO orange section. Set `loopBoard.contextLimit.percent` to e.g. `80` and the bar
+    paints orange from the 80% mark to its right edge, hovering it reads `restart at 80%` (or
+    `/clear at 80%` when `loopBoard.contextLimit.action` is `clear`); the blue fill paints OVER that
+    zone as usage crosses into it, and the whole bar reverts to plain when the setting goes back to
+    `0`. Then set `loopBoard.contextLimit.percent` to a value just under the running
     loop's current percentage: with NOTHING In Progress, that loop is restarted (or `/clear`ed when
     `loopBoard.contextLimit.action` is `clear`) within one poll, once — it must not restart again on
     the following polls. Repeat while that model owns the In-Progress task: the row instead reads

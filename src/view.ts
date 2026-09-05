@@ -47,12 +47,17 @@ export interface LoopStatus {
   // or transcript could not be located — so the row shows nothing rather than a "0%" lie.
   // `pending` = the threshold tripped while this slot owns the In-Progress task, so the restart is
   // waiting for the idle edge (an automatic restart is NEVER forced).
+  // `threshold` is `loopBoard.contextLimit.percent` — 0 when the feature is off. Above 0 the bar
+  // paints everything from that mark rightwards as the orange restart zone, so the row shows not
+  // just how full the context is but where the session will be restarted.
   context?: {
     used: number;
     window: number;
     percent: number;
     pending: boolean;
     label: string; // e.g. "ctx 56k / 200k · 28%", from describeContext()
+    threshold: number;
+    thresholdLabel: string; // e.g. "restart at 80%", from describeThreshold(); '' when off
   } | null;
 }
 

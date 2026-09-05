@@ -8,7 +8,8 @@ const assert = require('node:assert/strict');
 const {
   sessionName, windowSizeFor, DEFAULT_WINDOW, LARGE_WINDOW,
   parseSessionPointer, matchesSlot, newestPointer, parseTranscriptUsage, contextPercent,
-  describeContext, sanitizeContextAction, sanitizeContextPercent, shouldTrip, shouldClearTrip,
+  describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent,
+  shouldTrip, shouldClearTrip,
 } = require('../out-test/context.js');
 
 const CWD = '/Users/x/LoopBoard';
@@ -164,4 +165,13 @@ test('shouldClearTrip re-arms on the way down, with a band so a hovering value c
   assert.equal(shouldClearTrip(46, 50), false, 'inside the band — not yet re-armed');
   assert.equal(shouldClearTrip(45, 50), true);
   assert.equal(shouldClearTrip(0, 0), false, 'threshold 0 means the feature is off');
+});
+
+test('describeThreshold names the configured restart point, and says nothing when off', () => {
+  // The orange zone on the bar is the only thing marking where a session gets restarted, so it
+  // carries this as its tooltip — an unexplained colour band would be worse than no band.
+  assert.equal(describeThreshold(80, 'recycle'), 'restart at 80%');
+  assert.equal(describeThreshold(80, 'clear'), '/clear at 80%', 'the verb follows contextLimit.action');
+  assert.equal(describeThreshold(0, 'recycle'), '', 'percent 0 = off, so there is no such point');
+  assert.equal(describeThreshold(-5, 'clear'), '', 'a nonsense threshold draws no zone either');
 });
