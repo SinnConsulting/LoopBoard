@@ -16,10 +16,34 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const read = (...p) => fs.readFileSync(path.join(process.cwd(), ...p), 'utf8');
+const root = path.resolve(__dirname, '..');
+const read = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8');
 
-// List A comes from the shell script, so the script, .vscodeignore and this test cannot drift.
-function requiredPaths() {
+// Pinned here, deliberately: reading the list only out of the shell script would make deleting an
+// entry from BOTH files a green test, and dropping e.g. codicon.ttf ships a working build with
+// broken webview icons. The script is cross-checked against this list below instead.
+const REQUIRED = [
+  'package.json',
+  'README.md',
+  'LICENSE',
+  'out/extension.js',
+  'media/board.html',
+  'media/board.css',
+  'media/board.js',
+  'media/sidebar.html',
+  'media/sidebar.css',
+  'media/sidebar.js',
+  'media/codicon/codicon.css',
+  'media/codicon/codicon.ttf',
+  'media/icon.svg',
+  'media/icon-dark.svg',
+  'media/icon-light.svg',
+  'media/loopboard-icon-128.png',
+  'media/template-todo.md',
+  'media/template-loop.md',
+];
+
+function scriptRequiredPaths() {
   const script = read('scripts', 'assert-vsix-contents.sh');
   const block = /REQUIRED='([^']*)'/.exec(script);
   assert.ok(block, 'scripts/assert-vsix-contents.sh must define a single-quoted REQUIRED list');
@@ -67,9 +91,13 @@ test('.vscodeignore is an allowlist that ignores everything by default', () => {
   assert.equal(patterns[0], '**', '.vscodeignore must start by ignoring everything (allowlist)');
 });
 
+test('the packaging script asserts exactly the pinned required-file list', () => {
+  assert.deepEqual(scriptRequiredPaths(), REQUIRED);
+});
+
 test('every required file survives .vscodeignore', () => {
   const negations = ignoreNegations();
-  for (const file of requiredPaths()) {
+  for (const file of REQUIRED) {
     assert.ok(
       negations.some((re) => re.test(file)),
       file + ' is required at runtime but no .vscodeignore negation re-includes it — it would be ' +
@@ -79,14 +107,26 @@ test('every required file survives .vscodeignore', () => {
 });
 
 test('the templates the extension reads at runtime are explicitly re-included', () => {
-  const required = requiredPaths();
   for (const template of ['media/template-todo.md', 'media/template-loop.md']) {
     assert.ok(
-      required.includes(template),
+      REQUIRED.includes(template),
       template + ' must stay in the required-files list — src/controller.ts reads it from the ' +
       'installed extension for init, auto-heal and Sync Templates.',
     );
   }
+});
+
+test('every compiled module is required, not just the entry point', () => {
+  // out/extension.js alone is not enough: it requires the rest at activation time, so a narrowed
+  // !out/**/*.js negation would ship an extension that dies with "Cannot find module './store'".
+  // The script derives them from src/, so assert that derivation is still there.
+  const script = read('scripts', 'assert-vsix-contents.sh');
+  assert.match(
+    script,
+    /for source in src\/\*\.ts/,
+    'the script must require one out/<name>.js per src/*.ts, not just the entry point.',
+  );
+  assert.match(script, /out\/\$\(basename "\$source" \.ts\)\.js/);
 });
 
 test('doc and repo-housekeeping files stay out of the package', () => {
@@ -170,11 +210,46 @@ test('.releaserc.json pins non-shipping commit types to no release', () => {
   }
 });
 
-test('the vsce-listing assertion runs in both the Makefile and release.yml', () => {
-  const script = 'scripts/assert-vsix-contents.sh';
-  assert.match(read('Makefile'), new RegExp(script.replace(/[.\/]/g, '\\$&')));
-  assert.match(
-    read('.github', 'workflows', 'release.yml'),
-    new RegExp(script.replace(/[.\/]/g, '\\$&')),
+test('custom releaseRules keep breaking changes and reverts releasable', () => {
+  // commit-analyzer only falls back to its default rules when the custom ones return `undefined`.
+  // A `{ type: 'docs', release: false }` rule carries no `breaking` key, so it also matches a
+  // breaking commit and returns `false` — which is NOT undefined, so { breaking: true } from the
+  // default preset never runs. Without these two rules a `refactor!:` carrying a BREAKING CHANGE
+  // footer silently cuts no release at all.
+  const config = JSON.parse(read('.releaserc.json'));
+  const rules = config.plugins.find(
+    (p) => Array.isArray(p) && p[0] === '@semantic-release/commit-analyzer',
+  )[1].releaseRules;
+  assert.ok(
+    rules.some((r) => r.breaking === true && r.release === 'major'),
+    'releaseRules must restate { breaking: true, release: "major" } — overriding the defaults ' +
+    'drops it, and breaking changes would stop releasing.',
+  );
+  assert.ok(
+    rules.some((r) => r.revert === true && r.release === 'patch'),
+    'releaseRules must restate { revert: true, release: "patch" } for the same reason.',
+  );
+});
+
+test('the vsce-listing assertion runs in the Makefile and in both workflows', () => {
+  const script = /scripts\/assert-vsix-contents\.sh/;
+  assert.match(read('Makefile'), script);
+  // build.yml too: `make check` runs the assertion only under the opt-in PACKAGE=1, so without
+  // the branch build catching it the first gate would be release.yml, after the tag exists.
+  assert.match(read('.github', 'workflows', 'build.yml'), script);
+  assert.match(read('.github', 'workflows', 'release.yml'), script);
+});
+
+test('release.yml asserts the package contents before anything is published', () => {
+  const lines = read('.github', 'workflows', 'release.yml').split('\n');
+  const assertStep = lines.findIndex((l) => l.includes('assert-vsix-contents.sh'));
+  const publishing = lines.findIndex(
+    (l) => l.includes('gh release upload') || l.includes('vsce publish'),
+  );
+  assert.ok(assertStep !== -1 && publishing !== -1);
+  assert.ok(
+    assertStep < publishing,
+    'the assertion must run before the upload/publish steps, or a failure strands a published ' +
+    'GitHub Release with no .vsix asset.',
   );
 });

@@ -42,12 +42,25 @@ if printf '%s\n' "$listing" | grep -E '^(\.loopboard|\.claude)/'; then
 fi
 
 missing=0
-for f in $REQUIRED; do
-  if ! printf '%s\n' "$listing" | grep -qxF "$f"; then
-    echo "ERROR: required file missing from the .vsix: $f" >&2
+require() {
+  if ! printf '%s\n' "$listing" | grep -qxF "$1"; then
+    echo "ERROR: required file missing from the .vsix: $1" >&2
     missing=1
   fi
+}
+
+for f in $REQUIRED; do
+  require "$f"
 done
+
+# package.json's main is out/extension.js, but it requires every other compiled module at
+# activation time, so listing only the entry point would let a narrowed `!out/**/*.js` negation
+# ship an extension that dies with "Cannot find module './store'". Derive the list from src/ so a
+# new module is covered without editing anything here.
+for source in src/*.ts; do
+  require "out/$(basename "$source" .ts).js"
+done
+
 [ "$missing" -eq 0 ] || exit 1
 
 echo "vsix contents OK — all required files present, no private files"

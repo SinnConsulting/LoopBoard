@@ -76,6 +76,12 @@ jobs:
           npx tsc -p ./tsconfig.test.json
           node --test 'test/*.test.js'
 
+      # Before anything is uploaded or published: vsce ls needs only out/ + media/ on disk, so a
+      # missing .vscodeignore negation fails here rather than after the release job has already
+      # tagged and published — which would strand a GitHub Release with no .vsix asset.
+      - name: Assert vsix contents
+        run: sh scripts/assert-vsix-contents.sh
+
       # Sync package.json/package-lock.json to the released version so the
       # checked-in manifest matches the GitHub release / Marketplace version.
       - name: Sync version
@@ -83,9 +89,6 @@ jobs:
 
       - name: Package vsix
         run: npx --yes @vscode/vsce package --no-dependencies
-
-      - name: Assert vsix contents
-        run: sh scripts/assert-vsix-contents.sh
 
       - name: Upload vsix to release
         env:
