@@ -106,6 +106,18 @@ test('every required file survives .vscodeignore', () => {
   }
 });
 
+test('every required file still exists in the repo', () => {
+  // Renaming or deleting one of these is a change the script cannot catch until packaging, and for
+  // the two templates it is a .md-only change, which build.yml skips via paths-ignore — so the
+  // first failure would land in release.yml's vsix job, after the release job already tagged.
+  for (const file of REQUIRED.filter((f) => !f.startsWith('out/'))) {
+    assert.ok(
+      fs.existsSync(path.join(root, file)),
+      file + ' is required in the .vsix but is missing from the repo.',
+    );
+  }
+});
+
 test('the templates the extension reads at runtime are explicitly re-included', () => {
   for (const template of ['media/template-todo.md', 'media/template-loop.md']) {
     assert.ok(
@@ -116,17 +128,29 @@ test('the templates the extension reads at runtime are explicitly re-included', 
   }
 });
 
-test('every compiled module is required, not just the entry point', () => {
+test('every compiled module survives .vscodeignore, not just the entry point', () => {
   // out/extension.js alone is not enough: it requires the rest at activation time, so a narrowed
   // !out/**/*.js negation would ship an extension that dies with "Cannot find module './store'".
-  // The script derives them from src/, so assert that derivation is still there.
+  // Checked here rather than only in the shell script, because `make check` — the mandatory
+  // pre-commit gate — runs that script only under the opt-in PACKAGE=1.
+  const negations = ignoreNegations();
+  for (const source of fs.readdirSync(path.join(root, 'src')).filter((f) => f.endsWith('.ts'))) {
+    const module = 'out/' + source.replace(/\.ts$/, '.js');
+    assert.ok(
+      negations.some((re) => re.test(module)),
+      module + ' is compiled from src/' + source + ' and required at activation, but no ' +
+      '.vscodeignore negation re-includes it.',
+    );
+  }
+});
+
+test('the packaging script derives the compiled modules from src/', () => {
   const script = read('scripts', 'assert-vsix-contents.sh');
   assert.match(
     script,
     /for source in src\/\*\.ts/,
     'the script must require one out/<name>.js per src/*.ts, not just the entry point.',
   );
-  assert.match(script, /out\/\$\(basename "\$source" \.ts\)\.js/);
 });
 
 test('doc and repo-housekeeping files stay out of the package', () => {
