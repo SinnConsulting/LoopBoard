@@ -20,13 +20,12 @@ export function sessionName(model: Model): string {
   return `loopboard-${model}`;
 }
 
-// Claude Code's transcript directory name for a working directory: the absolute path with every
-// separator replaced by `-` (`/Users/x/LoopBoard` -> `-Users-x-LoopBoard`). Windows drive colons
-// are folded the same way (`C:\Users\x` -> `C--Users-x`) — UNVERIFIED on Windows, which is why a
-// miss must stay silent.
-export function encodeProjectDir(absPath: string): string {
-  return absPath.replace(/[\\/:]/g, '-');
-}
+// NOTE: the transcript's directory is deliberately NOT derived from the workspace path. Claude Code
+// encodes it as `[^a-zA-Z0-9]` -> `-`, hash-suffixes anything past 200 chars, and canonicalises
+// git-worktree roots first — reproducing that here was wrong for any path containing a `.`, `_` or
+// space (t-2b89 review), and silently so: a mismatch just means "no bar, ever". The reader instead
+// looks up the transcript BY SESSION ID across `~/.claude/projects/*/`, which needs no encoding
+// rules at all.
 
 // Context window of a slot. Nothing on disk records it — Claude Code computes it in-process from
 // its own model registry — so it has to be derived from the model id, and the `[1m]` SUFFIX alone
@@ -64,6 +63,7 @@ export interface SessionPointer {
   sessionId: string;
   cwd: string;
   name: string;
+  updatedAt: number; // ms epoch; 0 when the file carries no usable timestamp
 }
 
 export function parseSessionPointer(text: string): SessionPointer | undefined {
@@ -73,9 +73,26 @@ export function parseSessionPointer(text: string): SessionPointer | undefined {
   } catch {
     return undefined;
   }
-  const o = raw as { sessionId?: unknown; cwd?: unknown; name?: unknown } | null;
+  const o = raw as { sessionId?: unknown; cwd?: unknown; name?: unknown; updatedAt?: unknown } | null;
   if (!o || typeof o.sessionId !== 'string' || typeof o.cwd !== 'string') return undefined;
-  return { sessionId: o.sessionId, cwd: o.cwd, name: typeof o.name === 'string' ? o.name : '' };
+  const stamp = typeof o.updatedAt === 'number' ? o.updatedAt : Date.parse(String(o.updatedAt ?? ''));
+  return {
+    sessionId: o.sessionId,
+    cwd: o.cwd,
+    name: typeof o.name === 'string' ? o.name : '',
+    updatedAt: Number.isFinite(stamp) ? (stamp as number) : 0,
+  };
+}
+
+// Several session files can match one slot: two VSCode windows on the same folder, or a stale
+// `<pid>.json` left behind by a SIGKILLed process. Taking whichever the directory listed first
+// showed another process's number and could fire a spurious restart on a healthy loop (t-2b89
+// review), so the freshest `updatedAt` wins. Ties keep the first match — with no timestamps to
+// separate them there is nothing better to go on.
+export function newestPointer(pointers: SessionPointer[]): SessionPointer | undefined {
+  let best: SessionPointer | undefined;
+  for (const p of pointers) if (!best || p.updatedAt > best.updatedAt) best = p;
+  return best;
 }
 
 // A session file belongs to a slot when it names the workspace AND carries our `--name`. The cwd
@@ -154,8 +171,7 @@ export function sanitizeContextPercent(value: unknown): number {
 
 // Whether a measurement should trip a restart. `trippedSession` is the session id that already
 // tripped: the hysteresis that stops a loop from being restarted again and again while its
-// measured value stays above the threshold in the SAME session (a restart or /clear starts a new
-// session id, which re-arms by construction).
+// measured value stays above the threshold in the SAME session.
 export function shouldTrip(
   percent: number,
   threshold: number,
@@ -165,4 +181,15 @@ export function shouldTrip(
   if (threshold <= 0) return false;
   if (percent < threshold) return false;
   return trippedSession !== sessionId;
+}
+
+// The down edge that re-arms the hysteresis. Keying it on the session id alone assumed every reset
+// starts a NEW session, which is not guaranteed: `/clear` reuses the process, and auto-compaction
+// drops usage inside the same session id — either way the loop climbed back over the threshold and
+// could never trip again (t-2b89 review). Re-arm once a reading comes back below the threshold,
+// with a small band so a value hovering on the line cannot restart the loop every poll.
+export const TRIP_RESET_BAND = 5;
+export function shouldClearTrip(percent: number, threshold: number): boolean {
+  if (threshold <= 0) return false;
+  return percent <= Math.max(0, threshold - TRIP_RESET_BAND);
 }

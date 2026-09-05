@@ -156,6 +156,12 @@ The ▶ buttons open a plain VSCode terminal named `Claude <Model>` in the works
 ↻ disposes and respawns for a fresh context. Loops die with the VSCode window; restart is one click,
 since all state lives in `.loopboard/`.
 
+**Requires Claude Code 2.1.0 or newer.** Loop terminals are spawned with `--name`, which is what
+lets the context-usage bar tell one slot's session from another's. An older CLI rejects the unknown
+option and the terminal exits immediately — and because a terminal's output can never be read back,
+the extension cannot tell you why. If your loops die the instant they start, check `claude --version`
+first.
+
 ## Settings
 
 Every setting below is generated from `contributes.configuration` in `package.json`, grouped and
@@ -193,7 +199,7 @@ ordered exactly as VSCode's own settings page renders them.
 | `loopBoard.pulseTemplateSync` | `true` | Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way). |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 | `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
-| `loopBoard.contextLimit.percent` | `0` | Restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is derived from the slot's `--model` string (`[1m]` = 1,000,000 tokens, otherwise 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
+| `loopBoard.contextLimit.percent` | `0` | Restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
 | `loopBoard.contextLimit.action` | `recycle` | What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size. |
 | `loopBoard.autoRecycle` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this. |
 | `loopBoard.clearSessionAfterTask` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this. |

@@ -7,8 +7,8 @@
 import * as vscode from 'vscode';
 import { Model } from './model';
 import {
-  ContextUsage, encodeProjectDir, matchesSlot, parseSessionPointer, parseTranscriptUsage,
-  contextPercent, windowSizeFor,
+  ContextUsage, matchesSlot, newestPointer, parseSessionPointer, parseTranscriptUsage,
+  contextPercent, windowSizeFor, SessionPointer,
 } from './context';
 
 // The extension host is Node, so the environment is available at runtime — but `@types/node` is
@@ -33,6 +33,8 @@ export class ContextReader {
   // sessionId -> last transcript size + the usage parsed at that size, so an unchanged transcript
   // costs one stat() instead of a multi-MB read.
   private cache = new Map<string, { size: number; usage: ContextUsage }>();
+  // sessionId -> resolved transcript Uri, so the projects/ scan happens once per session.
+  private transcripts = new Map<string, vscode.Uri>();
 
   constructor(
     private getCwd: () => string,
@@ -59,6 +61,9 @@ export class ContextReader {
     } catch {
       return undefined;
     }
+    // Collect every match rather than taking the first: a stale file from a killed process sorts
+    // just as well as the live one. newestPointer picks by `updatedAt`.
+    const matches: SessionPointer[] = [];
     for (const [name, type] of entries) {
       if (type !== vscode.FileType.File || !name.endsWith('.json')) continue;
       let text: string;
@@ -68,13 +73,47 @@ export class ContextReader {
         continue;
       }
       const pointer = parseSessionPointer(text);
-      if (pointer && matchesSlot(pointer, this.getCwd(), model)) return pointer.sessionId;
+      if (pointer && matchesSlot(pointer, this.getCwd(), model)) matches.push(pointer);
+    }
+    if (matches.length > 1) {
+      this.log('verbose', 'context-read', `${model} -> ${matches.length} session files match; using the newest`);
+    }
+    return newestPointer(matches)?.sessionId;
+  }
+
+  // Where Claude Code put this session's transcript. Found by SEARCHING `projects/*` for
+  // `<sessionId>.jsonl` instead of reconstructing the directory name from the workspace path: that
+  // encoding is Claude Code's business (non-alphanumerics folded, long paths hashed, worktree roots
+  // canonicalised) and getting it subtly wrong killed the feature silently (t-2b89 review). The
+  // resolved Uri is cached per session id, so the scan is one readDirectory of a small directory
+  // once per session, not per poll.
+  private async findTranscript(dir: vscode.Uri, sessionId: string): Promise<vscode.Uri | undefined> {
+    const cached = this.transcripts.get(sessionId);
+    if (cached) return cached;
+    const projects = vscode.Uri.joinPath(dir, 'projects');
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(projects);
+    } catch {
+      return undefined;
+    }
+    for (const [name, type] of entries) {
+      if (type !== vscode.FileType.Directory) continue;
+      const candidate = vscode.Uri.joinPath(projects, name, `${sessionId}.jsonl`);
+      try {
+        await vscode.workspace.fs.stat(candidate);
+      } catch {
+        continue;
+      }
+      this.transcripts.set(sessionId, candidate);
+      return candidate;
     }
     return undefined;
   }
 
   private async readUsage(dir: vscode.Uri, sessionId: string): Promise<ContextUsage | undefined> {
-    const uri = vscode.Uri.joinPath(dir, 'projects', encodeProjectDir(this.getCwd()), `${sessionId}.jsonl`);
+    const uri = await this.findTranscript(dir, sessionId);
+    if (!uri) return undefined;
     let size: number;
     try {
       size = (await vscode.workspace.fs.stat(uri)).size;

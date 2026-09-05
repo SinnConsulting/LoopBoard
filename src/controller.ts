@@ -16,7 +16,7 @@ import {
 } from './schedule';
 import { computeNudges, formatNudge, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
-import { ContextAction, describeContext, sanitizeContextAction, sanitizeContextPercent, shouldTrip } from './context';
+import { ContextAction, describeContext, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -138,7 +138,14 @@ export class Controller {
     };
   }
 
-  private async buildWebBoard(board: Board): Promise<WebBoard> {
+  // `reuseTemplateState` skips the template-sync preview and reuses the last computed answer. The
+  // context poll repaints every 30s for as long as any loop runs, and re-reading + diffing TODO.md,
+  // LOOP.md and both bundled templates that often — plus a `template-preview` log line each time —
+  // is pure churn: nothing the poll changes can affect whether the templates are stale (t-2b89
+  // review). Only a real refresh (which re-reads disk anyway) recomputes it.
+  private lastTemplatesOutOfDate = false;
+
+  private async buildWebBoard(board: Board, reuseTemplateState = false): Promise<WebBoard> {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
     const loops = this.terminals.status();
@@ -156,7 +163,11 @@ export class Controller {
       const pending = this.contextPending.has(l.id);
       l.context = u
         ? { used: u.used, window: u.window, percent: u.percent, pending, label: describeContext(u.used, u.window, pending) }
-        : null;
+        // A deferred trip must stay visible even with no reading to draw a bar from, or the row
+        // silently says nothing while a restart is queued behind the In-Progress task.
+        : pending && l.running
+          ? { used: 0, window: 0, percent: 0, pending, label: 'restart waiting for task' }
+          : null;
     }
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
@@ -165,10 +176,15 @@ export class Controller {
     // Recomputed on every refresh (and again right after a sync click via the refresh() it
     // triggers) so the pulse reflects live disk state rather than a cached snapshot (t-pul1).
     if (cfg.pulseTemplateSync && !this.store.todoMissing) {
-      const { todoText, loopText } = await this.readTemplates();
-      const preview = await this.store.previewSync(todoText, loopText);
-      web.templatesOutOfDate = !preview.upToDate;
-      this.store.debugLog('verbose', 'template-preview', preview.upToDate ? 'upToDate' : 'stale');
+      if (reuseTemplateState) {
+        web.templatesOutOfDate = this.lastTemplatesOutOfDate;
+      } else {
+        const { todoText, loopText } = await this.readTemplates();
+        const preview = await this.store.previewSync(todoText, loopText);
+        web.templatesOutOfDate = !preview.upToDate;
+        this.lastTemplatesOutOfDate = web.templatesOutOfDate;
+        this.store.debugLog('verbose', 'template-preview', preview.upToDate ? 'upToDate' : 'stale');
+      }
     }
     return web;
   }
@@ -306,18 +322,28 @@ export class Controller {
       }
       const reading = await this.contextReader.read(m.id, m.model);
       if (!reading) {
-        changed = this.contextUsage.delete(m.id) || changed;
+        // Keep the last reading: a transient miss (transcript mid-write, EBUSY) must not blank the
+        // bar and lose a pending trip's label. A stopped loop is cleared above, which is the only
+        // case that genuinely has nothing to show.
         continue;
       }
       const before = this.contextUsage.get(m.id);
       this.contextUsage.set(m.id, reading);
       if (!before || before.used !== reading.used || before.sessionId !== reading.sessionId) changed = true;
+      // Re-arm the hysteresis on the way down, so a loop that dropped below the threshold without
+      // changing session id (`/clear`, auto-compaction) can trip again.
+      if (shouldClearTrip(reading.percent, cfg.contextPercent) && this.contextTripped.delete(m.id)) {
+        this.store.debugLog('info', 'context-rearm', `${m.id} back to ${reading.percent}% — trip re-armed`);
+      }
       if (!shouldTrip(reading.percent, cfg.contextPercent, reading.sessionId, this.contextTripped.get(m.id))) continue;
       // Hysteresis: record the session that tripped BEFORE acting, so a loop parked above the
       // threshold is restarted once per session rather than on every poll.
       this.contextTripped.set(m.id, reading.sessionId);
       this.store.debugLog('info', 'context-trip', `${m.id} ${reading.percent}% >= ${cfg.contextPercent}% (${reading.used}/${reading.window})`);
-      if (this.lastBoard && this.inProgressModels(this.lastBoard).includes(m.id)) {
+      // An UNKNOWN board defers too (the constructor polls before the first refresh): with no
+      // board there is no way to tell whether this slot owns the In-Progress task, and the
+      // fail-open direction is the forbidden one.
+      if (!this.lastBoard || this.inProgressModels(this.lastBoard).includes(m.id)) {
         // NEVER forced: killing a worker mid-task would leave its task `phase: inprogress` with
         // nobody on it, which Rule 2 turns into a board-wide block. Wait for the idle edge instead.
         this.contextPending.add(m.id);
@@ -365,7 +391,7 @@ export class Controller {
   // changes only host-side loop state.
   private async postBoard(): Promise<void> {
     if (!this.lastBoard) return;
-    const web = await this.buildWebBoard(this.lastBoard);
+    const web = await this.buildWebBoard(this.lastBoard, true);
     BoardPanel.current?.post({ type: 'board', board: web });
     this.sidebar.post({ type: 'board', board: web });
   }
