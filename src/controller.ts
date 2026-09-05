@@ -15,6 +15,13 @@ import {
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
 import { computeNudges, formatNudge, NudgeItem } from './nudge';
+import { ContextReader, ContextReading } from './contextreader';
+import { ContextAction, describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
+
+// How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
+// poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
+// row's number tracks a conversation, not every token.
+const CONTEXT_POLL_MS = 30000;
 
 // `loopBoard.afterTask` (t-1f1e) with a read-both fallback to the deprecated boolean pair. The
 // default in package.json is 'none', so `get()` alone could never tell "unset" from "explicitly
@@ -74,17 +81,40 @@ export class Controller {
   // the window. Held items merge and de-duplicate, so a model that stays down for ten board edits
   // gets ONE line naming each task once, not ten lines.
   private pendingNudges = new Map<Model, NudgeItem[]>();
+  // Context-usage state (t-2b89) — session-only, like the schedules above. `contextUsage` is the
+  // last measurement per slot (absent = nothing to show); `contextTripped` remembers WHICH session
+  // already tripped the threshold, so a loop sitting above it is restarted once, not every poll;
+  // `contextPending` holds a trip whose slot owns the In-Progress task. Deliberately NOT an entry
+  // in `restartSchedules`: a timed schedule (t-77d1) and a context trip are independent mechanisms
+  // that coexist on the same loop — neither replaces or suppresses the other.
+  private contextUsage = new Map<Model, ContextReading>();
+  private contextTripped = new Map<Model, string>();
+  private contextPending = new Set<Model>();
+  private contextTimer: ReturnType<typeof setInterval> | undefined;
+  // Guards against overlapping polls: the interval and every refresh both trigger one, and each
+  // awaits file IO.
+  private contextPolling = false;
 
   constructor(
     private extensionUri: vscode.Uri,
     private store: Store,
     private terminals: TerminalManager,
     private sidebar: SidebarProvider,
-    private globalState: vscode.Memento
+    private globalState: vscode.Memento,
+    private contextReader?: ContextReader
   ) {
     store.onChange(() => this.refresh('store-change'));
     terminals.onDidChangeStatus(() => this.refresh('terminal-status'));
     sidebar.onMessage((msg) => this.handleMessage(msg));
+    if (contextReader) {
+      this.contextTimer = setInterval(() => void this.pollContext(), CONTEXT_POLL_MS);
+      void this.pollContext();
+    }
+  }
+
+  dispose(): void {
+    if (this.contextTimer !== undefined) clearInterval(this.contextTimer);
+    for (const model of [...this.restartTimers.keys()]) this.clearRestartTimer(model);
   }
 
   private config() {
@@ -101,11 +131,21 @@ export class Controller {
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
+      // 0 (the default) = the context threshold is off entirely; the indicator still renders.
+      contextPercent: sanitizeContextPercent(c.get<number>('contextLimit.percent', 0)),
+      contextAction: sanitizeContextAction(c.get<string>('contextLimit.action', 'recycle')),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
 
-  private async buildWebBoard(board: Board): Promise<WebBoard> {
+  // `reuseTemplateState` skips the template-sync preview and reuses the last computed answer. The
+  // context poll repaints every 30s for as long as any loop runs, and re-reading + diffing TODO.md,
+  // LOOP.md and both bundled templates that often — plus a `template-preview` log line each time —
+  // is pure churn: nothing the poll changes can affect whether the templates are stale (t-2b89
+  // review). Only a real refresh (which re-reads disk anyway) recomputes it.
+  private lastTemplatesOutOfDate = false;
+
+  private async buildWebBoard(board: Board, reuseTemplateState = false): Promise<WebBoard> {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
     const loops = this.terminals.status();
@@ -117,6 +157,19 @@ export class Controller {
       l.restart = s
         ? { action: s.action, minutes: s.minutes, repeat: s.repeat, force: s.force, pending: s.pending, label: describeSchedule(s, now) }
         : null;
+      // Context bar (t-2b89): only for a running loop we actually measured — no measurement means
+      // no row content at all, never a "0%".
+      const u = l.running ? this.contextUsage.get(l.id) : undefined;
+      const pending = this.contextPending.has(l.id);
+      const threshold = cfg.contextPercent;
+      const thresholdLabel = describeThreshold(threshold, cfg.contextAction);
+      l.context = u
+        ? { used: u.used, window: u.window, percent: u.percent, pending, label: describeContext(u.used, u.window, pending), threshold, thresholdLabel }
+        // A deferred trip must stay visible even with no reading to draw a bar from, or the row
+        // silently says nothing while a restart is queued behind the In-Progress task.
+        : pending && l.running
+          ? { used: 0, window: 0, percent: 0, pending, label: 'restart waiting for task', threshold, thresholdLabel }
+          : null;
     }
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
@@ -125,10 +178,15 @@ export class Controller {
     // Recomputed on every refresh (and again right after a sync click via the refresh() it
     // triggers) so the pulse reflects live disk state rather than a cached snapshot (t-pul1).
     if (cfg.pulseTemplateSync && !this.store.todoMissing) {
-      const { todoText, loopText } = await this.readTemplates();
-      const preview = await this.store.previewSync(todoText, loopText);
-      web.templatesOutOfDate = !preview.upToDate;
-      this.store.debugLog('verbose', 'template-preview', preview.upToDate ? 'upToDate' : 'stale');
+      if (reuseTemplateState) {
+        web.templatesOutOfDate = this.lastTemplatesOutOfDate;
+      } else {
+        const { todoText, loopText } = await this.readTemplates();
+        const preview = await this.store.previewSync(todoText, loopText);
+        web.templatesOutOfDate = !preview.upToDate;
+        this.lastTemplatesOutOfDate = web.templatesOutOfDate;
+        this.store.debugLog('verbose', 'template-preview', preview.upToDate ? 'upToDate' : 'stale');
+      }
     }
     return web;
   }
@@ -146,6 +204,12 @@ export class Controller {
     // A deferred restart fires on the same idle signal auto-recycle uses — the freshly loaded board
     // is the only place "is this model busy?" is knowable (terminal output can never be read).
     this.flushPendingRestarts(board);
+    this.flushPendingContext(board);
+    // Re-measure on every refresh as well as on the interval (t-2b89 review feedback): a loop's
+    // turn ends by writing `.loopboard/` markdown, which is exactly what triggers a refresh — so
+    // the bar tracks the conversation instead of trailing it by up to a poll. Cheap: each read is
+    // stat-gated, and this never awaits the repaint below.
+    void this.pollContext();
     const web = await this.buildWebBoard(board);
     BoardPanel.current?.post({ type: 'board', board: web });
     this.sidebar.post({ type: 'board', board: web });
@@ -204,6 +268,7 @@ export class Controller {
         // Automatic lifecycle recycle — never steal focus from whatever the user is doing on the
         // board (e.g. typing in an answer field).
         this.store.debugLog('info', 'auto-recycle', model);
+        this.clearContextTrip(model, 'auto-recycle');
         this.terminals.recycle(model, true);
       }
     }
@@ -224,9 +289,113 @@ export class Controller {
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {
         this.store.debugLog('info', 'clear-session', model);
+        this.clearContextTrip(model, 'clear-session');
         this.terminals.clearSession(model);
       }
     }
+  }
+
+  // ---- context-usage indicator + threshold restart (t-2b89) ----
+
+  // Re-measure every running slot, then act on anything that crossed the threshold. Nothing here
+  // ever throws: a slot with no session file or no readable transcript simply loses its reading.
+  private async pollContext(): Promise<void> {
+    if (!this.contextReader || this.contextPolling) return;
+    this.contextPolling = true;
+    try {
+      await this.pollContextOnce();
+    } finally {
+      this.contextPolling = false;
+    }
+  }
+
+  private async pollContextOnce(): Promise<void> {
+    if (!this.contextReader) return;
+    const cfg = this.config();
+    let changed = false;
+    for (const m of cfg.models) {
+      if (!m.enabled) continue;
+      if (!this.terminals.status().some((l) => l.id === m.id && l.running)) {
+        // A stopped loop has no context to report and no trip to remember.
+        changed = this.contextUsage.delete(m.id) || changed;
+        this.contextTripped.delete(m.id);
+        this.contextPending.delete(m.id);
+        continue;
+      }
+      const reading = await this.contextReader.read(m.id, m.model);
+      if (!reading) {
+        // Keep the last reading: a transient miss (transcript mid-write, EBUSY) must not blank the
+        // bar and lose a pending trip's label. A stopped loop is cleared above, which is the only
+        // case that genuinely has nothing to show.
+        continue;
+      }
+      const before = this.contextUsage.get(m.id);
+      this.contextUsage.set(m.id, reading);
+      if (!before || before.used !== reading.used || before.sessionId !== reading.sessionId) changed = true;
+      // Re-arm the hysteresis on the way down, so a loop that dropped below the threshold without
+      // changing session id (`/clear`, auto-compaction) can trip again.
+      if (shouldClearTrip(reading.percent, cfg.contextPercent) && this.contextTripped.delete(m.id)) {
+        this.store.debugLog('info', 'context-rearm', `${m.id} back to ${reading.percent}% — trip re-armed`);
+      }
+      if (!shouldTrip(reading.percent, cfg.contextPercent, reading.sessionId, this.contextTripped.get(m.id))) continue;
+      // Hysteresis: record the session that tripped BEFORE acting, so a loop parked above the
+      // threshold is restarted once per session rather than on every poll.
+      this.contextTripped.set(m.id, reading.sessionId);
+      this.store.debugLog('info', 'context-trip', `${m.id} ${reading.percent}% >= ${cfg.contextPercent}% (${reading.used}/${reading.window})`);
+      // An UNKNOWN board defers too (the constructor polls before the first refresh): with no
+      // board there is no way to tell whether this slot owns the In-Progress task, and the
+      // fail-open direction is the forbidden one.
+      if (!this.lastBoard || this.inProgressModels(this.lastBoard).includes(m.id)) {
+        // NEVER forced: killing a worker mid-task would leave its task `phase: inprogress` with
+        // nobody on it, which Rule 2 turns into a board-wide block. Wait for the idle edge instead.
+        this.contextPending.add(m.id);
+        this.store.debugLog('info', 'context-defer', `${m.id} — task in progress, waiting for idle`);
+        changed = true;
+        continue;
+      }
+      this.fireContextRestart(m.id, cfg.contextAction);
+      changed = true;
+    }
+    if (changed) await this.postBoard();
+  }
+
+  private fireContextRestart(model: Model, action: ContextAction): void {
+    this.store.debugLog('info', 'context-fire', `${model} ${action}`);
+    this.contextPending.delete(model);
+    // The measurement belongs to the session we are about to end; the next poll measures the new one.
+    this.contextUsage.delete(model);
+    // preserveFocus — an automatic action never steals focus from whatever the user is doing.
+    if (action === 'clear') this.terminals.clearSession(model);
+    else this.terminals.recycle(model, true);
+  }
+
+  // A pending context trip fires on the same idle edge deferred schedules watch.
+  private flushPendingContext(board: Board): void {
+    if (this.contextPending.size === 0) return;
+    const busy = this.inProgressModels(board);
+    const action = this.config().contextAction;
+    for (const model of [...this.contextPending]) {
+      if (!busy.includes(model)) this.fireContextRestart(model, action);
+    }
+  }
+
+  // Any restart of a loop — timed, manual ♻, stop, afterTask — invalidates a pending context trip
+  // and its hysteresis marker: both were measured against a session that no longer exists.
+  private clearContextTrip(model: Model, reason: string): void {
+    if (!this.contextPending.has(model) && !this.contextTripped.has(model)) return;
+    this.contextPending.delete(model);
+    this.contextTripped.delete(model);
+    this.contextUsage.delete(model);
+    this.store.debugLog('info', 'context-clear', `${model} (${reason})`);
+  }
+
+  // Repaint from the board already in memory — no disk re-read. Used by the context poll, which
+  // changes only host-side loop state.
+  private async postBoard(): Promise<void> {
+    if (!this.lastBoard) return;
+    const web = await this.buildWebBoard(this.lastBoard, true);
+    BoardPanel.current?.post({ type: 'board', board: web });
+    this.sidebar.post({ type: 'board', board: web });
   }
 
   // ---- scheduled loop restarts (t-77d1) ----
@@ -303,6 +472,7 @@ export class Controller {
       this.store.debugLog('info', 'restart-skip', `${model} ${schedule.action} — loop is ${running ? 'already running' : 'not running'}, nothing to do`);
     } else {
       this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
+      this.clearContextTrip(model, `timed ${schedule.action}`);
       // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
       // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
       if (schedule.action === 'start') this.terminals.spawn(model, true);
@@ -454,10 +624,14 @@ export class Controller {
         // Left-click ♻ — restart right now. The scheduling popover is right-click (t-77d1
         // feedback); an armed schedule is left alone, since restarting now says nothing about
         // whether the user still wants the later one.
-        if (isKnownModel(msg.model)) this.terminals.recycle(msg.model);
+        if (isKnownModel(msg.model)) {
+          this.clearContextTrip(msg.model, 'manual restart');
+          this.terminals.recycle(msg.model);
+        }
         return;
       case 'stopLoop':
         if (isKnownModel(msg.model)) {
+          this.clearContextTrip(msg.model, 'loop stopped');
           // Stopping a loop clears any schedule it had — restarting a terminal the user just
           // stopped would be the opposite of what they asked for.
           this.cancelRestart(msg.model, 'loop stopped');

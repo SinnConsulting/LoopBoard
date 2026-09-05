@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString, sanitizeGroomConcurrency } from './model';
 import { LoopStatus } from './view';
 import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval } from './loop';
+import { sessionName } from './context';
 
 // Runtime allowlist for untrusted (webview-supplied) model ids — the logical slot ids. The webview
 // values reach the loop terminal shell line, so the host validates them rather than trusting a
@@ -152,7 +153,9 @@ export class TerminalManager {
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show(preserveFocus);
     this.revealedModel = model;
-    const base = buildClaudeBase(cfg.permissionMode, modelString);
+    // `--name loopboard-<slot>` is what lets the context indicator (t-2b89) find THIS slot's
+    // session file among all live claude processes — they all share the workspace cwd.
+    const base = buildClaudeBase(cfg.permissionMode, modelString, sessionName(model));
     this.log(
       'info',
       'loop-spawn',

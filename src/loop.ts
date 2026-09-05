@@ -31,8 +31,15 @@ export function sanitizeLoopInterval(s: string): string {
 // "no matches found". The string is pre-validated (isValidModelString) to contain no single quote,
 // so a plain single-quote wrap is safe. permissionMode is spliced unquoted, so it is sanitized to the
 // package.json enum here (invalid -> 'auto') — never trust a raw config value on the shell line.
-export function buildClaudeBase(permissionMode: string, modelString: string): string {
-  return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}'`;
+//
+// `sessionName` (t-2b89) is `--name loopboard-<slot>`: the ONLY thing that tells one slot's Claude
+// session from another's in `~/.claude/sessions/*.json` (every loop terminal spawns with the same
+// cwd, and the session file records no ppid). It is derived from the fixed slot id, never from
+// configuration, so it needs no quoting or escaping. Preferred over pinning `--session-id` because
+// `/clear` starts a NEW session id in the same process — the name survives, the id does not.
+export function buildClaudeBase(permissionMode: string, modelString: string, sessionName?: string): string {
+  const name = sessionName ? ` --name ${sessionName}` : '';
+  return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}'${name}`;
 }
 
 // Build the tiny bootstrap prompt pasted into a loop terminal: it only names the model, the

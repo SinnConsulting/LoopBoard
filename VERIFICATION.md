@@ -334,6 +334,28 @@ Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.
 
+29. **Context-usage bar + threshold restart (t-2b89):** with `loopBoard.contextLimit.percent` at its
+    `0` default, start a loop from the sidebar ▶ and let it take a turn — within ~30 s its row grows
+    a thin bar plus `ctx <n>k / <window>k · <n>%` under the label, and the number climbs as the
+    conversation grows. Nothing restarts. Stop the loop → the bar disappears entirely (no "0%"
+    row). BOTH numbers must match what that loop's own status line reports: a 5-series model reads
+    `/ 1000k` with NO `[1m]` suffix configured, and the used figure tracks the loop's last turn
+    rather than the one before it. Set `loopBoard.models.opus.model` to an older 200k model (e.g.
+    `claude-sonnet-4-5`), restart that loop with ♻, and the label reads `/ 200k`. At the `0` default
+    the bar has NO orange section. Set `loopBoard.contextLimit.percent` to e.g. `80` and the bar
+    paints orange from the 80% mark to its right edge, hovering it reads `restart at 80%` (or
+    `/clear at 80%` when `loopBoard.contextLimit.action` is `clear`); the blue fill paints OVER that
+    zone as usage crosses into it, and the whole bar reverts to plain when the setting goes back to
+    `0`. Then set `loopBoard.contextLimit.percent` to a value just under the running
+    loop's current percentage: with NOTHING In Progress, that loop is restarted (or `/clear`ed when
+    `loopBoard.contextLimit.action` is `clear`) within one poll, once — it must not restart again on
+    the following polls. Repeat while that model owns the In-Progress task: the row instead reads
+    `· restart waiting for task` and the terminal is left alone until the task leaves In Progress,
+    at which point the restart fires. With `loopBoard.debug: info`, `.loopboard/debug.log` carries
+    `context-trip`, then either `context-fire` or `context-defer` + a later `context-fire`, plus
+    `context-clear` when you restart that loop by hand first. A workspace with no `claude` session
+    running (or `CLAUDE_CONFIG_DIR` pointed at an empty directory) shows no bar and logs nothing but
+    `verbose` reads — never an error popup.
 30. **Batched answer saves (t-5e6d):** open a New story with three questions. Answer the first and
     Save → the row collapses with an amber rail and a `held` tag, the count reads `1 / 3 answered`
     with a tooltip saying answers are held until all three are filled, and `.loopboard/TODO.md` is
