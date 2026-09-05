@@ -47,6 +47,12 @@ jobs:
           npx tsc -p ./tsconfig.test.json
           node --test 'test/*.test.js'
 
+      # Catch a missing .vscodeignore negation on the branch, not on main: `make check` runs this
+      # assertion only under the opt-in PACKAGE=1, so without it the first gate would be
+      # release.yml — after the release job has already tagged.
+      - name: Assert vsix contents
+        run: sh scripts/assert-vsix-contents.sh
+
       # Derive the artifact token from the branch: strip a leading `task/t-` (else `task/`) prefix,
       # then sanitize any remaining `/` to `-`. e.g. `task/t-bld1` -> `bld1`.
       - name: Derive artifact filename from branch

@@ -1,29 +1,38 @@
-.vscode/**
-.loopboard/**
-.claude/**
-src/**
-test/**
-out-test/**
-node_modules/**
-**/*.map
-**/tsconfig*.json
-Makefile
-PLAN.md
-design-prompt.md
-implement-prompt.md
-idea.md
-DECISIONS.md
-VERIFICATION.md
-CLAUDE.md
-TODO.md
-DONE.md
-*.bak
-.gitignore
-.git/**
-.github/**
-.releaserc.json
-*.vsix
-media/loopboard-icon.svg
-media/hero.jpg
-media/screenshot-sidebar.png
-media/screenshot-board.gif
+# ALLOWLIST (t-e1d7): ignore everything, then re-add exactly the files the extension needs at
+# runtime. A new top-level file can no longer leak into the .vsix, and a broad ignore pattern can
+# no longer silently drop a shipped file.
+#
+# THIS FILE IS THE SINGLE SOURCE OF TRUTH for what ships: scripts/assert-vsix-contents.sh derives
+# its `vsce ls` assertion from the negation lines below (run by `make package`, build.yml and
+# release.yml before publish), and test/packaging.test.js checks the negations against the code
+# that actually loads each asset. Add a file here and it is shipped AND asserted; nothing restates
+# the list anywhere else.
+**
+
+!package.json
+!README.md
+!LICENSE
+
+# Extension host: package.json "main" is ./out/extension.js.
+!out/**/*.js
+
+# Webview assets — src/webview.ts builds each page's HTML from <page>.{html,css,js}.
+!media/board.html
+!media/board.css
+!media/board.js
+!media/sidebar.html
+!media/sidebar.css
+!media/sidebar.js
+!media/codicon/codicon.css
+!media/codicon/codicon.ttf
+
+# Icons: package.json "icon" and viewsContainers, plus src/panel.ts's panel tab icon.
+!media/loopboard-icon-128.png
+!media/icon.svg
+!media/icon-dark.svg
+!media/icon-light.svg
+
+# Scaffolding templates — src/controller.ts readTemplates() loads these from the installed
+# extension for init, auto-heal and Sync Templates. Dropping them breaks the extension at runtime.
+!media/template-todo.md
+!media/template-loop.md
