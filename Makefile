@@ -25,7 +25,7 @@ test: | node_modules
 
 package: | node_modules
 	$(DOCKER) npx --yes @vscode/vsce package --no-dependencies
-	$(DOCKER) sh -c "! npx --yes @vscode/vsce ls --no-dependencies | grep -E '^(\.loopboard|\.claude)/'"
+	$(DOCKER) sh scripts/assert-vsix-contents.sh
 
 # Pre-commit gate: build + test only, no .vsix. Opt in to packaging too with `make check PACKAGE=1`.
 check: build test $(if $(PACKAGE),package)

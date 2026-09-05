@@ -4,6 +4,26 @@ on:
   push:
     branches:
       - main
+    # Release only when content that actually SHIPS changes (t-e1d7). A file-extension rule would
+    # be wrong here: media/template-*.md are markdown AND are shipped extension behaviour, while
+    # README.md is the Marketplace listing body. Negations must follow the pattern they narrow.
+    # Blocked pushes are only deferred — they release with the next push that touches this list.
+    # Kept honest by test/packaging.test.js.
+    paths:
+      - 'src/**'
+      - 'media/**'
+      - '!media/hero.jpg'
+      - '!media/screenshot-sidebar.png'
+      - '!media/screenshot-board.gif'
+      - '!media/loopboard-icon.svg'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'README.md'
+      - 'LICENSE'
+      - '.vscodeignore'
+      - 'tsconfig.json'
+      - '.github/workflows/release.yml'
+      - '.releaserc.json'
 
 jobs:
   release:
@@ -63,6 +83,9 @@ jobs:
 
       - name: Package vsix
         run: npx --yes @vscode/vsce package --no-dependencies
+
+      - name: Assert vsix contents
+        run: sh scripts/assert-vsix-contents.sh
 
       - name: Upload vsix to release
         env:
