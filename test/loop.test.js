@@ -194,3 +194,19 @@ test('the template states the cap behaviour without embedding a number', () => {
   assert.ok(tpl.includes('index order'), 'names the tie-break');
   assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
 });
+
+test('the template makes the grooming fork optional, conditional and capped', () => {
+  // t-2fc8: a fork inherits this session's context, so it is only worth its cost when that
+  // context is relevant — the fresh spawn stays the default and the fallback, and N forks cost
+  // N copies of the parent context, so they cannot escape the concurrency cap.
+  const tpl = readMedia('template-loop.md');
+  assert.match(tpl, /a FRESH subagent by default/, 'fresh is the default first-groom route');
+  assert.match(tpl, /subagent_type: "fork"/, 'names the fork mechanism');
+  assert.match(tpl, /only where this session already groomed a closely related\s+topic/,
+    'fork is conditional on relevant inherited context, never the default');
+  assert.match(tpl, /forks count toward the cap/, 'forks are capped like fresh subagents');
+  assert.match(tpl, /resume the subagent that originally groomed it/,
+    're-groom still resumes first');
+  assert.match(tpl, /falls back as above\s+\(fork only if relevant, else fresh\)/,
+    'resume failure falls back to fork-if-relevant, else fresh');
+});
