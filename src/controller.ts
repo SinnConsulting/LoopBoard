@@ -14,7 +14,7 @@ import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
 } from './schedule';
-import { computeNudges, formatNudge, NudgeItem } from './nudge';
+import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
 import { ContextAction, describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
@@ -244,10 +244,9 @@ export class Controller {
     });
     for (const route of routes) {
       const held = this.pendingNudges.get(route.model) ?? [];
-      // De-duplicate on task id: a task edited twice while its loop was down is named once, and
-      // the newest reason for it wins.
-      const merged = held.filter((h) => !route.items.some((i) => i.taskId === h.taskId)).concat(route.items);
-      this.pendingNudges.set(route.model, merged);
+      // De-duplicate on task id: a task edited twice while its loop was down is named once, with
+      // the newest reason and the UNION of its change descriptors (pure helper, unit-tested).
+      this.pendingNudges.set(route.model, mergeNudgeItems(held, route.items));
       this.store.debugLog('verbose', 'nudge-route', `${route.model} <- ${route.items.map((i) => `${i.taskId}:${i.reason}`).join(',')}`);
     }
     for (const [model, items] of [...this.pendingNudges]) {
