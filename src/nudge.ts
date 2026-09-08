@@ -7,7 +7,7 @@
 //
 // A nudge is a HINT, never a work order. Loops re-read LOOP.md + TODO.md every pass regardless and
 // follow the same rules; a missed nudge costs nothing and changes no correctness property.
-import { IndexEntry, Model, GROOMER_HOLD } from './model';
+import { IndexEntry, Task, Model, GROOMER_HOLD } from './model';
 
 // Why a loop was nudged. Mirrors the Rules the loop will apply once it looks:
 //   note     — an unprocessed `note:` sub-bullet (Rule 16)
@@ -18,10 +18,13 @@ import { IndexEntry, Model, GROOMER_HOLD } from './model';
 //   feedback — a Review task carrying an unaddressed `feedback:` sub-bullet (Rule 13)
 export type NudgeReason = 'note' | 'groom' | 'regroom' | 'backlog' | 'answers' | 'feedback';
 
+// What the loop is told about one task. There is deliberately NO `title` field (t-f8bd): the nudge
+// names the task by id and the FIELDS that moved, never task text. Dropping the field — rather
+// than merely not printing it — is what stops a later edit re-introducing the leak.
 export interface NudgeItem {
   taskId: string;
-  title: string;
   reason: NudgeReason;
+  changes: string[]; // content-free field descriptors, see describeChanges
 }
 
 export interface NudgeRoute {
@@ -80,13 +83,89 @@ function changed(prev: IndexEntry, next: IndexEntry): boolean {
   return (prev.rev ?? 0) !== (next.rev ?? 0) || prev.raw !== next.raw;
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `${n} ${many}`);
+
+// What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
+// echoed — title, question, answer, note, feedback, description, worklog, delivered. Metadata ENUM
+// values (`phase`/`model`/`groomer`) are board state, not task content, and ARE named verbatim so
+// the loop is saved a lookup; counts and 1-based question positions carry no text either.
+//
+// Both boards already carry index AND detail content (store.load composes every task on every
+// refresh), so this is a pure computation over data in hand.
+export function describeChanges(prev: Task | undefined, next: Task): string[] {
+  if (!prev) return ['new entry'];
+  const out: string[] = [];
+
+  if (prev.title !== next.title) out.push('title edited');
+  if (prev.phase !== next.phase) out.push(`phase → ${next.phase}`);
+  if (prev.model !== next.model) out.push(`model → ${next.model ?? 'default'}`);
+  if (prev.groomer !== next.groomer) out.push(`groomer → ${next.groomer ?? 'default'}`);
+  if (prev.checked !== next.checked) out.push(next.checked ? 'ticked' : 'unticked');
+
+  const pq = prev.questions;
+  const nq = next.questions;
+  if (nq.length > pq.length) out.push(`${plural(nq.length - pq.length, 'question')} added`);
+  if (nq.length < pq.length) out.push(`${plural(pq.length - nq.length, 'question')} removed`);
+  // Question-level descriptors are POSITIONAL and 1-based, in index order: pinpointing which
+  // question moved without quoting it is the whole point of the story.
+  for (let i = 0; i < Math.min(pq.length, nq.length); i++) {
+    const at = `(question ${i + 1})`;
+    const was = pq[i].answer.trim().length > 0;
+    const is = nq[i].answer.trim().length > 0;
+    if (!was && is) out.push(`answer filled ${at}`);
+    else if (was && !is) out.push(`answer cleared ${at}`);
+    else if (pq[i].answer !== nq[i].answer) out.push(`answer edited ${at}`);
+    if (nq[i].suggestions.length > pq[i].suggestions.length) out.push(`suggestions added ${at}`);
+    else if (nq[i].suggestions.length < pq[i].suggestions.length) out.push(`suggestions removed ${at}`);
+  }
+
+  for (const [one, many, before, after] of [
+    ['note', 'notes', prev.notes, next.notes],
+    ['feedback', 'feedback', prev.feedback, next.feedback],
+  ] as [string, string, string[], string[]][]) {
+    if (after.length > before.length) out.push(`${plural(after.length - before.length, one, many)} added`);
+    else if (after.length < before.length) out.push(`${plural(before.length - after.length, one, many)} removed`);
+  }
+
+  // Detail changes are named per SECTION, never collapsed to a bare "detail changed".
+  if ((prev.description ?? '') !== (next.description ?? '')) out.push('description edited');
+  if ((prev.delivered ?? '') !== (next.delivered ?? '')) out.push('delivered edited');
+  if (next.worklog.length > prev.worklog.length) out.push('worklog appended');
+  else if (prev.worklog.join('\n') !== next.worklog.join('\n')) out.push('worklog edited');
+  for (const key of ['added', 'started', 'promoted', 'completed'] as const) {
+    if ((prev[key] ?? '') !== (next[key] ?? '')) out.push(`meta ${key} ${next[key] ? 'set' : 'cleared'}`);
+  }
+  if (prev.links.join(',') !== next.links.join(',')) out.push(`meta link ${next.links.length ? 'set' : 'cleared'}`);
+  if (prev.dependsOn.join(',') !== next.dependsOn.join(',')) out.push('depends on edited');
+
+  // `rev:` moved but no field above differs — a canonicalizing rewrite, or edits coalesced into one
+  // refresh. The nudge is still sent (never dropped); the loop falls back to its ordinary re-read.
+  return out.length ? out : ['changed'];
+}
+
+// Fold newly routed items into the ones held for a downed terminal, de-duped by task id: the newest
+// reason wins, but the change descriptors UNION so nothing a loop missed while it was down is lost.
+export function mergeNudgeItems(held: NudgeItem[], incoming: NudgeItem[]): NudgeItem[] {
+  const out = held.map((h) => ({ ...h, changes: [...h.changes] }));
+  for (const item of incoming) {
+    const existing = out.find((h) => h.taskId === item.taskId);
+    if (!existing) {
+      out.push({ ...item, changes: [...item.changes] });
+      continue;
+    }
+    existing.reason = item.reason;
+    for (const c of item.changes) if (!existing.changes.includes(c)) existing.changes.push(c);
+  }
+  return out;
+}
+
 // Route every CHANGED entry to the one loop that now has something to do, grouped per loop.
 //
 // `prev === undefined` (the first board load of a session) yields nothing: everything would look
 // new and every loop would be nudged about a board it is about to read anyway.
 export function computeNudges(
-  prev: IndexEntry[] | undefined,
-  next: IndexEntry[],
+  prev: Task[] | undefined,
+  next: Task[],
   defaults: NudgeDefaults,
 ): NudgeRoute[] {
   if (!prev) return [];
@@ -104,7 +183,7 @@ export function computeNudges(
     if (!route) continue;
     if (route.reason === 'backlog' && busy) continue;
     const items = routes.get(route.model) ?? [];
-    items.push({ taskId: entry.id, title: entry.title, reason: route.reason });
+    items.push({ taskId: entry.id, reason: route.reason, changes: describeChanges(was, entry) });
     routes.set(route.model, items);
   }
 
@@ -124,11 +203,13 @@ const REASON_TEXT: Record<NudgeReason, string> = {
 // REPL input, so it stays short and on ONE line — a newline would submit it mid-sentence.
 const MAX_NAMED = 5;
 
-// The nudge line itself. It names the SPECIFIC tasks (so the loop skips a rediscovery scan and the
-// debug log shows exactly what was routed where) and restates that the rules still gate the work.
+// The nudge line itself. It names the SPECIFIC tasks by id and which fields moved (so the loop
+// skips a rediscovery scan and the debug log shows exactly what was routed where) and restates that
+// the rules still gate the work. The reason phrase says what the loop MAY do, the change list says
+// where to look; neither carries task text.
 export function formatNudge(items: NudgeItem[]): string {
   const named = items.slice(0, MAX_NAMED)
-    .map((i) => `"${i.title}" (${i.taskId}) ${REASON_TEXT[i.reason]}`)
+    .map((i) => `${i.taskId}: ${(i.changes.length ? i.changes : ['changed']).join(', ')} — ${REASON_TEXT[i.reason]}`)
     .join('; ');
   const rest = items.length > MAX_NAMED ? `, and ${items.length - MAX_NAMED} more` : '';
   return `LoopBoard: the board changed — ${named}${rest}. Re-read .loopboard/LOOP.md and .loopboard/TODO.md and act per the rules as on any pass.`
