@@ -267,11 +267,24 @@
   function post(msg) {
     vscode.postMessage(msg);
   }
+  const TOAST_HOLD_RECHECK_MS = 500;
+  // Held = pointer over the toast, or keyboard focus inside it (action / ✕ button). Checked against
+  // the live DOM at expiry, so a full render() swapping the node mid-hover cannot lose the state.
+  function toastHeld(id) {
+    const el = document.querySelector('.toast[data-id="' + id + '"]');
+    return !!el && (el.matches(':hover') || el.contains(document.activeElement));
+  }
   function pushToast(level, text, action, iconName) {
     const id = toastSeq++;
     toasts.push({ id, level, text, action, icon: iconName });
     scheduleRender();
-    setTimeout(() => dismissToast(id), level === 'warning' ? 8000 : 4000);
+    // Hovering/focusing a toast holds it; releasing resumes the rest of the original countdown and
+    // never restarts it — only the short re-check is ever re-armed, never the full 8s/4s.
+    const expire = () => {
+      if (toastHeld(id)) { setTimeout(expire, TOAST_HOLD_RECHECK_MS); return; }
+      dismissToast(id);
+    };
+    setTimeout(expire, level === 'warning' ? 8000 : 4000);
   }
   function dismissToast(id) {
     toasts = toasts.filter((t) => t.id !== id);
@@ -2035,7 +2048,7 @@
   function renderToasts() {
     const wrap = h('div', { class: 'toasts' });
     for (const t of toasts) {
-      const el = h('div', { class: 'toast ' + t.level, role: 'status' },
+      const el = h('div', { class: 'toast ' + t.level, role: 'status', 'data-id': t.id },
         t.icon ? h('span', { class: 'codicon codicon-' + t.icon }) : null,
         h('span', {}, t.text));
       if (t.action) el.append(h('button', { class: 'toast-action', type: 'button', onclick: t.action.onClick }, t.action.label));
