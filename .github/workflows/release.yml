@@ -39,13 +39,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      # Pinned to v5, not the current v6: v5 is the first node24 major and is otherwise a no-op,
+      # while v6's breaking change is semantic-release 24 -> 25 — a major bump of the tool that
+      # cuts our releases, and a separate decision from clearing the Node-20 annotation (t-9c3d).
       - name: Semantic release
         id: release
-        uses: cycjimmy/semantic-release-action@v4
+        uses: cycjimmy/semantic-release-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -58,10 +61,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -90,20 +93,61 @@ jobs:
       - name: Package vsix
         run: npx --yes @vscode/vsce package --no-dependencies
 
+      # --clobber so a re-run of this job replaces the asset instead of failing on "already exists"
+      # (t-9c3d). It DELETES before re-uploading, which is safe only because `Package vsix` two
+      # steps up regenerates the bytes in the same run — do not extend --clobber to anything this
+      # job cannot rebuild.
       - name: Upload vsix to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "v${{ needs.release.outputs.version }}" "loopboard-todo-${{ needs.release.outputs.version }}.vsix"
+        run: gh release upload --clobber "v${{ needs.release.outputs.version }}" "loopboard-todo-${{ needs.release.outputs.version }}.vsix"
 
+      # Guarded so a re-run is a no-op instead of a failure: a re-run checks out the ORIGINAL
+      # triggering SHA, so `npm version` re-creates the same diff and the push would be rejected
+      # non-fast-forward against a main that has since moved on (t-9c3d).
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
+          if git diff --quiet --cached; then
+            echo "package.json/package-lock.json already at v${{ needs.release.outputs.version }} — nothing to commit."
+            exit 0
+          fi
           git commit -m "chore(release): v${{ needs.release.outputs.version }} [skip ci]"
           git push origin HEAD:main
 
-      # Last step: a Marketplace flake must not block the release asset or the
-      # version-bump commit. On failure, retry via the manual publish.yml.
+  # Its own job so that GitHub's "Re-run failed jobs" retries ONLY the Marketplace push: `vsix`
+  # already succeeded, so it is not re-run — no rebuild, no second asset upload, no second push to
+  # main (t-9c3d). Publishing the .vsix downloaded from the release (not one rebuilt here) ships the
+  # exact artifact under the tag and makes this job identical to publish.yml's escape hatch.
+  publish:
+    needs: [release, vsix]
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read # gh release download
+
+    steps:
+      - name: Download vsix from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "v${{ needs.release.outputs.version }}" --pattern "*.vsix" --dir .
+
+      # vsce has no retry or timeout flag, so the loop is hand-rolled rather than pulling in a
+      # third-party retry action (zero-dependency repo). --skip-duplicate makes a retry after a
+      # publish that actually landed exit 0 instead of erroring on "version already exists" — it
+      # covers both the gallery-query case and the 409 from the write, so the Marketplace's index
+      # lag cannot produce a false negative. VSCE_PAT is read from the environment by vsce itself.
       - name: Publish to Marketplace
-        run: npx --yes @vscode/vsce publish --packagePath "loopboard-todo-${{ needs.release.outputs.version }}.vsix" --pat "${{ secrets.VSCE_PAT }}"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSIX: loopboard-todo-${{ needs.release.outputs.version }}.vsix
+        run: |
+          for attempt in 1 2 3; do
+            npx --yes @vscode/vsce publish --packagePath "$VSIX" --skip-duplicate && exit 0
+            echo "publish attempt $attempt failed; retrying"
+            sleep $((attempt * 60))
+          done
+          exit 1

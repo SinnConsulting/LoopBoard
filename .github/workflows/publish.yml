@@ -13,12 +13,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download vsix from the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release download "v${{ inputs.version }}" --pattern "*.vsix" --dir .
 
+      # Same command as release.yml's publish job, minus the retry loop — a human re-dispatches
+      # this one. --skip-duplicate keeps a re-dispatch of an already-published version green.
       - name: Publish to Marketplace
-        run: npx --yes @vscode/vsce publish --packagePath loopboard-todo-${{ inputs.version }}.vsix --pat "${{ secrets.VSCE_PAT }}"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSIX: loopboard-todo-${{ inputs.version }}.vsix
+        run: npx --yes @vscode/vsce publish --packagePath "$VSIX" --skip-duplicate
