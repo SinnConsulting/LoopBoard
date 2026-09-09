@@ -16,7 +16,7 @@ import {
 } from './schedule';
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
-import { ContextAction, describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
+import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -90,6 +90,13 @@ export class Controller {
   private contextUsage = new Map<Model, ContextReading>();
   private contextTripped = new Map<Model, string>();
   private contextPending = new Set<Model>();
+  // The session id this slot's last restart ENDED (t-c7a2). Every restart path wipes the three
+  // maps above, including the `contextTripped` marker that would have suppressed a re-read of the
+  // dead session — so the one fact worth keeping is the id we just killed. A reading still carrying
+  // it is the old file's echo and is dropped whole (`isStaleSession`), before the threshold is even
+  // looked at. Released only by a reading with a DIFFERENT id, never by ■ or ▶: a ▶ after ■ starts
+  // a new process with a new id, so the guard is inert there and still covers the same race.
+  private contextEnded = new Map<Model, string>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
   // awaits file IO.
@@ -315,8 +322,12 @@ export class Controller {
     for (const m of cfg.models) {
       if (!m.enabled) continue;
       if (!this.terminals.status().some((l) => l.id === m.id && l.running)) {
-        // A stopped loop has no context to report and no trip to remember.
-        changed = this.contextUsage.delete(m.id) || changed;
+        // A stopped loop has no context to report and no trip to remember — but its session id is
+        // still worth keeping (t-c7a2): this branch runs on the close-event poll during a
+        // recycle's 400 ms gap, and wiping `contextTripped` here is exactly what let the reopen
+        // poll re-trip on the identical reading it had just acted on.
+        changed = this.contextUsage.has(m.id) || changed;
+        this.rememberEndedSession(m.id);
         this.contextTripped.delete(m.id);
         this.contextPending.delete(m.id);
         continue;
@@ -328,6 +339,17 @@ export class Controller {
         // case that genuinely has nothing to show.
         continue;
       }
+      // The ended session's echo (t-c7a2): the new `claude` has not written its session file yet,
+      // so the reader still resolves the id we just killed and its transcript still reads at the
+      // pre-restart number. Drop the reading WHOLE — it is not stored (so the row shows no bar,
+      // today's "no measurement" rendering, rather than a stale one), not compared against the
+      // threshold and cannot trip. The hysteresis below keeps its meaning for the NEW session; this
+      // guard sits in front of it rather than replacing it.
+      if (isStaleSession(reading.sessionId, this.contextEnded.get(m.id))) {
+        this.store.debugLog('verbose', 'context-stale', `${m.id} session ${reading.sessionId} was ended — ignoring`);
+        continue;
+      }
+      this.contextEnded.delete(m.id);
       const before = this.contextUsage.get(m.id);
       this.contextUsage.set(m.id, reading);
       if (!before || before.used !== reading.used || before.sessionId !== reading.sessionId) changed = true;
@@ -359,10 +381,13 @@ export class Controller {
   }
 
   private fireContextRestart(model: Model, action: ContextAction): void {
-    this.store.debugLog('info', 'context-fire', `${model} ${action}`);
     this.contextPending.delete(model);
-    // The measurement belongs to the session we are about to end; the next poll measures the new one.
-    this.contextUsage.delete(model);
+    // The measurement belongs to the session we are about to end; the next poll measures the new
+    // one. Its id is kept as the stale-session guard (t-c7a2) — this is the path the observed
+    // restart storm took, and for `action: 'clear'` there is no terminal close/open event to route
+    // through `clearContextTrip`.
+    const ended = this.rememberEndedSession(model);
+    this.store.debugLog('info', 'context-fire', `${model} ${action}${ended ? ` — ended session ${ended}` : ''}`);
     // preserveFocus — an automatic action never steals focus from whatever the user is doing.
     if (action === 'clear') this.terminals.clearSession(model);
     else this.terminals.recycle(model, true);
@@ -381,11 +406,27 @@ export class Controller {
   // Any restart of a loop — timed, manual ♻, stop, afterTask — invalidates a pending context trip
   // and its hysteresis marker: both were measured against a session that no longer exists.
   private clearContextTrip(model: Model, reason: string): void {
+    // Remember-then-drop runs UNCONDITIONALLY (t-c7a2); only the log line is conditional on there
+    // having been a trip. The old early return skipped a loop that never tripped — but ending its
+    // session still leaves a stale bar (threshold 50, loop at 41%, ♻ → the row keeps showing 41%
+    // for a session that is gone), and nothing would have recorded the id to suppress it.
+    const ended = this.rememberEndedSession(model);
     if (!this.contextPending.has(model) && !this.contextTripped.has(model)) return;
     this.contextPending.delete(model);
     this.contextTripped.delete(model);
+    this.store.debugLog('info', 'context-clear', `${model} (${reason})${ended ? ` — ended session ${ended}` : ''}`);
+  }
+
+  // Move the last reading's session id into `contextEnded` and drop the measurement: it belongs to
+  // a session that is ending, and the next poll may still resolve it (t-c7a2). Returns the id so
+  // callers can name it in their own log line. No reading on record = nothing to remember, and the
+  // first reading after the restart is accepted — the same files that produced no reading before
+  // are the only ones a stale read could come from.
+  private rememberEndedSession(model: Model): string | undefined {
+    const sessionId = this.contextUsage.get(model)?.sessionId;
+    if (sessionId) this.contextEnded.set(model, sessionId);
     this.contextUsage.delete(model);
-    this.store.debugLog('info', 'context-clear', `${model} (${reason})`);
+    return sessionId;
   }
 
   // Repaint from the board already in memory — no disk re-read. Used by the context poll, which
