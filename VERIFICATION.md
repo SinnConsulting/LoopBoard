@@ -382,3 +382,36 @@ and likewise cannot be verified headless.
     succeeds with the newline folded to a space; no "Task changed on disk" toast. Finally, save a
     row whose value equals what is already on disk as the last blank → no patch is posted and the
     `held` tag disappears immediately rather than sticking.
+
+31. **Per-section collapse (t-aee3):** webview-only (`media/board.js` + `media/board.css`), so the
+    Docker suite does not cover any of it — this checklist is the acceptance path, exactly as for
+    t-col1 / t-7411 / t-7679. On a **New** card that has open questions:
+
+    **Default:** with no saved section state (fresh board, or after Expand all), both the
+    **Description** and **Open questions** sections show expanded, each with a chevron in its
+    header.
+
+    **Independent fold:** click the Description chevron → only that section folds; the questions
+    panel and the card itself are untouched. Same in reverse for the Open questions chevron: its
+    header (title, `N / M answered`, the progress meter, and the `re-groom pending` badge when it
+    applies) stays visible, the rows and **Save All** go, and the header keeps no dangling divider.
+
+    **Collapsed preview:** the folded Description header shows the first line of the description
+    beside the label, on one ellipsised line with markdown markers stripped — a heading, list
+    bullet or `[link](path)` renders as its plain text, never as markup. A card with an EMPTY
+    description shows the header with no preview, and expanding it still offers
+    `Add a description…`. Expanding removes the preview.
+
+    **Collapse all / Expand all:** click **Collapse all** → every card in the tab folds. Expand one
+    card by its own chevron → BOTH its sections come back folded. **Expand all** → every card and
+    every section open. Switch tabs: the other tab is unaffected.
+
+    **Persistence:** hand-fold one section, then (a) let a loop write to the tracker so the board
+    refreshes, (b) switch to another view in the activity bar and back, and (c) reload the window —
+    the fold survives all three. Then press Collapse all / Expand all in that tab: the hand-set
+    override is wiped by it.
+
+    **Commit on collapse:** click the description to open its editor, type without saving, then
+    click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
+    section shows the new text); nothing typed is lost. Separately, type an answer draft without
+    saving, fold the questions panel and unfold it → the draft is still there.

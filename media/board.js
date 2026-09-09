@@ -95,6 +95,13 @@
   let heldAnswers = saved.heldAnswers && typeof saved.heldAnswers === 'object' ? saved.heldAnswers : {};
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
+  // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
+  // `sections[phaseKey][taskId] = { description?: boolean, questions?: boolean }`. A section with
+  // no entry falls back to the tab default, which is what makes "expand one card after Collapse
+  // all" show both sections folded. New key, so there is nothing to migrate — an unrecognized
+  // value just means "no overrides", i.e. everything follows the default. Ids are never pruned,
+  // for the same reason as `collapsed` above.
+  let sections = saved.sections && typeof saved.sections === 'object' ? saved.sections : {};
   // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
   // `collapsed` map): seed the old values into every phase bucket so an upgrade keeps the view the
   // user left behind. Anything unrecognized falls back to "everything expanded".
@@ -170,7 +177,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers });
+    vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers });
   }
 
   // ---- held answers (t-5e6d) ----
@@ -252,9 +259,27 @@
     saveState();
     render();
   }
+  // A section with no override follows the tab default, so Collapse all folds the sections of
+  // every card in the tab and Expand all opens them (t-aee3) — one click always yields a uniform
+  // view, including for cards the user later expands by hand.
+  function isSectionCollapsed(id, name) {
+    const over = sections[phase] && sections[phase][id];
+    return over && Object.prototype.hasOwnProperty.call(over, name) ? !!over[name] : phaseDefaultCollapsed();
+  }
+  function toggleSection(id, name) {
+    if (!sections[phase]) sections[phase] = {};
+    if (!sections[phase][id]) sections[phase][id] = {};
+    sections[phase][id][name] = !isSectionCollapsed(id, name);
+    saveState();
+    render();
+  }
   function setPhaseCollapsed(value) {
     collapsedDefault[phase] = value;
     collapsed[phase] = {};
+    // Wipe the section overrides too, exactly as the card overrides are wiped: the button's whole
+    // point is that one click makes the tab uniform, which a surviving per-section override would
+    // break. Current tab only (t-7679).
+    sections[phase] = {};
     saveState();
     render();
   }
@@ -1531,19 +1556,74 @@
     return html;
   }
 
+  // Shared chevron for the two foldable card sections (t-aee3). Same class, aria contract and
+  // rotation CSS as the card chevron in renderCard, so the three toggles read identically.
+  function sectionToggle(taskId, name, label, onBefore) {
+    const folded = isSectionCollapsed(taskId, name);
+    const verb = folded ? 'Expand ' : 'Collapse ';
+    return h('button', {
+      class: 'icon-btn collapse-toggle', type: 'button',
+      'aria-expanded': folded ? 'false' : 'true',
+      'aria-label': verb + label, title: verb + label,
+      onclick: () => { if (onBefore) onBefore(); toggleSection(taskId, name); },
+    }, icon(SVG.chevron));
+  }
+
+  // First non-empty line of the description with markdown markers stripped, for the collapsed
+  // Description header (t-aee3). Rendered as TEXT, never HTML — a preview is not a second markdown
+  // surface, and it must not be able to inject markup.
+  function descPreview(text) {
+    for (const raw of String(text || '').split('\n')) {
+      if (/^\s*```/.test(raw)) continue; // a fence line is punctuation, not content
+      const line = raw
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links/images collapse to their text
+        .replace(/^\s*>+\s*/, '')
+        .replace(/^\s*#{1,6}\s+/, '')
+        .replace(/^\s*[-*+]\s+/, '')
+        .replace(/^\s*\d+[.)]\s+/, '')
+        .replace(/^\s*[-=*_]{3,}\s*$/, '') // horizontal rule holds no text
+        .replace(/[*_`~]/g, '')
+        .trim();
+      if (line) return line;
+    }
+    return '';
+  }
+
   function renderDescription(t) {
     const u = getUi(t.id);
     const wrap = h('div', { class: 'desc-wrap' });
+    const folded = isSectionCollapsed(t.id, 'description');
+    // Assigned below when the editor is open. The chevron lives INSIDE .desc-wrap, so t-471a's
+    // click-outside commit never fires for it — collapsing has to commit explicitly, or the fold
+    // would silently drop whatever was typed (t-aee3 decision 3).
+    let commitOpenEditor = null;
+    const head = h('div', { class: 'desc-head' },
+      sectionToggle(t.id, 'description', 'description', () => { if (commitOpenEditor) commitOpenEditor(); }),
+      h('div', { class: 'section-title' }, 'Description'));
+    if (folded) {
+      // Empty description => no preview, but the header still renders so the "Add a description…"
+      // affordance stays one click away.
+      const preview = descPreview(t.description);
+      if (preview) head.append(h('div', { class: 'desc-preview', title: preview }, preview));
+      wrap.append(head);
+      return wrap;
+    }
+    wrap.append(head);
     if (u.editingDesc) {
       const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…', 'data-field': 'description' });
       ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
       autoGrow(ta);
-      const commitDesc = () => {
+      // Split so the collapse chevron can commit WITHOUT a render of its own — toggleSection
+      // renders straight after, and two repaints in one tick is one wasted rebuild of every card.
+      commitOpenEditor = () => {
         clearActiveEditor(wrap);
         const val = ta.value;
         u.editingDesc = false;
         u.descDraft = null;
         commitPatch(t.id, 'description', val, t.description || '', t, 'description');
+      };
+      const commitDesc = () => {
+        commitOpenEditor();
         render();
       };
       const saveBtn = h('button', {
@@ -1605,7 +1685,12 @@
     const panel = h('div', { class: 'qa-panel' });
     const head = h('div', { class: 'qa-head' });
     const list = h('div', { class: 'qa-list' });
-    panel.append(head, list);
+    // Folded: the head stays (title, count, meter and the re-groom badge are exactly what makes a
+    // folded panel readable at a glance) and only the rows go (t-aee3). Unsaved answer drafts and
+    // held answers live on the transient `ui[id]` map, so they survive the fold like any repaint.
+    const qFolded = isSectionCollapsed(t.id, 'questions');
+    panel.append(head);
+    if (!qFolded) panel.append(list);
 
     // An answer is "given" whether it is on disk or only held (t-5e6d) — the meter and the count
     // track the human's progress through the story, not what has been written yet.
@@ -1650,7 +1735,9 @@
     updateHead();
     const headRight = h('div', { class: 'qa-head-right' }, meter);
     head.append(
-      h('div', { class: 'qa-head-left' }, h('span', { class: 'qa-title' }, 'Open questions'), countEl, pendingEl),
+      h('div', { class: 'qa-head-left' },
+        sectionToggle(t.id, 'questions', 'questions'),
+        h('span', { class: 'qa-title' }, 'Open questions'), countEl, pendingEl),
       headRight,
     );
 
@@ -1661,7 +1748,9 @@
     // same thing. Restyled (t-2394) into the header, as the design's secondary button.
     const commits = [];
     let updateSaveAll = () => {}; // replaced below once the button exists (only when >1 question)
-    if (t.questions.length > 1) {
+    // Not while folded: Save All commits the rows, and offering it over rows nobody can see is a
+    // blind write (t-aee3).
+    if (t.questions.length > 1 && !qFolded) {
       const saveAllBtn = h('button', {
         class: 'qa-btn is-secondary', type: 'button',
         disabled: true,
