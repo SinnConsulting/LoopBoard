@@ -321,3 +321,100 @@ test('release.yml asserts the package contents before anything is published', ()
     'GitHub Release with no .vsix asset.',
   );
 });
+
+// ---------------------------------------------------------------------------
+// Release retryability (t-9c3d). v3.5.0's release died on a Marketplace timeout and the re-run
+// then failed EARLIER, on the already-uploaded asset — the retry could not reach the step that
+// needed retrying. These assertions pin the three properties that fixed it. The live proof rides
+// on the next real release; what is checkable from a plain fs read is checked here.
+// ---------------------------------------------------------------------------
+
+test('the Marketplace publish is its own job, so a re-run does not redo the release work', () => {
+  const lines = read('.github', 'workflows', 'release.yml').split('\n');
+  const publishJob = lines.findIndex((l) => /^ {2}publish:\s*$/.test(l));
+  assert.notEqual(
+    publishJob, -1,
+    'the Marketplace publish must be a top-level job, not a step of vsix: as a step, GitHub\'s ' +
+    '"Re-run failed jobs" re-runs the whole vsix job — rebuilding, re-uploading the asset and ' +
+    're-pushing the version bump — which is exactly what broke on v3.5.0.',
+  );
+  const body = lines.slice(publishJob).join('\n');
+  assert.match(
+    body, /needs:\s*\[release,\s*vsix\]/,
+    'publish must need BOTH release (for the version/published outputs) and vsix (so it never ' +
+    'publishes an artifact that was not uploaded to the release).',
+  );
+  assert.match(
+    body, /if:\s*needs\.release\.outputs\.published == 'true'/,
+    'publish must carry the same published gate as vsix, or a no-release push would try to ship.',
+  );
+  // The job's only side effect is the Marketplace push, which is what makes re-running it safe.
+  assert.ok(
+    !/gh release upload|git push/.test(body),
+    'the publish job must have no side effect other than the Marketplace push.',
+  );
+});
+
+test('the vsix job survives its own re-run: clobbering upload, guarded version bump', () => {
+  const release = read('.github', 'workflows', 'release.yml');
+  assert.match(
+    release, /gh release upload --clobber/,
+    'gh release upload has no implicit overwrite, so without --clobber a re-run dies on ' +
+    '"asset under the same name already exists".',
+  );
+  assert.match(
+    release, /git diff --quiet --cached/,
+    'the version bump must be guarded: a re-run checks out the ORIGINAL triggering SHA, so the ' +
+    'commit succeeds and the push is then rejected non-fast-forward against a moved main.',
+  );
+});
+
+test('both Marketplace publishes skip duplicates and take the PAT from the environment', () => {
+  for (const wf of ['release.yml', 'publish.yml']) {
+    const text = read('.github', 'workflows', wf);
+    assert.match(
+      text, /vsce publish[^\n]*--skip-duplicate/,
+      `${wf}: --skip-duplicate is what makes a retry after a publish that actually landed exit 0 ` +
+      'instead of erroring on "version already exists". It also beats a read-only gallery ' +
+      'pre-check, which the Marketplace index lag can turn into a false negative.',
+    );
+    assert.ok(
+      // \b, so this does not trip on `gh release download --pattern`.
+      !/--pat\b/.test(text),
+      `${wf}: vsce reads VSCE_PAT from the environment — passing --pat puts the secret on the ` +
+      'command line.',
+    );
+    assert.match(text, /VSCE_PAT: \$\{\{ secrets\.VSCE_PAT \}\}/, `${wf}: PAT must arrive via env:`);
+  }
+});
+
+test('no workflow action is left on a Node-20 runtime', () => {
+  // GitHub currently force-runs node20 actions on Node 24 and annotates every run. Forcing is the
+  // migration window, not the end state. Majors verified against each tag's action.yml `runs.using`
+  // — bump this table only after checking the target major is genuinely node24 (upload-artifact v5
+  // is NOT: v6 was its first true node24 major).
+  const node24 = {
+    'actions/checkout': 7,
+    'actions/setup-node': 7,
+    'actions/upload-artifact': 7,
+    // Deliberately NOT v6: that bumps semantic-release 24 -> 25, a major bump of the tool that
+    // cuts our releases. v5 is node24 and otherwise a no-op, so nothing forces that decision here.
+    'cycjimmy/semantic-release-action': 5,
+  };
+  const workflows = ['release.yml', 'build.yml', 'publish.yml'];
+  let seen = 0;
+  for (const wf of workflows) {
+    for (const line of read('.github', 'workflows', wf).split('\n')) {
+      const m = line.match(/uses:\s*([\w.-]+\/[\w.-]+)@v(\d+)/);
+      if (!m) continue;
+      seen++;
+      const [, action, major] = m;
+      assert.ok(action in node24, `${wf}: unknown action ${action} — add it to the node24 table.`);
+      assert.equal(
+        Number(major), node24[action],
+        `${wf}: ${action}@v${major} is not the verified node24 major (expected v${node24[action]}).`,
+      );
+    }
+  }
+  assert.equal(seen, 8, 'expected all 8 uses: lines across the three workflows to be checked.');
+});
