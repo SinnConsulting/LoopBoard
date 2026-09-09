@@ -395,3 +395,14 @@ and likewise cannot be verified headless.
     toast, cause a board refresh (edit `TODO.md` from the editor, or let a loop write) → the toast
     is not dismissed early by the repaint and is not stuck afterwards: releasing the hover still
     dismisses it within ~1 s. ✕ and the action button still work immediately during a hold.
+
+    Review round 2 (t-7905). **Focus leaving the webview must release the hold:** Tab onto a
+    toast's ✕, then click into an editor tab or a terminal WITHOUT tabbing away first (so the
+    button is still `document.activeElement` in the blurred webview) → the toast dismisses within
+    ~1 s of the click, it does NOT hang on screen indefinitely. Click back into the board and
+    confirm no stale toast is left over. **Focus survives a refresh mid-hold:** Tab onto a toast's
+    ✕ and, while holding focus there past the toast's 4 s / 8 s duration, cause a board refresh
+    (edit `TODO.md` from the editor, or let a loop write) → the toast is still on screen, focus is
+    still on its ✕ (Enter dismisses it), and it does not vanish on the next tick; Tab away
+    afterwards → it goes within ~1 s. Repeat with focus on a conflict toast's **Review** action
+    button — focus must land back on that button, not on the ✕.

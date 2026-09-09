@@ -270,9 +270,13 @@
   const TOAST_HOLD_RECHECK_MS = 500;
   // Held = pointer over the toast, or keyboard focus inside it (action / ✕ button). Checked against
   // the live DOM at expiry, so a full render() swapping the node mid-hover cannot lose the state.
+  // The focus half is gated on document.hasFocus(): activeElement is NOT cleared when the webview
+  // loses focus, so clicking into the editor or a terminal while a toast button was focused would
+  // otherwise report "held" forever and the toast would never dismiss.
   function toastHeld(id) {
     const el = document.querySelector('.toast[data-id="' + id + '"]');
-    return !!el && (el.matches(':hover') || el.contains(document.activeElement));
+    if (!el) return false;
+    return el.matches(':hover') || (document.hasFocus() && el.contains(document.activeElement));
   }
   function pushToast(level, text, action, iconName) {
     const id = toastSeq++;
@@ -430,6 +434,8 @@
     // Capture which card field (and its caret) held focus BEFORE the wipe, so a repaint that lands
     // mid-edit can put focus + caret back afterward instead of blurring the field / jumping the caret.
     const activeField = captureActiveField();
+    // A toast button that currently HOLDS its toast open is blurred by the wipe too (t-7905).
+    const activeToastBtn = captureActiveToastBtn();
     root.textContent = '';
     if (!board) {
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
@@ -441,6 +447,10 @@
     // rather than deferred to rAF, kills the one-frame scroll-to-0 flash that used to read as a
     // jump on every gate-triggered refresh.
     paneEl.scrollTop = scrollTop;
+    // Synchronous, NOT deferred to rAF like the field restores below: a hold re-check landing in
+    // the frame where activeElement is still <body> would read the toast as released and dismiss
+    // it — the exact thing keyboard focus is supposed to prevent.
+    if (activeToastBtn) restoreActiveToastBtn(activeToastBtn);
     // Textareas can only measure their scrollHeight once attached to the DOM.
     requestAnimationFrame(() => {
       root.querySelectorAll('textarea.desc, textarea.field').forEach(autoGrow);
@@ -503,6 +513,22 @@
     if (!el) return;
     el.focus();
     if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
+  }
+
+  // Same idea for the toast stack (t-7905), kept separate because a toast is not a card field:
+  // it has no task id, no caret, and its focus is what HOLDS the dismiss timer open, so losing it
+  // across a repaint does not just move the cursor — it dismisses the toast the user is reading.
+  function captureActiveToastBtn() {
+    const el = document.activeElement;
+    const toast = el && el.closest ? el.closest('.toast[data-id]') : null;
+    if (!toast) return null;
+    return { id: toast.getAttribute('data-id'), action: el.classList.contains('toast-action') };
+  }
+  function restoreActiveToastBtn(a) {
+    const toast = document.querySelector('.toast[data-id="' + a.id + '"]');
+    if (!toast) return; // already dismissed — nothing to hold
+    const el = toast.querySelector(a.action ? '.toast-action' : '.icon-btn');
+    if (el) el.focus();
   }
 
   // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
