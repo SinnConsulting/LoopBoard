@@ -130,9 +130,14 @@ jobs:
       contents: read # gh release download
 
     steps:
+      # GH_REPO because this job deliberately does NOT check out: with no .git directory gh cannot
+      # infer the repo and dies with "fatal: not a git repository" (v3.5.1, run 34443591201). A
+      # checkout would fix it too, but the point of the job is to ship the artifact from the release
+      # without rebuilding anything, so the repo is passed in rather than cloned.
       - name: Download vsix from the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: gh release download "v${{ needs.release.outputs.version }}" --pattern "*.vsix" --dir .
 
       # vsce has no retry or timeout flag, so the loop is hand-rolled rather than pulling in a
