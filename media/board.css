@@ -152,6 +152,9 @@ textarea { resize: vertical; }
   font-size: 13px; flex-shrink: 0;
 }
 .collapse-toggle { margin-top: 2px; }
+/* The 2px above aligns the chevron with the card title's first line; the two section headers
+   (t-aee3) are centered flex rows, where it just knocks the chevron off-center. */
+.desc-head .collapse-toggle, .qa-head-left .collapse-toggle { margin-top: 0; }
 .collapse-toggle svg { transition: transform 120ms ease; }
 .collapse-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .card.collapsed .chips { margin-bottom: 0; }
@@ -201,6 +204,15 @@ textarea { resize: vertical; }
 .unparsed-help { font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); margin-top: 6px; }
 
 .desc-wrap { margin-top: 12px; position: relative; }
+/* t-aee3: foldable Description section. The header is always rendered; only the body below it
+   goes. min-width: 0 on both the row and the preview is what lets the preview actually ellipsise
+   instead of forcing the card wider. */
+.desc-head { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 4px; }
+.desc-head .section-title { margin-bottom: 0; flex-shrink: 0; }
+.desc-preview {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--vscode-descriptionForeground, #9d9d9d);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .desc {
   width: 100%; font-size: 13px; line-height: 1.5; font-family: inherit;
   background: transparent; color: var(--vscode-foreground, #cccccc);
@@ -264,6 +276,8 @@ textarea { resize: vertical; }
   padding: 8px 12px; border-bottom: 1px solid var(--vscode-panel-border, #454545);
   background: var(--vscode-sideBar-background, #252526);
 }
+/* Folded (t-aee3): the head is the panel's only child, so its divider has nothing to divide. */
+.qa-head:last-child { border-bottom: none; }
 .qa-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .qa-title { font-size: 12px; font-weight: 600; }
 .qa-count { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground, #9d9d9d); }
