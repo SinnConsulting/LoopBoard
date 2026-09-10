@@ -355,6 +355,24 @@ test('the Marketplace publish is its own job, so a re-run does not redo the rele
   );
 });
 
+test('every gh call in a checkout-less job carries its repo context', () => {
+  // gh resolves the repo from the checkout's git remote. The publish job has no checkout by design
+  // (it ships the release artifact instead of rebuilding), so without GH_REPO the very first step
+  // fails with "fatal: not a git repository" — which is how v3.5.1 shipped no Marketplace update.
+  const lines = read('.github', 'workflows', 'release.yml').split('\n');
+  const publishJob = lines.findIndex((l) => /^ {2}publish:\s*$/.test(l));
+  const body = lines.slice(publishJob).join('\n');
+  assert.ok(
+    !/uses: actions\/checkout/.test(body),
+    'publish is expected to stay checkout-less; if a checkout is added, gh finds the repo on its ' +
+    'own and this test should be replaced rather than satisfied with a redundant GH_REPO.',
+  );
+  assert.match(
+    body, /GH_REPO: \$\{\{ github\.repository \}\}/,
+    'a gh step in a job with no checkout must be told which repo it is acting on.',
+  );
+});
+
 test('the vsix job survives its own re-run: clobbering upload, guarded version bump', () => {
   const release = read('.github', 'workflows', 'release.yml');
   assert.match(
