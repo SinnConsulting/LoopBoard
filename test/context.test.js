@@ -9,7 +9,7 @@ const {
   sessionName, windowSizeFor, DEFAULT_WINDOW, LARGE_WINDOW,
   parseSessionPointer, matchesSlot, newestPointer, parseTranscriptUsage, contextPercent,
   describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent,
-  shouldTrip, shouldClearTrip,
+  shouldTrip, shouldClearTrip, isStaleSession,
 } = require('../out-test/context.js');
 
 const CWD = '/Users/x/LoopBoard';
@@ -174,4 +174,26 @@ test('describeThreshold names the configured restart point, and says nothing whe
   assert.equal(describeThreshold(80, 'clear'), '/clear at 80%', 'the verb follows contextLimit.action');
   assert.equal(describeThreshold(0, 'recycle'), '', 'percent 0 = off, so there is no such point');
   assert.equal(describeThreshold(-5, 'clear'), '', 'a nonsense threshold draws no zone either');
+});
+
+test('a reading that still carries the ended session id is stale until a different id appears', () => {
+  // t-c7a2: a restart disposes the terminal and respawns 400 ms later, and both terminal events
+  // poll — long before the new `claude` has written its session file. Until then the only file
+  // matching our --name + cwd is the ended session's, so the reader resolves its id and its
+  // transcript still reads at the pre-restart number.
+  assert.equal(isStaleSession('s1', 's1'), true, 'same id as the one we just ended = the old file');
+  assert.equal(isStaleSession('s2', 's1'), false, 'a different id is the new session — guard released');
+  assert.equal(isStaleSession('s1', undefined), false, 'nothing was ended, so nothing is stale');
+  assert.equal(isStaleSession('', ''), true, 'an empty recorded id still matches itself, not undefined');
+});
+
+test('the stale guard is what protects a wiped hysteresis marker, not shouldTrip', () => {
+  // Every restart path wipes `trippedSession`, so on its own shouldTrip WOULD fire again on the
+  // dead session's number — which is exactly the observed restart storm. Composition, not either
+  // function alone, is the fix: the guard runs first and the reading never reaches shouldTrip.
+  assert.equal(shouldTrip(41, 35, 's1', undefined), true, 'marker gone: the stale reading would trip');
+  assert.equal(isStaleSession('s1', 's1'), true, 'so it must be discarded before shouldTrip is asked');
+  // The new session is measured normally the moment its own id shows up, from its real small number.
+  assert.equal(isStaleSession('s2', 's1'), false);
+  assert.equal(shouldTrip(3, 35, 's2', undefined), false, 'fresh session, well under the threshold');
 });

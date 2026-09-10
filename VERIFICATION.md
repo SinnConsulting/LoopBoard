@@ -406,3 +406,32 @@ and likewise cannot be verified headless.
     still on its ✕ (Enter dismisses it), and it does not vanish on the next tick; Tab away
     afterwards → it goes within ~1 s. Repeat with focus on a conflict toast's **Review** action
     button — focus must land back on that button, not on the ✕.
+32. **Stale-session guard after a restart (t-c7a2):** the pure decision (`isStaleSession`) is unit
+    tested in `test/context.test.js`, but the controller wiring — the three remember paths and the
+    `continue` in `pollContextOnce` — imports `vscode` and cannot reach the Docker suite, so it is
+    verified here only. Set `loopBoard.debug: verbose` and watch `.loopboard/debug.log`.
+
+    **Context-triggered restart, no In-Progress task:** set `loopBoard.contextLimit.percent` just
+    under a running loop's current usage. Expect **exactly one** `context-fire` / `loop-recycle`
+    pair — never the storm of consecutive `loop-recycle` lines this fixes. The `context-fire` line
+    names the ended session (`— ended session <id>`). The polls that follow log `context-stale` for
+    that same id, the sidebar row shows **no context bar at all** (not a stale number), and once
+    the new session writes its file a fresh `context-read` appears with a **different** id and the
+    bar restarts from that session's real, small number.
+
+    **Manual ♻ while the slot owns the In-Progress task:** with the loop above the threshold, click
+    ♻. Expect `context-clear … — ended session <id>` and **no** `context-defer`, no
+    `restart waiting for task` on the row, and no bar until the new session reads. At the next idle
+    edge the fresh session is **not** recycled.
+
+    **Repeat with `loopBoard.contextLimit.action: clear`** — same expectations via
+    `terminals.clearSession` (there is no terminal close/open event on this path, so it exercises
+    the `fireContextRestart` remember step rather than `clearContextTrip`'s).
+
+    **A loop that never tripped:** with the threshold well ABOVE a running loop's usage (e.g. 50
+    with the loop at 41%), click ♻ → the row must show no bar until the new session reads. Before
+    this change `clearContextTrip` returned early for an untripped loop and the 41% stayed on
+    screen for a session that no longer existed.
+
+    **Hysteresis unchanged:** a session that legitimately sits above the threshold still trips
+    once, and re-arms when it comes back down past the band.
