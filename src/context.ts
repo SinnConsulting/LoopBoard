@@ -191,6 +191,23 @@ export function shouldTrip(
   return trippedSession !== sessionId;
 }
 
+// Whether a reading is the ENDED session's echo (t-c7a2). A restart disposes the terminal and
+// respawns 400 ms later, and both terminal events poll — seconds before the new `claude` has
+// written its own session file. Until then the only file matching our `--name` + cwd is the old
+// one (still shutting down, or left behind by a SIGKILL), so the reader resolves the ended
+// session's id and its transcript still reads at the pre-restart number. That stale value used to
+// count as a fresh trip, because every restart path ALSO wipes the `trippedSession` marker that
+// would have suppressed it.
+//
+// The test is exact rather than time-based on purpose: a session id never comes back. `/clear`
+// mints a new id in the same process (t-2b89, decisions/loops.md) and a respawn is a new process,
+// so a reading carrying the id we just ended can only be the old file being read again. The
+// timings, by contrast, are all guesses — boot is 3.5 s, SIGHUP shutdown is unknown, `/clear` is
+// 1.5 s plus the CLI's own work.
+export function isStaleSession(readingSessionId: string, endedSession: string | undefined): boolean {
+  return endedSession !== undefined && endedSession === readingSessionId;
+}
+
 // The down edge that re-arms the hysteresis. Keying it on the session id alone assumed every reset
 // starts a NEW session, which is not guaranteed: `/clear` reuses the process, and auto-compaction
 // drops usage inside the same session id — either way the loop climbed back over the threshold and

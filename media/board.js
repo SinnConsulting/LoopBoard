@@ -292,11 +292,28 @@
   function post(msg) {
     vscode.postMessage(msg);
   }
+  const TOAST_HOLD_RECHECK_MS = 500;
+  // Held = pointer over the toast, or keyboard focus inside it (action / ✕ button). Checked against
+  // the live DOM at expiry, so a full render() swapping the node mid-hover cannot lose the state.
+  // The focus half is gated on document.hasFocus(): activeElement is NOT cleared when the webview
+  // loses focus, so clicking into the editor or a terminal while a toast button was focused would
+  // otherwise report "held" forever and the toast would never dismiss.
+  function toastHeld(id) {
+    const el = document.querySelector('.toast[data-id="' + id + '"]');
+    if (!el) return false;
+    return el.matches(':hover') || (document.hasFocus() && el.contains(document.activeElement));
+  }
   function pushToast(level, text, action, iconName) {
     const id = toastSeq++;
     toasts.push({ id, level, text, action, icon: iconName });
     scheduleRender();
-    setTimeout(() => dismissToast(id), level === 'warning' ? 8000 : 4000);
+    // Hovering/focusing a toast holds it; releasing resumes the rest of the original countdown and
+    // never restarts it — only the short re-check is ever re-armed, never the full 8s/4s.
+    const expire = () => {
+      if (toastHeld(id)) { setTimeout(expire, TOAST_HOLD_RECHECK_MS); return; }
+      dismissToast(id);
+    };
+    setTimeout(expire, level === 'warning' ? 8000 : 4000);
   }
   function dismissToast(id) {
     toasts = toasts.filter((t) => t.id !== id);
@@ -442,6 +459,8 @@
     // Capture which card field (and its caret) held focus BEFORE the wipe, so a repaint that lands
     // mid-edit can put focus + caret back afterward instead of blurring the field / jumping the caret.
     const activeField = captureActiveField();
+    // A toast button that currently HOLDS its toast open is blurred by the wipe too (t-7905).
+    const activeToastBtn = captureActiveToastBtn();
     root.textContent = '';
     if (!board) {
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
@@ -453,6 +472,10 @@
     // rather than deferred to rAF, kills the one-frame scroll-to-0 flash that used to read as a
     // jump on every gate-triggered refresh.
     paneEl.scrollTop = scrollTop;
+    // Synchronous, NOT deferred to rAF like the field restores below: a hold re-check landing in
+    // the frame where activeElement is still <body> would read the toast as released and dismiss
+    // it — the exact thing keyboard focus is supposed to prevent.
+    if (activeToastBtn) restoreActiveToastBtn(activeToastBtn);
     // Textareas can only measure their scrollHeight once attached to the DOM.
     requestAnimationFrame(() => {
       root.querySelectorAll('textarea.desc, textarea.field').forEach(autoGrow);
@@ -515,6 +538,22 @@
     if (!el) return;
     el.focus();
     if (a.start != null) { try { el.setSelectionRange(a.start, a.end); } catch (e) { /* ignore */ } }
+  }
+
+  // Same idea for the toast stack (t-7905), kept separate because a toast is not a card field:
+  // it has no task id, no caret, and its focus is what HOLDS the dismiss timer open, so losing it
+  // across a repaint does not just move the cursor — it dismisses the toast the user is reading.
+  function captureActiveToastBtn() {
+    const el = document.activeElement;
+    const toast = el && el.closest ? el.closest('.toast[data-id]') : null;
+    if (!toast) return null;
+    return { id: toast.getAttribute('data-id'), action: el.classList.contains('toast-action') };
+  }
+  function restoreActiveToastBtn(a) {
+    const toast = document.querySelector('.toast[data-id="' + a.id + '"]');
+    if (!toast) return; // already dismissed — nothing to hold
+    const el = toast.querySelector(a.action ? '.toast-action' : '.icon-btn');
+    if (el) el.focus();
   }
 
   // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
@@ -2124,7 +2163,7 @@
   function renderToasts() {
     const wrap = h('div', { class: 'toasts' });
     for (const t of toasts) {
-      const el = h('div', { class: 'toast ' + t.level, role: 'status' },
+      const el = h('div', { class: 'toast ' + t.level, role: 'status', 'data-id': t.id },
         t.icon ? h('span', { class: 'codicon codicon-' + t.icon }) : null,
         h('span', {}, t.text));
       if (t.action) el.append(h('button', { class: 'toast-action', type: 'button', onclick: t.action.onClick }, t.action.label));
