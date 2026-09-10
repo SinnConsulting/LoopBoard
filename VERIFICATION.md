@@ -383,6 +383,29 @@ and likewise cannot be verified headless.
     row whose value equals what is already on disk as the last blank → no patch is posted and the
     `held` tag disappears immediately rather than sticking.
 
+31. **Toasts hold while hovered or focused (t-7905):** trigger a board toast — arm a schedule from
+    a sidebar row (success, 4 s) or force a "changed on disk" conflict by editing a field in
+    `TODO.md` while editing the same field on the card (warning, 8 s). Leave the pointer OFF it →
+    it still disappears at its usual 4 s / 8 s. Trigger another and **hover** it: it stays on
+    screen for as long as you hover, well past 8 s (try ~30 s). Move the pointer away → it goes
+    within ~1 s and does NOT sit for a further 4 s / 8 s. Trigger one and move the pointer away
+    BEFORE its duration elapses → it still disappears at its original time, not later. **Tab**
+    onto the toast's ✕ (or its action button, e.g. the conflict toast's) and hold focus there past
+    the duration → it stays; Tab away or click elsewhere → it goes within ~1 s. While hovering a
+    toast, cause a board refresh (edit `TODO.md` from the editor, or let a loop write) → the toast
+    is not dismissed early by the repaint and is not stuck afterwards: releasing the hover still
+    dismisses it within ~1 s. ✕ and the action button still work immediately during a hold.
+
+    Review round 2 (t-7905). **Focus leaving the webview must release the hold:** Tab onto a
+    toast's ✕, then click into an editor tab or a terminal WITHOUT tabbing away first (so the
+    button is still `document.activeElement` in the blurred webview) → the toast dismisses within
+    ~1 s of the click, it does NOT hang on screen indefinitely. Click back into the board and
+    confirm no stale toast is left over. **Focus survives a refresh mid-hold:** Tab onto a toast's
+    ✕ and, while holding focus there past the toast's 4 s / 8 s duration, cause a board refresh
+    (edit `TODO.md` from the editor, or let a loop write) → the toast is still on screen, focus is
+    still on its ✕ (Enter dismisses it), and it does not vanish on the next tick; Tab away
+    afterwards → it goes within ~1 s. Repeat with focus on a conflict toast's **Review** action
+    button — focus must land back on that button, not on the ✕.
 32. **Stale-session guard after a restart (t-c7a2):** the pure decision (`isStaleSession`) is unit
     tested in `test/context.test.js`, but the controller wiring — the three remember paths and the
     `continue` in `pollContextOnce` — imports `vscode` and cannot reach the Docker suite, so it is
