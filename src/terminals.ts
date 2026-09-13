@@ -46,7 +46,13 @@ export class TerminalManager {
   constructor(
     private getCwd: () => vscode.Uri,
     private getLoopText: () => string,
-    private getConfig: () => { permissionMode: string; interval: string; models: ResolvedModel[] },
+    private getConfig: () => {
+      permissionMode: string;
+      interval: string;
+      models: ResolvedModel[];
+      delegateWork: boolean;
+      delegateReview: boolean;
+    },
     // Opt-in debug trace (t-2901) — routed through the store's single sink; defaults to a no-op so
     // the manager stays decoupled from the store and testable.
     private log: (level: 'info' | 'verbose', event: string, detail?: string) => void = () => {}
@@ -149,7 +155,15 @@ export class TerminalManager {
     // `resolved.effort` and `resolved.groomConcurrency` are already validated (resolveModels
     // defaults invalid/absent to 'high' / 3). Both are frozen at spawn: a settings change reaches
     // this slot only on its next start/restart (♻), exactly like the interval.
-    const cmd = buildLoopCommand(this.getLoopText(), model, cfg.interval, resolved?.effort, resolved?.groomConcurrency);
+    const cmd = buildLoopCommand(
+      this.getLoopText(),
+      model,
+      cfg.interval,
+      resolved?.effort,
+      resolved?.groomConcurrency,
+      cfg.delegateWork,
+      cfg.delegateReview
+    );
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show(preserveFocus);
     this.revealedModel = model;
@@ -159,7 +173,8 @@ export class TerminalManager {
     this.log(
       'info',
       'loop-spawn',
-      `${model} -> --model ${modelString} (effort ${resolved?.effort ?? 'high'}, groom cap ${sanitizeGroomConcurrency(resolved?.groomConcurrency)})`
+      `${model} -> --model ${modelString} (effort ${resolved?.effort ?? 'high'}, groom cap ${sanitizeGroomConcurrency(resolved?.groomConcurrency)}, ` +
+        `delegate ${cfg.delegateWork === true ? 'on' : 'off'}, review ${cfg.delegateReview === false ? 'off' : 'on'})`
     );
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the

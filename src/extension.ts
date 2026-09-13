@@ -27,6 +27,9 @@ export function activate(context: vscode.ExtensionContext): void {
         permissionMode: c.get<string>('permissionMode', 'auto'),
         interval: c.get<string>('loopInterval', '1m'),
         models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
+        // t-e3c3: both flags are frozen into the bootstrap prompt at spawn (like the interval).
+        delegateWork: c.get<boolean>('delegateWork', false),
+        delegateReview: c.get<boolean>('delegateWork.review', true),
       };
     },
     (level, event, detail) => store.debugLog(level, event, detail)

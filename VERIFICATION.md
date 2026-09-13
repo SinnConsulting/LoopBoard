@@ -467,3 +467,18 @@ and likewise cannot be verified headless.
     click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
     section shows the new text); nothing typed is lost. Separately, type an answer draft without
     saving, fold the questions panel and unfold it → the draft is still there.
+
+35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
+    clause are unit-tested; what only F5 can show is the real terminal line. (Item 34 is claimed by
+    t-bbad's open PR.) With both `loopBoard.delegateWork` settings at their defaults, start a loop
+    → the pasted `/loop` line reads `… with a subagent effort ceiling of <effort> and a grooming
+    concurrency cap of <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text.
+    Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
+    `Delegate work to subagents.`; additionally set `loopBoard.delegateWork.review` to `false` and
+    ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
+    WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
+    `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
+    review on|off`. Run **LoopBoard: Sync Templates** on a workspace whose `LOOP.md` predates this
+    change → its Automation fence gains the `DELEGATED-WORK MODE` clause and the custom-rules
+    section is untouched.
+

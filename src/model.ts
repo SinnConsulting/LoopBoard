@@ -38,7 +38,8 @@ export function isValidModelString(s: string): boolean {
   return MODEL_STRING_RE.test(s);
 }
 
-// Grooming-subagent reasoning-effort ceiling (Rule 14): the worker picks low..this ceiling by
+// Subagent reasoning-effort ceiling — grooming (Rule 14) and, with `loopBoard.delegateWork` on,
+// the implementer/review subagents (t-e3c3): the worker picks low..this ceiling by
 // story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly
 // asks for deep reasoning. Order matters (Faster -> Smarter).
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -53,7 +54,7 @@ export function isValidEffort(s: string): s is Effort {
 export interface ModelConfigObject {
   enabled?: boolean; // default true; false hides the slot from the Loops overview + board selects
   model?: string; // custom `--model` string; empty/invalid => the built-in default (REPLACE when set)
-  effort?: string; // grooming effort ceiling for this slot; invalid/absent => 'high'
+  effort?: string; // subagent effort ceiling for this slot; invalid/absent => 'high'
   groomConcurrency?: number; // max grooming subagents per pass; invalid/absent => 3
 }
 export type ModelConfigEntry = string | ModelConfigObject;
@@ -126,7 +127,7 @@ export interface ResolvedModel {
   label: string;
   model: string; // validated `--model` string to spawn
   enabled: boolean;
-  effort: Effort; // validated grooming effort ceiling (Rule 14); defaults to 'high'
+  effort: Effort; // validated subagent effort ceiling (Rule 14 / t-e3c3); defaults to 'high'
   groomConcurrency: number; // validated cap on grooming subagents per pass; defaults to 3
 }
 
