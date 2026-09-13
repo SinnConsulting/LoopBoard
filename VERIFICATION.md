@@ -495,3 +495,20 @@ and likewise cannot be verified headless.
     **Unchanged surfaces:** New Story composer — pick a groomer and a worker model, Save Draft →
     the new draft carries both. Sidebar — right-click ▶/♻/■, click presets and toggle
     Repeat/Force → each reflects immediately.
+
+36. **Groomer select on New cards + labelled selects row (t-eb64):** webview-only (`media/board.js`),
+    guarded by a source-text pin in `test/board-patch-echo.test.js`; this checklist is the acceptance
+    path. (Item 35 is claimed by t-e3c3's PR.) On a groomed (non-draft) **New** card: directly
+    below the chip row there is a labelled row `Groom with [select] Work with [select]`, the same
+    idiom as a draft card, and the head row holds only the collapse chevron, type icon, title,
+    Promote and delete — no select. Pick another groomer → `TODO.md` shows `- groomer: <model>` on
+    that entry, only its `rev:` bumps, and the card repaints on pick (no click-out). Pick `On
+    hold` → `groomer: none` and the `on hold — not groomed` chip appears; pick a real groomer →
+    it clears. Pick `default (<model>)` in either select → that entry's `groomer:` / `model:` line
+    disappears with no conflict toast. On a **Backlog**, **In Progress**, **Feedback** and
+    **Review** card the row carries ONLY `Work with` + its select, and changing it writes `model:`
+    exactly as before. Collapse a card of each phase → the whole row is gone and the card grows
+    no rows (a collapsed card shows no model select at all — intended); expand → the row returns
+    with the current values selected and focus stays on a select after a pick. Draft cards and the
+    New Story composer are unchanged.
+
