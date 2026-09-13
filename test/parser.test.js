@@ -106,7 +106,10 @@ test('orphan suggestion (no preceding question) is dropped, matching the answer 
 test('note: sub-bullets parse (repeatable) and round-trip', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const e = doc.entries.find((x) => x.id === 't-bb01');
-  assert.deepEqual(e.notes, ['Rebase on main before opening the PR.', 'Add a metric for retry count.']);
+  assert.deepEqual(e.notes, [
+    'Rebase on main before opening the PR.',
+    'Add a metric for retry count — see [the retry dashboard](https://example.com/metrics/retries).',
+  ]);
   assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
 });
 

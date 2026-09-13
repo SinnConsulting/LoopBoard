@@ -13,11 +13,11 @@ paths:
   change, or run a compression pass (below) before landing.
 * **The line budget is the backstop.** `test/claude-md-budget.test.js` asserts a hard maximum line
   count for this file and runs under `make test` / `make check`, which must pass before any
-  commit. It binds editors that never read this rule — CI cannot: `.github/workflows/build.yml`
-  carries `paths-ignore: ['**/*.md']`, so doc-only pushes produce no build, and a delegated
-  implementer subagent cannot invoke skills unless one is explicitly handed to it. Raising the
-  budget requires a deliberate edit to that test and is a decision, not a formality: compress
-  first, and only then raise it.
+  commit. It binds editors that never read this rule — CI cannot: `CLAUDE.md` is outside
+  `.github/workflows/build.yml`'s `paths:` allowlist, so such a push produces no build, and a
+  delegated implementer subagent cannot invoke skills unless one is explicitly handed to it.
+  Raising the budget requires a deliberate edit to that test and is a decision, not a formality:
+  compress first, and only then raise it.
 * **Compression route.** If the task is to shrink, tighten, or reduce the token count of this
   file, use the `claude-md-compress` skill rather than compressing ad hoc — it encodes the
   untouchable-elements list and the self-check that gates every write. The sibling

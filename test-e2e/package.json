@@ -1,0 +1,8 @@
+{
+  "name": "loopboard-e2e",
+  "private": true,
+  "description": "Playwright webview suite. Deliberately SEPARATE from the root package.json, whose devDependencies must stay exactly typescript + @types/vscode (CLAUDE.md non-negotiable #2). Installed only inside test-e2e/Dockerfile.",
+  "devDependencies": {
+    "@playwright/test": "1.55.1"
+  }
+}

@@ -151,9 +151,9 @@ test('every asset the extension references at runtime survives .vscodeignore', (
 });
 
 test('every path .vscodeignore re-includes still exists in the repo', () => {
-  // Renaming or deleting one of these is a change the script cannot catch until packaging, and for
-  // the two templates it is a .md-only change, which build.yml skips via paths-ignore — so the
-  // first failure would land in release.yml's vsix job, after the release job already tagged.
+  // Renaming or deleting one of these is a change the script cannot catch until packaging, so
+  // without this test the first failure would land in release.yml's vsix job, after the release
+  // job already tagged.
   for (const file of ignoreRequiredPaths()) {
     assert.ok(
       fs.existsSync(path.join(root, file)),
@@ -261,8 +261,8 @@ test('release.yml never triggers on repo-housekeeping paths', () => {
 });
 
 test('media/template-*.md still trigger a release', () => {
-  // The regression this whole gate exists to avoid: copying build.yml's paths-ignore ['**/*.md']
-  // would have silently stopped shipping template changes, which every workspace re-syncs from.
+  // The regression this whole gate exists to avoid: a blanket `**/*.md` exclusion would have
+  // silently stopped shipping template changes, which every workspace re-syncs from.
   const matchers = releasePaths().filter((p) => !p.startsWith('!')).map(globToRegExp);
   for (const file of ['media/template-loop.md', 'media/template-todo.md', 'README.md']) {
     assert.ok(matchers.some((re) => re.test(file)), file + ' must be able to trigger a release.');
@@ -440,5 +440,5 @@ test('no workflow action is left on a Node-20 runtime', () => {
       );
     }
   }
-  assert.equal(seen, 8, 'expected all 8 uses: lines across the three workflows to be checked.');
+  assert.equal(seen, 10, 'expected all 10 uses: lines across the three workflows to be checked.');
 });
