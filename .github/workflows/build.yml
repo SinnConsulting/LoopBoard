@@ -10,9 +10,20 @@ on:
   push:
     branches:
       - 'task/**'
-    # Only build on real code changes — skip pushes that touch documentation only.
-    paths-ignore:
-      - '**/*.md'
+    # Allowlist, not paths-ignore: markdown under test/fixtures/ and media/ IS input to the
+    # suites, so a `**/*.md` ignore silently skipped CI for fixture and template changes. Pure
+    # docs (README, VERIFICATION, decisions/, CLAUDE.md, .claude/) still produce no build.
+    paths:
+      - 'src/**'
+      - 'media/**'
+      - 'test/**'
+      - 'test-e2e/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - '.vscodeignore'
+      - '.github/workflows/build.yml'
 
 # Only keep the newest build per branch; a rapid re-push cancels the superseded run so artifacts
 # do not pile up.
@@ -98,3 +109,48 @@ jobs:
           Download from the run's Artifacts, unzip, then install: \`code --install-extension $VSIX\` (or VS Code → Extensions → ⋯ → *Install from VSIX…*).
           EOF
           )"
+
+  # Webview suite (media/*.js in a real browser). Runs in the SAME pinned Playwright image
+  # test-e2e/Dockerfile builds from, so the committed screenshot baselines — recorded against that
+  # image's browser and fonts — are the right ones to compare against. Kept as its own job rather
+  # than a step in `build`: it needs a different container, and a webview regression should not
+  # hide the .vsix artifact the build job publishes.
+  e2e:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.55.1-noble
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # test-e2e/fixtures.js builds its board payloads out of out-test/ (the `types: []` build —
+      # out/ is not needed here, since those modules import `vscode`). This is what `make e2e`
+      # inherits from its `test` prerequisite.
+      - name: Install root dev dependencies
+        run: npm ci
+
+      - name: Build out-test/
+        run: npx tsc -p ./tsconfig.test.json
+
+      # Into the checkout rather than the image: unlike the Docker path there is no prebuilt
+      # /e2e/node_modules here. The lockfile pins @playwright/test to the image's own version.
+      - name: Install the Playwright test runner
+        working-directory: test-e2e
+        run: npm ci
+
+      # Same flags as `make e2e`: playwright.config.js already carries --no-sandbox and
+      # --disable-dev-shm-usage (the container equivalent of the Makefile's --ipc=host), the
+      # harness server, the worker count and the snapshot path template.
+      - name: Webview suite
+        working-directory: test-e2e
+        run: npx playwright test
+
+      - name: Upload failure traces and screenshot diffs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-test-results
+          path: test-e2e/test-results
+          if-no-files-found: ignore

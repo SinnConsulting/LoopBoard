@@ -1,13 +1,24 @@
 # Verification
 
-All toolchain commands ran inside Docker (`node:22`) via `make`; nothing was installed on the
-host. Latest run (v2.0.0 storage split):
+All toolchain commands ran inside Docker via `make`; nothing was installed on the host. Latest
+run (host + webview test layers):
 
 ```
 make build     -> tsc -> out/ (clean, no errors)
-make test      -> 47 tests, 47 pass, 0 fail
-make package   -> loopboard-todo-2.0.0.vsix (32 files, ~125 KB; templates ship, REFACTORING.md excluded)
+make test      -> 262 tests, 262 pass, 0 fail      (node:22)
+make e2e       -> 25 tests, 25 pass, 0 fail        (mcr.microsoft.com/playwright:v1.55.1-noble)
+make check     -> build + test + e2e, all green
+make package   -> loopboard-todo-3.6.0.vsix (40 files, ~219 KB; test-e2e/ does not ship)
 ```
+
+There are now THREE automated layers and one manual one:
+
+| Layer | Runs | Covers |
+| --- | --- | --- |
+| Pure modules | `make test` (node:22) | `parser`/`writer`/`taskfile`/`model`/`merge`/`gates`/`view`/`loop`/`sync`/`schedule`/`nudge`/`context` |
+| Host | `make test` (node:22) | `store`/`controller`/`panel`/`webview` — real `out/` code against a fake `vscode` |
+| Webview | `make e2e` (Playwright image) | `media/board.*` + `media/sidebar.*` in a real browser |
+| Manual F5 | a human | activation, real terminals, real VS Code chrome (see below) |
 
 ## Automated (executed here, in Docker)
 
@@ -83,11 +94,103 @@ questions, an HTML-comment template) and `index-unknown.md`:
 - `delayUntilFire` counts down and floors at 0; `describeSchedule` renders the countdown, `repeat`,
   `force` and the "waiting for task" state.
 
+### Host layer — `test/host.test.js` + `test/fake-vscode.js`
+
+The vscode-importing modules (`store.ts`, `controller.ts`, `panel.ts`, `webview.ts`) are compiled by
+the MAIN tsconfig into `out/` and run headless: `test/fake-vscode.js` hooks
+`Module._resolveFilename` so `require('vscode')` resolves to a hand-written stand-in (real
+`node:fs` behind `workspace.fs`; every namespace a `Proxy` that throws on an un-stubbed property).
+Each test mounts a temp `.loopboard/` COPIED from `test/fixtures` and drives it with the exact
+messages `media/board.js` posts. 19 cases:
+
+- **CSP/HTML (`renderHtml`):** all four placeholders substituted, and the `<script>` tag's nonce is
+  the same one the CSP's `script-src 'nonce-…'` carries.
+- **`ready`:** posts a board to BOTH the panel and the sidebar, plus the sidebar badge; every
+  fixture entry lands in the phase bucket its `phase:` names.
+- **Promote (gate 1):** `phase: backlog` in the index, `promoted:` + worklog in the task file, the
+  whole TODO.md still a serializer fixpoint, the refreshed board moves the card, one success toast,
+  and NO native modal for a question-free story. A story WITH questions pops the modal and a
+  cancel writes nothing.
+- **Accept (gate 2):** DONE.md is created on the first acceptance (absent before), gets a slim
+  entry with `completed:`, the index entry is gone, the task file stays and gains `completed:`.
+- **Demote (gate 3):** back to `phase: new`; a second demote is refused as a conflict (disk wins).
+- **Field patch:** a `model` patch rewrites ONE line (+`rev:`) of ONE file — every other entry is
+  byte-identical, no task file is created, DONE.md is untouched; `''` (the webview's
+  `default (opus)`) drops the line. A `description` patch targets only `tasks/<id>.md` and bumps
+  the index `rev:`.
+- **Conflict:** a stale `base` leaves TODO.md byte-identical and posts the amber
+  "Task changed on disk" toast carrying the task id; the refreshed board still shows the disk value.
+  A patch for an unknown id reports `notfound`.
+- **Unparseable lines:** all four non-canonical sub-bullets of `index-unknown.md` survive a title
+  patch verbatim, the file stays canonical, and the card keeps its 4-line unparsed flag.
+- **Debug sink:** `off` never creates `.loopboard/debug.log`; `info` writes tab-separated
+  ISO-timestamped lifecycle lines and drops `verbose` ones; `verbose` adds the per-patch and
+  `dispatch` detail.
+- **Extras:** `createDraft` (whitespace collapse, `groomer: none`, eager `tasks/<id>.md` scaffold),
+  delete behind its native modal (entry + task file both gone), `openLink` routing
+  (`.loopboard/…` → `vscode.open`, a URL → `env.openExternal`), loop lifecycle messages reaching
+  the terminal manager only for known model ids, `armRestart` minute validation, and the
+  `todoMissing` → `createFiles` init path.
+
+### Webview layer — `test-e2e/` (Playwright, `make e2e`)
+
+`media/board.{html,css,js}` and `media/sidebar.{html,css,js}` run in a real Chromium inside the
+pinned `test-e2e/Dockerfile` image. The harness (`test-e2e/server.js`) mirrors `src/webview.ts`'s
+placeholder substitution and CSP — including the nonce, so a policy violation fails here — and
+injects an `acquireVsCodeApi` shim recording into `window.__sent` plus a stylesheet supplying the
+`--vscode-*` variables VS Code would. Board payloads come from `test-e2e/fixtures.js`, which runs
+`test/fixtures/*.md` through the shipped parser and `view.ts`'s `toWebviewBoard`, so the shapes
+cannot drift from what `panel.ts` posts. 25 cases:
+
+- **Board DOM:** cards land in the tab their phase names and the tab counts match the payload; a
+  DRAFT renders as a draft card with no Promote button; an unparsed sub-bullet is flagged and its
+  verbatim text shown; a `note:` renders as a note card.
+- **Board messages:** the promote tick posts `{gate, promote}` EXACTLY once (the pointerdown/click
+  double-fire guard) and fades the card, the accept tick `{gate, accept}`, Demote `{gate, demote}`,
+  the × `{gate, delete}`; promoting a story that still carries a question (fixture
+  `index-questions.md`) posts the SAME `{gate, promote}` but does NOT add `acting` — the other
+  branch of `commitPromote`, where the host may pop a confirm modal first (t-6936); the model select
+  maps `default (opus)` → `''` with the on-disk value as `base`; a `[label](https://…)` inside a
+  `note:` renders as an anchor whose click posts `openLink` with the URL and navigates nowhere; the
+  composer posts `createDraft` with the chosen groomer (`none`) and model; the init empty state
+  posts `createFiles` and nothing else.
+- **Concurrency:** an incoming board arriving while a field is focused is parked in `pendingBoard`
+  (the card keeps its pre-refresh text) and flushed on focusout.
+- **Sidebar:** left-clicking the three row buttons posts spawn/recycle/stop; an inapplicable button
+  is `aria-disabled` + `.off` (NOT `disabled`) and its left click is inert; right-click opens the
+  scheduling popover for THAT action, with presets, `Repeat`, and `Force` only on restart/stop;
+  Schedule posts `armRestart` with the custom minutes as a string, a bad custom value shows the
+  in-popover error and arms nothing, Cancel arms nothing; a greyed-out stop button still schedules;
+  a running loop's row body posts `revealTerminal` and a stopped one does not; an attention row
+  posts `reveal` with its own query.
+- **Screenshots** (`test-e2e/__screenshots__/`, 4 baselines): init empty state, full board light,
+  full board dark, sidebar with a running loop (context bar + armed schedule). Every spec also
+  asserts the `codicon` `FontFace` reached `loaded`, so fallback glyphs can never be baked in.
+
 ## Manual — Extension Development Host (F5)
 
 **PENDING — not executed in this environment** (headless agent session, no interactive VS Code
 GUI). Run these in a desktop VS Code by opening a folder and pressing **F5**; a headless session
 cannot verify them, so they are not claimed done.
+
+**What is NOT covered by any automated layer and therefore still needs F5:**
+
+- **Activation** — `workspaceContains:.loopboard/TODO.md`, `activate()`/`deactivate()`, command
+  registration, the `SidebarProvider` resolve path, the activity-bar badge and the panel tab icon.
+- **Terminals** — every `TerminalManager` behaviour: spawning `claude`, the seeded bootstrap prompt
+  and its delayed Enter, `/clear`, recycle, reveal/hide toggling, `[1m]` model overrides. Terminal
+  output can never be read (CLAUDE.md), so this is unautomatable in principle.
+- **Real-host asset loading** — `asWebviewUri` + the real `cspSource`, `localResourceRoots`, and
+  the codicon font under VS Code's own CSP. The e2e harness reproduces the POLICY SHAPE, not the
+  host's URI scheme.
+- **Real VS Code chrome** — native modals, `window.show*Message` rendering, the file picker,
+  `vscode.open`/`openExternal` actually opening something, live theme switching and the real
+  `--vscode-*` palette, and the file-system watcher's debounce against a live loop writing.
+- **Steps below that are now PARTLY automated** (the automated half is listed above; run the F5
+  step for the host-integration half only): 1 (init), 2/3 (draft + first detail edit), 4
+  (concurrency — the deferral half is in `board.spec.js`, the disk-wins toast in `host.test.js`),
+  5/6 (promote + accept gates), 21 (`owner:` removal), 22 (promote guard modals), and 24's
+  popover mechanics.
 
 New v2 checklist (from REFACTORING.md Phase 8):
 

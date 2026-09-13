@@ -275,8 +275,9 @@ commit; pressing **F5** to launch an Extension Development Host against this rep
 ```
 make install    # npm install (typescript + @types/vscode only) in node:22
 make build      # tsc -> out/
-make test       # compile pure modules + run node --test round-trip / merge suites
-make check      # build + test — the gate that must pass before committing
+make test       # node --test: pure-module suites + the host suite (store/controller on a fake vscode)
+make e2e        # Playwright: media/*.js in a real browser (own image; UPDATE=1 refreshes screenshots)
+make check      # build + test + e2e — the gate that must pass before committing
 make package    # build a .vsix via @vscode/vsce
 ```
 

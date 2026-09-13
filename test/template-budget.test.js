@@ -6,10 +6,10 @@
 // something stops it.
 //
 // This budget is that stop. It is the ONLY enforcement that binds an editor who never reads
-// .claude/rules/template-loop-compress.md: build.yml carries paths-ignore ['**/*.md'] so a
-// doc-only push produces no CI at all, and a delegated implementer subagent cannot invoke the
-// template-loop-compress skill unless one is explicitly handed to it. `make check` is mandatory
-// before any commit, so this test is the backstop no agent can skip.
+// .claude/rules/template-loop-compress.md, and the one an implementer cannot route around: a
+// delegated subagent cannot invoke the template-loop-compress skill unless one is explicitly
+// handed to it. `make check` is mandatory before any commit, so this test is the backstop no
+// agent can skip; build.yml's `paths:` allowlist covers media/**, so CI runs it too.
 //
 // The number: 228 lines = the 2026-08-28 compressed baseline (207 lines, from the
 // template-loop-compress skill's gated pass under t-1cc8) plus ~10% headroom, so an ordinary
