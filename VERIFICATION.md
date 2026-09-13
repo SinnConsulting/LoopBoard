@@ -467,3 +467,31 @@ and likewise cannot be verified headless.
     click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
     section shows the new text); nothing typed is lost. Separately, type an answer draft without
     saving, fold the questions panel and unfold it → the draft is still there.
+
+34. **Card selects commit on pick (t-bbad):** the echo + repaint is webview-only
+    (`media/board.js`), so alongside the source-text guard `test/board-patch-echo.test.js` this
+    checklist is the acceptance path. On a `groomer: none` draft, pick a real groomer → the
+    `on hold — not groomed` pill and the "on hold — pick a groomer…" line disappear in the same
+    frame, before any outside click, and `TODO.md` shows the new `groomer:` with a `rev:` bump.
+    Without clicking out, pick a THIRD value → it lands on disk with no "Task changed on disk"
+    toast. Without clicking out, pick the ORIGINAL value back → disk returns to it. Without
+    clicking out, collapse another card (forcing a full `render()`) → the select still shows the
+    picked value and still has focus. Repeat the same four steps on the draft **Work with** select
+    and on a full card's head **Model** select.
+
+    **Keyboard:** focus a select and arrow through the options without opening it → every step
+    lands and focus never leaves the select.
+
+    **Open dropdown survives a loop write:** open a dropdown and leave it open while a loop writes
+    `TODO.md` → the dropdown is NOT torn down.
+
+    **Conflict snaps back without a click-out:** edit `model:` for that task in `TODO.md` by hand,
+    then pick a different model on the card without clicking out → the "Task changed on disk"
+    toast appears AND the card snaps back to the on-disk value immediately.
+
+    **Title editors:** edit a card title and Save, and edit a draft's text and Save → the new text
+    paints immediately, with no flash of the old title.
+
+    **Unchanged surfaces:** New Story composer — pick a groomer and a worker model, Save Draft →
+    the new draft carries both. Sidebar — right-click ▶/♻/■, click presets and toggle
+    Repeat/Force → each reflects immediately.
