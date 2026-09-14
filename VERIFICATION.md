@@ -495,3 +495,47 @@ and likewise cannot be verified headless.
     **Unchanged surfaces:** New Story composer — pick a groomer and a worker model, Save Draft →
     the new draft carries both. Sidebar — right-click ▶/♻/■, click presets and toggle
     Repeat/Force → each reflects immediately.
+
+35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
+    clause are unit-tested; what only F5 can show is the real terminal line. (Item 34 is claimed by
+    t-bbad's open PR.) With both `loopBoard.delegateWork` settings at their defaults, start a loop
+    → the pasted `/loop` line reads `… with a subagent effort ceiling of <effort> and a grooming
+    concurrency cap of <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text.
+    Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
+    `Delegate work to subagents.`; additionally set `loopBoard.delegateWork.review` to `false` and
+    ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
+    WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
+    `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
+    review on|off`. Run **LoopBoard: Sync Templates** on a workspace whose `LOOP.md` predates this
+    change → its Automation fence gains the `DELEGATED-WORK MODE` clause and the custom-rules
+    section is untouched.
+
+
+36. **Unique per-spawn session `--name` (t-x1t1):** the suffix generator, the prefix match and the
+    spawn line are unit-tested (`test/context.test.js`); what only F5 can show is a real terminal
+    against the global `~/.claude/sessions/` registry. **Two windows:** open a second VSCode window
+    on a different workspace that also runs LoopBoard, start the SAME slot's loop in both, then
+    inspect both `~/.claude/sessions/<pid>.json` — each `name` reads `loopboard-<slot>-<4 hex>`,
+    the two suffixes differ, and BOTH carry `nameSource: "user"` (never `"collision"`, and never a
+    `<word>-<word>` tail). Both sidebar rows show their context bar; before this change the window
+    that booted second had no bar for its whole session. **Recycle:** press ♻ on a running loop,
+    wait past the boot delay → the new process's session file again has `nameSource: "user"` with a
+    DIFFERENT suffix from the one it just replaced, and the bar reappears on the new session rather
+    than staying dark. **Rescue path:** a session that did collide (an older build, or one started
+    before this fix) is still resolved — its `loopboard-<slot>-<word>-<word>` name matches the same
+    prefix, so its bar renders.
+
+37. **Groomer select on New cards + labelled selects row (t-eb64):** webview-only (`media/board.js`),
+    guarded by a source-text pin in `test/board-patch-echo.test.js`; this checklist is the acceptance
+    path. On a groomed (non-draft) **New** card: directly below the chip row there is a labelled
+    row `Groom with [select] Work with [select]`, the same idiom as a draft card, and the head row
+    holds only the collapse chevron, type icon, title, Promote and delete — no select. Pick another
+    groomer → `TODO.md` shows `- groomer: <model>` on that entry, only its `rev:` bumps, and the
+    card repaints on pick (no click-out). Pick `On hold` → `groomer: none` and the `on hold — not
+    groomed` chip appears; pick a real groomer → it clears. Pick `default (<model>)` in either
+    select → that entry's `groomer:` / `model:` line disappears with no conflict toast. On a
+    **Backlog**, **In Progress**, **Feedback** and **Review** card the row carries ONLY `Work with`
+    + its select, and changing it writes `model:` exactly as before. Collapse a card of each phase
+    → the whole row is gone and the card grows no rows (a collapsed card shows no model select at
+    all — intended); expand → the row returns with the current values selected and focus stays on a
+    select after a pick. Draft cards and the New Story composer are unchanged.

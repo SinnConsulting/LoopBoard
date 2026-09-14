@@ -57,3 +57,18 @@ test('the same-field conflict toast is tagged on both sides', () => {
   assert.ok(controller.some((l) => l.includes(tag)), 'src/controller.ts must post the kind');
   assert.ok(board.some((l) => l.includes(tag)), 'media/board.js must react to the kind');
 });
+
+test('the draft card and the New card both wire Groom with / Work with through commitSelect (t-eb64)', () => {
+  // t-eb64 moved the full card's worker select out of the head row into a labelled row and added a
+  // groomer select on New cards; both must stay on the echoing path t-bbad settled, and the head
+  // row must not grow a select back. Source-text pins, like the tests above.
+  const groom = board.filter((l) => l.includes("commitSelect(t, 'groomer'"));
+  const work = board.filter((l) => l.includes("commitSelect(t, 'model'"));
+  assert.equal(groom.length, 2, 'draft card + New card each commit the groomer select via commitSelect');
+  assert.equal(work.length, 2, 'draft card + full card each commit the worker select via commitSelect');
+  assert.deepEqual(board.filter((l) => l.includes('head.append(sel)')), [], 'no select is appended to the full card head row');
+  assert.ok(board.some((l) => l.includes("'aria-label': 'Groom with', 'data-field': 'groomer'")), 'groomer select keeps its accessible name + data-field');
+  assert.ok(board.some((l) => l.includes("'aria-label': 'Work with', 'data-field': 'model'")), 'worker select keeps its accessible name + data-field');
+  assert.deepEqual(board.filter((l) => l.includes("'aria-label': 'Model'")), [], 'the unlabelled "Model" select is gone');
+});
+

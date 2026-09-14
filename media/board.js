@@ -1343,18 +1343,38 @@
     }
     head.append(titleWrap);
 
-    const modelDefOpt = workerDefaultOpt();
-    const modelVal = t.model || modelDefOpt;
-    const sel = h('select', { class: 'model-select', 'aria-label': 'Model', 'data-field': 'model' });
-    for (const opt of modelOptions(modelDefOpt)) {
+    // Labelled selects row (t-eb64): lives BELOW the chips, hidden when collapsed — mirroring the
+    // draft card, so the head row carries no select any more. `Work with` (the `model:` field,
+    // Rule 15) on every phase; New cards additionally get `Groom with` (Rule 14) ahead of it, the
+    // only phase where grooming is still routed. Store represents "no model" as ''; map the display
+    // "default (<model>)" value to '' so base matches disk and a re-picked default never trips a
+    // false same-field conflict. Both commit through commitSelect (t-bbad: echo + repaint on pick).
+    const workDefOpt = workerDefaultOpt();
+    const workVal = t.model || workDefOpt;
+    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with', 'data-field': 'model' });
+    for (const opt of modelOptions(workDefOpt)) {
       const o = h('option', { value: opt }, opt);
-      if (opt === modelVal) o.selected = true;
-      sel.append(o);
+      if (opt === workVal) o.selected = true;
+      workSel.append(o);
     }
-    // Store represents "no model" as ''; map the display "default (<model>)" value to '' so
-    // base matches the on-disk value and we don't trip a false conflict.
-    sel.addEventListener('change', (e) => commitSelect(t, 'model', normModelValue(e.target.value, modelDefOpt)));
-    head.append(sel);
+    workSel.addEventListener('change', (e) => commitSelect(t, 'model', normModelValue(e.target.value, workDefOpt)));
+    let groomSel = null;
+    if (t.phase === 'new') {
+      const groomDefOpt = groomerDefaultOpt();
+      const groomVal = groomerSelectValue(t.groomer, groomDefOpt);
+      groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with', 'data-field': 'groomer' });
+      for (const opt of groomerOptions(groomDefOpt)) {
+        const o = h('option', { value: opt }, opt);
+        if (opt === groomVal) o.selected = true;
+        groomSel.append(o);
+      }
+      groomSel.addEventListener('change', (e) => commitSelect(t, 'groomer', normGroomerValue(e.target.value, groomDefOpt)));
+    }
+    const selectsRow = h('div', { class: 'card-selects', style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
+      groomSel ? h('span', { class: 'muted-11' }, 'Groom with') : null,
+      groomSel,
+      h('span', { class: 'muted-11' }, 'Work with'),
+      workSel);
     if (variant === 'new') {
       // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the
       // button down via render()'s `root.textContent = ''` — waiting for `click` risks it being
@@ -1439,6 +1459,9 @@
     if (u.acting) card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), 'working…'));
 
     if (!isCollapsedCard) {
+      // selects row first, directly under the chips (t-eb64)
+      card.append(selectsRow);
+
       // No detail file: since t-6ab4, draft creation eager-scaffolds tasks/<id>.md, so this only
       // fires for an entry that predates that change or had its task file deleted out-of-band.
       if (!t.hasDetailFile) {
