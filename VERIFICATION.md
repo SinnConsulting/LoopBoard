@@ -482,3 +482,17 @@ and likewise cannot be verified headless.
     change → its Automation fence gains the `DELEGATED-WORK MODE` clause and the custom-rules
     section is untouched.
 
+
+36. **Unique per-spawn session `--name` (t-x1t1):** the suffix generator, the prefix match and the
+    spawn line are unit-tested (`test/context.test.js`); what only F5 can show is a real terminal
+    against the global `~/.claude/sessions/` registry. **Two windows:** open a second VSCode window
+    on a different workspace that also runs LoopBoard, start the SAME slot's loop in both, then
+    inspect both `~/.claude/sessions/<pid>.json` — each `name` reads `loopboard-<slot>-<4 hex>`,
+    the two suffixes differ, and BOTH carry `nameSource: "user"` (never `"collision"`, and never a
+    `<word>-<word>` tail). Both sidebar rows show their context bar; before this change the window
+    that booted second had no bar for its whole session. **Recycle:** press ♻ on a running loop,
+    wait past the boot delay → the new process's session file again has `nameSource: "user"` with a
+    DIFFERENT suffix from the one it just replaced, and the bar reappears on the new session rather
+    than staying dark. **Rescue path:** a session that did collide (an older build, or one started
+    before this fix) is still resolved — its `loopboard-<slot>-<word>-<word>` name matches the same
+    prefix, so its bar renders.
