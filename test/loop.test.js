@@ -29,10 +29,11 @@ function automationFence(text) {
 
 test('buildLoopCommand: bootstrap prompt names model + interval + effort ceiling, points at .loopboard/LOOP.md', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 'xhigh');
+  assert.ok(!cmd.includes('Delegate work'), 'delegation off by default: no activation phrase');
   assert.ok(cmd, 'a loop command was built from the shipped LOOP.md template');
   assert.match(cmd, /^\/loop 5m /, 'interval honored');
   assert.ok(cmd.includes('running as model sonnet'), 'model injected');
-  assert.ok(cmd.includes('grooming effort ceiling of xhigh'), 'effort ceiling injected');
+  assert.ok(cmd.includes('subagent effort ceiling of xhigh'), 'effort ceiling injected (caps grooming AND delegated subagents, t-e3c3)');
   assert.ok(cmd.includes('.loopboard/LOOP.md'), 'points at LOOP.md');
   assert.ok(cmd.includes('Automation section'), 'directs the worker to the Automation section');
   assert.ok(!cmd.includes("'"), 'no apostrophes (short-argv escaping constraint)');
@@ -68,12 +69,12 @@ test('template Automation block tells a finished worker to start the pass over',
 
 test('buildLoopCommand: effort defaults to high when omitted', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m');
-  assert.ok(cmd.includes('grooming effort ceiling of high'));
+  assert.ok(cmd.includes('subagent effort ceiling of high'));
 });
 
 test('buildLoopCommand: an invalid effort falls back to high rather than reaching the prompt raw', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'extreme; rm -rf /');
-  assert.ok(cmd.includes('grooming effort ceiling of high'));
+  assert.ok(cmd.includes('subagent effort ceiling of high'));
   assert.ok(!cmd.includes('extreme'));
   assert.ok(!cmd.includes('rm -rf'));
 });
@@ -193,4 +194,62 @@ test('the template states the cap behaviour without embedding a number', () => {
   assert.ok(tpl.includes('grooming concurrency cap named in your bootstrap prompt'));
   assert.ok(tpl.includes('index order'), 'names the tie-break');
   assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
+});
+
+// Delegated-work mode (t-e3c3): `loopBoard.delegateWork` / `loopBoard.delegateWork.review` ride the
+// bootstrap prompt as a short activation PHRASE only — the behaviour for each mode lives in the
+// template's Automation block, so the phrase and the clause are pinned together here.
+const DELEGATE_ON = ' Delegate work to subagents.';
+const DELEGATE_NO_REVIEW = ' Delegate work to subagents without review.';
+
+function assertBootstrapShape(cmd) {
+  assert.ok(cmd.includes('.loopboard/LOOP.md') && cmd.includes('Automation section'), 'still points at the Automation section');
+  assert.ok(cmd.includes('grooming concurrency cap of'), 'still names the grooming cap');
+  assert.ok(!cmd.includes("'"), 'apostrophe-free (single-quoted argv)');
+  assert.ok(!cmd.includes('\n'), 'single line');
+  assert.ok(cmd.length < 300, 'inside the bootstrap line budget (not raised): ' + cmd.length);
+}
+
+test('buildLoopCommand: delegateWork off (explicit, absent, or non-boolean) appends no activation phrase whatever the review flag says', () => {
+  const tpl = readMedia('template-loop.md');
+  const base = buildLoopCommand(tpl, 'sonnet', '5m', 'xhigh', 3);
+  for (const off of [false, undefined, null, 'true', 1, {}]) {
+    for (const review of [true, false, undefined]) {
+      const cmd = buildLoopCommand(tpl, 'sonnet', '5m', 'xhigh', 3, off, review);
+      assert.equal(cmd, base, `delegateWork=${JSON.stringify(off)} review=${JSON.stringify(review)} must equal the plain prompt`);
+    }
+  }
+  assert.ok(!base.includes('Delegate work'));
+  assertBootstrapShape(base);
+});
+
+test('buildLoopCommand: delegateWork on with review on (explicit or absent) ends the prompt with the plain activation phrase', () => {
+  const tpl = readMedia('template-loop.md');
+  for (const review of [true, undefined]) {
+    const cmd = buildLoopCommand(tpl, 'sonnet', '5m', 'xhigh', 3, true, review);
+    assert.ok(cmd.endsWith(DELEGATE_ON), 'activation phrase appended last');
+    assert.ok(!cmd.includes('without review'));
+    assertBootstrapShape(cmd);
+  }
+});
+
+test('buildLoopCommand: delegateWork on with review off ends the prompt with the without-review phrase', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 'xhigh', 3, true, false);
+  assert.ok(cmd.endsWith(DELEGATE_NO_REVIEW));
+  assertBootstrapShape(cmd);
+});
+
+test('template Automation block spells out the delegated-work mode the activation phrases switch on', () => {
+  const fence = automationFence(readMedia('template-loop.md'));
+  assert.ok(fence.includes('DELEGATED-WORK MODE'), 'clause present');
+  assert.ok(fence.includes('`Delegate work to subagents`'), 'keyed on the activation phrase');
+  assert.ok(fence.includes('`without review`'), 'names the review-off variant');
+  assert.match(fence, /subagent effort ceiling/, 'implementer capped by the same ceiling as grooming');
+  assert.match(fence, /no git worktree, no --no-verify/, 'implementer inherits the git contract');
+  assert.match(fence, /writes any `\.loopboard\/` file/, 'subagents never write the tracker');
+  assert.match(fence, /gh pr merge <url> --squash --delete-branch/, 'pass path merges by squash');
+  assert.match(fence, /re-delegate ONCE/, 'fail path: one re-delegation');
+  assert.match(fence, /second fail → `phase: feedback`/, 'then Feedback with the findings');
+  assert.match(fence, /never self-accept/, 'Rule 1 gate survives');
+  assert.ok(fence.indexOf('DELEGATED-WORK MODE') > fence.indexOf('reply "no changes"'), 'the clause trails the ordinary pass so the base instructions are untouched');
 });

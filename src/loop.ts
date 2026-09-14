@@ -43,7 +43,8 @@ export function buildClaudeBase(permissionMode: string, modelString: string, ses
 }
 
 // Build the tiny bootstrap prompt pasted into a loop terminal: it only names the model, the
-// interval, and the grooming effort ceiling; the worker reads the full standing instructions from
+// interval, the subagent effort ceiling, the grooming cap and (t-e3c3) the delegated-work mode; the
+// worker reads the full standing instructions from
 // `.loopboard/LOOP.md`'s ## Automation section on every pass (so editing that section retunes
 // running loops). The effort ceiling rides here (like loopInterval) because it is per-slot and
 // only used at grooming time (Rule 14) — changing it needs a terminal recycle, same as interval.
@@ -60,7 +61,12 @@ export function buildLoopCommand(
   model: Model,
   interval: string,
   effort: string = 'high',
-  groomConcurrency?: number
+  groomConcurrency?: number,
+  // t-e3c3: `loopBoard.delegateWork` / `loopBoard.delegateWork.review`. Only an activation PHRASE
+  // rides here — the behaviour for each mode lives in LOOP.md's Automation block. A non-boolean
+  // (absent/hostile config) is treated as the default: delegation off, review on.
+  delegateWork: boolean = false,
+  delegateReview: boolean = true
 ): string | undefined {
   const lines = loopText.split('\n');
   let start = -1;
@@ -83,9 +89,14 @@ export function buildLoopCommand(
 
   const groomEffort = isValidEffort(effort) ? effort : 'high';
   const groomCap = sanitizeGroomConcurrency(groomConcurrency);
+  const delegate = delegateWork === true;
+  const review = delegateReview !== false;
+  // Apostrophe-free by construction (single-quoted argv); each mode's line must stay < 300 chars.
+  const delegatePhrase = !delegate ? '' : review ? ' Delegate work to subagents.' : ' Delegate work to subagents without review.';
   return (
-    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model} with a grooming effort ceiling of ${groomEffort} ` +
+    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model} with a subagent effort ceiling of ${groomEffort} ` +
     `and a grooming concurrency cap of ${groomCap}. ` +
-    `Open .loopboard/LOOP.md, read the loop worker instructions in its Automation section, and follow them exactly for this and every pass.`
+    `Open .loopboard/LOOP.md, read the loop worker instructions in its Automation section, and follow them exactly for this and every pass.` +
+    delegatePhrase
   );
 }
