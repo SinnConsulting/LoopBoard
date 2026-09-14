@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString, sanitizeGroomConcurrency } from './model';
 import { LoopStatus } from './view';
 import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval } from './loop';
-import { sessionName } from './context';
+import { sessionSuffix, spawnSessionName } from './context';
 
 // Runtime allowlist for untrusted (webview-supplied) model ids — the logical slot ids. The webview
 // values reach the loop terminal shell line, so the host validates them rather than trusting a
@@ -167,9 +167,14 @@ export class TerminalManager {
     const terminal = vscode.window.createTerminal({ name: terminalName(model), cwd: this.getCwd() });
     terminal.show(preserveFocus);
     this.revealedModel = model;
-    // `--name loopboard-<slot>` is what lets the context indicator (t-2b89) find THIS slot's
-    // session file among all live claude processes — they all share the workspace cwd.
-    const base = buildClaudeBase(cfg.permissionMode, modelString, sessionName(model));
+    // `--name loopboard-<slot>-<suffix>` is what lets the context indicator (t-2b89) find THIS
+    // slot's session file among all live claude processes — they all share the workspace cwd. The
+    // suffix is fresh per spawn (t-x1t1) and deliberately NOT remembered: the `--name` registry is
+    // global to `~/.claude/sessions/`, so without it a second VSCode window on a different folder —
+    // or a recycle respawning before the old process let go — would take the bare name first and
+    // this session would be renamed `nameSource: "collision"` for its whole life, hiding the bar.
+    // `matchesSlot` reads the bare `loopboard-<slot>` as a prefix, so the reader needs nothing more.
+    const base = buildClaudeBase(cfg.permissionMode, modelString, spawnSessionName(model, sessionSuffix(Math.random())));
     this.log(
       'info',
       'loop-spawn',

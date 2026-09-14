@@ -20,6 +20,32 @@ export function sessionName(model: Model): string {
   return `loopboard-${model}`;
 }
 
+// The name a terminal is actually SPAWNED with (t-x1t1): `loopboard-<slot>-<suffix>`, unique per
+// spawn. The bare `sessionName(model)` above stays the PREFIX both this and `matchesSlot` build on,
+// so it must never grow a suffix of its own.
+//
+// Why a suffix at all: the `--name` registry is global to `~/.claude/sessions/`, not per workspace,
+// so a second VSCode window running LoopBoard on a different folder takes `loopboard-opus` first and
+// this window's session is registered as `<name>-<word>-<word>` with `nameSource: "collision"` for
+// its whole life — the bar then never resolves. A recycle respawning while the old process still
+// holds the name does the same. A globally unique name removes both causes at once.
+export function spawnSessionName(model: Model, suffix: string): string {
+  return `${sessionName(model)}-${suffix}`;
+}
+
+// Four hex characters from an injected random value in [0, 1) — `Math.random()` at the call site,
+// so this stays pure and unit-testable. There is no `crypto` here (zero runtime deps, no
+// `@types/node`, `types: []`), and hex reads differently from the CLI's own `<word>-<word>`
+// collision suffixes, which makes a REAL collision visible in a session file.
+//
+// The contract is the charset: the result is spliced UNQUOTED into the shell line by
+// `buildClaudeBase`, so `[0-9a-f]` only — for every input, including NaN and out-of-range values.
+export function sessionSuffix(random: number): string {
+  const clamped = Number.isFinite(random) ? Math.min(Math.max(random, 0), 1) : 0;
+  const n = Math.min(Math.floor(clamped * 0x10000), 0xffff);
+  return n.toString(16).padStart(4, '0');
+}
+
 // NOTE: the transcript's directory is deliberately NOT derived from the workspace path. Claude Code
 // encodes it as `[^a-zA-Z0-9]` -> `-`, hash-suffixes anything past 200 chars, and canonicalises
 // git-worktree roots first — reproducing that here was wrong for any path containing a `.`, `_` or
@@ -97,8 +123,24 @@ export function newestPointer(pointers: SessionPointer[]): SessionPointer | unde
 
 // A session file belongs to a slot when it names the workspace AND carries our `--name`. The cwd
 // test alone can never separate two slots — every loop terminal spawns in the workspace root.
+//
+// The name is matched as a PREFIX, not exactly. Two things put a suffix after `loopboard-<slot>`:
+//
+//  1. Our own per-spawn suffix (`spawnSessionName`, t-x1t1) — every live session has one.
+//  2. A session that DID collide before/without that fix. Claude Code (2.1.263, observed) never
+//     fails on a taken `--name`; it registers `<name>-<word>-<word>` with `nameSource: "collision"`
+//     and keeps it for the whole session. The dominant cause is CROSS-WORKSPACE — the `--name`
+//     registry is global to `~/.claude/sessions/`, so a second VSCode window running LoopBoard on a
+//     different folder collides on the same slot name; a recycle respawning 400 ms after dispose,
+//     while the old process is still shutting down, is the secondary one. An exact match lost the
+//     bar for the rest of such a session, so the prefix is kept as the rescue for them.
+//
+// Slot names never nest (`loopboard-opus` vs `loopboard-sonnet`), so the prefix is only ambiguous
+// against a `-`-separated suffix — exactly the shape of both cases above.
 export function matchesSlot(pointer: SessionPointer, workspaceCwd: string, model: Model): boolean {
-  return pointer.cwd === workspaceCwd && pointer.name === sessionName(model);
+  if (pointer.cwd !== workspaceCwd) return false;
+  const name = sessionName(model);
+  return pointer.name === name || pointer.name.startsWith(name + '-');
 }
 
 export interface ContextUsage {

@@ -9,8 +9,9 @@ const {
   sessionName, windowSizeFor, DEFAULT_WINDOW, LARGE_WINDOW,
   parseSessionPointer, matchesSlot, newestPointer, parseTranscriptUsage, contextPercent,
   describeContext, describeThreshold, sanitizeContextAction, sanitizeContextPercent,
-  shouldTrip, shouldClearTrip, isStaleSession,
+  shouldTrip, shouldClearTrip, isStaleSession, sessionSuffix, spawnSessionName,
 } = require('../out-test/context.js');
+const { buildClaudeBase } = require('../out-test/loop.js');
 
 const CWD = '/Users/x/LoopBoard';
 
@@ -71,6 +72,46 @@ test('a slot is matched by name AND cwd — cwd alone cannot separate two loops'
   assert.equal(matchesSlot(base, CWD, 'sonnet'), false, 'same cwd, different slot');
   assert.equal(matchesSlot(base, '/other', 'opus'), false, 'another workspace');
   assert.equal(matchesSlot({ ...base, name: '' }, CWD, 'opus'), false, 'a session spawned without --name');
+});
+
+test('a collision-suffixed --name (recycle respawn while the old process still holds it) still matches its slot', () => {
+  const base = { sessionId: 's', cwd: CWD, name: 'loopboard-opus-replicated-crab', updatedAt: 0 };
+  assert.equal(matchesSlot(base, CWD, 'opus'), true);
+  assert.equal(matchesSlot(base, CWD, 'sonnet'), false, 'suffix never crosses slots');
+  assert.equal(matchesSlot({ ...base, name: 'loopboard-opusx' }, CWD, 'opus'), false, 'only a `-` separated suffix counts');
+});
+
+// t-x1t1: every spawn gets its own `--name` suffix, so the name is globally unique and Claude Code
+// never renames it (`nameSource: "collision"`) — neither against a second VSCode window on another
+// folder (the `--name` registry is global) nor against a recycle's still-shutting-down process.
+test('the spawn suffix is [0-9a-f] only, for every injected random value including the broken ones', () => {
+  for (const r of [0, 0.5, 0.999999, 1, -1, 2, NaN, Infinity, -Infinity]) {
+    const s = sessionSuffix(r);
+    assert.match(s, /^[0-9a-f]{4}$/, `suffix for ${r} must be shell-safe hex, got "${s}"`);
+  }
+  for (let i = 0; i < 500; i++) assert.match(sessionSuffix(Math.random()), /^[0-9a-f]{4}$/);
+  assert.equal(sessionSuffix(0), '0000', 'the low end is padded, never shortened');
+  assert.equal(sessionSuffix(1), 'ffff', 'the top of the range stays in 4 chars');
+});
+
+test('a suffixed spawn name keeps the slot prefix, so matchesSlot accepts it and other slots do not', () => {
+  const name = spawnSessionName('opus', sessionSuffix(0.5));
+  assert.equal(name, 'loopboard-opus-8000');
+  const pointer = { sessionId: 's', cwd: CWD, name, updatedAt: 0 };
+  assert.equal(matchesSlot(pointer, CWD, 'opus'), true);
+  assert.equal(matchesSlot(pointer, CWD, 'sonnet'), false, 'a suffix never crosses slots');
+  assert.equal(matchesSlot(pointer, '/other', 'opus'), false, 'nor workspaces');
+});
+
+test('sessionName(model) stays the bare prefix — matchesSlot builds its prefix from it', () => {
+  assert.equal(sessionName('opus'), 'loopboard-opus');
+  assert.equal(sessionName('sonnet'), 'loopboard-sonnet');
+  assert.equal(sessionName('fable'), 'loopboard-fable');
+});
+
+test('buildClaudeBase renders the suffixed name onto the spawn line', () => {
+  const line = buildClaudeBase('auto', 'opus', spawnSessionName('opus', sessionSuffix(0.5)));
+  assert.equal(line, "claude --permission-mode auto --model 'opus' --name loopboard-opus-8000");
 });
 
 test('usage = the LAST main-chain assistant line, summing the three input counters', () => {
