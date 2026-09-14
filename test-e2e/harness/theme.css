@@ -1,0 +1,92 @@
+/* The --vscode-* variables VS Code injects into every webview. The list is exactly what
+ * `grep -oE '\-\-vscode-[A-Za-z0-9-]+' media/*.css media/*.js media/codicon/codicon.css` reports,
+ * so a new variable used by the CSS shows up here as an unstyled element rather than silently
+ * falling back to the in-CSS default.
+ *
+ * Values approximate Dark+ / Light+. They do not have to match VS Code byte for byte — they have
+ * to be STABLE, because the committed screenshot baselines are recorded against them.
+ *
+ * Fonts are named explicitly (rather than the system stack) so the baselines depend only on the
+ * pinned Playwright image's font set.
+ */
+
+:root {
+  --vscode-font-family: "DejaVu Sans", sans-serif;
+  --vscode-editor-font-family: "DejaVu Sans Mono", monospace;
+
+  --vscode-foreground: #3b3b3b;
+  --vscode-descriptionForeground: #646464;
+  --vscode-disabledForeground: #a1a1a1;
+  --vscode-errorForeground: #a1260d;
+  --vscode-focusBorder: #005fb8;
+  --vscode-editor-background: #ffffff;
+  --vscode-editorWidget-background: #f8f8f8;
+  --vscode-editorLineNumber-foreground: #6e7681;
+  --vscode-editorWarning-foreground: #bf8803;
+  --vscode-sideBar-background: #f8f8f8;
+  --vscode-panel-border: #e5e5e5;
+  --vscode-widget-border: #e5e5e5;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.16);
+  --vscode-badge-background: #cccccc;
+  --vscode-badge-foreground: #3b3b3b;
+  --vscode-button-background: #005fb8;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: #e5e5e5;
+  --vscode-button-secondaryForeground: #3b3b3b;
+  --vscode-input-background: #ffffff;
+  --vscode-input-border: #cecece;
+  --vscode-input-foreground: #3b3b3b;
+  --vscode-inputValidation-errorForeground: #ffffff;
+  --vscode-inputValidation-warningBackground: #f6f5d2;
+  --vscode-inputValidation-warningBorder: #b89500;
+  --vscode-inputValidation-warningForeground: #3b3b3b;
+  --vscode-list-activeSelectionBackground: #e4e6f1;
+  --vscode-list-hoverBackground: #f0f0f0;
+  --vscode-progressBar-background: #005fb8;
+  --vscode-testing-iconPassed: #16825d;
+  --vscode-textBlockQuote-background: #f2f2f2;
+  --vscode-textCodeBlock-background: #f2f2f2;
+  --vscode-textLink-foreground: #005fb8;
+  --vscode-charts-green: #16825d;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-yellow: #b89500;
+}
+
+:root[data-theme="dark"] {
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-disabledForeground: #6f6f6f;
+  --vscode-errorForeground: #f48771;
+  --vscode-focusBorder: #0078d4;
+  --vscode-editor-background: #1f1f1f;
+  --vscode-editorWidget-background: #202020;
+  --vscode-editorLineNumber-foreground: #6e7681;
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-sideBar-background: #181818;
+  --vscode-panel-border: #2b2b2b;
+  --vscode-widget-border: #313131;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.36);
+  --vscode-badge-background: #616161;
+  --vscode-badge-foreground: #f8f8f8;
+  --vscode-button-background: #0078d4;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-input-background: #313131;
+  --vscode-input-border: #3c3c3c;
+  --vscode-input-foreground: #cccccc;
+  --vscode-inputValidation-errorForeground: #ffffff;
+  --vscode-inputValidation-warningBackground: #352a05;
+  --vscode-inputValidation-warningBorder: #cca700;
+  --vscode-inputValidation-warningForeground: #cccccc;
+  --vscode-list-activeSelectionBackground: #04395e;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-progressBar-background: #0078d4;
+  --vscode-testing-iconPassed: #73c991;
+  --vscode-textBlockQuote-background: #2b2b2b;
+  --vscode-textCodeBlock-background: #2b2b2b;
+  --vscode-textLink-foreground: #4daafc;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-yellow: #cca700;
+}

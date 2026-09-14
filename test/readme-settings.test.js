@@ -2,7 +2,7 @@
 // README drift guard (t-158b). The settings region is generated from package.json's
 // `contributes.configuration`; the feature prose is hand-written and only coverage-checked.
 // This is the backstop that binds an editor who never reads `.claude/rules/readme-regen.md` —
-// CI cannot, because .github/workflows/build.yml carries paths-ignore: ['**/*.md'].
+// CI cannot, because README.md is outside .github/workflows/build.yml's `paths:` allowlist.
 //
 // The tool lives under `.claude/skills/` (never shipped, never compiled into out-test/), so this
 // suite requires it directly rather than through out-test/.

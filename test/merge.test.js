@@ -85,7 +85,7 @@ test('note is an index field: edits the whole set, split on newlines, drop empti
   const doc = parseTodo(readFix('index-full.md'));
   const entry = doc.entries.find((e) => e.id === 't-bb01');
   // The webview joins notes with \n as the rendered base.
-  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count.';
+  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count — see [the retry dashboard](https://example.com/metrics/retries).';
   assert.equal(currentFieldValue(entry, 'note'), base);
   const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: 'first\n\n  \nsecond\n', base });
   assert.equal(r.status, 'applied');
@@ -94,7 +94,7 @@ test('note is an index field: edits the whole set, split on newlines, drop empti
 
 test('clearing note via empty value empties the set', () => {
   const doc = parseTodo(readFix('index-full.md'));
-  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count.';
+  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count — see [the retry dashboard](https://example.com/metrics/retries).';
   const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: '', base });
   assert.equal(r.status, 'applied');
   assert.deepEqual(doc.entries.find((e) => e.id === 't-bb01').notes, []);

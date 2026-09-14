@@ -21,8 +21,8 @@ paths:
 * **The line budget backstop.** `test/readme-settings.test.js` asserts the settings region is
   byte-equal to the generator's output and that every command/view/documented behaviour still has
   prose. It runs under `make check`, which must pass before any commit — it binds an editor who
-  never reads this rule, which CI cannot: `.github/workflows/build.yml` carries
-  `paths-ignore: ['**/*.md']`, so doc-only pushes produce no build.
+  never reads this rule, which CI cannot: `README.md` is outside `.github/workflows/build.yml`'s
+  `paths:` allowlist, so such a push produces no build.
 * **Docker only.** The generator runs via `docker run node:22`, never host `node`/`npm`
   (CLAUDE.md non-negotiable 1).
 * **Never ships.** The skill and its script live under `.claude/skills/readme-regen/`, excluded by
