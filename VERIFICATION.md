@@ -532,7 +532,16 @@ and likewise cannot be verified headless.
     "2m"` is in your USER settings file. Click **Reset** → the key disappears from user settings,
     the field returns to `5m`, the dot and Reset go away.
 
-    **The grid:** all six columns edit in place. Toggle *Fable* off → its row fades and it vanishes
+    **The grid:** all six columns edit in place. The two radio columns are headed on TWO LINES —
+    a smaller `default` sitting directly above `worker` / `groomer` — because a radio there picks the
+    *default* worker, not a slot that is *a* worker (untested in Docker: it is `media/settings.js` +
+    `.css`). Check the layout held: the header row is one line taller, the six columns sit exactly
+    where they did, `--model` is not squeezed, and the table does not scroll sideways — at a normal
+    width, at >1180px with the topic list showing, and in a narrow side-by-side editor. With a screen
+    reader, the radio still announces *"Opus is the default worker"*, matching the header. The caption
+    reads *Which slots exist, who they spawn, and how hard they think — the radios pick who takes a
+    task that names no model or groomer of its own.*
+    Toggle *Fable* off → its row fades and it vanishes
     from the sidebar's Loops overview and the board's model selects. Click the *worker* radio on
     another row → the previous one clears (single choice). Now try to turn OFF the slot that is the
     default worker → the write is REFUSED with a reason naming it, and the toggle snaps back; same
@@ -551,7 +560,7 @@ and likewise cannot be verified headless.
     review*) — plus the model grid's header note, which says the same thing for `--model`,
     `effort` and `groomers`. EVERY other row has nothing there: *After a task*, *Context limit —
     percent/action*, *Nudge loops*, *Max attachment size MB*, *Pulse template sync*, *Debug* and the
-    grid's `on` / `worker` / `groomer` columns show no marker at all, and there is no
+    grid's `on` / `default worker` / `default groomer` columns show no marker at all, and there is no
     "applies immediately" chip anywhere. Read the marked rows and the grid note side by side: the
     wording must be identical, not two phrasings of the same fact. In a light and a dark theme the
     marker stays legible and stays QUIET — description colour, one size down, never a coloured badge.

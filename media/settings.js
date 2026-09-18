@@ -207,8 +207,15 @@
   // ---- the one hand-built block: the model grid ----
   function gridTable() {
     const grid = state.grid;
+    // The two radio columns are `loopBoard.defaultWorkerModel` / `defaultGroomerModel` — a single
+    // choice across all slots. Labelled bare, a filled radio reads as "this slot is a worker", which
+    // is not what it means: EVERY enabled slot can work, exactly one is the DEFAULT. So the word is
+    // stacked ABOVE the role rather than put in front of it — a one-line `default worker` would add
+    // ~80px of nowrap header to a table that is already the widest thing on the page, while stacked
+    // the column's intrinsic width is still just `groomer` and the layout does not move.
+    const roleHead = (role) => h('th', {}, h('span', { class: 'th-q' }, 'default'), role);
     const head = h('tr', {},
-      h('th', { class: 'left' }, 'Slot'), h('th', {}, 'on'), h('th', {}, 'worker'), h('th', {}, 'groomer'),
+      h('th', { class: 'left' }, 'Slot'), h('th', {}, 'on'), roleHead('worker'), roleHead('groomer'),
       h('th', { class: 'left' }, '--model'), h('th', {}, 'effort'), h('th', {}, 'groomers'));
     const body = h('tbody', {});
 
@@ -262,7 +269,9 @@
 
     return [
       h('div', { class: 'grid-head' },
-        h('span', { class: 'subtle' }, 'Which slots exist, who they spawn, and how hard they think.'),
+        h('span', { class: 'subtle' },
+          'Which slots exist, who they spawn, and how hard they think — the radios pick who takes a '
+          + 'task that names no model or groomer of its own.'),
         // Same marker as a `restart` row's: the grid stands in for those rows, so it must not say
         // their fact in a second voice. `grid.note` names the three columns it covers.
         appliesMarker(grid.note)),

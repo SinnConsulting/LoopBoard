@@ -81,7 +81,8 @@
   .grid-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 10px 10px; }
   .grid-head .applies { margin-left: auto; margin-top: 0; }
   table { width: 100%; border-collapse: collapse; }
-  th { font-size: 11px; font-weight: 500; color: var(--desc); text-align: center; padding: 0 8px 8px; white-space: nowrap; }
+  th { font-size: 11px; font-weight: 500; color: var(--desc); text-align: center; padding: 0 8px 8px; white-space: nowrap; line-height: 1.35; vertical-align: bottom; }
+  .th-q { display: block; font-size: 10px; }
   th.left, td.left { text-align: left; }
   td { padding: 9px 8px; border-top: 1px solid var(--border); text-align: center; vertical-align: middle; }
   tbody tr:hover { background: var(--row-hover); }
@@ -138,13 +139,14 @@
 
   <h2>Models &amp; Slots</h2>
   <div class="grid-head">
-    <span class="subtle">Which slots exist, who they spawn, and how hard they think.</span>
+    <span class="subtle">Which slots exist, who they spawn, and how hard they think — the radios pick who takes a task that names no model or groomer of its own.</span>
     <span class="applies"><span class="ico">⟳</span>model · effort · groomers apply on the next loop start (▶) or restart (♻)</span>
   </div>
   <table>
     <thead>
       <tr>
-        <th class="left">Slot</th><th>on</th><th>worker</th><th>groomer</th>
+        <th class="left">Slot</th><th>on</th>
+        <th><span class="th-q">default</span>worker</th><th><span class="th-q">default</span>groomer</th>
         <th class="left">--model</th><th>effort</th><th>groomers</th>
       </tr>
     </thead>
