@@ -539,9 +539,28 @@ and likewise cannot be verified headless.
     for the default groomer, and same in reverse (making an OFF slot the default worker is refused).
     Type `opus; rm -rf /` into a `--model` field → it turns red as you type and, on blur, is refused
     with the reason shown and the field restored. Type `opus[1m]` → accepted. Set *groomers* to `0`
-    → it is clamped to `1`. The header hint reads `model · effort · groomers apply on the next ▶ / ♻`
-    — confirm it is true: with a loop running, change its effort, then ♻, and check the pasted
-    `/loop` line carries the NEW ceiling while the pre-♻ terminal did not.
+    → it is clamped to `1`. The header hint reads `⟳ model · effort · groomers apply on the next loop
+    start (▶) or restart (♻)` — confirm it is true: with a loop running, change its effort, then ♻,
+    and check the pasted `/loop` line carries the NEW ceiling while the pre-♻ terminal did not.
+
+    **The "applies on" marker (untested in Docker — the marker itself is `media/settings.js` + CSS;
+    only the classification, the wording and the manifest sentence are unit-tested in
+    `test/manifest-settings.test.js` / `test/settingsform.test.js`):** exactly FOUR generic rows
+    carry a `⟳ Applies on the next loop start (▶) or restart (♻)` line directly under their
+    description — *Permission mode*, *Loop interval*, and both Beta rows (*Delegate work*, *Delegate
+    work — review*) — plus the model grid's header note, which says the same thing for `--model`,
+    `effort` and `groomers`. EVERY other row has nothing there: *After a task*, *Context limit —
+    percent/action*, *Nudge loops*, *Max attachment size MB*, *Pulse template sync*, *Debug* and the
+    grid's `on` / `worker` / `groomer` columns show no marker at all, and there is no
+    "applies immediately" chip anywhere. Read the marked rows and the grid note side by side: the
+    wording must be identical, not two phrasings of the same fact. In a light and a dark theme the
+    marker stays legible and stays QUIET — description colour, one size down, never a coloured badge.
+    Then check the fact itself end to end: with a loop running, change *Permission mode*, look at the
+    running terminal's command line (unchanged), press ♻, and confirm the new `--permission-mode`
+    rides the fresh spawn. Finally open **Open in VSCode Settings**: the native editor cannot draw
+    the marker, so those same settings must end their description with
+    `Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned
+    with.` — and no other setting may say anything of the kind.
 
     **Live sync, and the listener dying with the page:** with the page open, hand-edit
     `loopBoard.debug` in your user `settings.json` → the page repaints without a reload. Do the same

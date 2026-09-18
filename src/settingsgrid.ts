@@ -15,12 +15,17 @@ import {
   BUILTIN_MODEL_IDS, Model, ModelConfigEntry, ModelsConfig, resolveModels, isValidModelString,
   isValidEffort, EFFORT_LEVELS, Effort, MAX_GROOM_CONCURRENCY,
 } from './model';
-import { ConfigPatch, SETTINGS_PREFIX } from './settingsform';
+import { APPLIES_RESTART_TAIL, ConfigPatch, SETTINGS_PREFIX } from './settingsform';
 
 // The truthfulness note the grid must carry (goal 4): `model`, `effort` and `groomConcurrency` are
 // frozen into the spawn command, so a running loop keeps what it was started with. Saying nothing
 // would imply the change is live.
-export const GRID_APPLY_NOTE = 'model · effort · groomers apply on the next ▶ / ♻';
+//
+// The grid replaces the generic rows for those keys, so it also replaces their per-row markers —
+// and it says it in the SAME words, off the same `APPLIES_RESTART_TAIL`, naming only the three
+// columns it applies to (`on` and the two default-model radios are live). One fact, one wording,
+// never twice on the page in two voices.
+export const GRID_APPLY_NOTE = `model · effort · groomers apply ${APPLIES_RESTART_TAIL}`;
 
 export type GridField = 'enabled' | 'worker' | 'groomer' | 'model' | 'effort' | 'groomConcurrency';
 export const GRID_FIELDS: GridField[] = ['enabled', 'worker', 'groomer', 'model', 'effort', 'groomConcurrency'];

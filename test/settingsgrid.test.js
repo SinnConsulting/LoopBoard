@@ -10,6 +10,7 @@ const {
   GRID_APPLY_NOTE, GRID_FIELDS,
 } = require('../out-test/settingsgrid.js');
 const { MAX_GROOM_CONCURRENCY } = require('../out-test/model.js');
+const { APPLIES_RESTART_TAIL } = require('../out-test/settingsform.js');
 
 const cfg = (over = {}) => ({
   opus: { enabled: true, model: 'opus[1m]', effort: 'high', groomConcurrency: 3 },
@@ -53,7 +54,10 @@ test('the grid states when a change actually lands', () => {
   // model/effort/groomers are frozen into the spawn command, so the surface must say so instead of
   // implying the change is live.
   assert.equal(grid().note, GRID_APPLY_NOTE);
-  assert.match(GRID_APPLY_NOTE, /next ▶ \/ ♻/);
+  // And it says it in the page's ONE wording (src/settingsform.ts), so the grid and a marked row
+  // cannot state the same fact in two voices.
+  assert.ok(GRID_APPLY_NOTE.endsWith(APPLIES_RESTART_TAIL), GRID_APPLY_NOTE);
+  assert.ok(GRID_APPLY_NOTE.startsWith('model · effort · groomers'), 'the note must name the columns it covers');
 });
 
 test('a slot toggle round-trips', () => {

@@ -18,6 +18,27 @@ export const SETTINGS_PREFIX = 'loopBoard.';
 // agrees with the page's own Beta section instead of contradicting it.
 export const EXPERIMENTAL_TAG = 'experimental';
 
+// WHEN a changed setting takes effect. Two classes, no third: nothing LoopBoard reads is frozen at
+// activation (every `getConfiguration` call in `src/` sits inside a closure taken at use time), so
+// no setting ever needs a window reload.
+//   `live`    — read on demand; the change is in force at once. Draws NO marker: because
+//               `test/manifest-settings.test.js` forces EVERY property to be classified, an absent
+//               marker is information, not an oversight.
+//   `restart` — frozen into the spawn command (`buildClaudeBase` / `buildLoopCommand` in
+//               `src/loop.ts`), so a running loop keeps what it was spawned with.
+// Carried per property in the manifest itself (`loopBoardApplies`), so there is no second list to
+// keep in step and a stale entry for a deleted key is impossible by construction.
+export const APPLIES_KEY = 'loopBoardApplies';
+export type Applies = 'live' | 'restart';
+export const APPLIES_VALUES: Applies[] = ['live', 'restart'];
+
+// ONE wording, three surfaces: the page's per-row marker, the model grid's header note and the
+// `markdownDescription` sentence the NATIVE settings editor shows (it cannot render our marker).
+// Everything below is built from the same tail, and the manifest sentence is asserted against it.
+export const APPLIES_RESTART_TAIL = 'on the next loop start (▶) or restart (♻)';
+export const APPLIES_RESTART_NOTE = `Applies ${APPLIES_RESTART_TAIL}`;
+export const APPLIES_RESTART_SENTENCE = `${APPLIES_RESTART_NOTE}: a running loop keeps what it was spawned with.`;
+
 // How a property's `type`/`enum` maps to a drawn control. `unknown` is the degrade-gracefully case:
 // a future key with a type this page has no editor for renders read-only rather than throwing or
 // vanishing — the escape hatch can still edit it.
@@ -37,6 +58,9 @@ export interface ManifestProperty {
   description?: string;
   markdownDeprecationMessage?: string;
   deprecationMessage?: string;
+  // LoopBoard's own key (see APPLIES_KEY). VSCode ignores manifest keys it does not know, and
+  // `packageJSON` hands back the raw manifest, so it survives to the page untouched.
+  loopBoardApplies?: string;
 }
 
 export interface ManifestSection {
@@ -68,6 +92,10 @@ export interface SettingControl {
   maximum?: number;
   beta: boolean;
   readOnly: boolean;
+  // `restart` draws the marker under the description; `live` draws nothing. An unclassified key
+  // (which the manifest suite forbids) is treated as `live` — the page must not claim a fact the
+  // manifest does not state.
+  applies: Applies;
   // A boolean parent key, when one exists (`loopBoard.delegateWork.review` -> `loopBoard.delegateWork`).
   // Derived, not hard-coded: the page greys a dependent row while its parent is off, and a future
   // `x` + `x.y` pair gets the same treatment for free.
@@ -85,6 +113,9 @@ export interface SettingsSection {
 
 export interface SettingsForm {
   sections: SettingsSection[];
+  // The marker text a `restart` row draws. Sent WITH the form so the string the webview paints is
+  // the one this (tested) module owns, instead of a copy hand-kept in media/settings.js.
+  appliesNote: string;
 }
 
 export interface ConfigPatch {
@@ -115,6 +146,11 @@ export function isGridKey(key: string): boolean {
 // and reproducing it here would advertise a setting whose whole message is "stop using me".
 export function isDeprecated(prop: ManifestProperty): boolean {
   return !!(prop.markdownDeprecationMessage || prop.deprecationMessage);
+}
+
+// The property's classification, defaulting to `live` for anything unclassified or misspelt.
+export function appliesOf(prop: ManifestProperty): Applies {
+  return prop.loopBoardApplies === 'restart' ? 'restart' : 'live';
 }
 
 export function controlKind(prop: ManifestProperty): ControlKind {
@@ -199,6 +235,7 @@ function toControl(
     modified,
     beta: isTaggedBeta(prop),
     readOnly: kind === 'unknown',
+    applies: appliesOf(prop),
   };
   if (kind === 'enum') {
     control.enumValues = prop.enum ? [...prop.enum] : [];
@@ -237,7 +274,7 @@ export function buildSettingsForm(sections: ManifestSection[], values: ValueMap 
       controls,
     });
   }
-  return { sections: built.sort((a, b) => a.order - b.order) };
+  return { sections: built.sort((a, b) => a.order - b.order), appliesNote: APPLIES_RESTART_NOTE };
 }
 
 // Every key the page needs an `inspect()` for — including the grid's, which the host reads through

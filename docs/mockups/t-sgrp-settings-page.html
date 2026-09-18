@@ -72,9 +72,14 @@
   .sw[aria-checked="true"]::after { transform: translateX(16px); }
   .dependent { opacity: .45; pointer-events: none; }
 
+  /* WHEN a change lands. Only on a setting frozen into the spawn command; a live setting shows
+     nothing at all, so the marker stays meaningful. Quiet by design — it repeats on 4 rows + the grid. */
+  .applies { display: flex; align-items: center; gap: 6px; color: var(--desc); font-size: 11px; margin-top: 5px; }
+  .applies .ico { font-size: 12px; line-height: 1; }
+
   /* ---- model grid ---- */
   .grid-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 10px 10px; }
-  .grid-head .hint { color: var(--desc); font-size: 11px; margin-left: auto; }
+  .grid-head .applies { margin-left: auto; margin-top: 0; }
   table { width: 100%; border-collapse: collapse; }
   th { font-size: 11px; font-weight: 500; color: var(--desc); text-align: center; padding: 0 8px 8px; white-space: nowrap; }
   th.left, td.left { text-align: left; }
@@ -134,7 +139,7 @@
   <h2>Models &amp; Slots</h2>
   <div class="grid-head">
     <span class="subtle">Which slots exist, who they spawn, and how hard they think.</span>
-    <span class="hint">model · effort · groomers apply on the next ▶ / ♻</span>
+    <span class="applies"><span class="ico">⟳</span>model · effort · groomers apply on the next loop start (▶) or restart (♻)</span>
   </div>
   <table>
     <thead>
@@ -179,7 +184,8 @@
   <div class="row modified">
     <div>
       <div class="key"><span class="dot"></span>Permission mode</div>
-      <div class="desc"><code>--permission-mode</code> passed to the <code>claude</code> CLI when spawning a loop. Frozen into the spawn command — a change reaches a running loop only after ♻.</div>
+      <div class="desc"><code>--permission-mode</code> passed to the <code>claude</code> CLI when spawning a loop.</div>
+      <div class="applies"><span class="ico">⟳</span>Applies on the next loop start (▶) or restart (♻)</div>
     </div>
     <div class="ctl"><a class="reset">Reset</a>
       <select><option>auto</option><option selected>acceptEdits</option><option>bypassPermissions</option><option>dontAsk</option><option>default</option><option>plan</option></select>
@@ -190,6 +196,7 @@
     <div>
       <div class="key">Loop interval</div>
       <div class="desc">Interval passed to <code>/loop</code> (e.g. <code>1m</code>, <code>5m</code>).</div>
+      <div class="applies"><span class="ico">⟳</span>Applies on the next loop start (▶) or restart (♻)</div>
     </div>
     <div class="ctl"><a class="reset">Reset</a><input type="text" value="5m" /></div>
   </div>
@@ -207,7 +214,7 @@
   <div class="row modified">
     <div>
       <div class="key"><span class="dot"></span>Context limit — percent</div>
-      <div class="desc">Restart a loop once its session fills this percentage of its context window. <code>0</code> never restarts for context size.</div>
+      <div class="desc">Automatically restart a loop once its session fills this percentage of its context window. <code>0</code> never restarts for context size.</div>
     </div>
     <div class="ctl"><a class="reset">Reset</a><input type="number" min="0" max="100" value="80" /></div>
   </div>
@@ -264,6 +271,7 @@
     <div>
       <div class="key">Delegate work to subagents</div>
       <div class="desc"><strong>Beta —</strong> may change or be withdrawn. The loop delegates every code-editing step to an implementer subagent on its own slot model, which branches, commits and opens the PR.</div>
+      <div class="applies"><span class="ico">⟳</span>Applies on the next loop start (▶) or restart (♻)</div>
     </div>
     <div class="ctl"><a class="reset">Reset</a><button class="sw" role="switch" aria-checked="false" id="delegate"></button></div>
   </div>
@@ -272,6 +280,7 @@
     <div>
       <div class="key">Review delegated work</div>
       <div class="desc"><strong>Beta —</strong> only applies while delegated work is on. A review subagent reviews the PR; a pass lets the loop squash-merge it, a fail is handed back once.</div>
+      <div class="applies"><span class="ico">⟳</span>Applies on the next loop start (▶) or restart (♻)</div>
     </div>
     <div class="ctl"><a class="reset">Reset</a><button class="sw" role="switch" aria-checked="true"></button></div>
   </div>

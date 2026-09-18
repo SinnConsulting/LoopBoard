@@ -54,6 +54,16 @@ h2 {
 .row .desc a { color: var(--vscode-textLink-foreground, #3794ff); }
 .ctl { justify-self: end; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
+/* "Applies on the next loop start (▶) or restart (♻)" — its own line under the description, drawn
+   only for a setting frozen into the spawn command. It repeats on every such row, so it stays
+   quiet: description colour, one size down, no badge chrome. */
+.applies {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-size: 11px; margin-top: 5px;
+}
+.applies .ico { font-size: 12px; line-height: 1; }
+
 .dot {
   width: 6px; height: 6px; border-radius: 50%; flex: none;
   background: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
@@ -97,7 +107,7 @@ input[type="number"] { width: 80px; }
 
 /* ---- model grid ---- */
 .grid-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 10px 10px; flex-wrap: wrap; }
-.grid-head .hint { color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 11px; margin-left: auto; }
+.grid-head .applies { margin-left: auto; margin-top: 0; }
 table { width: 100%; border-collapse: collapse; }
 th {
   font-size: 11px; font-weight: 500; color: var(--vscode-descriptionForeground, #9d9d9d);

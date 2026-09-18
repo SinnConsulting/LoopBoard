@@ -9,6 +9,7 @@ const path = require('node:path');
 const {
   buildSettingsForm, controlKind, humanizeKey, sectionTitle, sectionSlug, isGridKey, isDeprecated, formKeys,
   validateValue, toConfigPatch, resetPatch, findControl, MODEL_GRID_KEYS,
+  appliesOf, APPLIES_RESTART_NOTE, APPLIES_RESTART_SENTENCE, APPLIES_RESTART_TAIL,
 } = require('../out-test/settingsform.js');
 
 const root = path.resolve(__dirname, '..');
@@ -159,6 +160,54 @@ test('the real manifest renders as the four agreed sections', () => {
   );
 });
 
+test('a control carries WHEN its change lands, taken from the manifest', () => {
+  assert.equal(appliesOf({ loopBoardApplies: 'restart' }), 'restart');
+  assert.equal(appliesOf({ loopBoardApplies: 'live' }), 'live');
+  // Unclassified or misspelt degrades to `live`, i.e. to NO marker: the page must never claim a
+  // fact the manifest does not state. `test/manifest-settings.test.js` is what forbids the case.
+  assert.equal(appliesOf({}), 'live');
+  assert.equal(appliesOf({ loopBoardApplies: 'Restart' }), 'live');
+
+  const form = buildSettingsForm([
+    {
+      title: 'LoopBoard: T',
+      order: 1,
+      properties: {
+        'loopBoard.frozen': { type: 'string', order: 10, default: '', markdownDescription: 'f', loopBoardApplies: 'restart' },
+        'loopBoard.hot': { type: 'string', order: 20, default: '', markdownDescription: 'h', loopBoardApplies: 'live' },
+      },
+    },
+  ]);
+  assert.equal(findControl(form, 'loopBoard.frozen').applies, 'restart');
+  assert.equal(findControl(form, 'loopBoard.hot').applies, 'live');
+  // The marker text travels WITH the form, so the webview never keeps its own copy of the wording.
+  assert.equal(form.appliesNote, APPLIES_RESTART_NOTE);
+});
+
+test('the page marker, the grid note and the manifest sentence are one wording', () => {
+  assert.equal(APPLIES_RESTART_NOTE, `Applies ${APPLIES_RESTART_TAIL}`);
+  assert.ok(APPLIES_RESTART_SENTENCE.startsWith(APPLIES_RESTART_NOTE));
+  assert.ok(APPLIES_RESTART_SENTENCE.endsWith('.'), 'the native editor shows a SENTENCE, not a chip');
+  assert.match(APPLIES_RESTART_TAIL, /▶/);
+  assert.match(APPLIES_RESTART_TAIL, /♻/);
+});
+
+test('every drawn generic control on the real page is classified', () => {
+  const form = buildSettingsForm(manifest.contributes.configuration);
+  for (const section of form.sections) {
+    for (const control of section.controls) {
+      assert.ok(['live', 'restart'].includes(control.applies), `${control.key} reached the page unclassified`);
+    }
+  }
+  // The 4 rows that must wear the marker (the other 9 restart keys are the grid's, which carries
+  // the same note for the whole table).
+  const marked = form.sections.flatMap((s) => s.controls).filter((c) => c.applies === 'restart').map((c) => c.key);
+  assert.deepEqual(marked, [
+    'loopBoard.permissionMode', 'loopBoard.loopInterval',
+    'loopBoard.delegateWork', 'loopBoard.delegateWork.review',
+  ]);
+});
+
 test('every drawn control keeps its markdown description source for the shared renderer', () => {
   const form = buildSettingsForm(manifest.contributes.configuration);
   for (const section of form.sections) {
@@ -263,6 +312,7 @@ test('a reset patches the key to undefined — what update() reads as "remove"',
 });
 
 test('buildSettingsForm tolerates an empty or malformed manifest', () => {
-  assert.deepEqual(buildSettingsForm([]), { sections: [] });
-  assert.deepEqual(buildSettingsForm([{ title: 'LoopBoard: Empty', order: 1 }]), { sections: [] });
+  const empty = { sections: [], appliesNote: APPLIES_RESTART_NOTE };
+  assert.deepEqual(buildSettingsForm([]), empty);
+  assert.deepEqual(buildSettingsForm([{ title: 'LoopBoard: Empty', order: 1 }]), empty);
 });

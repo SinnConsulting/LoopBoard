@@ -103,6 +103,14 @@
     return errors[id] ? h('div', { class: 'err' }, errors[id]) : null;
   }
 
+  // WHEN a change takes effect. Drawn ONLY for a `restart` setting (src/settingsform.ts classifies
+  // every key from the manifest's `loopBoardApplies`); a `live` row gets nothing, because a page
+  // where every row claims something says nothing. The text comes from the form model, so the
+  // marker, the grid's note and the manifest sentence are one string in one tested place.
+  function appliesMarker(text) {
+    return h('div', { class: 'applies' }, h('span', { class: 'ico', 'aria-hidden': 'true' }, '⟳'), text);
+  }
+
   function toggle(checked, label, onchange) {
     return h('button', {
       class: 'sw', type: 'button', role: 'switch', 'aria-checked': checked ? 'true' : 'false',
@@ -162,6 +170,7 @@
       h('div', {},
         h('div', { class: 'key' }, control.modified ? h('span', { class: 'dot', title: 'Modified' }) : null, control.label),
         description(control.description),
+        control.applies === 'restart' ? appliesMarker(state.form.appliesNote) : null,
         errorFor(control.key)),
       h('div', { class: 'ctl' },
         h('button', {
@@ -231,7 +240,9 @@
     return [
       h('div', { class: 'grid-head' },
         h('span', { class: 'subtle' }, 'Which slots exist, who they spawn, and how hard they think.'),
-        h('span', { class: 'hint' }, grid.note)),
+        // Same marker as a `restart` row's: the grid stands in for those rows, so it must not say
+        // their fact in a second voice. `grid.note` names the three columns it covers.
+        appliesMarker(grid.note)),
       h('table', {}, h('thead', {}, head), body),
       slotErrors.length ? h('div', { class: 'err' }, slotErrors[0]) : null,
     ];

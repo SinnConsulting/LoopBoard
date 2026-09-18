@@ -25,6 +25,30 @@ const entries = () => {
 
 const BETA_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateWork.review'];
 
+// WHEN a changed setting takes effect. `restart` = frozen into the spawn command, so a running loop
+// keeps what it was spawned with; `live` = read on demand. There is no third class: every
+// `getConfiguration` call in `src/` sits inside a closure taken at use time, so nothing is frozen at
+// activation and no setting needs a window reload.
+//
+// This list is the SPAWN-COMMAND reality, hand-kept against `src/loop.ts`: `buildClaudeBase`
+// (permissionMode, the resolved `--model` string) and `buildLoopCommand` (interval, effort,
+// groomConcurrency, delegateWork, delegateWork.review) are the only places a setting is baked in.
+// Adding a setting to package.json without classifying it — or classifying one this list does not
+// know — turns the suite red, which is the whole point: an absent marker on the settings page is
+// then information ("this one is live"), never an oversight.
+const RESTART_KEYS = [
+  'loopBoard.permissionMode',
+  'loopBoard.loopInterval',
+  'loopBoard.models.opus.model', 'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency',
+  'loopBoard.models.sonnet.model', 'loopBoard.models.sonnet.effort', 'loopBoard.models.sonnet.groomConcurrency',
+  'loopBoard.models.fable.model', 'loopBoard.models.fable.effort', 'loopBoard.models.fable.groomConcurrency',
+  'loopBoard.delegateWork', 'loopBoard.delegateWork.review',
+];
+// The one sentence every `restart` description ends with, so the NATIVE settings editor — which
+// cannot render the page's marker — states the same fact in the same words. Imported, not retyped:
+// it is the same constant the page and the grid note are built from.
+const { APPLIES_RESTART_SENTENCE } = require('../out-test/settingsform.js');
+
 test('the four sections are declared in the agreed order', () => {
   assert.deepEqual(
     sections.map((s) => s.title),
@@ -119,6 +143,73 @@ test('the deprecated pair is still declared, still deprecated, and still out of 
     assert.ok(prop, `${key} must stay declared — it is still honoured as a fallback`);
     assert.equal(typeof prop.markdownDeprecationMessage, 'string', `${key} must stay deprecated`);
     assert.ok(prop.order >= 900, `${key} must sort after the section's live settings`);
+  }
+});
+
+test('every property says WHEN a change takes effect — exactly one valid class, no exceptions', () => {
+  for (const { key, prop } of entries()) {
+    assert.ok(
+      prop.loopBoardApplies === 'live' || prop.loopBoardApplies === 'restart',
+      `${key} has loopBoardApplies ${JSON.stringify(prop.loopBoardApplies)} — every setting must be ` +
+      'classified `live` (read on demand) or `restart` (frozen into the spawn command), or the ' +
+      'settings page cannot say when a change lands and an absent marker stops meaning anything.'
+    );
+  }
+});
+
+test('the classification matches the spawn command, in both directions', () => {
+  const declared = entries().map((e) => e.key);
+  const restart = entries().filter((e) => e.prop.loopBoardApplies === 'restart').map((e) => e.key);
+  // Direction 1: nothing frozen into the spawn command is marked live.
+  assert.deepEqual(
+    [...restart].sort(), [...RESTART_KEYS].sort(),
+    'the `restart` set and src/loop.ts disagree — a setting is either newly frozen into the spawn ' +
+    'command or no longer is'
+  );
+  // Direction 2: no stale entry for a key that no longer exists.
+  for (const key of RESTART_KEYS) {
+    assert.ok(declared.includes(key), `${key} is classified but no longer declared in the manifest`);
+  }
+});
+
+test('every restart property ends with the one standard sentence, and no live one carries it', () => {
+  for (const { key, prop } of entries()) {
+    const restart = prop.loopBoardApplies === 'restart';
+    if (restart) {
+      assert.ok(
+        prop.markdownDescription.trimEnd().endsWith(APPLIES_RESTART_SENTENCE),
+        `${key}'s markdownDescription must END with: ${APPLIES_RESTART_SENTENCE}\n  got: ` +
+        `…${prop.markdownDescription.slice(-120)}`
+      );
+    } else {
+      assert.ok(
+        !prop.markdownDescription.includes(APPLIES_RESTART_SENTENCE),
+        `${key} is live but carries the restart sentence`
+      );
+      // The other half of the same trap: a live description must not grow its own ad-hoc phrasing
+      // of the fact. `afterTask` and `contextLimit.*` legitimately talk about RESTARTING LOOPS as a
+      // feature, which is why the check is on the marker's wording, not on the word "restart".
+      assert.ok(
+        !/(♻|▶)\s*\)?\s*$/.test(prop.markdownDescription.trim()),
+        `${key} is live but its description ends on a ▶/♻ note — say it with loopBoardApplies instead`
+      );
+    }
+  }
+});
+
+test('the model grid may speak for its slot keys: the classification it claims is the real one', () => {
+  // The grid replaces the generic rows for `loopBoard.models.*`, so ONE header note stands in for
+  // their markers. It reads "model · effort · groomers apply …" — that is only true while those
+  // three are `restart` and the slot toggle is `live`.
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  for (const slot of ['opus', 'sonnet', 'fable']) {
+    for (const field of ['model', 'effort', 'groomConcurrency']) {
+      assert.equal(all[`loopBoard.models.${slot}.${field}`].loopBoardApplies, 'restart');
+    }
+    assert.equal(all[`loopBoard.models.${slot}.enabled`].loopBoardApplies, 'live');
+  }
+  for (const key of ['loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel']) {
+    assert.equal(all[key].loopBoardApplies, 'live', `${key} is a radio column the grid note does not cover`);
   }
 });
 
