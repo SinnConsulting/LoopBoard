@@ -21,11 +21,23 @@
 // never an error.
 
 // How long an agent may go without writing its own transcript before it stops counting as live.
-// A real agent writes constantly, so this only ever drops leftovers — a SIGKILLed session leaves
-// metas with no finish marker, and without this backstop those would hold every automatic restart
-// forever (the pointer file it was resolved through can outlive the process too). 30 minutes is far
-// longer than any gap a working agent produces and far shorter than "never".
-export const AGENT_STALE_MS = 30 * 60 * 1000;
+// The cut exists for one reason: a SIGKILLed session leaves metas with no finish marker, and
+// `findSessionId` can still resolve it through a `<pid>.json` its dead process left behind — so
+// without a cap those leftovers would hold every automatic restart FOREVER.
+//
+// It is not free, though, and the cost falls on exactly the agents this feature protects: an agent
+// blocked on ONE long operation (a Docker image build, a slow test suite, a network wait) writes
+// nothing for the duration, and dropping it lets a held restart kill it mid-work. 60 minutes, not
+// 30, is the compromise: long enough to cover the silent stretches real work produces, still
+// bounded, and paired with an explicit `agents-stale` log line saying the agent was dropped for
+// SILENCE rather than for finishing, so a restart that follows stays explicable.
+//
+// A marker-aware cut was considered and rejected: every cheaper liveness signal available here is
+// either the stale-pointer risk itself (the pointer file exists), documented as unreliable (its
+// `updatedAt`/`statusUpdatedAt`), or goes quiet for the very same reason the agent does (the parent
+// transcript's mtime — a parent waiting on silent agents writes nothing either). Trading a bounded
+// 60-minute exposure for an unbounded "held forever" would be the worse bug.
+export const AGENT_STALE_MS = 60 * 60 * 1000;
 
 // EVERY Agent call gets a `tool_result` on its `toolUseId` at spawn time. For an asynchronous agent
 // that result is an ACKNOWLEDGEMENT, not a finish, and it is the one trap in this whole file (it
@@ -100,10 +112,14 @@ export function parseAgentStart(head: string): number | undefined {
 
 // `finished` carries whichever id the marker identified the agent by: a notification names the
 // agent id, a synchronous `tool_result` only its `toolUseId`. `relived` re-opens a finished agent —
-// a `SendMessage` to it makes it live again until its next notification.
+// a `SendMessage` to it makes it live again until its next notification — and carries WHEN, because
+// a resumed agent keeps its id and appends to the same transcript, so its first line still holds
+// the original spawn. Without the resume instant the row would report spawn-to-now and count the
+// idle gap in between (observed: a row reading 14m for an agent 59s into its resumed stretch).
+// `at` is absent only when the transcript line carried no parseable timestamp.
 export type MarkerEvent =
   | { kind: 'finished'; agentId?: string; toolUseId?: string }
-  | { kind: 'relived'; agentId: string };
+  | { kind: 'relived'; agentId: string; at?: number };
 
 // Everything one scan has to hand the next one, because the caller feeds this parser a BYTE DELTA
 // of a file that is still being appended to. Both fields exist for a correctness reason, not for
@@ -124,6 +140,13 @@ export interface MarkerScan {
 
 const NOTIFICATION_ID = /<task-id>([^<]+)<\/task-id>/;
 const NOTIFICATION_STATUS = /<status>(?:completed|failed|killed)<\/status>/;
+
+// A transcript line's ISO `timestamp` as ms epoch, or undefined for anything unparseable.
+function parseStamp(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? at : undefined;
+}
 
 // Text of a transcript `content` field, which is either a plain string or an array of blocks.
 function textOf(value: unknown): string {
@@ -177,8 +200,10 @@ export function scanMarkers(
       continue;
     }
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-    const o = raw as { content?: unknown; message?: { content?: unknown } | null };
+    const o = raw as { content?: unknown; timestamp?: unknown; message?: { content?: unknown } | null };
     const message = o.message && typeof o.message === 'object' ? o.message : undefined;
+    // Every transcript line carries its own ISO `timestamp`; only a resume needs it (see below).
+    const at = parseStamp(o.timestamp);
     // A `<task-notification>` block reports an ASYNCHRONOUS agent's finish. It reaches the
     // transcript either as a queued operation (top-level `content`) or as the user message it is
     // turned into (`message.content`), so both places are checked.
@@ -202,7 +227,7 @@ export function scanMarkers(
         // A resume re-opens the agent, so its next finish is a new one and must not be deduped
         // away against the one this resume just cancelled.
         seen.delete(to);
-        events.push({ kind: 'relived', agentId: to });
+        events.push({ kind: 'relived', agentId: to, at });
       }
     }
   }
@@ -215,13 +240,16 @@ export function scanMarkers(
 export interface AgentEntry extends AgentMeta {
   id: string;
   mtime: number;       // last write of `agent-<id>.jsonl` — the liveness heartbeat
-  startedAt?: number;  // from `parseAgentStart`; absent until the host has read that first line
+  startedAt?: number;  // SPAWN, from `parseAgentStart`; absent until the host has read that line
 }
 
 export interface AgentRow {
   id: string;
   agentType: string;
   description: string;
+  // Start of the CURRENT working stretch, which is not the same thing as the spawn: a resumed
+  // agent keeps its id and appends to the same transcript, so its first line still says when it
+  // was originally spawned. `foldAgents` substitutes the latest resume instant when there is one.
   startedAt?: number;
 }
 
@@ -239,23 +267,35 @@ function matchesAgent(event: MarkerEvent, entry: AgentEntry): boolean {
 }
 
 // live = meta exists AND NOT stoppedByUser AND the LATEST marker for it is not a finish AND its own
-// transcript is younger than AGENT_STALE_MS. Events are applied in file order and the last one
-// wins, which is what makes a resumed agent (`SendMessage` after a notification) live again.
+// transcript has been written within AGENT_STALE_MS. Events are applied in file order and the last
+// one wins, which is what makes a resumed agent (`SendMessage` after a notification) live again —
+// and what makes its row measure the RESUMED stretch rather than everything since its spawn.
 export function foldAgents(metas: readonly AgentEntry[], events: readonly MarkerEvent[], now: number): AgentFold {
   const rows: AgentRow[] = [];
   const stale: string[] = [];
   for (const entry of metas) {
     if (entry.stoppedByUser) continue;
     let finished = false;
+    let resumedAt: number | undefined;
     for (const event of events) {
-      if (matchesAgent(event, entry)) finished = event.kind === 'finished';
+      if (!matchesAgent(event, entry)) continue;
+      finished = event.kind === 'finished';
+      // Keep the last resume that had a usable timestamp rather than letting an undated later one
+      // fall all the way back to the spawn: a stretch measured from an EARLIER resume is still
+      // far closer to the truth than one that includes every idle gap since the agent was created.
+      if (event.kind === 'relived' && event.at !== undefined) resumedAt = event.at;
     }
     if (finished) continue;
     if (now - entry.mtime > AGENT_STALE_MS) {
       stale.push(entry.id);
       continue;
     }
-    rows.push({ id: entry.id, agentType: entry.agentType, description: entry.description, startedAt: entry.startedAt });
+    rows.push({
+      id: entry.id,
+      agentType: entry.agentType,
+      description: entry.description,
+      startedAt: resumedAt ?? entry.startedAt,
+    });
   }
   return { rows, stale };
 }

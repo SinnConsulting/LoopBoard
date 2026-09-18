@@ -103,7 +103,7 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   too). Force consent is a native modal taken ONCE at arm time (a scheduled action is unattended by
   definition); fire time is silent and only logged. With `force` off the timer defers while that
   model is BUSY and waits indefinitely; busy = In-Progress owner ∪ slots with a live subagent
-  (t-sbag: pure `src/subagents.ts`, `contextreader.readSubagents`, 30-min transcript-mtime staleness
+  (t-sbag: pure `src/subagents.ts`, `contextreader.readSubagents`, 60-min transcript-mtime staleness
   cap; manual ♻ only warns in its tooltip; `force` and a scheduled start override it). The idle edge
   is `maybeAutoRecycle`'s, but a finishing subagent writes no `.loopboard/` — so the context poll
   re-runs the flushes too. A forced restart leaves the task `phase: inprogress` with no worker

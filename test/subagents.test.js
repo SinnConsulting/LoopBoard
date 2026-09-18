@@ -14,6 +14,7 @@ const {
 
 const NOW = Date.parse('2026-09-18T12:00:00.000Z');
 const MINUTE = 60000;
+const HOUR = 60 * MINUTE;
 
 // ---- fixture builders (shapes observed on macOS, CLI 2.1.276) ----
 
@@ -66,11 +67,15 @@ function toolResultLine(toolUseId, text) {
   });
 }
 
-function sendMessageLine(to) {
-  return JSON.stringify({
+// Every transcript line carries its own ISO `timestamp`; a resume's is what the row's duration is
+// measured from. `at` omitted = the reshaped-line case.
+function sendMessageLine(to, at) {
+  const line = {
     type: 'assistant',
     message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_send', name: 'SendMessage', input: { to, summary: 'carry on' } }] },
-  });
+  };
+  if (at !== undefined) line.timestamp = new Date(at).toISOString();
+  return JSON.stringify(line);
 }
 
 function chunk(lines) {
@@ -180,8 +185,9 @@ test('a notification without a terminal status is not a finish', () => {
 });
 
 test('SendMessage to a finished agent re-opens it — latest marker wins', () => {
-  const first = scan(notificationLines('a111', 'completed').concat([sendMessageLine('a111')]));
-  assert.deepStrictEqual(first.events, [{ kind: 'finished', agentId: 'a111' }, { kind: 'relived', agentId: 'a111' }]);
+  const resumedAt = NOW - MINUTE;
+  const first = scan(notificationLines('a111', 'completed').concat([sendMessageLine('a111', resumedAt)]));
+  assert.deepStrictEqual(first.events, [{ kind: 'finished', agentId: 'a111' }, { kind: 'relived', agentId: 'a111', at: resumedAt }]);
   assert.deepStrictEqual(foldAgents([entry()], first.events, NOW).rows.map((r) => r.id), ['a111']);
   // …and its NEXT notification finishes it again — the resume must have cleared the dedupe marker,
   // or the second finish would be swallowed as a duplicate of the first and the agent would hold
@@ -189,6 +195,46 @@ test('SendMessage to a finished agent re-opens it — latest marker wins', () =>
   const second = scan(notificationLines('a111', 'completed'), first.carry);
   assert.deepStrictEqual(second.events, [{ kind: 'finished', agentId: 'a111' }]);
   assert.deepStrictEqual(foldAgents([entry()], first.events.concat(second.events), NOW).rows, []);
+});
+
+test('a resumed agent is timed from the RESUME, not from its original spawn', () => {
+  // The bug this pins: a resume keeps the agent id and APPENDS to the same transcript, so the
+  // first line still holds the spawn instant. Timing from it counted the idle gap in between —
+  // observed as a row reading 14m for an agent 59s into its resumed stretch.
+  const spawned = NOW - 14 * MINUTE;
+  const resumedAt = NOW - 59000;
+  const events = scan(notificationLines('a111', 'completed').concat([sendMessageLine('a111', resumedAt)])).events;
+  const [row] = foldAgents([entry({ startedAt: spawned })], events, NOW).rows;
+  assert.strictEqual(row.startedAt, resumedAt);
+  assert.strictEqual(describeAgent(row, NOW).duration, '59s');
+  // An agent that was never resumed is unchanged: it is still timed from its spawn.
+  const [plain] = foldAgents([entry({ startedAt: spawned })], [], NOW).rows;
+  assert.strictEqual(plain.startedAt, spawned);
+  assert.strictEqual(describeAgent(plain, NOW).duration, '14m');
+});
+
+test('two resumes time from the later one, and an undated resume falls back rather than lying', () => {
+  const spawned = NOW - 3 * HOUR;
+  const firstResume = NOW - 30 * MINUTE;
+  const lastResume = NOW - 2 * MINUTE;
+  const both = [
+    { kind: 'relived', agentId: 'a111', at: firstResume },
+    { kind: 'relived', agentId: 'a111', at: lastResume },
+  ];
+  assert.strictEqual(foldAgents([entry({ startedAt: spawned })], both, NOW).rows[0].startedAt, lastResume);
+  // A reshaped line with no parseable timestamp keeps the last resume that HAD one — still far
+  // closer than falling back to a spawn three hours ago.
+  const undated = [{ kind: 'relived', agentId: 'a111', at: firstResume }, { kind: 'relived', agentId: 'a111' }];
+  assert.strictEqual(foldAgents([entry({ startedAt: spawned })], undated, NOW).rows[0].startedAt, firstResume);
+  // …and with NO dated resume at all there is nothing better than the spawn.
+  const none = [{ kind: 'relived', agentId: 'a111' }];
+  assert.strictEqual(foldAgents([entry({ startedAt: spawned })], none, NOW).rows[0].startedAt, spawned);
+});
+
+test('a resume for a DIFFERENT agent does not re-time this one', () => {
+  const spawned = NOW - 10 * MINUTE;
+  const events = [{ kind: 'relived', agentId: 'a999', at: NOW - MINUTE }];
+  assert.strictEqual(foldAgents([entry({ startedAt: spawned })], events, NOW).rows[0].startedAt, spawned);
 });
 
 test('a truncated last line is carried into the next chunk instead of being lost', () => {
@@ -256,16 +302,30 @@ test('nested agents are listed flat', () => {
   assert.deepStrictEqual(rows.map((r) => r.id), ['a111', 'a222']);
 });
 
-test('the staleness cutoff drops a leftover meta 30 minutes after its last transcript write', () => {
+test('the staleness cutoff drops a leftover meta an hour after its last transcript write', () => {
   // The backstop for a SIGKILLed session: metas with no finish marker, resolved through a pointer
   // file its dead process left behind, would otherwise read as live forever and hold every
   // automatic restart. NEITHER case here has a finish marker — only the mtime differs.
-  const fresh = entry({ id: 'a-fresh', mtime: NOW - 29 * MINUTE });
-  const old = entry({ id: 'a-old', toolUseId: 'toolu_old', mtime: NOW - 31 * MINUTE });
+  const fresh = entry({ id: 'a-fresh', mtime: NOW - 59 * MINUTE });
+  const old = entry({ id: 'a-old', toolUseId: 'toolu_old', mtime: NOW - 61 * MINUTE });
   const { rows, stale } = foldAgents([fresh, old], [], NOW);
   assert.deepStrictEqual(rows.map((r) => r.id), ['a-fresh']);
   assert.deepStrictEqual(stale, ['a-old'], 'a dropped agent must be reported so the log can explain the restart that follows');
-  assert.strictEqual(AGENT_STALE_MS, 30 * MINUTE);
+  assert.strictEqual(AGENT_STALE_MS, 60 * MINUTE);
+});
+
+test('the cut is on SILENCE, not on age — a long-running agent that keeps writing stays live', () => {
+  // The hole the hour buys room for: an agent blocked on one long operation (a Docker build, a
+  // slow suite) writes nothing while it waits, and dropping it lets a held restart kill it
+  // mid-work — the exact outcome the hold exists to prevent. An agent that has merely LIVED a
+  // long time was never at risk: the cut reads mtime, not the start.
+  const ancient = entry({ id: 'a-old-but-working', startedAt: NOW - 8 * HOUR, mtime: NOW - MINUTE });
+  const { rows, stale } = foldAgents([ancient], [], NOW);
+  assert.deepStrictEqual(rows.map((r) => r.id), ['a-old-but-working']);
+  assert.deepStrictEqual(stale, []);
+  // A 45-minute silent stretch used to be fatal and now is not.
+  const quiet = entry({ id: 'a-quiet', mtime: NOW - 45 * MINUTE });
+  assert.deepStrictEqual(foldAgents([quiet], [], NOW).rows.map((r) => r.id), ['a-quiet']);
 });
 
 test('an empty subagents directory folds to no rows', () => {

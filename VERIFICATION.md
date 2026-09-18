@@ -101,9 +101,15 @@ one that never fires):
 - **Resume:** a `SendMessage` with `input.to === <id>` re-opens a finished agent (latest marker
   wins), and its next notification finishes it again.
 - **`stoppedByUser: true`** in the meta drops the agent — there is no finish marker for that case.
-- **Staleness cutoff:** with NO finish marker either way, an agent transcript written 29 minutes ago
-  stays live and one written 31 minutes ago is dropped AND reported as stale (`AGENT_STALE_MS` is
-  30 min) — the backstop that stops a SIGKILLed session's leftovers holding every restart forever.
+- **Staleness cutoff:** with NO finish marker either way, an agent transcript written 59 minutes ago
+  stays live and one written 61 minutes ago is dropped AND reported as stale (`AGENT_STALE_MS` is
+  60 min) — the backstop that stops a SIGKILLed session's leftovers holding every restart forever.
+  The cut is on SILENCE, not on age: an agent 8 hours into its work stays live as long as it keeps
+  writing, and a 45-minute quiet stretch (a Docker build, a slow suite) no longer drops it.
+- **A resumed agent is timed from the RESUME**, not from its original spawn — it keeps its id and
+  appends to the same transcript, so the first line still holds the spawn instant and the row used
+  to include every idle gap since. The later of two resumes wins; an undated resume keeps the last
+  dated one; a resume for another agent re-times nothing; an agent never resumed is unchanged.
 - **Dedupe is by id, not by adjacency:** the two halves of one notification dedupe to a single
   event even with unrelated lines between them AND when the byte-delta cut lands between them
   (the carry holds the seen ids); a `SendMessage` resume clears that marker, so the resumed agent's
@@ -822,6 +828,21 @@ and likewise cannot be verified headless.
     stopping under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
     never grouped. Nothing in a row is clickable. When the agents finish, the rows disappear and the
     whole section goes with them. `debug.log` shows an `agents-read <slot> N live: …` line per poll.
+
+    **The duration is the CURRENT stretch** (human-observed defect, PR #157): while an agent runs,
+    its row's duration tracks the elapsed time in that agent's own terminal status line. Then send
+    that agent a follow-up message so it resumes (delegated-work mode does this constantly) → the
+    row restarts from the resume, NOT from the original spawn; a row reading `14m` for an agent
+    59 s into its resumed stretch is the bug this replaced. An agent that was never resumed still
+    counts from its spawn.
+
+    **A quiet agent is not dropped:** `AGENT_STALE_MS` is 60 minutes and the cut is on the agent
+    transcript's mtime, so an agent blocked on one long operation (a Docker image build, a slow
+    suite) is NOT dropped at 30 minutes and no held restart kills it mid-work. Past the hour the
+    drop is deliberate and explicable: `debug.log` carries
+    `agents-stale <slot> agent <id> — silent for over 60m (no finish marker, dropped for silence — a
+    held restart may now fire)`, and the restart that follows is the documented backstop against a
+    killed session's leftover metas, not a mystery.
 
     **The ♻ tooltip warns but the click still restarts:** while an agent is live, hover ♻ → the
     tooltip reads `Restart with fresh context — N subagents still running (right-click to

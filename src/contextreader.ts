@@ -233,7 +233,9 @@ export class ContextReader {
     if (!events) return undefined;
     const { rows, stale } = foldAgents(metas, events, now);
     for (const id of stale) {
-      this.log('verbose', 'agents-stale', `${model} agent ${id} — no transcript write in ${Math.round(AGENT_STALE_MS / 60000)}m, dropped`);
+      // Spelled out because this is the one drop that is NOT evidence the agent ended: it stopped
+      // counting as live purely because it went quiet, and a restart may fire on the back of it.
+      this.log('verbose', 'agents-stale', `${model} agent ${id} — silent for over ${Math.round(AGENT_STALE_MS / 60000)}m (no finish marker, dropped for silence — a held restart may now fire)`);
     }
     for (const row of rows) {
       if (row.startedAt === undefined) row.startedAt = await this.readAgentStart(agentsDir, row.id);
