@@ -11,8 +11,8 @@ import {
   contextPercent, windowSizeFor, SessionPointer,
 } from './context';
 import {
-  AGENT_STALE_MS, AgentEntry, AgentRow, MarkerEvent, agentIdFromMetaName, agentTranscriptName,
-  foldAgents, parseAgentMeta, parseAgentStart, scanMarkers,
+  AGENT_STALE_MS, AgentEntry, AgentRow, MarkerCarry, MarkerEvent, agentIdFromMetaName,
+  agentTranscriptName, foldAgents, parseAgentMeta, parseAgentStart, scanMarkers,
 } from './subagents';
 
 // The extension host is Node, so the environment is available at runtime — but `@types/node` is
@@ -47,12 +47,17 @@ export class ContextReader {
   private transcripts = new Map<string, vscode.Uri>();
   // Subagent marker scan (t-sbag). A finish marker can sit anywhere in the parent transcript, so
   // unlike `readUsage`'s tail this needs the WHOLE file — once. Afterwards only the bytes past
-  // `offset` are decoded and parsed, with `carry` holding the possibly half-written last line, and
-  // `events` accumulating every marker seen so far (a handful per agent, so it stays small).
-  private markers = new Map<string, { offset: number; carry: string; events: MarkerEvent[] }>();
-  // agent id -> start ms. An agent's start never changes, so this is read once per agent and only
-  // ever for one that is already known to be live.
-  private agentStarts = new Map<string, number>();
+  // `offset` are decoded and parsed, `carry` holds what the next scan needs (the half-written last
+  // line, and the ids already reported finished), and `events` accumulates the markers seen so far.
+  // That list is bounded by the number of AGENTS, not by the size of the transcript, because
+  // `scanMarkers` is given the session's known ids and drops markers naming anything else — every
+  // ordinary tool_result in the file would otherwise look like a synchronous agent's finish.
+  private markers = new Map<string, { offset: number; carry: MarkerCarry; events: MarkerEvent[] }>();
+  // agent id -> start ms, or undefined when the first transcript line held no readable timestamp.
+  // The NEGATIVE answer is cached too (`has`, never `get`, decides): an agent whose opening prompt
+  // is longer than AGENT_HEAD_BYTES would otherwise re-read its whole growing transcript every
+  // poll, for a duration string.
+  private agentStarts = new Map<string, number | undefined>();
 
   constructor(
     private getCwd: () => string,
@@ -222,7 +227,9 @@ export class ContextReader {
     // Nothing was ever spawned here — skip the transcript scan entirely rather than walking
     // several MB to answer a question with no subjects.
     if (metas.length === 0) return [];
-    const events = await this.readMarkers(transcript, sessionId);
+    // Both id spaces a marker can name this session's agents by.
+    const known = metas.flatMap((m) => [m.id, m.toolUseId]);
+    const events = await this.readMarkers(transcript, sessionId, known);
     if (!events) return undefined;
     const { rows, stale } = foldAgents(metas, events, now);
     for (const id of stale) {
@@ -237,10 +244,10 @@ export class ContextReader {
   // Every finish/resume marker seen in this session's parent transcript so far. Read whole once,
   // then delta-only: `vscode.workspace.fs` has no ranged read, so the file is still loaded, but
   // only the new bytes are decoded and parsed — which is where the cost of a 10 MB transcript is.
-  private async readMarkers(uri: vscode.Uri, sessionId: string): Promise<MarkerEvent[] | undefined> {
+  private async readMarkers(uri: vscode.Uri, sessionId: string, known: readonly string[]): Promise<MarkerEvent[] | undefined> {
     let state = this.markers.get(sessionId);
     if (!state) {
-      state = { offset: 0, carry: '', events: [] };
+      state = { offset: 0, carry: { partial: '', seen: [] }, events: [] };
       this.markers.set(sessionId, state);
     }
     let size: number;
@@ -254,7 +261,7 @@ export class ContextReader {
     // rather than decode a delta that was never appended.
     if (size < state.offset) {
       state.offset = 0;
-      state.carry = '';
+      state.carry = { partial: '', seen: [] };
       state.events = [];
     }
     let bytes: Uint8Array;
@@ -265,7 +272,7 @@ export class ContextReader {
     }
     // A multi-byte character split across the previous read's end decodes to a replacement
     // character here; it lands inside the carried line, which then fails JSON.parse and is skipped.
-    const scan = scanMarkers(DECODER.decode(state.offset > 0 ? bytes.slice(state.offset) : bytes), state.carry);
+    const scan = scanMarkers(DECODER.decode(state.offset > 0 ? bytes.slice(state.offset) : bytes), known, state.carry);
     state.offset = bytes.byteLength;
     state.carry = scan.carry;
     if (scan.events.length) state.events = state.events.concat(scan.events);
@@ -273,16 +280,18 @@ export class ContextReader {
   }
 
   private async readAgentStart(agentsDir: vscode.Uri, id: string): Promise<number | undefined> {
-    const cached = this.agentStarts.get(id);
-    if (cached !== undefined) return cached;
+    // `has`, not `get`: a miss is cached as `undefined` and must not be retried every poll.
+    if (this.agentStarts.has(id)) return this.agentStarts.get(id);
     let bytes: Uint8Array;
     try {
       bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(agentsDir, agentTranscriptName(id)));
     } catch {
+      // NOT cached: the file was unreadable this once (mid-write, a permission blip), which says
+      // nothing about its content — unlike a head that genuinely carries no timestamp.
       return undefined;
     }
     const started = parseAgentStart(DECODER.decode(bytes.slice(0, AGENT_HEAD_BYTES)));
-    if (started !== undefined) this.agentStarts.set(id, started);
+    this.agentStarts.set(id, started);
     return started;
   }
 }

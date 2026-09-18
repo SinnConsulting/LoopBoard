@@ -105,11 +105,21 @@ export type MarkerEvent =
   | { kind: 'finished'; agentId?: string; toolUseId?: string }
   | { kind: 'relived'; agentId: string };
 
+// Everything one scan has to hand the next one, because the caller feeds this parser a BYTE DELTA
+// of a file that is still being appended to. Both fields exist for a correctness reason, not for
+// caching: without `partial` the line straddling the cut is lost, and without `seen` the duplicate
+// half of a notification pair split across that same cut is emitted twice.
+export interface MarkerCarry {
+  // The trailing, possibly incomplete line — a transcript's last line is routinely half-written.
+  partial: string;
+  // Ids (agent ids and toolUseIds) already reported finished. A `relived` clears its own id, which
+  // is what keeps a resumed agent's NEXT finish from being swallowed as a duplicate.
+  seen: string[];
+}
+
 export interface MarkerScan {
   events: MarkerEvent[];
-  // The trailing, possibly incomplete line — the caller feeds it back on the next read. A
-  // transcript is appended to while we read it, so its last line is routinely half-written.
-  carry: string;
+  carry: MarkerCarry;
 }
 
 const NOTIFICATION_ID = /<task-id>([^<]+)<\/task-id>/;
@@ -130,21 +140,32 @@ function textOf(value: unknown): string {
 // order. Callers read the transcript once and then feed only the delta, so this must never depend
 // on having seen the whole file — it does not: each marker is self-contained on its line, and
 // `foldAgents` takes the accumulated event list.
-export function scanMarkers(chunk: string, carry = ''): MarkerScan {
-  const lines = (carry + chunk).split('\n');
+//
+// `known` is every agent id and toolUseId this session currently has a meta for. Markers naming
+// anything else are DROPPED, and that filter is load-bearing rather than tidy: a `tool_result` is
+// how a synchronous agent finishes, so without it every tool call in the transcript — thousands in
+// a 10 MB file — would be recorded as an agent finish and retained for the life of the window. With
+// it the accumulated list really is a handful per agent. Metas are written at spawn, before any
+// marker for them can exist, so filtering against the CURRENT set can never drop a marker for an
+// agent that is about to appear.
+export function scanMarkers(
+  chunk: string,
+  known: readonly string[],
+  carry: MarkerCarry = { partial: '', seen: [] }
+): MarkerScan {
+  const lines = (carry.partial + chunk).split('\n');
   // The final element is either '' (the chunk ended on a newline) or a partial line: hold it back.
-  const nextCarry = lines.pop() ?? '';
+  const nextPartial = lines.pop() ?? '';
   const events: MarkerEvent[] = [];
-  const key = (e: MarkerEvent): string =>
-    `${e.kind}:${e.agentId ?? ''}:${e.kind === 'finished' ? e.toolUseId ?? '' : ''}`;
-  let lastKey = '';
-  const push = (e: MarkerEvent): void => {
-    // A finish notification is written TWICE (a `queue-operation` enqueue line and the `user`
-    // message line it becomes) — dedupe by identity so one finish is one event.
-    const k = key(e);
-    if (k === lastKey) return;
-    lastKey = k;
-    events.push(e);
+  const wanted = new Set(known);
+  // Dedupe BY ID, not by adjacency: a finish notification is written TWICE (a `queue-operation`
+  // enqueue line and the `user` message line it becomes), the two can be separated by other lines,
+  // and the byte-delta cut can land between them — so the state is carried across chunks.
+  const seen = new Set(carry.seen);
+  const finish = (id: string, event: MarkerEvent): void => {
+    if (!wanted.has(id) || seen.has(id)) return;
+    seen.add(id);
+    events.push(event);
   };
   for (const line of lines) {
     const trimmed = line.trim();
@@ -165,7 +186,7 @@ export function scanMarkers(chunk: string, carry = ''): MarkerScan {
     if (note.includes('<task-notification>')) {
       const id = NOTIFICATION_ID.exec(note);
       // Only a terminal status finishes the agent; anything else is a note about a still-live one.
-      if (id && NOTIFICATION_STATUS.test(note)) push({ kind: 'finished', agentId: id[1] });
+      if (id && NOTIFICATION_STATUS.test(note)) finish(id[1], { kind: 'finished', agentId: id[1] });
     }
     const parts = Array.isArray(message?.content) ? (message!.content as unknown[]) : [];
     for (const part of parts) {
@@ -174,14 +195,18 @@ export function scanMarkers(chunk: string, carry = ''): MarkerScan {
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         // See ASYNC_ACK: the launch receipt is not a finish.
         if (textOf(block.content).trimStart().startsWith(ASYNC_ACK)) continue;
-        push({ kind: 'finished', toolUseId: block.tool_use_id });
+        finish(block.tool_use_id, { kind: 'finished', toolUseId: block.tool_use_id });
       } else if (block.type === 'tool_use' && block.name === 'SendMessage') {
         const to = (block.input as { to?: unknown } | null | undefined)?.to;
-        if (typeof to === 'string') push({ kind: 'relived', agentId: to });
+        if (typeof to !== 'string' || !wanted.has(to)) continue;
+        // A resume re-opens the agent, so its next finish is a new one and must not be deduped
+        // away against the one this resume just cancelled.
+        seen.delete(to);
+        events.push({ kind: 'relived', agentId: to });
       }
     }
   }
-  return { events, carry: nextCarry };
+  return { events, carry: { partial: nextPartial, seen: [...seen] } };
 }
 
 // ---- the fold: which agents are live ----

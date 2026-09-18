@@ -127,64 +127,103 @@ test('parseAgentStart takes the timestamp off the agent transcript first line', 
 
 // ---- markers ----
 
+// Every agent id and toolUseId this session has a meta for: markers naming anything else are
+// dropped, which is what keeps the accumulated event list O(agents) instead of O(tool calls).
+const KNOWN = ['a111', 'toolu_01AAA'];
+const scan = (lines, carry) => scanMarkers(chunk(lines), KNOWN, carry);
+
 test('an async launch acknowledgement is NOT a finish', () => {
   // The trap this module exists around: EVERY Agent call gets a tool_result on its toolUseId at
   // spawn time. For an async agent that result is the launch receipt.
   const text = `${ASYNC_ACK}. (This tool result is internal metadata…)\nagentId: a111`;
-  const { events } = scanMarkers(chunk([toolResultLine('toolu_01AAA', text)]));
-  assert.deepStrictEqual(events, []);
+  assert.deepStrictEqual(scan([toolResultLine('toolu_01AAA', text)]).events, []);
 });
 
 test('an ordinary tool_result on the toolUseId IS a finish (synchronous agent)', () => {
-  const { events } = scanMarkers(chunk([toolResultLine('toolu_01AAA', 'Here is the summary of what I changed…')]));
+  const { events } = scan([toolResultLine('toolu_01AAA', 'Here is the summary of what I changed…')]);
   assert.deepStrictEqual(events, [{ kind: 'finished', toolUseId: 'toolu_01AAA' }]);
+});
+
+test('a tool_result for a tool that is not an agent is ignored entirely', () => {
+  // Without the `known` filter every Bash/Read/Edit result in a multi-MB transcript would be
+  // recorded as a synchronous agent finishing, and retained for the life of the window.
+  const { events } = scan([toolResultLine('toolu_someBashCall', 'total 42\ndrwxr-xr-x  …')]);
+  assert.deepStrictEqual(events, []);
 });
 
 for (const status of ['completed', 'failed', 'killed']) {
   test(`a <status>${status}</status> notification finishes the agent, deduped across its two lines`, () => {
-    const { events } = scanMarkers(chunk(notificationLines('a111', status)));
+    const { events } = scan(notificationLines('a111', status));
     // Written twice per finish (the queue-operation enqueue and the user message it becomes); one
     // finish must be one event.
     assert.deepStrictEqual(events, [{ kind: 'finished', agentId: 'a111' }]);
   });
 }
 
+test('the dedupe is by id, not by adjacency', () => {
+  // The two halves of one notification are not guaranteed to be neighbours: the enqueue is written
+  // when the agent stops and the user line when the queue is drained, with whatever happened in
+  // between sitting between them.
+  const [enqueue, delivered] = notificationLines('a111', 'completed');
+  const { events } = scan([
+    enqueue,
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'meanwhile…' }] } }),
+    toolResultLine('toolu_someBashCall', 'unrelated'),
+    delivered,
+  ]);
+  assert.deepStrictEqual(events, [{ kind: 'finished', agentId: 'a111' }]);
+});
+
 test('a notification without a terminal status is not a finish', () => {
   const line = JSON.stringify({ type: 'queue-operation', content: '<task-notification>\n<task-id>a111</task-id>\n<status>running</status>\n</task-notification>' });
-  assert.deepStrictEqual(scanMarkers(chunk([line])).events, []);
+  assert.deepStrictEqual(scan([line]).events, []);
 });
 
 test('SendMessage to a finished agent re-opens it — latest marker wins', () => {
-  const lines = notificationLines('a111', 'completed').concat([sendMessageLine('a111')]);
-  const { events } = scanMarkers(chunk(lines));
-  assert.deepStrictEqual(events, [{ kind: 'finished', agentId: 'a111' }, { kind: 'relived', agentId: 'a111' }]);
-  assert.deepStrictEqual(foldAgents([entry()], events, NOW).rows.map((r) => r.id), ['a111']);
-  // …and its NEXT notification finishes it again.
-  const after = events.concat(scanMarkers(chunk(notificationLines('a111', 'completed'))).events);
-  assert.deepStrictEqual(foldAgents([entry()], after, NOW).rows, []);
+  const first = scan(notificationLines('a111', 'completed').concat([sendMessageLine('a111')]));
+  assert.deepStrictEqual(first.events, [{ kind: 'finished', agentId: 'a111' }, { kind: 'relived', agentId: 'a111' }]);
+  assert.deepStrictEqual(foldAgents([entry()], first.events, NOW).rows.map((r) => r.id), ['a111']);
+  // …and its NEXT notification finishes it again — the resume must have cleared the dedupe marker,
+  // or the second finish would be swallowed as a duplicate of the first and the agent would hold
+  // every automatic restart until the staleness cap expired.
+  const second = scan(notificationLines('a111', 'completed'), first.carry);
+  assert.deepStrictEqual(second.events, [{ kind: 'finished', agentId: 'a111' }]);
+  assert.deepStrictEqual(foldAgents([entry()], first.events.concat(second.events), NOW).rows, []);
 });
 
 test('a truncated last line is carried into the next chunk instead of being lost', () => {
   const lines = notificationLines('a111', 'completed');
   const whole = chunk(lines);
-  const cut = Math.floor(whole.length / 2);
-  const first = scanMarkers(whole.slice(0, cut));
-  assert.ok(first.carry.length > 0, 'the half-written last line must be held back, not parsed');
-  const second = scanMarkers(whole.slice(cut), first.carry);
-  assert.strictEqual(second.carry, '');
-  const events = first.events.concat(second.events);
-  assert.deepStrictEqual(events, [{ kind: 'finished', agentId: 'a111' }]);
+  // Cut INSIDE the first line, so the second half of that line only becomes parseable once the
+  // carry is fed back — the case a byte-delta read produces on every poll.
+  const cut = Math.floor(lines[0].length / 2);
+  const first = scanMarkers(whole.slice(0, cut), KNOWN);
+  assert.deepStrictEqual(first.events, [], 'a half-written line must not parse');
+  assert.ok(first.carry.partial.length > 0, 'the half-written last line must be held back');
+  const second = scanMarkers(whole.slice(cut), KNOWN, first.carry);
+  assert.strictEqual(second.carry.partial, '');
+  assert.deepStrictEqual(first.events.concat(second.events), [{ kind: 'finished', agentId: 'a111' }]);
+});
+
+test('a notification pair split across two chunks is still ONE finish', () => {
+  const lines = notificationLines('a111', 'completed');
+  // The byte-delta cut lands exactly between the enqueue line and the user line it becomes — the
+  // duplicate half arrives in the NEXT poll's chunk, so the dedupe state has to be carried.
+  const first = scanMarkers(chunk([lines[0]]), KNOWN);
+  assert.deepStrictEqual(first.events, [{ kind: 'finished', agentId: 'a111' }]);
+  const second = scanMarkers(chunk([lines[1]]), KNOWN, first.carry);
+  assert.deepStrictEqual(second.events, [], 'the duplicate half must not be reported a second time');
 });
 
 test('scanMarkers skips unparseable and irrelevant lines without throwing', () => {
-  const { events } = scanMarkers(chunk([
+  const { events } = scan([
     '',
     '   ',
     '{ not json at all',
     'null',
     JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hello' }] } }),
     JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'Bash', input: { command: 'ls' } }] } }),
-  ]));
+  ]);
   assert.deepStrictEqual(events, []);
 });
 

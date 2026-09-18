@@ -8,7 +8,7 @@ import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
   Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS,
-  AfterTask, resolveAfterTask,
+  AfterTask, resolveAfterTask, resolveHeldAfterTask,
 } from './model';
 import {
   ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
@@ -359,6 +359,13 @@ export class Controller {
     this.store.debugLog('info', 'aftertask-defer', `${model} — ${this.describeBusy(model, board)}, waiting for idle`);
   }
 
+  // Drops a hold that something else has already satisfied. Logged (at info) whenever there really
+  // was one: a hold that silently disappears is as hard to explain as one that silently fires.
+  private cancelAfterTask(model: Model, reason: string): void {
+    if (!this.afterTaskPending.delete(model)) return;
+    this.store.debugLog('info', 'aftertask-cancel', `${model} (${reason})`);
+  }
+
   // The held recycle/clear fires on the same idle edge deferred schedules watch — which, for a
   // subagent, is a poll rather than a board write (a finishing subagent touches no `.loopboard/`
   // file). The MODE is re-read here instead of remembered: what is configured now is what should
@@ -370,13 +377,20 @@ export class Controller {
     for (const model of [...this.afterTaskPending]) {
       if (busy.includes(model)) continue;
       this.afterTaskPending.delete(model);
-      if (mode === 'none') {
-        this.store.debugLog('info', 'aftertask-skip', `${model} — afterTask is off now, nothing to do`);
+      // The slot may have been stopped or restarted by hand since the hold was recorded, and
+      // `terminals.recycle` on a stopped slot is a plain START (dispose-if-present, then always
+      // respawn). `resolveHeldAfterTask` is the pure guard against that — see its comment.
+      const running = this.terminals.status().some((l) => l.id === model && l.running);
+      const held = resolveHeldAfterTask(mode, running);
+      if (held.act === 'skip') {
+        this.store.debugLog('info', 'aftertask-skip', held.reason === 'off'
+          ? `${model} — afterTask is off now, nothing to do`
+          : `${model} — loop is not running, nothing to restart`);
         continue;
       }
-      this.store.debugLog('info', mode === 'clear' ? 'clear-session' : 'auto-recycle', `${model} (held for a live subagent)`);
-      this.clearContextTrip(model, mode === 'clear' ? 'clear-session' : 'auto-recycle');
-      if (mode === 'clear') this.terminals.clearSession(model);
+      this.store.debugLog('info', held.act === 'clear' ? 'clear-session' : 'auto-recycle', `${model} (held for a live subagent)`);
+      this.clearContextTrip(model, held.act === 'clear' ? 'clear-session' : 'auto-recycle');
+      if (held.act === 'clear') this.terminals.clearSession(model);
       else this.terminals.recycle(model, true);
     }
   }
@@ -415,6 +429,11 @@ export class Controller {
         this.rememberEndedSession(m.id);
         this.contextTripped.delete(m.id);
         this.contextPending.delete(m.id);
+        // Drop a held afterTask action for the same reason `contextPending` is dropped here: it was
+        // recorded against a session that no longer exists, and `terminals.recycle` would start a
+        // fresh loop rather than restart one (t-sbag). `flushAfterTask` guards this too; dropping
+        // it at the source means a stopped loop never leaves a live hold behind at all.
+        this.cancelAfterTask(m.id, 'loop is not running');
         // A stopped loop's session is gone, and with it every subagent it owned.
         if (this.forgetAgents(m.id)) {
           changed = true;
@@ -517,6 +536,9 @@ export class Controller {
 
   private fireContextRestart(model: Model, action: ContextAction): void {
     this.contextPending.delete(model);
+    // This path does not go through `clearContextTrip`, so it cancels the held afterTask action
+    // itself — same rule: one restart, not two (t-sbag).
+    this.cancelAfterTask(model, `context ${action}`);
     // The measurement belongs to the session we are about to end; the next poll measures the new
     // one. Its id is kept as the stale-session guard (t-c7a2) — this is the path the observed
     // restart storm took, and for `action: 'clear'` there is no terminal close/open event to route
@@ -541,6 +563,13 @@ export class Controller {
   // Any restart of a loop — timed, manual ♻, stop, afterTask — invalidates a pending context trip
   // and its hysteresis marker: both were measured against a session that no longer exists.
   private clearContextTrip(model: Model, reason: string): void {
+    // A held afterTask action goes with it (t-sbag). Whatever restarted this loop — the normal
+    // idle edge, a manual ♻, a ■, a timed action — has already given the slot the fresh session
+    // the hold was waiting to give it, and firing the hold on top would be a SECOND restart:
+    // `terminals.recycle` disposes and respawns 400 ms later, so a duplicate lands inside that
+    // window and tears down the terminal the first one just created. Placed above the early return
+    // below, which only guards the context-trip half.
+    this.cancelAfterTask(model, reason);
     // Remember-then-drop runs UNCONDITIONALLY (t-c7a2); only the log line is conditional on there
     // having been a trip. The old early return skipped a loop that never tripped — but ending its
     // session still leaves a stale bar (threshold 50, loop at 41%, ♻ → the row keeps showing 41%

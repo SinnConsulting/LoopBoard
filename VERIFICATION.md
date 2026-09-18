@@ -104,6 +104,12 @@ one that never fires):
 - **Staleness cutoff:** with NO finish marker either way, an agent transcript written 29 minutes ago
   stays live and one written 31 minutes ago is dropped AND reported as stale (`AGENT_STALE_MS` is
   30 min) — the backstop that stops a SIGKILLed session's leftovers holding every restart forever.
+- **Dedupe is by id, not by adjacency:** the two halves of one notification dedupe to a single
+  event even with unrelated lines between them AND when the byte-delta cut lands between them
+  (the carry holds the seen ids); a `SendMessage` resume clears that marker, so the resumed agent's
+  NEXT finish is reported rather than swallowed as a duplicate.
+- **Only markers naming a known agent count:** a `tool_result` for an ordinary tool call is ignored,
+  which is what keeps the accumulated event list O(agents) instead of O(tool calls in a 10 MB file).
 - A **truncated last line** is carried across two chunks instead of being lost; an unparseable meta,
   unparseable/irrelevant transcript lines and an empty `subagents/` directory all degrade to no rows.
 - `describeAgent` renders `agentType · description` + a duration (`20s`/`1m`/`2h 5m`), drops the
@@ -835,6 +841,22 @@ and likewise cannot be verified headless.
     task while one of its subagents is still running → no recycle at the idle edge, an
     `aftertask-defer` line naming the agent, and the recycle fires once the agent is gone
     (`auto-recycle <slot> (held for a live subagent)`). Same with `clear`.
+
+    **A hold never becomes a second restart, and never becomes a start** (PR #157 review). The
+    decision itself is pure and covered by `resolveHeldAfterTask` in `test/model.test.js`; the
+    wiring that feeds it is host-only, so check all four paths with `afterTask: recycle` and a hold
+    recorded (worker finishes while one of its subagents is still running):
+    - Click **■** → the loop stops and STAYS stopped. No terminal reappears 400 ms later, and
+      `debug.log` shows `aftertask-cancel <slot> (loop stopped)` (or
+      `(loop is not running)` from the next poll) and no `auto-recycle`.
+    - Click **♻** → exactly ONE restart. `aftertask-cancel <slot> (manual restart)`, and no second
+      `loop-recycle` in the log afterwards.
+    - Let the loop claim another task and finish it with no agent live → exactly ONE recycle
+      (`auto-recycle` followed by `aftertask-cancel <slot> (auto-recycle)`), not two.
+    - Close the loop's terminal from VSCode's terminal panel while the hold is pending → the hold is
+      swallowed, `aftertask-skip <slot> — loop is not running, nothing to restart` at worst; no loop
+      is started. Repeat the same four with `afterTask: clear` — a `clear-session` line must never
+      appear for a slot with no terminal.
 
     **Degradation:** stop the loop → the section's rows for that slot vanish at once. With no
     readable session (rename `~/.claude/sessions/` briefly) the log shows

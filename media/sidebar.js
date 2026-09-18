@@ -258,9 +258,12 @@
         // exactly as before, and the host swallows a scheduled action that no longer applies when
         // its timer elapses (`appliesTo` in src/schedule.ts).
         const armedFor = (action) => (l.restart && l.restart.action === action ? l.restart : null);
-        const withSchedule = (base, action) => {
+        // `note` rides ALONGSIDE the armed/unarmed wording rather than inside `base`, which the
+        // armed branch throws away — the ♻ button's subagent warning matters most on a loop that
+        // already has a restart armed, since that is the restart the subagent will hold back.
+        const withSchedule = (base, action, note) => {
           const armed = armedFor(action);
-          return (armed ? 'Scheduled ' + action + ' — ' + armed.label : base) + ' (right-click to schedule)';
+          return (armed ? 'Scheduled ' + action + ' — ' + armed.label : base) + (note || '') + ' (right-click to schedule)';
         };
         const actionBtn = (action, enabled, label, message, glyph) => {
           const btn = h('button', {
@@ -282,7 +285,7 @@
         const agentNames = live.length ? '\n' + live.map((a) => a.label).join('\n') : '';
 
         const playBtn = actionBtn('start', !l.running, withSchedule(spawnLabel, 'start'), 'spawnLoop', SVG.play);
-        const recycleBtn = actionBtn('restart', l.running, withSchedule('Restart with fresh context' + agentNote, 'restart') + agentNames, 'recycleLoop', SVG.recycle);
+        const recycleBtn = actionBtn('restart', l.running, withSchedule('Restart with fresh context', 'restart', agentNote) + agentNames, 'recycleLoop', SVG.recycle);
         const stopBtn = actionBtn('stop', l.running, withSchedule('Stop loop', 'stop'), 'stopLoop', SVG.stop);
 
         const row = h('div', { class: 'sb-row loop' }, body, playBtn, recycleBtn, stopBtn);
