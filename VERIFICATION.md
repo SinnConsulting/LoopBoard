@@ -783,11 +783,14 @@ and likewise cannot be verified headless.
     On a **draft** card the labelled row `Groom with [select] Work with [select]` now sits BETWEEN
     the `Draft` badge/id-chip/hold-badge row and the draft text — no longer below the text and
     attachments. The `added <date>` line stays last, at the bottom of the card (deliberately not a
-    chip). Pick another groomer → `TODO.md` shows `- groomer: <model>` on that draft's entry and
-    the card repaints on pick; pick `On hold` → `groomer: none` and the `on hold — not groomed`
-    badge plus its hint appear. Pick another model under `Work with` → `model:` is written to the
-    same entry. Click the draft text → the inline editor opens BELOW the selects row and saving
-    still rewrites the title. Collapse the draft → the selects row, text, attachments and `added`
-    line are all gone and the card grows no rows (t-eb64's decision); expand → they return in the
-    new order with the current values selected. An ordinary (non-draft) card's row (item 38) is
-    unchanged.
+    chip). The row is separated from the draft text by the same **8px** gap every other vertical
+    gap in the card uses (`added` line, attachments area) — the text must NOT butt flush against
+    the bottom edge of the `Work with` select, and clicking the text must open the inline textarea
+    with that same 8px above it. Pick another groomer → `TODO.md` shows `- groomer: <model>` on
+    that draft's entry and the card repaints on pick; pick `On hold` → `groomer: none` and the
+    `on hold — not groomed` badge plus its hint appear. Pick another model under `Work with` →
+    `model:` is written to the same entry. Click the draft text → the inline editor opens BELOW
+    the selects row and saving still rewrites the title. Collapse the draft → the selects row,
+    text, attachments and `added` line are all gone and the card grows no rows (t-eb64's
+    decision); expand → they return in the new order with the current values selected. An
+    ordinary (non-draft) card's row (item 38) is unchanged.

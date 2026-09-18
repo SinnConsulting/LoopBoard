@@ -1043,8 +1043,10 @@
               ? 'on hold — pick a groomer to have the loop structure this into a story'
               : 'the loop will structure this into a story')),
           // Selects sit directly under the badge row, above the draft text (t-720f) — the same
-          // head → selects → body order an ordinary card already uses in renderCard.
-          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
+          // head → selects → body order an ordinary card already uses in renderCard. The explicit
+          // marginBottom is load-bearing: the draft text has no top margin of its own and used to
+          // take its 8px gap from .draft-head-row's margin-bottom, which now lands above this row.
+          isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', marginBottom: '8px', flexWrap: 'wrap' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel,
             h('span', { class: 'muted-11' }, 'Work with'),
