@@ -91,9 +91,37 @@
   .err { color: #f14c4c; font-size: 11px; margin-top: 3px; }
   .stale { color: var(--modified); font-size: 11px; margin-left: 8px; }
   .foot { margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--desc); font-size: 11px; }
+
+  /* ---- topic list (left section nav) ----
+     Shown only when the viewport can hold it beside the content column; below the breakpoint the
+     page is exactly the single centred column it was before. Same rule in media/settings.css. */
+  .toc { display: none; }
+  @media (min-width: 1180px) {
+    .page { display: flex; align-items: flex-start; justify-content: center; gap: 32px; }
+    .wrap { flex: 1 1 880px; margin: 0; }
+    .toc {
+      display: block; flex: none; width: 200px;
+      position: sticky; top: 0; max-height: 100vh; overflow-y: auto; padding: 24px 0;
+    }
+    .toc-title {
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--desc); padding: 0 10px; margin-bottom: 8px;
+    }
+    .toc-link {
+      display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+      background: none; border: none; border-radius: 4px; cursor: pointer;
+      color: var(--fg); font: inherit; font-size: 12px; padding: 5px 10px;
+    }
+    .toc-link:hover { background: var(--row-hover); }
+    h2 { scroll-margin-top: 16px; }
+  }
 </style>
 </head>
 <body>
+<div class="page">
+
+<nav class="toc" aria-label="Settings sections"><div class="toc-title">Sections</div></nav>
+
 <div class="wrap">
 
   <header>
@@ -254,6 +282,8 @@
     It hard-codes the non-model settings for illustration; the real page derives them from
     <code>package.json &gt; contributes.configuration</code> instead. Every control there writes
     <code>ConfigurationTarget.Global</code>, and the model grid is the one hand-built block.
+    The <strong>topic list</strong> on the left appears only above 1180px — widen this window to see
+    it, narrow it and the page is the single centred column it has always been.
     <br /><br />
     <strong>Where the shipped page (<code>media/settings.{html,css,js}</code>) departs from this,
     deliberately:</strong> it has no light/dark switch — a webview inherits the editor's theme, and
@@ -266,6 +296,22 @@
     Reset belong to the generic rows, exactly as drawn here).
   </div>
 </div>
+</div>
+
+<script>
+  // Topic list, derived here from the h2s on the page; the shipped page derives the same entries
+  // from the manifest's sections instead (state.form.sections), and links to the same anchors.
+  const toc = document.querySelector('.toc');
+  document.querySelectorAll('.wrap h2').forEach((h2) => {
+    h2.id = 'section-' + h2.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const link = document.createElement('button');
+    link.className = 'toc-link';
+    link.type = 'button';
+    link.innerHTML = h2.innerHTML;
+    link.onclick = () => h2.scrollIntoView({ block: 'start' });
+    toc.append(link);
+  });
+</script>
 
 <script>
   document.getElementById('theme').onclick = (e) => {

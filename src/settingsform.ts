@@ -76,6 +76,7 @@ export interface SettingControl {
 
 export interface SettingsSection {
   title: string; // manifest title with the `LoopBoard: ` prefix stripped
+  slug: string; // stable anchor id for the page's topic list — derived from the title, see sectionSlug
   order: number;
   beta: boolean;
   grid: boolean; // this section owns the hand-built model grid
@@ -148,6 +149,13 @@ export function sectionTitle(title: string | undefined): string {
   return raw.startsWith('LoopBoard:') ? raw.slice('LoopBoard:'.length).trim() : raw;
 }
 
+// `Board & Workspace` -> `board-workspace`. The anchor the settings page's topic list scrolls to.
+// Derived from the TITLE, never from the section's position, so reordering `contributes.configuration`
+// cannot silently repoint an entry at a different section.
+export function sectionSlug(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+}
+
 function isTaggedBeta(prop: ManifestProperty): boolean {
   return Array.isArray(prop.tags) && prop.tags.includes(EXPERIMENTAL_TAG);
 }
@@ -205,14 +213,22 @@ function toControl(
 export function buildSettingsForm(sections: ManifestSection[], values: ValueMap = {}): SettingsForm {
   const booleans = booleanKeys(sections);
   const built: SettingsSection[] = [];
+  // Two sections with the same title would otherwise share an anchor and the topic list would send
+  // both entries to the first one.
+  const slugs = new Map<string, number>();
   for (const section of sections) {
     const entries = orderedEntries(section).filter((e) => !isDeprecated(e.prop));
     const grid = entries.some((e) => isGridKey(e.key));
     const drawn = entries.filter((e) => !isGridKey(e.key));
     const controls = drawn.map((e) => toControl(e.key, e.prop, values[e.key], booleans));
     if (controls.length === 0 && !grid) continue;
+    const title = sectionTitle(section.title);
+    const slug = sectionSlug(title);
+    const taken = slugs.get(slug) ?? 0;
+    slugs.set(slug, taken + 1);
     built.push({
-      title: sectionTitle(section.title),
+      title,
+      slug: taken === 0 ? slug : `${slug}-${taken + 1}`,
       order: section.order ?? 1e9,
       // A section is Beta only when EVERY property it draws is tagged experimental — the tag is the
       // truth, the heading is its rendering.

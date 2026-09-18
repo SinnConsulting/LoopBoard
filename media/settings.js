@@ -237,6 +237,36 @@
     ];
   }
 
+  // ---- topic list ----
+  // The heading text and the nav entry are the SAME derivation, so a section can never be listed
+  // under a name it is not drawn under.
+  function sectionLabel(section) {
+    return section.beta ? section.title.replace(/\s*\(experimental\)\s*$/, '') : section.title;
+  }
+  // `slug` comes from the form model (src/settingsform.ts) — title-derived, so reordering the
+  // manifest cannot repoint an entry at a different section.
+  function sectionId(section) { return 'section-' + section.slug; }
+
+  // Entries are derived from the same `state.form.sections` the page is drawn from: a section added
+  // to `contributes.configuration` later appears here with no change to this file. WHETHER the list
+  // is shown is a pure CSS decision (the min-width media query in media/settings.css) — there is no
+  // width measurement and no resize listener here, so at narrow widths it is simply not on the page.
+  function topicList() {
+    if (!state.form.sections.length) return null;
+    const nav = h('nav', { class: 'toc', 'aria-label': 'Settings sections' },
+      h('div', { class: 'toc-title' }, 'Sections'));
+    for (const section of state.form.sections) {
+      nav.append(h('button', {
+        class: 'toc-link', type: 'button',
+        onclick: () => {
+          const target = document.getElementById(sectionId(section));
+          if (target) target.scrollIntoView({ block: 'start' });
+        },
+      }, sectionLabel(section), section.beta ? h('span', { class: 'tag' }, 'experimental') : null));
+    }
+    return nav;
+  }
+
   // ---- page ----
   function render() {
     root.textContent = '';
@@ -256,8 +286,8 @@
     if (state.problem) wrap.append(h('div', { class: 'banner' }, state.problem));
 
     for (const section of state.form.sections) {
-      const title = section.beta ? section.title.replace(/\s*\(experimental\)\s*$/, '') : section.title;
-      wrap.append(h('h2', {}, title, section.beta ? h('span', { class: 'tag' }, 'experimental') : null));
+      wrap.append(h('h2', { id: sectionId(section) },
+        sectionLabel(section), section.beta ? h('span', { class: 'tag' }, 'experimental') : null));
       if (section.grid) for (const node of gridTable()) if (node) wrap.append(node);
       for (const control of section.controls) wrap.append(settingRow(control));
     }
@@ -267,7 +297,7 @@
       ' — these are ordinary VSCode settings, so ', h('code', {}, 'settings.json'),
       ' and Settings Sync keep working. Every change here is written to your USER settings.'));
 
-    root.append(wrap);
+    root.append(h('div', { class: 'page' }, topicList(), wrap));
   }
 
   vscode.postMessage({ type: 'settingsReady' });

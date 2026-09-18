@@ -514,6 +514,19 @@ and likewise cannot be verified headless.
     with the page open → every label, input, switch and radio stays legible; nothing is a dark-only
     hard-coded colour.
 
+    **Topic list, width-gated (untested in Docker — `media/` has no coverage beyond the syntax
+    gate):** only the section→anchor slugs are unit-tested (`test/settingsform.test.js`); the list
+    itself is CSS and a webview click handler. With the page open, make the editor group WIDE
+    (≥ 1180px — drag the sidebar closed / maximise the window): a **Sections** list appears on the
+    left, its entries matching the page's headings one for one, in the same order, with the Beta
+    entry carrying the same `experimental` chip. Click each entry → the page scrolls to that
+    heading. Scroll down → the list stays put (sticky). Now NARROW the group (split the editor, or
+    open the sidebar and Panel): below 1180px the list is GONE — no hamburger, no leftover gap, and
+    the content column is centred exactly as it was before this was added. Do the whole check once
+    in a dark theme and once in a light one: the list's text and hover are theme colours, so both
+    must stay legible. There is deliberately NO active-section highlight — no entry is ever marked
+    while you scroll.
+
     **Modified marker + reset:** change *Loop interval* to `2m` → a dot appears next to the label
     and **Reset** appears. Check `settings.json` (user, not workspace): `"loopBoard.loopInterval":
     "2m"` is in your USER settings file. Click **Reset** → the key disappears from user settings,

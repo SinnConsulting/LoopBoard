@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  buildSettingsForm, controlKind, humanizeKey, sectionTitle, isGridKey, isDeprecated, formKeys,
+  buildSettingsForm, controlKind, humanizeKey, sectionTitle, sectionSlug, isGridKey, isDeprecated, formKeys,
   validateValue, toConfigPatch, resetPatch, findControl, MODEL_GRID_KEYS,
 } = require('../out-test/settingsform.js');
 
@@ -188,6 +188,26 @@ test('section titles drop the LoopBoard: prefix the native editor needs', () => 
   assert.equal(sectionTitle('LoopBoard: Agent Setup'), 'Agent Setup');
   assert.equal(sectionTitle('Something else'), 'Something else');
   assert.equal(sectionTitle(undefined), '');
+});
+
+test('every section carries a unique, title-derived anchor slug', () => {
+  // The settings page's topic list links to these. Title-derived, never index-derived, so
+  // reordering contributes.configuration cannot repoint an entry at a different section.
+  assert.equal(sectionSlug('Board & Workspace'), 'board-workspace');
+  assert.equal(sectionSlug('Beta (experimental)'), 'beta-experimental');
+  assert.equal(sectionSlug('???'), 'section'); // a title with nothing sluggable still gets an id
+
+  const real = buildSettingsForm(manifest.contributes.configuration).sections;
+  assert.ok(real.length > 1);
+  assert.equal(new Set(real.map((s) => s.slug)).size, real.length, 'two sections share an anchor');
+  assert.equal(real.find((s) => s.title === 'Models & Slots').slug, 'models-slots');
+
+  // Same title twice: the second gets its own id rather than stealing the first one's.
+  const dup = buildSettingsForm([
+    { title: 'LoopBoard: Same', order: 1, properties: { 'loopBoard.a': { type: 'boolean', default: false } } },
+    { title: 'LoopBoard: Same', order: 2, properties: { 'loopBoard.b': { type: 'boolean', default: false } } },
+  ]);
+  assert.deepEqual(dup.sections.map((s) => s.slug), ['same', 'same-2']);
 });
 
 test('formKeys lists every declared key, grid and deprecated included', () => {
