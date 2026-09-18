@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Less prompting. No babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
-  "version": "3.7.1",
+  "version": "3.8.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",
@@ -72,45 +72,54 @@
     ],
     "configuration": [
       {
-        "title": "LoopBoard: Models",
+        "title": "LoopBoard: Models & Slots",
         "order": 1,
         "properties": {
           "loopBoard.defaultWorkerModel": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "opus",
               "sonnet",
               "fable"
             ],
-            "order": 1,
+            "order": 10,
             "default": "sonnet",
+            "loopBoardApplies": "live",
             "markdownDescription": "The model that owns (works) tasks with no explicit `model:` field."
           },
           "loopBoard.defaultGroomerModel": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "opus",
               "sonnet",
               "fable"
             ],
-            "order": 2,
+            "order": 20,
             "default": "opus",
+            "loopBoardApplies": "live",
             "markdownDescription": "The model that grooms tasks/drafts with no explicit `groomer:` field."
           },
           "loopBoard.models.opus.enabled": {
             "type": "boolean",
-            "order": 10,
+            "scope": "application",
+            "order": 30,
             "default": true,
+            "loopBoardApplies": "live",
             "markdownDescription": "**Opus slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot."
           },
           "loopBoard.models.opus.model": {
             "type": "string",
-            "order": 11,
+            "scope": "application",
+            "order": 40,
             "default": "",
-            "markdownDescription": "Custom `--model` string spawned for the Opus slot (e.g. `opus[1m]`). Empty = `opus`. Invalid strings are ignored."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Custom `--model` string spawned for the Opus slot (e.g. `opus[1m]`). Empty = `opus`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.opus.effort": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "low",
               "medium",
@@ -118,31 +127,39 @@
               "xhigh",
               "max"
             ],
-            "order": 12,
+            "order": 50,
             "default": "high",
-            "markdownDescription": "Subagent reasoning-effort ceiling for the Opus slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Subagent reasoning-effort ceiling for the Opus slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.opus.groomConcurrency": {
             "type": "number",
+            "scope": "application",
             "minimum": 1,
-            "order": 13,
+            "order": 60,
             "default": 3,
-            "markdownDescription": "Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.sonnet.enabled": {
             "type": "boolean",
-            "order": 20,
+            "scope": "application",
+            "order": 70,
             "default": true,
+            "loopBoardApplies": "live",
             "markdownDescription": "**Sonnet slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot."
           },
           "loopBoard.models.sonnet.model": {
             "type": "string",
-            "order": 21,
+            "scope": "application",
+            "order": 80,
             "default": "",
-            "markdownDescription": "Custom `--model` string spawned for the Sonnet slot (e.g. `sonnet[1m]`). Empty = `sonnet`. Invalid strings are ignored."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Custom `--model` string spawned for the Sonnet slot (e.g. `sonnet[1m]`). Empty = `sonnet`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.sonnet.effort": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "low",
               "medium",
@@ -150,31 +167,39 @@
               "xhigh",
               "max"
             ],
-            "order": 22,
+            "order": 90,
             "default": "high",
-            "markdownDescription": "Subagent reasoning-effort ceiling for the Sonnet slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Subagent reasoning-effort ceiling for the Sonnet slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.sonnet.groomConcurrency": {
             "type": "number",
+            "scope": "application",
             "minimum": 1,
-            "order": 23,
+            "order": 100,
             "default": 3,
-            "markdownDescription": "Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.fable.enabled": {
             "type": "boolean",
-            "order": 30,
+            "scope": "application",
+            "order": 110,
             "default": true,
+            "loopBoardApplies": "live",
             "markdownDescription": "**Fable slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot."
           },
           "loopBoard.models.fable.model": {
             "type": "string",
-            "order": 31,
+            "scope": "application",
+            "order": 120,
             "default": "",
-            "markdownDescription": "Custom `--model` string spawned for the Fable slot. Empty = `fable`. Invalid strings are ignored."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Custom `--model` string spawned for the Fable slot. Empty = `fable`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.fable.effort": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "low",
               "medium",
@@ -182,31 +207,53 @@
               "xhigh",
               "max"
             ],
-            "order": 32,
+            "order": 130,
             "default": "high",
-            "markdownDescription": "Subagent reasoning-effort ceiling for the Fable slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Subagent reasoning-effort ceiling for the Fable slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.fable.groomConcurrency": {
             "type": "number",
+            "scope": "application",
             "minimum": 1,
-            "order": 33,
+            "order": 140,
             "default": 3,
-            "markdownDescription": "Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           }
         }
       },
       {
-        "title": "LoopBoard: Loop Behavior",
+        "title": "LoopBoard: Agent Setup",
         "order": 2,
         "properties": {
+          "loopBoard.permissionMode": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "auto",
+              "acceptEdits",
+              "bypassPermissions",
+              "dontAsk",
+              "default",
+              "plan"
+            ],
+            "order": 10,
+            "default": "auto",
+            "loopBoardApplies": "restart",
+            "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** — a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+          },
           "loopBoard.loopInterval": {
             "type": "string",
-            "order": 1,
+            "scope": "application",
+            "order": 20,
             "default": "5m",
-            "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.afterTask": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "none",
               "clear",
@@ -217,32 +264,24 @@
               "Soft: send /clear to the terminal so the next task starts on a fresh conversation. The terminal keeps running.",
               "Hard: close the terminal and open a new one. Fully fresh, but the loop is briefly down while it restarts."
             ],
-            "order": 2,
+            "order": 30,
             "default": "none",
-            "markdownDescription": "What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). You can always restart a loop by hand with ♻."
-          },
-          "loopBoard.delegateWork": {
-            "type": "boolean",
-            "order": 3,
-            "default": false,
-            "markdownDescription": "Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateWork.review` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt, so a change takes effect the next time a loop terminal is started or restarted (♻)."
-          },
-          "loopBoard.delegateWork.review": {
-            "type": "boolean",
-            "order": 4,
-            "default": true,
-            "markdownDescription": "Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Frozen into the bootstrap prompt, so a change needs a loop start or restart (♻)."
+            "loopBoardApplies": "live",
+            "markdownDescription": "What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). Whatever this is set to, the ♻ button still recycles a loop by hand at any time."
           },
           "loopBoard.contextLimit.percent": {
             "type": "number",
+            "scope": "application",
             "minimum": 0,
             "maximum": 100,
-            "order": 10,
+            "order": 40,
             "default": 0,
-            "markdownDescription": "Restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle."
+            "loopBoardApplies": "live",
+            "markdownDescription": "Automatically restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle."
           },
           "loopBoard.contextLimit.action": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "clear",
               "recycle"
@@ -251,38 +290,63 @@
               "Soft: send /clear to the terminal so the loop continues on a fresh conversation.",
               "Hard: close the terminal and open a new one (default)."
             ],
-            "order": 11,
+            "order": 50,
             "default": "recycle",
+            "loopBoardApplies": "live",
             "markdownDescription": "What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size."
-          },
-          "loopBoard.permissionMode": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "acceptEdits",
-              "bypassPermissions",
-              "dontAsk",
-              "default",
-              "plan"
-            ],
-            "order": 6,
-            "default": "auto",
-            "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻."
-          },
-          "loopBoard.pulseTemplateSync": {
-            "type": "boolean",
-            "order": 7,
-            "default": true,
-            "description": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
           "loopBoard.nudgeLoops": {
             "type": "boolean",
-            "order": 5,
+            "scope": "application",
+            "order": 60,
             "default": true,
-            "description": "When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
+            "loopBoardApplies": "live",
+            "markdownDescription": "When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before."
+          },
+          "loopBoard.autoRecycle": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 900,
+            "default": false,
+            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this.",
+            "loopBoardApplies": "live",
+            "markdownDescription": "Deprecated: when a model finishes a task, restart its loop terminal so the next task starts fresh."
+          },
+          "loopBoard.clearSessionAfterTask": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 910,
+            "default": false,
+            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this.",
+            "loopBoardApplies": "live",
+            "markdownDescription": "Deprecated: when a model finishes a task, send /clear to its loop terminal so the next task starts fresh."
+          }
+        }
+      },
+      {
+        "title": "LoopBoard: Board & Workspace",
+        "order": 3,
+        "properties": {
+          "loopBoard.maxAttachmentSizeMB": {
+            "type": "number",
+            "scope": "application",
+            "order": 10,
+            "default": 10,
+            "minimum": 1,
+            "loopBoardApplies": "live",
+            "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
+          },
+          "loopBoard.pulseTemplateSync": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 20,
+            "default": true,
+            "loopBoardApplies": "live",
+            "markdownDescription": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
           "loopBoard.debug": {
             "type": "string",
+            "scope": "application",
             "enum": [
               "off",
               "info",
@@ -293,30 +357,39 @@
               "Key lifecycle events only: activation, promote/accept/demote gates, loop spawn/recycle/stop, same-field disk-wins conflicts.",
               "Everything, including every field patch/save, attachment, template scaffold/heal/sync, config read, and webview message dispatch."
             ],
-            "order": 8,
+            "order": 30,
             "default": "off",
+            "loopBoardApplies": "live",
             "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
-          },
-          "loopBoard.maxAttachmentSizeMB": {
-            "type": "number",
-            "order": 9,
-            "default": 10,
-            "minimum": 1,
-            "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
-          },
-          "loopBoard.autoRecycle": {
+          }
+        }
+      },
+      {
+        "title": "LoopBoard: Beta (experimental)",
+        "order": 4,
+        "properties": {
+          "loopBoard.delegateWork": {
             "type": "boolean",
-            "order": 90,
+            "scope": "application",
+            "tags": [
+              "experimental"
+            ],
+            "order": 10,
             "default": false,
-            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this.",
-            "description": "Deprecated: when a model finishes a task, restart its loop terminal so the next task starts fresh."
+            "loopBoardApplies": "restart",
+            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
-          "loopBoard.clearSessionAfterTask": {
+          "loopBoard.delegateReview": {
             "type": "boolean",
-            "order": 91,
-            "default": false,
-            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this.",
-            "description": "Deprecated: when a model finishes a task, send /clear to its loop terminal so the next task starts fresh."
+            "scope": "application",
+            "tags": [
+              "experimental"
+            ],
+            "order": 20,
+            "default": true,
+            "loopBoardApplies": "restart",
+            "loopBoardDependsOn": "loopBoard.delegateWork",
+            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           }
         }
       }

@@ -164,49 +164,77 @@ first.
 
 ## Settings
 
-Every setting below is generated from `contributes.configuration` in `package.json`, grouped and
-ordered exactly as VSCode's own settings page renders them.
+The sidebar's **Settings** row opens LoopBoard's own settings page: the same keys, grouped into
+four sections, with the three model slots drawn as one clickable grid (on · worker · groomer ·
+`--model` · effort · groomers) instead of fourteen flat rows. It carries a modified marker and a
+per-setting reset, and keeps an **Open in VSCode Settings** escape hatch to the native
+`@ext:SinnConsulting.loopboard-todo` view for settings search and JSON editing.
+
+These stay ordinary VSCode settings — `settings.json` and Settings Sync are unaffected — with one
+deliberate restriction: **every `loopBoard.*` key is `"scope": "application"`, so it can only be set
+in your USER settings.** See [Security model](#security-model).
+
+The table below is generated from `contributes.configuration` in `package.json`, grouped and
+ordered exactly as both settings pages render them.
 
 <!-- loopboard:settings:begin -->
 
-### LoopBoard: Models
+### LoopBoard: Models & Slots
 
 | Setting | Default | Description |
 |---|---|---|
 | `loopBoard.defaultWorkerModel` | `sonnet` | The model that owns (works) tasks with no explicit `model:` field. |
 | `loopBoard.defaultGroomerModel` | `opus` | The model that grooms tasks/drafts with no explicit `groomer:` field. |
 | `loopBoard.models.opus.enabled` | `true` | **Opus slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
-| `loopBoard.models.opus.model` | `""` | Custom `--model` string spawned for the Opus slot (e.g. `opus[1m]`). Empty = `opus`. Invalid strings are ignored. |
-| `loopBoard.models.opus.effort` | `high` | Subagent reasoning-effort ceiling for the Opus slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. |
-| `loopBoard.models.opus.groomConcurrency` | `3` | Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with. |
+| `loopBoard.models.opus.model` | `""` | Custom `--model` string spawned for the Opus slot (e.g. `opus[1m]`). Empty = `opus`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.opus.effort` | `high` | Subagent reasoning-effort ceiling for the Opus slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.opus.groomConcurrency` | `3` | Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.models.sonnet.enabled` | `true` | **Sonnet slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
-| `loopBoard.models.sonnet.model` | `""` | Custom `--model` string spawned for the Sonnet slot (e.g. `sonnet[1m]`). Empty = `sonnet`. Invalid strings are ignored. |
-| `loopBoard.models.sonnet.effort` | `high` | Subagent reasoning-effort ceiling for the Sonnet slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. |
-| `loopBoard.models.sonnet.groomConcurrency` | `3` | Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with. |
+| `loopBoard.models.sonnet.model` | `""` | Custom `--model` string spawned for the Sonnet slot (e.g. `sonnet[1m]`). Empty = `sonnet`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.sonnet.effort` | `high` | Subagent reasoning-effort ceiling for the Sonnet slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.sonnet.groomConcurrency` | `3` | Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.models.fable.enabled` | `true` | **Fable slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
-| `loopBoard.models.fable.model` | `""` | Custom `--model` string spawned for the Fable slot. Empty = `fable`. Invalid strings are ignored. |
-| `loopBoard.models.fable.effort` | `high` | Subagent reasoning-effort ceiling for the Fable slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. |
-| `loopBoard.models.fable.groomConcurrency` | `3` | Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. A change takes effect the next time this slot's loop terminal is started or restarted (♻): a running loop keeps the cap it was spawned with. |
+| `loopBoard.models.fable.model` | `""` | Custom `--model` string spawned for the Fable slot. Empty = `fable`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.fable.effort` | `high` | Subagent reasoning-effort ceiling for the Fable slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.fable.groomConcurrency` | `3` | Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 
-### LoopBoard: Loop Behavior
+### LoopBoard: Agent Setup
 
 | Setting | Default | Description |
 |---|---|---|
-| `loopBoard.loopInterval` | `5m` | Interval passed to `/loop` (e.g. `1m`, `5m`). Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻. |
-| `loopBoard.afterTask` | `none` | What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). You can always restart a loop by hand with ♻. |
-| `loopBoard.delegateWork` | `false` | Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateWork.review` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt, so a change takes effect the next time a loop terminal is started or restarted (♻). |
-| `loopBoard.delegateWork.review` | `true` | Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Frozen into the bootstrap prompt, so a change needs a loop start or restart (♻). |
-| `loopBoard.nudgeLoops` | `true` | When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before. |
-| `loopBoard.permissionMode` | `auto` | `--permission-mode` passed to the `claude` CLI when spawning a loop terminal. Frozen into the spawn command, so a change reaches a running loop only after you restart it with ♻. |
-| `loopBoard.pulseTemplateSync` | `true` | Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way). |
-| `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
-| `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
-| `loopBoard.contextLimit.percent` | `0` | Restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
+| `loopBoard.permissionMode` | `auto` | `--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** — a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.loopInterval` | `5m` | Interval passed to `/loop` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.afterTask` | `none` | What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). Whatever this is set to, the ♻ button still recycles a loop by hand at any time. |
+| `loopBoard.contextLimit.percent` | `0` | Automatically restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
 | `loopBoard.contextLimit.action` | `recycle` | What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size. |
+| `loopBoard.nudgeLoops` | `true` | When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before. |
 | `loopBoard.autoRecycle` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this. |
 | `loopBoard.clearSessionAfterTask` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this. |
 
+### LoopBoard: Board & Workspace
+
+| Setting | Default | Description |
+|---|---|---|
+| `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
+| `loopBoard.pulseTemplateSync` | `true` | Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way). |
+| `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
+
+### LoopBoard: Beta (experimental)
+
+| Setting | Default | Description |
+|---|---|---|
+| `loopBoard.delegateWork` | `false` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.delegateReview` | `true` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+
 <!-- loopboard:settings:end -->
+
+> **Renamed:** `loopBoard.delegateWork.review` is now **`loopBoard.delegateReview`**. The old id
+> could never take effect: VSCode resolves settings as a tree, so a key holding a scalar cannot
+> also have a child key — with `loopBoard.delegateWork` set, VSCode logged
+> `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is true` and discarded the
+> value, leaving the default (`true`) in force. Nothing that was actually being honoured is lost by
+> the rename; if you had set the old key, set the new one to the value you meant and delete the old
+> line from your user `settings.json`.
 
 See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
 
@@ -252,7 +280,7 @@ three keys:
 - `loopBoard.models.<slot>.effort` — subagent reasoning-effort ceiling (`low`…`max`) for that slot: grooming subagents per Rule 14 in `LOOP.md`, and the implementer/review subagents when `loopBoard.delegateWork` is on.
 - `loopBoard.models.<slot>.groomConcurrency` — how many grooming subagents that slot's loop may run in parallel in one pass (default `3`, minimum `1`; there is no unlimited setting). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass.
 
-The `.effort` and `.groomConcurrency` ceilings ride the loop's bootstrap prompt — as do `loopBoard.delegateWork` and `loopBoard.delegateWork.review` — so a change to any of them takes effect the **next time that slot's loop is started or restarted (♻)**; a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
+The `.effort` and `.groomConcurrency` ceilings ride the loop's bootstrap prompt — as do `loopBoard.delegateWork` and `loopBoard.delegateReview` — so a change to any of them takes effect the **next time that slot's loop is started or restarted (♻)**; a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
 
 ```jsonc
 // Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.
@@ -286,19 +314,41 @@ Zero runtime dependencies; the webview is vanilla HTML/CSS/JS with a CSP nonce o
 
 ## Security model
 
-**Treat `.loopboard/` and workspace settings as trusted input.** LoopBoard points an autonomous
-`claude` session at `.loopboard/LOOP.md`'s Automation block, running with the configured
-`loopBoard.permissionMode` — which may be `bypassPermissions`. Anything written into `LOOP.md` (or
-the task files it opens), or into `.vscode/settings.json`, steers an agent that can run commands on
-your machine. This is inherent to what LoopBoard does, not a bug.
+**Treat `.loopboard/` as trusted input.** LoopBoard points an autonomous `claude` session at
+`.loopboard/LOOP.md`'s Automation block, running with the configured `loopBoard.permissionMode` —
+which may be `bypassPermissions`. Anything written into `LOOP.md`, or into the task files it opens,
+steers an agent that can run commands on your machine. This is inherent to what LoopBoard does, not
+a bug.
 
 - A `.loopboard/` from a source you don't control (a cloned repo, a shared workspace) is a
-  prompt-injection vector with arbitrary-command-execution reach.
+  prompt-injection vector with arbitrary-command-execution reach. It stays in the repo by design —
+  the tracker *is* the repo's — so it remains the one channel worth reading before you press ▶.
 - **Review `.loopboard/LOOP.md` before starting a loop in a repo you didn't author**, and set
   `loopBoard.permissionMode` no higher than you're comfortable running unattended.
 
+**The settings channel is enforced shut.** Every `loopBoard.*` key is declared
+`"scope": "application"`, which means user settings only. A repository cannot set one — not through
+its `.vscode/settings.json`, and not through a `.devcontainer/devcontainer.json` it ships (which is
+why the scope is `application` and not `machine`: `machine` still permits remote settings, and a
+dev container's settings come from inside the repo). `loopBoard.permissionMode` is the key this is
+really about: a cloned repo must never get to decide how much authority your agent runs with.
+
 VSCode Workspace Trust gates activation, but trusting a repo to open it is not the same as vetting
 what its `.loopboard/` will tell an agent to do.
+
+### Migrating from a workspace setting
+
+If you previously set a `loopBoard.*` key in a workspace's `.vscode/settings.json` (or in a
+`.code-workspace` file), **that value no longer has any effect** — VSCode does not migrate a
+workspace value when a key stops being workspace-settable, it silently ignores it. Move any setting
+you still want into your user settings (the sidebar's Settings row, or
+`@ext:SinnConsulting.loopboard-todo` in VSCode's own Settings editor, both of which now write there
+exclusively), and delete the stale workspace entries. No key was renamed, so the names are
+unchanged.
+
+The trade-off is accepted deliberately: a repository can no longer ship its own default models,
+effort ceiling or delegation mode for a team to share. LoopBoard configuration belongs to the
+person, not to the checked-out repo.
 
 ## Usage volume
 

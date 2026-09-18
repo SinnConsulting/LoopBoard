@@ -114,8 +114,10 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   construction because `sync.ts` matches only the `loopboard:sync:` namespace (regression test in
   `test/sync.test.js`). `media/template-loop.md` ends with the EMPTY section outside every sync
   marker: fresh workspaces scaffold it, Sync never adds it to existing files. Caveat: a LOOP.md with NO sync markers at all is legacy-replaced wholesale
-  on Sync (backed up to `LOOP.md.bkp`). `src/` has no `onDidChangeConfiguration` listener anywhere
-  — configuration is read on demand.
+  on Sync (backed up to `LOOP.md.bkp`). The gear opens LoopBoard's OWN settings page (t-sgrp),
+  drawn from `contributes.configuration` (every key `scope: application`, so writes are always
+  Global); its `loopBoard.*` config listener lives and dies with that panel — `src/` has none
+  otherwise, and configuration is still read on demand.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
 - Debug trace (`loopBoard.debug` = `off | info | verbose`): any new code that writes a

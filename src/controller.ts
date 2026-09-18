@@ -3,12 +3,19 @@ import * as vscode from 'vscode';
 import { Store } from './store';
 import { TerminalManager, isKnownModel } from './terminals';
 import { BoardPanel } from './panel';
+import { SettingsPanel } from './settingspanel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
   Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS,
   AfterTask, resolveAfterTask,
 } from './model';
+import {
+  ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
+  ConfigPatch, MODEL_GRID_KEYS, SETTINGS_PREFIX,
+} from './settingsform';
+import { buildModelGrid, gridPatch } from './settingsgrid';
+import { MigrationPlan, SettingValues, actionWrites, buildMigrationPlan, scanKeys } from './settingsmigrate';
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
@@ -43,7 +50,21 @@ function today(): string {
 // Single source of truth for the Getting Started docs target — both the first-run popup and the
 // sidebar Help button open this URL (t-de8d).
 export const HELP_URL = 'https://github.com/SinnConsulting/LoopBoard#get-started';
+
+// LoopBoard's own id, used twice: to read its own `contributes.configuration` back at runtime (so
+// the settings page is drawn FROM the manifest and can never drift from it) and as the filter for
+// the native Settings editor the page keeps as an escape hatch.
+export const EXTENSION_ID = 'SinnConsulting.loopboard-todo';
+export const NATIVE_SETTINGS_FILTER = `@ext:${EXTENSION_ID}`;
+
 const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
+// DEAD KEY, kept only to be deleted. An earlier build of the migration panel could not remove
+// `loopBoard.delegateWork.review` (it is unreadable behind its scalar parent) and instead asked the
+// user to confirm they had dealt with it by hand, remembering that here. The removal turned out to
+// be possible after all — reading and writing are different code paths in VSCode, see
+// src/settingsmigrate.ts — so the advisory, the button and the claim are all gone. Every
+// activation clears the leftover so an existing install does not carry it forever.
+const DEAD_MIGRATE_ACK_KEY = 'loopboard.settingsMigrate.acknowledged';
 
 // The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
 // here so store.stageAttachment has one raw-bytes entry point regardless of source (drag-drop/
@@ -756,8 +777,28 @@ export class Controller {
         this.openBoard();
         return;
       case 'openSettings':
-        void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:SinnConsulting.loopboard-todo');
+        this.openSettings();
         return;
+      case 'openNativeSettings':
+        // The escape hatch t-set1's gear used to be. Settings search and JSON editing are NOT
+        // reproduced on LoopBoard's own page — this covers both.
+        this.store.debugLog('info', 'settings-native', NATIVE_SETTINGS_FILTER);
+        void vscode.commands.executeCommand('workbench.action.openSettings', NATIVE_SETTINGS_FILTER);
+        return;
+      case 'settingsReady':
+        return this.postSettings();
+      case 'settingsPatch':
+        return this.onSettingsPatch(String(msg.key ?? ''), msg.value);
+      case 'settingsReset':
+        return this.onSettingsReset(String(msg.key ?? ''));
+      case 'gridPatch':
+        return this.onGridPatch(msg.slot, msg.field, msg.value);
+      case 'settingsScanStale':
+        return this.onScanStale();
+      case 'settingsMigrate':
+        return this.onMigrateStale();
+      case 'settingsMigrateKey':
+        return this.onMigrateOne(String(msg.key ?? ''));
       case 'reveal':
         // `search` is forwarded verbatim and its ABSENCE is meaningful (t-1cdb): undefined means
         // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
@@ -773,6 +814,297 @@ export class Controller {
     }
   }
 
+  // ---- LoopBoard's own settings page (t-sgrp) ----
+
+  // The page's whole content comes from here: LoopBoard reads its OWN manifest back at runtime, so
+  // goals 1–3 (sections, Beta area, `scope: application`) define what the page looks like and a
+  // setting added later appears on it with no code change.
+  private settingsManifest(): ManifestSection[] {
+    const contributed = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON?.contributes?.configuration;
+    if (Array.isArray(contributed)) return contributed as ManifestSection[];
+    return contributed ? [contributed as ManifestSection] : [];
+  }
+
+  // Opens (or reveals) the page. The config listener is created WITH the panel and disposed with it
+  // — see SettingsPanel; the codebase gains no permanently installed config listener.
+  openSettings(): void {
+    this.store.debugLog('info', 'settings-open', 'LoopBoard settings page');
+    const { panel, created } = SettingsPanel.show(this.extensionUri, () => {
+      this.store.debugLog('info', 'settings-config-change', 'loopBoard.* changed — repainting the settings page and the board');
+      // TWO repaints, because a `loopBoard.*` change moves two surfaces. Everything the board and
+      // sidebar draw from configuration — the enabled slot rows, the default worker/groomer marks,
+      // the context threshold — is read on demand inside `config()`, and `refresh()` is the only
+      // path that pushes a repaint to them; without this call they keep showing the OLD values
+      // until an unrelated `.loopboard/` write or terminal event happens to refresh them.
+      // Both are started, never chained: an await (or a rejection) in one must not skip the other.
+      void this.postSettings();
+      void this.refresh('config-change');
+    });
+    panel.onMessage((msg) => this.handleMessage(msg));
+    // A fresh panel's webview isn't listening yet; it asks with `settingsReady`.
+    if (!created) void this.postSettings();
+  }
+
+  private async postSettings(): Promise<void> {
+    if (!SettingsPanel.current) return;
+    const sections = this.settingsManifest();
+    const root = vscode.workspace.getConfiguration();
+    const values: ValueMap = {};
+    for (const key of formKeys(sections)) {
+      const inspected = root.inspect(key);
+      // Only these two scopes can exist: every LoopBoard key is `scope: application`, so a
+      // workspace value is not merely ignored — VSCode refuses to record one.
+      values[key] = { defaultValue: inspected?.defaultValue, globalValue: inspected?.globalValue };
+    }
+    this.store.debugLog('verbose', 'settings-render', `${sections.length} section(s), ${Object.keys(values).length} key(s)`);
+    const c = vscode.workspace.getConfiguration('loopBoard');
+    const grid = buildModelGrid(
+      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
+      readDefaultModel(c, 'defaultWorkerModel'),
+      readDefaultModel(c, 'defaultGroomerModel'),
+    );
+    SettingsPanel.current.post({
+      type: 'settings',
+      form: buildSettingsForm(sections, values),
+      grid,
+      extensionId: EXTENSION_ID,
+      // Only ever set if the extension could not read its own manifest — the page then has nothing
+      // to draw and must say so rather than render as an empty, working-looking form.
+      problem: sections.length === 0
+        ? 'LoopBoard could not read its own configuration manifest. Use “Open in VSCode Settings” instead.'
+        : undefined,
+    });
+  }
+
+  // The codebase's ONLY configuration write. Target is settled by goal 3 rather than chosen here:
+  // every key is `scope: application`, so Global is the only target VSCode would accept anyway.
+  private async writeConfig(patch: ConfigPatch): Promise<void> {
+    this.store.debugLog('info', 'settings-write', `${patch.key} = ${JSON.stringify(patch.value ?? null)} (Global)`);
+    let failure: string | undefined;
+    try {
+      await vscode.workspace.getConfiguration().update(patch.key, patch.value, vscode.ConfigurationTarget.Global);
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+      this.store.debugLog('info', 'settings-write-failed', `${patch.key} — ${failure}`);
+    }
+    // The config listener repaints too, but only when the value actually CHANGED — a no-op write
+    // fires no event, and the control would keep showing whatever the user typed. VSCode fires the
+    // event for the extension's OWN `update()` as well, so the board/sidebar repaint the listener
+    // now also does covers edits made ON this page; nothing extra is needed here (and a write that
+    // changed nothing has nothing for the sidebar to redraw).
+    await this.postSettings();
+    // Strictly after the repaint: a fresh form clears the page's error map, so posting the reason
+    // first would erase it again before the user ever saw it.
+    if (failure) SettingsPanel.current?.post({ type: 'settingsError', key: patch.key, reason: failure });
+  }
+
+  // Generic control edit. Re-validated against the manifest here because the webview is never
+  // trusted: it can post any value for any key, and this is the last gate before `update()`.
+  private async onSettingsPatch(key: string, raw: unknown): Promise<void> {
+    const form = buildSettingsForm(this.settingsManifest());
+    const control = findControl(form, key);
+    if (!control) {
+      this.store.debugLog('info', 'settings-reject', `${key} — not a settings-page control`);
+      SettingsPanel.current?.post({ type: 'settingsError', key, reason: 'not a setting this page owns.' });
+      return;
+    }
+    const result = toConfigPatch(control, raw);
+    if (!result.ok) {
+      // Nothing on disk changed, so no fresh form is posted: the page re-renders from the state it
+      // already has (putting the control back to the stored value) and shows the reason beside it.
+      this.store.debugLog('info', 'settings-reject', `${key} — ${result.reason}`);
+      SettingsPanel.current?.post({ type: 'settingsError', key, reason: result.reason });
+      return;
+    }
+    return this.writeConfig(result.patch);
+  }
+
+  // Per-setting reset — `update(key, undefined, Global)` removes the user value so the manifest
+  // default takes over again. Without it a custom page silently loses the one thing the native
+  // editor makes obvious.
+  private async onSettingsReset(key: string): Promise<void> {
+    const control = findControl(buildSettingsForm(this.settingsManifest()), key);
+    const known = control !== undefined || MODEL_GRID_KEYS.includes(key);
+    if (!known) {
+      SettingsPanel.current?.post({ type: 'settingsError', key, reason: 'not a setting this page owns.' });
+      return;
+    }
+    return this.writeConfig(resetPatch(key));
+  }
+
+  // One grid cell edit. The grid is a different PRESENTATION of ordinary settings, so it lands in
+  // the same write path; only the validation differs (pure, unit-tested in src/settingsgrid.ts).
+  private async onGridPatch(slot: unknown, field: unknown, raw: unknown): Promise<void> {
+    const c = vscode.workspace.getConfiguration('loopBoard');
+    const grid = buildModelGrid(
+      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
+      readDefaultModel(c, 'defaultWorkerModel'),
+      readDefaultModel(c, 'defaultGroomerModel'),
+    );
+    const result = gridPatch(grid, slot, field, raw);
+    if (!result.ok) {
+      this.store.debugLog('info', 'settings-reject', `${String(slot)}.${String(field)} — ${result.reason}`);
+      SettingsPanel.current?.post({ type: 'settingsError', slot, field, reason: result.reason });
+      return;
+    }
+    for (const patch of result.patches) await this.writeConfig(patch);
+  }
+
+  // ---- stale-settings migration (t-sgrp follow-up) ----
+
+  // Every `loopBoard.*` key the user has actually set, as a flat dotted map. Two passes, because
+  // neither alone is complete:
+  //   * BY NAME, for every key `scanKeys` asks for. A migration source under a declared SCALAR
+  //     parent (`loopBoard.delegateWork.review`) is not reachable by walking — VSCode's value tree
+  //     dropped it — so the known ids must be inspected directly rather than discovered.
+  //   * BY ENUMERATION, for keys the manifest never declared. The object
+  //     `getConfiguration('loopBoard')` returns is mixed in with the section's value TREE (and
+  //     unregistered keys survive into it), so its own property names are the only way an orphan is
+  //     ever found. Descent stops at the first path the manifest does not know: an undeclared
+  //     object is reported whole, so `{"loopBoard.gone": {"a": 1}}` is one orphan and not one per
+  //     leaf. A declared namespace is descended into instead, and the four API methods on the
+  //     returned object are skipped because they are functions.
+  // `inspect().globalValue` is the gate in both passes: it is the only scope this page writes, so a
+  // key that exists only in workspace settings is read, found to have no global value, and ignored.
+  private collectSettingValues(declared: string[]): SettingValues {
+    const root = vscode.workspace.getConfiguration();
+    const values: SettingValues = {};
+    const record = (key: string) => {
+      const globalValue = root.inspect(key)?.globalValue;
+      if (globalValue !== undefined) values[key] = globalValue;
+    };
+    for (const key of scanKeys(declared)) record(key);
+
+    const walk = (path: string, node: unknown) => {
+      const key = `${SETTINGS_PREFIX}${path}`;
+      if (declared.includes(key)) return; // already read by name above
+      // A namespace the manifest declares keys underneath (`loopBoard.models`, and a legacy object
+      // written at that level) — live configuration, so look inside rather than at it.
+      if (declared.some((d) => d.startsWith(`${key}.`))) {
+        if (node && typeof node === 'object' && !Array.isArray(node)) {
+          for (const [child, value] of Object.entries(node as Record<string, unknown>)) walk(`${path}.${child}`, value);
+        }
+        return;
+      }
+      record(key);
+    };
+    const section = vscode.workspace.getConfiguration('loopBoard') as unknown as Record<string, unknown>;
+    for (const [name, value] of Object.entries(section)) {
+      if (typeof value === 'function') continue;
+      walk(name, value);
+    }
+    return values;
+  }
+
+  private stalePlan(): MigrationPlan {
+    const declared = formKeys(this.settingsManifest());
+    return buildMigrationPlan(declared, this.collectSettingValues(declared));
+  }
+
+  // Preview only — this NEVER writes. The page draws one line per affected key and asks; the writes
+  // arrive separately as `settingsMigrate` (all of them) or `settingsMigrateKey` (one row).
+  private onScanStale(): void {
+    const plan = this.stalePlan();
+    this.store.debugLog(
+      'verbose',
+      'settings-migrate-scan',
+      plan.actions.map((a) => `${a.key} → ${a.kind}`).join('; ') || 'no stale loopBoard.* keys'
+    );
+    this.store.debugLog(
+      'info',
+      'settings-migrate-preview',
+      plan.findings === 0 && plan.sweeps === 0
+        ? 'nothing to migrate'
+        : `${plan.findings} stale key(s), ${plan.writes.length} write(s) proposed, ` +
+          `${plan.conflicts} conflict(s), ${plan.sweeps} blind removal(s) offered`
+    );
+    SettingsPanel.current?.post({ type: 'settingsMigration', plan });
+  }
+
+  // The bulk confirmation. The plan is REBUILT here rather than taken from the message: the page's
+  // copy is a snapshot that `settings.json` may have moved out from under, and the webview is never
+  // trusted to say which keys get written.
+  private async onMigrateStale(): Promise<void> {
+    const plan = this.stalePlan();
+    if (plan.writes.length === 0) {
+      this.store.debugLog('info', 'settings-migrate-choice', 'confirmed, but nothing is left to write');
+      SettingsPanel.current?.post({ type: 'settingsMigration', plan, done: true, applied: 0, failures: [] });
+      return;
+    }
+    this.store.debugLog('info', 'settings-migrate-choice', `confirmed — applying ${plan.writes.length} change(s)`);
+    const failures = await this.applyMigrationWrites(plan, plan.writes);
+    // Repaint from disk, then hand back the RE-SCANNED plan: what is still listed afterwards is
+    // what genuinely remains, not a stale echo of the preview. A sweep is listed again by
+    // construction — the scan cannot see that it just ran — so the panel says what was done instead.
+    await this.postSettings();
+    SettingsPanel.current?.post({
+      type: 'settingsMigration',
+      plan: this.stalePlan(),
+      done: true,
+      applied: plan.writes.length - failures.length,
+      failures,
+    });
+  }
+
+  // ONE row's button. Same discipline as the bulk path — the plan is rebuilt and the named key
+  // looked up in it, so the page can only ask for an action the host independently planned, and a
+  // key that is no longer stale (or never was) writes nothing at all.
+  private async onMigrateOne(key: string): Promise<void> {
+    const plan = this.stalePlan();
+    const action = plan.actions.find((a) => a.key === key);
+    if (!action) {
+      this.store.debugLog('info', 'settings-migrate-reject', `${key} — not a planned action, nothing written`);
+      SettingsPanel.current?.post({ type: 'settingsMigration', plan });
+      return;
+    }
+    const writes = actionWrites(action);
+    this.store.debugLog('info', 'settings-migrate-choice', `${key} — ${action.kind}, ${writes.length} write(s)`);
+    const failures = await this.applyMigrationWrites(plan, writes);
+    await this.postSettings();
+    SettingsPanel.current?.post({
+      type: 'settingsMigration',
+      plan: this.stalePlan(),
+      applied: writes.length - failures.length,
+      failures,
+      // A sweep's report is worded for a write whose outcome the host genuinely cannot observe, and
+      // `didKind` sends the page where to put it — beside the button that caused it, inside the
+      // collapsed "legacy keys" disclosure, never in the default view.
+      did: action.kind === 'sweep' ? `Removed ${key} from your user settings, if it was there.` : `Done: ${key}.`,
+      didKind: action.kind,
+    });
+  }
+
+  // The only place this feature touches `settings.json`. A `sweep` write is logged as what it is —
+  // it removes the key if present and is a byte-identical no-op if not, and the host cannot tell
+  // which happened, so the log must not claim either.
+  private async applyMigrationWrites(plan: MigrationPlan, writes: ConfigPatch[]): Promise<string[]> {
+    const blind = new Set(plan.actions.filter((a) => a.kind === 'sweep').map((a) => a.key));
+    const failures: string[] = [];
+    for (const patch of writes) {
+      const what =
+        patch.value !== undefined ? `set to ${JSON.stringify(patch.value)}`
+          : blind.has(patch.key) ? 'remove if present (unreadable here)'
+            : 'remove';
+      this.store.debugLog('info', 'settings-migrate-write', `${patch.key} — ${what} (Global)`);
+      try {
+        await vscode.workspace.getConfiguration().update(patch.key, patch.value, vscode.ConfigurationTarget.Global);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.store.debugLog('info', 'settings-migrate-failed', `${patch.key} — ${reason}`);
+        failures.push(`${patch.key}: ${reason}`);
+      }
+    }
+    return failures;
+  }
+
+  // One-time cleanup of the acknowledgement an earlier build stored (see DEAD_MIGRATE_ACK_KEY).
+  // Nothing reads it any more, so leaving it would be a key this extension never explains again.
+  private async forgetDeadMigrateAck(): Promise<void> {
+    if (this.globalState.get<unknown>(DEAD_MIGRATE_ACK_KEY) === undefined) return;
+    await this.globalState.update(DEAD_MIGRATE_ACK_KEY, undefined);
+    this.store.debugLog('info', 'settings-migrate-ack-dropped', `${DEAD_MIGRATE_ACK_KEY} — obsolete, removed`);
+  }
+
   private async readTemplates(): Promise<{ todoText: string; loopText: string }> {
     const read = async (name: string) =>
       new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.extensionUri, 'media', name)));
@@ -784,6 +1116,7 @@ export class Controller {
   async autoHeal(): Promise<void> {
     const { todoText, loopText } = await this.readTemplates();
     await this.store.autoHeal(todoText, loopText);
+    await this.forgetDeadMigrateAck();
   }
 
   // First-run (and every subsequent activation) Getting Started prompt, gated on a globalState

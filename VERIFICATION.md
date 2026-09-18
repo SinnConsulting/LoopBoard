@@ -497,12 +497,12 @@ and likewise cannot be verified headless.
     Repeat/Force → each reflects immediately.
 
 35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
-    clause are unit-tested; what only F5 can show is the real terminal line. (Item 34 is claimed by
-    t-bbad's open PR.) With both `loopBoard.delegateWork` settings at their defaults, start a loop
+    clause are unit-tested; what only F5 can show is the real terminal line. With both delegation
+    settings at their defaults, start a loop
     → the pasted `/loop` line reads `… with a subagent effort ceiling of <effort> and a grooming
     concurrency cap of <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text.
     Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
-    `Delegate work to subagents.`; additionally set `loopBoard.delegateWork.review` to `false` and
+    `Delegate work to subagents.`; additionally set `loopBoard.delegateReview` to `false` and
     ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
     WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
     `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
@@ -525,7 +525,244 @@ and likewise cannot be verified headless.
     before this fix) is still resolved — its `loopboard-<slot>-<word>-<word>` name matches the same
     prefix, so its bar renders.
 
-37. **Groomer select on New cards + labelled selects row (t-eb64):** webview-only (`media/board.js`),
+37. **LoopBoard's own settings page (t-sgrp):** the manifest→form model, the grid's validation and
+    the manifest invariants are unit-tested (`test/settingsform.test.js`,
+    `test/settingsgrid.test.js`, `test/manifest-settings.test.js`); what only F5 can show is the
+    page itself, the config writes and the live listener.
+
+    **Opens instead of the native editor:** click the sidebar's **Settings** row → a `LoopBoard
+    Settings` editor tab opens (NOT VSCode's Settings editor). It shows four sections in order —
+    *Models & Slots*, *Agent Setup*, *Board & Workspace*, *Beta* with an `experimental` chip — and
+    the two deprecated keys (`loopBoard.autoRecycle`, `loopBoard.clearSessionAfterTask`) appear
+    nowhere on it. Descriptions render as markdown: backticks are code chips, `**Beta —**` is bold,
+    nothing shows raw markers. Compare against `docs/mockups/t-sgrp-settings-page.html` — structure
+    and feel should match; the footer there lists the deliberate departures.
+
+    **Light and dark:** switch the colour theme (e.g. Default Dark Modern → Default Light Modern)
+    with the page open → every label, input, switch and radio stays legible; nothing is a dark-only
+    hard-coded colour.
+
+    **Topic list, width-gated (untested in Docker — `media/` has no coverage beyond the syntax
+    gate):** only the section→anchor slugs are unit-tested (`test/settingsform.test.js`); the list
+    itself is CSS and a webview click handler. With the page open, make the editor group WIDE
+    (≥ 1180px — drag the sidebar closed / maximise the window): a **Sections** list appears on the
+    left, its entries matching the page's headings one for one, in the same order, with the Beta
+    entry carrying the same `experimental` chip. Click each entry → the page scrolls to that
+    heading. Scroll down → the list stays put (sticky). Now NARROW the group (split the editor, or
+    open the sidebar and Panel): below 1180px the list is GONE — no hamburger, no leftover gap, and
+    the content column is centred exactly as it was before this was added. Do the whole check once
+    in a dark theme and once in a light one: the list's text and hover are theme colours, so both
+    must stay legible. There is deliberately NO active-section highlight — no entry is ever marked
+    while you scroll.
+
+    **Modified marker + reset:** change *Loop interval* to `2m` → a dot appears next to the label
+    and **Reset** appears. Check `settings.json` (user, not workspace): `"loopBoard.loopInterval":
+    "2m"` is in your USER settings file. Click **Reset** → the key disappears from user settings,
+    the field returns to `5m`, the dot and Reset go away.
+
+    **The grid:** all six columns edit in place. The two radio columns are headed on TWO LINES —
+    a smaller `default` sitting directly above `worker` / `groomer` — because a radio there picks the
+    *default* worker, not a slot that is *a* worker (untested in Docker: it is `media/settings.js` +
+    `.css`). Check the layout held: the header row is one line taller, the six columns sit exactly
+    where they did, `--model` is not squeezed, and the table does not scroll sideways — at a normal
+    width, at >1180px with the topic list showing, and in a narrow side-by-side editor. With a screen
+    reader, the radio still announces *"Opus is the default worker"*, matching the header. The caption
+    reads *Which slots exist, who they spawn, and how hard they think — the radios pick who takes a
+    task that names no model or groomer of its own.*
+    Toggle *Fable* off → its row fades and it vanishes
+    from the sidebar's Loops overview and the board's model selects. Click the *worker* radio on
+    another row → the previous one clears (single choice). Now try to turn OFF the slot that is the
+    default worker → the write is REFUSED with a reason naming it, and the toggle snaps back; same
+    for the default groomer, and same in reverse (making an OFF slot the default worker is refused).
+    Type `opus; rm -rf /` into a `--model` field → it turns red as you type and, on blur, is refused
+    with the reason shown and the field restored. Type `opus[1m]` → accepted. Set *groomers* to `0`
+    → it is clamped to `1`. The header hint reads `⟳ model · effort · groomers apply on the next loop
+    start (▶) or restart (♻)` — confirm it is true: with a loop running, change its effort, then ♻,
+    and check the pasted `/loop` line carries the NEW ceiling while the pre-♻ terminal did not.
+
+    **The "applies on" marker (untested in Docker — the marker itself is `media/settings.js` + CSS;
+    only the classification, the wording and the manifest sentence are unit-tested in
+    `test/manifest-settings.test.js` / `test/settingsform.test.js`):** exactly FOUR generic rows
+    carry a `⟳ Applies on the next loop start (▶) or restart (♻)` line directly under their
+    description — *Permission mode*, *Loop interval*, and both Beta rows (*Delegate work*, *Delegate
+    review*) — plus the model grid's header note, which says the same thing for `--model`,
+    `effort` and `groomers`. EVERY other row has nothing there: *After a task*, *Context limit —
+    percent/action*, *Nudge loops*, *Max attachment size MB*, *Pulse template sync*, *Debug* and the
+    grid's `on` / `default worker` / `default groomer` columns show no marker at all, and there is no
+    "applies immediately" chip anywhere. Read the marked rows and the grid note side by side: the
+    wording must be identical, not two phrasings of the same fact. In a light and a dark theme the
+    marker stays legible and stays QUIET — description colour, one size down, never a coloured badge.
+    Then check the fact itself end to end: with a loop running, change *Permission mode*, look at the
+    running terminal's command line (unchanged), press ♻, and confirm the new `--permission-mode`
+    rides the fresh spawn. Finally open **Open in VSCode Settings**: the native editor cannot draw
+    the marker, so those same settings must end their description with
+    `Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned
+    with.` — and no other setting may say anything of the kind.
+
+    **The fact is stated ONCE per surface (untested in Docker — `stripAppliesSentence` and the
+    "no drawn control repeats it" assertion are unit-tested in `test/settingsform.test.js`, but what
+    is PAINTED is `media/settings.js`):** on LoopBoard's own page, read each of the four marked rows
+    top to bottom. The description must END on its own last sentence and must NOT also read
+    `… Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned
+    with.` immediately above the `⟳` marker saying the same thing. Check *Delegate review*
+    especially — before this fix it printed the fact twice, sentence then marker. The native editor
+    is the opposite check and is above: there the sentence must still be present, because that
+    surface cannot draw the marker. The grid's header note is one line and was already correct;
+    confirm it has no duplicate sentence either.
+
+    **The renamed Beta key (untested in Docker — only the manifest invariant is):** the review
+    toggle is `loopBoard.delegateReview`, NOT `loopBoard.delegateWork.review`, which VSCode could
+    never honour (it logged `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is
+    true` and used the default). Put BOTH keys in your user `settings.json` with
+    `"loopBoard.delegateWork": true`, `"loopBoard.delegateReview": false` and
+    `"loopBoard.delegateWork.review": true` → the VSCode log shows NO `Conflict in settings file`
+    line for `loopBoard.delegateReview` (the stale third key is simply an unknown setting now), the
+    page's *Delegate review* toggle reads OFF, and ♻ spawns a `/loop …` line ending in `Delegate
+    work to subagents without review.` — i.e. the configured value actually reaches the prompt.
+    Then turn *Delegate work* off on the page → the *Delegate review* row greys out (the dependency
+    is declared in the manifest as `loopBoardDependsOn`, no longer inferred from the key name).
+
+    **“Migrate Config” — stale settings (untested in Docker — only the PLAN is:
+    `test/settingsmigrate.test.js` covers every rule, conflict, orphan and blind-removal case plus
+    the per-row `actionWrites`; the button, the preview panel, the per-row buttons and the actual
+    `update()` calls are `media/settings.js` + `controller.ts`, which have no Docker coverage).**
+    Back up your user `settings.json` first — this writes to it. Throughout: **every listed row
+    carries its own button** — there is no row that only tells you to go and fix something by hand.
+
+    *Nothing to do:* with no stale keys set, click **Migrate Config** (left of *Open in VSCode
+    Settings*) → a panel says **Nothing to migrate**, and `settings.json` is byte-identical
+    afterwards. No dialog, no empty list, no write.
+
+    *Deprecated pair:* put `"loopBoard.autoRecycle": true` and `"loopBoard.clearSessionAfterTask":
+    true` in user settings, remove `loopBoard.afterTask`, click **Migrate Config** → the panel lists
+    exactly two lines: `MIGRATE loopBoard.autoRecycle = true — set loopBoard.afterTask to "recycle",
+    then remove this key.` and `REMOVE loopBoard.clearSessionAfterTask = true — … loopBoard.
+    autoRecycle is what decides loopBoard.afterTask …`. **Nothing has changed yet** — check
+    `settings.json` at this point and confirm it is untouched. Click **Cancel** → still untouched.
+    Click **Migrate Config** again, then **Apply all 3 changes** → `settings.json` now has
+    `"loopBoard.afterTask": "recycle"` and neither boolean, the page's *After a task* row reads
+    `recycle` without a reload, and the panel reports `Applied 3 changes`. The behaviour must not
+    have changed: finish a task with a loop running and confirm the terminal is recycled exactly as
+    it was before the migration.
+
+    *Destination already set → conflict:* set `"loopBoard.afterTask": "none"` AND
+    `"loopBoard.autoRecycle": true` → the panel shows one `CONFLICT` line naming both and saying
+    `left out of Apply — loopBoard.afterTask is already set to "none"`, with **no bulk Apply button**
+    (a conflict contributes nothing to one, and one row does not earn a bulk button). `settings.json`
+    is unchanged. This is the assertion that matters most: a hand-set key is never overwritten.
+    The row does carry its own **Remove old** button — click it → `loopBoard.autoRecycle` is gone and
+    `"loopBoard.afterTask": "none"` is **still there, unchanged**. That button must never overwrite
+    the destination.
+
+    *Orphan:* add `"loopBoard.customRules": ["x"]` (a real key this extension dropped in t-4a04) →
+    it is listed as `REMOVE … LoopBoard has no setting by this name`. Apply → it is gone. Now add
+    `"loopBoard.defaultModel": "sonnet"` (undeclared but still honoured by `readDefaultModel`) and
+    `"loopBoard.models": {"opus": {"enabled": false}}` (the legacy container form) → **neither is
+    listed**, and after an Apply of anything else both are still in `settings.json`. Removing either
+    would silently change which model spawns.
+
+    *Renamed key while it is readable:* with `loopBoard.delegateWork` NOT set, add
+    `"loopBoard.delegateWork.review": false` → it is listed as `MIGRATE … set
+    loopBoard.delegateReview to false`. Click the row's own **Migrate** button →
+    `loopBoard.delegateReview: false` is in `settings.json`, the old key is gone, and the Beta
+    *Delegate review* toggle reads OFF.
+
+    *The key that cannot be read but CAN be removed — the blind removal (untested in Docker: the
+    plan is, `test/settingsmigrate.test.js` pins that the sweep names the child key ALONE and that it
+    never reaches `plan.writes`; the disclosure, its open state and the `update()` that carries it out
+    are `media/settings.{js,css}` + `controller.ts`).* This is the step that proves VSCode's
+    read/write asymmetry, so do it exactly:
+    1. Put BOTH `"loopBoard.delegateWork": true` and `"loopBoard.delegateWork.review": true` in your
+       user `settings.json` by hand. The VSCode log shows `Ignoring loopBoard.delegateWork.review as
+       loopBoard.delegateWork is true` — the key is genuinely unreadable.
+    2. Click **Migrate Config** → the panel says **Nothing to migrate** and *nothing else that reads
+       as an outstanding item*: no `REMOVE?` row, no *Removed …, if it was there* sentence. The only
+       other thing on it is a quiet, COLLAPSED disclosure reading *Legacy keys this page cannot read
+       (1)*, description-coloured and normal weight. There must be NO advisory telling you to edit
+       JSON yourself, and no *Mark as done*.
+    3. Click the disclosure open → a short explanation, then one `REMOVE?` row for
+       `loopBoard.delegateWork.review` with its own **Remove** button. Nothing has been written yet —
+       check `settings.json` and confirm both keys are still there. **Opening the Migrate Config
+       panel must never sweep on its own.**
+    4. Click **Remove** → the confirmation `Removed loopBoard.delegateWork.review from your user
+       settings, if it was there.` appears **inside the disclosure**, which stays OPEN, and the
+       headline outside it still just reads *Nothing to migrate*. **Open `settings.json` and confirm:
+       the `"loopBoard.delegateWork.review"` line is gone AND `"loopBoard.delegateWork": true` is
+       still there, untouched.** That second half is the whole risk — a dotted key is one literal
+       property name, never a path, so the removal must not reach into the parent.
+    5. Close the panel and click **Migrate Config** again → the disclosure is back and COLLAPSED, and
+       the default view is a bare *Nothing to migrate*. The row inside it is listed again; that is
+       correct and no longer visible noise, because the API still cannot read the key. Pressing
+       **Remove** on an already-clean config is a byte-identical no-op — confirm by copying
+       `settings.json`, opening the disclosure, clicking **Remove**, and diffing. Identical, no
+       reformat.
+    6. Now remove `"loopBoard.delegateWork"` too → **Migrate Config** shows **Nothing to migrate**
+       with *no disclosure at all* (nothing shadows the key any more).
+    7. With a real finding present as well — add `"loopBoard.autoRecycle": true` — the review list
+       shows ONLY the `MIGRATE` row and the button reads **Apply all 2 changes** (destination + its
+       removal). The blind removal is NOT in that count and is NOT in that list; it is still down in
+       the collapsed disclosure, independent of the findings above it.
+
+    *The acknowledgement is gone:* an earlier build stored a `loopboard.settingsMigrate.acknowledged`
+    key in the extension's `globalState`. Nothing reads it now, and activation deletes it. With
+    `loopBoard.debug: info`, the FIRST window reload after installing this build writes one `info
+    settings-migrate-ack-dropped` line to `.loopboard/debug.log` if you ever pressed the old *Mark as
+    done*; every later reload writes none. There is no *Mark as done* button anywhere on the page.
+
+    *Known read-only blind spots (check, but a miss here is expected, not a bug):* run the orphan
+    step again on a NON-DEFAULT VSCode profile, and again in a Remote/WSL/Container window. In
+    either case an orphan may not be listed — application-scoped settings are re-read through a
+    scope-filtered model off the default profile, and a remote window parses local user settings
+    under `LOCAL_MACHINE_SCOPES`; an unregistered key has no scope to survive that filter. The
+    required outcome is that it is silently NOT listed. If it is ever listed with the wrong value,
+    or anything is written that the preview did not name, that IS a bug.
+
+    *Debug trace:* with `loopBoard.debug: verbose`, one **Migrate Config** click then an Apply
+    writes to `.loopboard/debug.log`: a `verbose settings-migrate-scan` line listing each key and
+    its planned kind, an `info settings-migrate-preview` line, an `info settings-migrate-choice`
+    line, and one `info settings-migrate-write` line **per key** naming the key, whether it is a set
+    or a remove, and the value. A per-row button logs the same `choice` + `write` pair for that one
+    key, and a blind removal's write line reads `remove if present (unreadable here)` — it must NOT
+    claim the key was there, because the host cannot know. With `loopBoard.debug: off` none appear.
+
+    *Light and dark:* the panel's tags, list rules, the Apply button and the *Legacy keys* disclosure
+    (collapsed summary, its hover state, its keyboard focus ring, and the rule above it when open)
+    must be legible in both themes — it uses only `var(--vscode-*)` colours. Tab to the summary and
+    press Enter: it must toggle with a visible focus ring.
+
+    **Live sync, and the listener dying with the page:** with the page open, hand-edit
+    `loopBoard.debug` in your user `settings.json` → the page repaints without a reload. Do the same
+    while a text field is focused → the repaint is deferred until you blur (your caret is not
+    stolen). Then click **Open in VSCode Settings** → the native `@ext:SinnConsulting.loopboard-todo`
+    view opens; change a value there → LoopBoard's page repaints too. Close the LoopBoard Settings
+    tab and hand-edit `settings.json` again → with `loopBoard.debug: verbose`, `.loopboard/debug.log`
+    records NO `settings-config-change` line (the listener was disposed with the panel).
+
+    **The sidebar follows a config change too (untested in Docker — `controller.ts` has no Docker
+    coverage):** the config listener repaints the board and sidebar as well as the page
+    (`refresh('config-change')`). With the LoopBoard Settings tab open side by side with the
+    sidebar: in the grid, toggle an enabled slot (e.g. *Fable*) OFF → its row disappears from the
+    sidebar's **Loops** overview IMMEDIATELY, with no click on the board, no `.loopboard/` edit and
+    no terminal action in between; toggle it back on → the row returns. Click the *worker* radio on
+    a different slot → the board's default-worker mark follows on the same beat. Then, still with
+    the page open, hand-edit `loopBoard.defaultWorkerModel` in your user `settings.json` → the
+    sidebar and board update without touching either surface. With `loopBoard.debug: verbose`,
+    `.loopboard/debug.log` shows an `info settings-config-change` line followed by a
+    `verbose refresh config-change` line for each of those changes. Closing the page disposes the
+    listener, so after that a `settings.json` edit updates NEITHER surface until the next refresh —
+    that is the documented no-permanent-listener design, not a regression.
+
+    **Scope is enforced:** put `"loopBoard.permissionMode": "bypassPermissions"` into a workspace's
+    `.vscode/settings.json` → VSCode marks it as not applicable in this scope, the settings page
+    still shows the user value, and a spawned loop's `--permission-mode` is the USER value. This is
+    the security-relevant assertion of the whole story.
+
+    **`@tag:experimental` (unverified here):** the two Beta keys carry `tags: ["experimental"]`.
+    Search `@tag:experimental` in VSCode's Settings editor and confirm extension-contributed keys
+    are picked up. If they are NOT, the tag is inert rather than wrong — drop it and keep the
+    section heading and the `**Beta —**` sentence, which carry the status on their own.
+
+38. **Groomer select on New cards + labelled selects row (t-eb64):** webview-only (`media/board.js`),
     guarded by a source-text pin in `test/board-patch-echo.test.js`; this checklist is the acceptance
     path. On a groomed (non-draft) **New** card: directly below the chip row there is a labelled
     row `Groom with [select] Work with [select]`, the same idiom as a draft card, and the head row
