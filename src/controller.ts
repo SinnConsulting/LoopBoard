@@ -814,8 +814,15 @@ export class Controller {
   openSettings(): void {
     this.store.debugLog('info', 'settings-open', 'LoopBoard settings page');
     const { panel, created } = SettingsPanel.show(this.extensionUri, () => {
-      this.store.debugLog('info', 'settings-config-change', 'loopBoard.* changed — repainting the settings page');
+      this.store.debugLog('info', 'settings-config-change', 'loopBoard.* changed — repainting the settings page and the board');
+      // TWO repaints, because a `loopBoard.*` change moves two surfaces. Everything the board and
+      // sidebar draw from configuration — the enabled slot rows, the default worker/groomer marks,
+      // the context threshold — is read on demand inside `config()`, and `refresh()` is the only
+      // path that pushes a repaint to them; without this call they keep showing the OLD values
+      // until an unrelated `.loopboard/` write or terminal event happens to refresh them.
+      // Both are started, never chained: an await (or a rejection) in one must not skip the other.
       void this.postSettings();
+      void this.refresh('config-change');
     });
     panel.onMessage((msg) => this.handleMessage(msg));
     // A fresh panel's webview isn't listening yet; it asks with `settingsReady`.
@@ -865,7 +872,10 @@ export class Controller {
       this.store.debugLog('info', 'settings-write-failed', `${patch.key} — ${failure}`);
     }
     // The config listener repaints too, but only when the value actually CHANGED — a no-op write
-    // fires no event, and the control would keep showing whatever the user typed.
+    // fires no event, and the control would keep showing whatever the user typed. VSCode fires the
+    // event for the extension's OWN `update()` as well, so the board/sidebar repaint the listener
+    // now also does covers edits made ON this page; nothing extra is needed here (and a write that
+    // changed nothing has nothing for the sidebar to redraw).
     await this.postSettings();
     // Strictly after the repaint: a fresh form clears the page's error map, so posting the reason
     // first would erase it again before the user ever saw it.

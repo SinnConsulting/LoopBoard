@@ -538,6 +538,20 @@ and likewise cannot be verified headless.
     tab and hand-edit `settings.json` again → with `loopBoard.debug: verbose`, `.loopboard/debug.log`
     records NO `settings-config-change` line (the listener was disposed with the panel).
 
+    **The sidebar follows a config change too (untested in Docker — `controller.ts` has no Docker
+    coverage):** the config listener repaints the board and sidebar as well as the page
+    (`refresh('config-change')`). With the LoopBoard Settings tab open side by side with the
+    sidebar: in the grid, toggle an enabled slot (e.g. *Fable*) OFF → its row disappears from the
+    sidebar's **Loops** overview IMMEDIATELY, with no click on the board, no `.loopboard/` edit and
+    no terminal action in between; toggle it back on → the row returns. Click the *worker* radio on
+    a different slot → the board's default-worker mark follows on the same beat. Then, still with
+    the page open, hand-edit `loopBoard.defaultWorkerModel` in your user `settings.json` → the
+    sidebar and board update without touching either surface. With `loopBoard.debug: verbose`,
+    `.loopboard/debug.log` shows an `info settings-config-change` line followed by a
+    `verbose refresh config-change` line for each of those changes. Closing the page disposes the
+    listener, so after that a `settings.json` edit updates NEITHER surface until the next refresh —
+    that is the documented no-permanent-listener design, not a regression.
+
     **Scope is enforced:** put `"loopBoard.permissionMode": "bypassPermissions"` into a workspace's
     `.vscode/settings.json` → VSCode marks it as not applicable in this scope, the settings page
     still shows the user value, and a spawned loop's `--permission-mode` is the USER value. This is
