@@ -196,7 +196,7 @@ test('the template states the cap behaviour without embedding a number', () => {
   assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
 });
 
-// Delegated-work mode (t-e3c3): `loopBoard.delegateWork` / `loopBoard.delegateWork.review` ride the
+// Delegated-work mode (t-e3c3): `loopBoard.delegateWork` / `loopBoard.delegateReview` ride the
 // bootstrap prompt as a short activation PHRASE only — the behaviour for each mode lives in the
 // template's Automation block, so the phrase and the clause are pinned together here.
 const DELEGATE_ON = ' Delegate work to subagents.';

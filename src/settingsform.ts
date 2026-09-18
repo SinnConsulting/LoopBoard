@@ -39,6 +39,24 @@ export const APPLIES_RESTART_TAIL = 'on the next loop start (▶) or restart (�
 export const APPLIES_RESTART_NOTE = `Applies ${APPLIES_RESTART_TAIL}`;
 export const APPLIES_RESTART_SENTENCE = `${APPLIES_RESTART_NOTE}: a running loop keeps what it was spawned with.`;
 
+// ONE wording, but never TWICE on the same surface. The manifest sentence exists for the NATIVE
+// editor, which cannot draw a marker; LoopBoard's own page DOES draw the marker, so it strips the
+// sentence off the description it renders. Exact-suffix match against the constant itself — not a
+// prose regex — so a description that does not end with it is returned untouched.
+export function stripAppliesSentence(description: string): string {
+  const text = description.trimEnd();
+  return text.endsWith(APPLIES_RESTART_SENTENCE)
+    ? text.slice(0, text.length - APPLIES_RESTART_SENTENCE.length).trimEnd()
+    : description;
+}
+
+// A setting that is only meaningful while another boolean setting is on. Declared in the manifest
+// (VSCode ignores keys it does not know), NOT inferred from a dotted name: `x` + `x.y` cannot both
+// exist — VSCode drops the child whenever the scalar parent is set — so a name-derived dependency
+// could only ever pair keys that are broken by construction. `test/manifest-settings.test.js` is
+// what forbids the pair; this key is how a real dependency is stated instead.
+export const DEPENDS_KEY = 'loopBoardDependsOn';
+
 // How a property's `type`/`enum` maps to a drawn control. `unknown` is the degrade-gracefully case:
 // a future key with a type this page has no editor for renders read-only rather than throwing or
 // vanishing — the escape hatch can still edit it.
@@ -58,9 +76,10 @@ export interface ManifestProperty {
   description?: string;
   markdownDeprecationMessage?: string;
   deprecationMessage?: string;
-  // LoopBoard's own key (see APPLIES_KEY). VSCode ignores manifest keys it does not know, and
-  // `packageJSON` hands back the raw manifest, so it survives to the page untouched.
+  // LoopBoard's own keys (see APPLIES_KEY / DEPENDS_KEY). VSCode ignores manifest keys it does not
+  // know, and `packageJSON` hands back the raw manifest, so they survive to the page untouched.
   loopBoardApplies?: string;
+  loopBoardDependsOn?: string;
 }
 
 export interface ManifestSection {
@@ -96,9 +115,9 @@ export interface SettingControl {
   // (which the manifest suite forbids) is treated as `live` — the page must not claim a fact the
   // manifest does not state.
   applies: Applies;
-  // A boolean parent key, when one exists (`loopBoard.delegateWork.review` -> `loopBoard.delegateWork`).
-  // Derived, not hard-coded: the page greys a dependent row while its parent is off, and a future
-  // `x` + `x.y` pair gets the same treatment for free.
+  // The boolean setting this one is only meaningful under; the page greys the row while that
+  // setting is off. Taken from the manifest's `loopBoardDependsOn` (see DEPENDS_KEY), and only when
+  // it names a declared boolean — a dangling reference draws nothing rather than greying forever.
   dependsOn?: string;
 }
 
@@ -204,7 +223,8 @@ function orderedEntries(section: ManifestSection): { key: string; prop: Manifest
     .sort((a, b) => (a.prop.order ?? 1e9) - (b.prop.order ?? 1e9) || a.index - b.index);
 }
 
-// Every boolean key in the whole manifest — the lookup that turns `x.y` into "depends on `x`".
+// Every boolean key in the whole manifest — the lookup a `loopBoardDependsOn` reference is checked
+// against, so a dependency can only ever point at a togglable setting.
 function booleanKeys(sections: ManifestSection[]): Set<string> {
   const keys = new Set<string>();
   for (const section of sections) {
@@ -224,12 +244,13 @@ function toControl(
   const kind = controlKind(prop);
   const defaultValue = inspected && 'defaultValue' in inspected ? inspected.defaultValue : prop.default;
   const modified = inspected?.globalValue !== undefined;
-  const parent = key.slice(0, key.lastIndexOf('.'));
   const control: SettingControl = {
     key,
     label: humanizeKey(key),
     kind,
-    description: prop.markdownDescription ?? prop.description ?? '',
+    // The page draws the `restart` marker itself, so the description it renders must not also carry
+    // the sentence the manifest keeps for the native editor.
+    description: stripAppliesSentence(prop.markdownDescription ?? prop.description ?? ''),
     defaultValue,
     value: modified ? inspected?.globalValue : defaultValue,
     modified,
@@ -243,7 +264,10 @@ function toControl(
   }
   if (typeof prop.minimum === 'number') control.minimum = prop.minimum;
   if (typeof prop.maximum === 'number') control.maximum = prop.maximum;
-  if (key.includes('.') && parent !== key && booleans.has(parent)) control.dependsOn = parent;
+  const dependsOn = prop.loopBoardDependsOn;
+  if (typeof dependsOn === 'string' && dependsOn !== key && booleans.has(dependsOn)) {
+    control.dependsOn = dependsOn;
+  }
   return control;
 }
 

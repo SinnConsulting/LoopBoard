@@ -9,7 +9,8 @@ const path = require('node:path');
 const {
   buildSettingsForm, controlKind, humanizeKey, sectionTitle, sectionSlug, isGridKey, isDeprecated, formKeys,
   validateValue, toConfigPatch, resetPatch, findControl, MODEL_GRID_KEYS,
-  appliesOf, APPLIES_RESTART_NOTE, APPLIES_RESTART_SENTENCE, APPLIES_RESTART_TAIL,
+  appliesOf, stripAppliesSentence,
+  APPLIES_RESTART_NOTE, APPLIES_RESTART_SENTENCE, APPLIES_RESTART_TAIL,
 } = require('../out-test/settingsform.js');
 
 const root = path.resolve(__dirname, '..');
@@ -22,8 +23,16 @@ const SECTIONS = [
     order: 2,
     properties: {
       'loopBoard.flag': { type: 'boolean', order: 20, default: false, markdownDescription: 'a `flag`' },
-      'loopBoard.flag.detail': { type: 'boolean', order: 10, default: true, markdownDescription: 'depends' },
+      'loopBoard.detail': {
+        type: 'boolean', order: 10, default: true, markdownDescription: 'depends',
+        loopBoardDependsOn: 'loopBoard.flag',
+      },
       'loopBoard.count': { type: 'number', minimum: 1, maximum: 9, order: 30, default: 3, markdownDescription: 'count' },
+      // A dependency that names a key which is not a declared boolean: ignored, never drawn.
+      'loopBoard.dangling': {
+        type: 'boolean', order: 40, default: false, markdownDescription: 'dangling',
+        loopBoardDependsOn: 'loopBoard.count',
+      },
     },
   },
   {
@@ -65,7 +74,7 @@ test('sections are ordered by `order`, properties by `order` then declaration', 
   assert.deepEqual(form.sections.map((s) => s.title), ['One', 'Two']);
   assert.deepEqual(
     form.sections[1].controls.map((c) => c.key),
-    ['loopBoard.flag.detail', 'loopBoard.flag', 'loopBoard.count']
+    ['loopBoard.detail', 'loopBoard.flag', 'loopBoard.count', 'loopBoard.dangling']
   );
 });
 
@@ -98,11 +107,34 @@ test('a global value equal to the default still counts as modified', () => {
   assert.equal(findControl(form, 'loopBoard.count').modified, true);
 });
 
-test('a boolean parent key becomes a dependency, derived not hard-coded', () => {
+test('a dependency is DECLARED in the manifest, never inferred from a dotted name', () => {
+  // t-sgrp follow-up: the old rule paired `x.y` with a boolean `x`. That pair cannot legally exist
+  // — VSCode drops the child key whenever the scalar parent is set (which is exactly when the child
+  // matters), and test/manifest-settings.test.js now forbids it — so the dependency is stated with
+  // `loopBoardDependsOn` instead.
   const form = buildSettingsForm(SECTIONS);
-  assert.equal(findControl(form, 'loopBoard.flag.detail').dependsOn, 'loopBoard.flag');
-  // A dotted key whose parent is NOT a declared boolean depends on nothing.
+  assert.equal(findControl(form, 'loopBoard.detail').dependsOn, 'loopBoard.flag');
+  // No declaration, no dependency.
   assert.equal(findControl(form, 'loopBoard.mode').dependsOn, undefined);
+  // A reference to a declared key that is not a boolean draws nothing rather than greying forever.
+  assert.equal(findControl(form, 'loopBoard.dangling').dependsOn, undefined);
+  // Same for a reference to a key that is not declared at all, and for a self-reference.
+  const odd = buildSettingsForm([
+    {
+      title: 'LoopBoard: Odd',
+      order: 1,
+      properties: {
+        'loopBoard.ghost': { type: 'boolean', order: 10, default: false, markdownDescription: 'g', loopBoardDependsOn: 'loopBoard.nope' },
+        'loopBoard.self': { type: 'boolean', order: 20, default: false, markdownDescription: 's', loopBoardDependsOn: 'loopBoard.self' },
+      },
+    },
+  ]);
+  assert.equal(findControl(odd, 'loopBoard.ghost').dependsOn, undefined);
+  assert.equal(findControl(odd, 'loopBoard.self').dependsOn, undefined);
+  // And a dotted key is no longer enough on its own: `loopBoard.contextLimit.percent` has no
+  // scalar `loopBoard.contextLimit` to depend on, and must not acquire one by accident.
+  const real = buildSettingsForm(manifest.contributes.configuration);
+  assert.equal(findControl(real, 'loopBoard.contextLimit.action').dependsOn, undefined);
 });
 
 test('the model keys are claimed by the grid, never drawn as generic controls', () => {
@@ -131,9 +163,10 @@ test('the Beta section is beta because its properties are tagged, not because of
   const form = buildSettingsForm(manifest.contributes.configuration);
   const beta = form.sections.find((s) => s.title === 'Beta (experimental)');
   assert.equal(beta.beta, true);
-  assert.deepEqual(beta.controls.map((c) => c.key), ['loopBoard.delegateWork', 'loopBoard.delegateWork.review']);
+  assert.deepEqual(beta.controls.map((c) => c.key), ['loopBoard.delegateWork', 'loopBoard.delegateReview']);
   assert.ok(beta.controls.every((c) => c.beta));
-  // The review toggle only applies while delegation is on — derived from the manifest.
+  // The review toggle only applies while delegation is on — declared in the manifest, not inferred
+  // from the key name (the two ids no longer share a prefix, and must not).
   assert.equal(beta.controls[1].dependsOn, 'loopBoard.delegateWork');
   for (const section of form.sections) {
     if (section === beta) continue;
@@ -192,6 +225,38 @@ test('the page marker, the grid note and the manifest sentence are one wording',
   assert.match(APPLIES_RESTART_TAIL, /♻/);
 });
 
+test('the page strips the manifest sentence it draws as a marker — one fact, one voice', () => {
+  // t-sgrp follow-up: every `restart` description ENDS with APPLIES_RESTART_SENTENCE so the native
+  // editor states the fact it cannot draw. LoopBoard's own page draws the marker instead, so it
+  // must not render the sentence too. Exact-suffix strip against the constant, never a prose regex.
+  assert.equal(stripAppliesSentence(`Some text. ${APPLIES_RESTART_SENTENCE}`), 'Some text.');
+  assert.equal(stripAppliesSentence(APPLIES_RESTART_SENTENCE), '');
+  // Trailing whitespace on either side is tolerated.
+  assert.equal(stripAppliesSentence(`Some text. ${APPLIES_RESTART_SENTENCE}\n`), 'Some text.');
+  // Absent: returned untouched, including a description that only MENTIONS restarting loops.
+  assert.equal(stripAppliesSentence('Some text.'), 'Some text.');
+  assert.equal(stripAppliesSentence(''), '');
+  assert.equal(
+    stripAppliesSentence('Restart the loop (♻) after each task.'),
+    'Restart the loop (♻) after each task.'
+  );
+  // Only a SUFFIX is stripped — the sentence mid-description stays, because the marker replaces the
+  // closing statement, not a reference inside the prose.
+  const mid = `${APPLIES_RESTART_SENTENCE} And then more.`;
+  assert.equal(stripAppliesSentence(mid), mid);
+
+  // And on the real page: no drawn control repeats the marker's fact in its description.
+  const form = buildSettingsForm(manifest.contributes.configuration);
+  for (const section of form.sections) {
+    for (const control of section.controls) {
+      assert.ok(
+        !control.description.includes(APPLIES_RESTART_SENTENCE),
+        `${control.key} renders the applies sentence AND the ⟳ marker — the same fact twice`
+      );
+    }
+  }
+});
+
 test('every drawn generic control on the real page is classified', () => {
   const form = buildSettingsForm(manifest.contributes.configuration);
   for (const section of form.sections) {
@@ -204,7 +269,7 @@ test('every drawn generic control on the real page is classified', () => {
   const marked = form.sections.flatMap((s) => s.controls).filter((c) => c.applies === 'restart').map((c) => c.key);
   assert.deepEqual(marked, [
     'loopBoard.permissionMode', 'loopBoard.loopInterval',
-    'loopBoard.delegateWork', 'loopBoard.delegateWork.review',
+    'loopBoard.delegateWork', 'loopBoard.delegateReview',
   ]);
 });
 
@@ -227,7 +292,7 @@ test('enum controls carry their values and per-value descriptions', () => {
 test('labels are humanised from the key', () => {
   assert.equal(humanizeKey('loopBoard.permissionMode'), 'Permission mode');
   assert.equal(humanizeKey('loopBoard.contextLimit.percent'), 'Context limit — percent');
-  assert.equal(humanizeKey('loopBoard.delegateWork.review'), 'Delegate work — review');
+  assert.equal(humanizeKey('loopBoard.delegateReview'), 'Delegate review');
   // An ALL-CAPS run keeps its case: "Max attachment size MB", never "... size Mb".
   assert.equal(humanizeKey('loopBoard.maxAttachmentSizeMB'), 'Max attachment size MB');
   assert.equal(humanizeKey('loopBoard.debug'), 'Debug');

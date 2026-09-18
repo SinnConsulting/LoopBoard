@@ -223,10 +223,18 @@ ordered exactly as both settings pages render them.
 
 | Setting | Default | Description |
 |---|---|---|
-| `loopBoard.delegateWork` | `false` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateWork.review` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.delegateWork.review` | `true` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.delegateWork` | `false` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.delegateReview` | `true` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 
 <!-- loopboard:settings:end -->
+
+> **Renamed:** `loopBoard.delegateWork.review` is now **`loopBoard.delegateReview`**. The old id
+> could never take effect: VSCode resolves settings as a tree, so a key holding a scalar cannot
+> also have a child key — with `loopBoard.delegateWork` set, VSCode logged
+> `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is true` and discarded the
+> value, leaving the default (`true`) in force. Nothing that was actually being honoured is lost by
+> the rename; if you had set the old key, set the new one to the value you meant and delete the old
+> line from your user `settings.json`.
 
 See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
 
@@ -272,7 +280,7 @@ three keys:
 - `loopBoard.models.<slot>.effort` — subagent reasoning-effort ceiling (`low`…`max`) for that slot: grooming subagents per Rule 14 in `LOOP.md`, and the implementer/review subagents when `loopBoard.delegateWork` is on.
 - `loopBoard.models.<slot>.groomConcurrency` — how many grooming subagents that slot's loop may run in parallel in one pass (default `3`, minimum `1`; there is no unlimited setting). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass.
 
-The `.effort` and `.groomConcurrency` ceilings ride the loop's bootstrap prompt — as do `loopBoard.delegateWork` and `loopBoard.delegateWork.review` — so a change to any of them takes effect the **next time that slot's loop is started or restarted (♻)**; a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
+The `.effort` and `.groomConcurrency` ceilings ride the loop's bootstrap prompt — as do `loopBoard.delegateWork` and `loopBoard.delegateReview` — so a change to any of them takes effect the **next time that slot's loop is started or restarted (♻)**; a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
 
 ```jsonc
 // Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.

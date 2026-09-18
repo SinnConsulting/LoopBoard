@@ -23,7 +23,7 @@ const entries = () => {
   return out;
 };
 
-const BETA_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateWork.review'];
+const BETA_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateReview'];
 
 // WHEN a changed setting takes effect. `restart` = frozen into the spawn command, so a running loop
 // keeps what it was spawned with; `live` = read on demand. There is no third class: every
@@ -32,7 +32,7 @@ const BETA_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateWork.review'];
 //
 // This list is the SPAWN-COMMAND reality, hand-kept against `src/loop.ts`: `buildClaudeBase`
 // (permissionMode, the resolved `--model` string) and `buildLoopCommand` (interval, effort,
-// groomConcurrency, delegateWork, delegateWork.review) are the only places a setting is baked in.
+// groomConcurrency, delegateWork, delegateReview) are the only places a setting is baked in.
 // Adding a setting to package.json without classifying it — or classifying one this list does not
 // know — turns the suite red, which is the whole point: an absent marker on the settings page is
 // then information ("this one is live"), never an oversight.
@@ -42,7 +42,7 @@ const RESTART_KEYS = [
   'loopBoard.models.opus.model', 'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency',
   'loopBoard.models.sonnet.model', 'loopBoard.models.sonnet.effort', 'loopBoard.models.sonnet.groomConcurrency',
   'loopBoard.models.fable.model', 'loopBoard.models.fable.effort', 'loopBoard.models.fable.groomConcurrency',
-  'loopBoard.delegateWork', 'loopBoard.delegateWork.review',
+  'loopBoard.delegateWork', 'loopBoard.delegateReview',
 ];
 // The one sentence every `restart` description ends with, so the NATIVE settings editor — which
 // cannot render the page's marker — states the same fact in the same words. Imported, not retyped:
@@ -130,9 +130,59 @@ test('every Beta key is marked all three ways: section, sentence and tag', () =>
   }
 });
 
+test('no property id is a prefix of another — a scalar key can never have a child key', () => {
+  // The trap this exists for (found in a user's VSCode log, shipped in v3.7.0 as
+  // `loopBoard.delegateWork.review`):
+  //
+  //   Conflict in settings file … Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is true
+  //
+  // VSCode stores settings as a flat map but resolves them as a TREE, so a key holding a scalar
+  // cannot also be an object with children. Declare both `x` and `x.y` and VSCode silently DROPS
+  // the user's `x.y` whenever `x` is set — i.e. exactly when `x.y` would have mattered — and the
+  // code's `get(x.y, default)` falls back to the default with nothing to show for it. Neither the
+  // manifest, the settings UI nor `make check` said a word; only the log did.
+  //
+  // Dotted NAMESPACES are fine and stay fine: `loopBoard.contextLimit.percent` /
+  // `loopBoard.contextLimit.action` and `loopBoard.models.<slot>.<field>` have no scalar
+  // `loopBoard.contextLimit` or `loopBoard.models` property above them, which is the whole rule.
+  const declared = entries().map((e) => e.key);
+  for (const parent of declared) {
+    for (const child of declared) {
+      if (child === parent) continue;
+      assert.ok(
+        !child.startsWith(parent + '.'),
+        `"${parent}" and "${child}" cannot both be declared: "${parent}" holds a scalar, so VSCode ` +
+        `IGNORES "${child}" whenever "${parent}" is set — the user's value is discarded and the code ` +
+        `silently reads the default. Rename "${child}" to a sibling id (e.g. the last segment folded ` +
+        'into the name), or make the parent an object property with no scalar of its own.'
+      );
+    }
+  }
+});
+
+test('a declared dependency names a real boolean setting', () => {
+  // `loopBoardDependsOn` replaced the old `x` + `x.y` name derivation, which the prefix rule above
+  // has just made impossible. A reference that no longer resolves would grey a row forever.
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  for (const { key, prop } of entries()) {
+    if (prop.loopBoardDependsOn === undefined) continue;
+    const target = all[prop.loopBoardDependsOn];
+    assert.ok(target, `${key} depends on ${prop.loopBoardDependsOn}, which is not declared`);
+    assert.equal(
+      target.type, 'boolean',
+      `${key} depends on ${prop.loopBoardDependsOn}, which is not a boolean — only a toggle can gate a row`
+    );
+  }
+  // The one real dependency, asserted by name so a rename cannot quietly drop it: the review
+  // toggle is meaningless while delegation is off, and the page must keep greying it.
+  assert.equal(all['loopBoard.delegateReview'].loopBoardDependsOn, 'loopBoard.delegateWork');
+});
+
 test('the Beta keys keep their original ids — graduating must never rename a key', () => {
   // Recorded in decisions/tooling.md: the SECTION carries the status, not the id. A move to
   // `loopBoard.beta.*` would drop existing values silently now and force a second rename later.
+  // (`loopBoard.delegateWork.review` -> `loopBoard.delegateReview` is not a counter-example: that id
+  // was unusable, so there was no honoured value to drop — see the prefix test above.)
   for (const key of BETA_KEYS) assert.ok(!key.includes('.beta.'), `${key} must not live in a beta namespace`);
 });
 
@@ -222,7 +272,7 @@ test('every key the code reads is still declared in the manifest', () => {
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel',
     'loopBoard.maxAttachmentSizeMB', 'loopBoard.pulseTemplateSync', 'loopBoard.nudgeLoops',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
-    'loopBoard.delegateWork', 'loopBoard.delegateWork.review',
+    'loopBoard.delegateWork', 'loopBoard.delegateReview',
     'loopBoard.models.opus.enabled', 'loopBoard.models.opus.model',
     'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency',
     'loopBoard.models.sonnet.enabled', 'loopBoard.models.sonnet.model',

@@ -470,11 +470,11 @@ and likewise cannot be verified headless.
 
 35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
     clause are unit-tested; what only F5 can show is the real terminal line. (Item 34 is claimed by
-    t-bbad's open PR.) With both `loopBoard.delegateWork` settings at their defaults, start a loop
+    t-bbad's open PR.) With both delegation settings at their defaults, start a loop
     → the pasted `/loop` line reads `… with a subagent effort ceiling of <effort> and a grooming
     concurrency cap of <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text.
     Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
-    `Delegate work to subagents.`; additionally set `loopBoard.delegateWork.review` to `false` and
+    `Delegate work to subagents.`; additionally set `loopBoard.delegateReview` to `false` and
     ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
     WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
     `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
@@ -548,7 +548,7 @@ and likewise cannot be verified headless.
     `test/manifest-settings.test.js` / `test/settingsform.test.js`):** exactly FOUR generic rows
     carry a `⟳ Applies on the next loop start (▶) or restart (♻)` line directly under their
     description — *Permission mode*, *Loop interval*, and both Beta rows (*Delegate work*, *Delegate
-    work — review*) — plus the model grid's header note, which says the same thing for `--model`,
+    review*) — plus the model grid's header note, which says the same thing for `--model`,
     `effort` and `groomers`. EVERY other row has nothing there: *After a task*, *Context limit —
     percent/action*, *Nudge loops*, *Max attachment size MB*, *Pulse template sync*, *Debug* and the
     grid's `on` / `worker` / `groomer` columns show no marker at all, and there is no
@@ -561,6 +561,29 @@ and likewise cannot be verified headless.
     the marker, so those same settings must end their description with
     `Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned
     with.` — and no other setting may say anything of the kind.
+
+    **The fact is stated ONCE per surface (untested in Docker — `stripAppliesSentence` and the
+    "no drawn control repeats it" assertion are unit-tested in `test/settingsform.test.js`, but what
+    is PAINTED is `media/settings.js`):** on LoopBoard's own page, read each of the four marked rows
+    top to bottom. The description must END on its own last sentence and must NOT also read
+    `… Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned
+    with.` immediately above the `⟳` marker saying the same thing. Check *Delegate review*
+    especially — before this fix it printed the fact twice, sentence then marker. The native editor
+    is the opposite check and is above: there the sentence must still be present, because that
+    surface cannot draw the marker. The grid's header note is one line and was already correct;
+    confirm it has no duplicate sentence either.
+
+    **The renamed Beta key (untested in Docker — only the manifest invariant is):** the review
+    toggle is `loopBoard.delegateReview`, NOT `loopBoard.delegateWork.review`, which VSCode could
+    never honour (it logged `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is
+    true` and used the default). Put BOTH keys in your user `settings.json` with
+    `"loopBoard.delegateWork": true`, `"loopBoard.delegateReview": false` and
+    `"loopBoard.delegateWork.review": true` → the VSCode log shows NO `Conflict in settings file`
+    line for `loopBoard.delegateReview` (the stale third key is simply an unknown setting now), the
+    page's *Delegate review* toggle reads OFF, and ♻ spawns a `/loop …` line ending in `Delegate
+    work to subagents without review.` — i.e. the configured value actually reaches the prompt.
+    Then turn *Delegate work* off on the page → the *Delegate review* row greys out (the dependency
+    is declared in the manifest as `loopBoardDependsOn`, no longer inferred from the key name).
 
     **Live sync, and the listener dying with the page:** with the page open, hand-edit
     `loopBoard.debug` in your user `settings.json` → the page repaints without a reload. Do the same

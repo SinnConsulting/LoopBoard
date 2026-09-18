@@ -62,7 +62,7 @@ export function buildLoopCommand(
   interval: string,
   effort: string = 'high',
   groomConcurrency?: number,
-  // t-e3c3: `loopBoard.delegateWork` / `loopBoard.delegateWork.review`. Only an activation PHRASE
+  // t-e3c3: `loopBoard.delegateWork` / `loopBoard.delegateReview`. Only an activation PHRASE
   // rides here — the behaviour for each mode lives in LOOP.md's Automation block. A non-boolean
   // (absent/hostile config) is treated as the default: delegation off, review on.
   delegateWork: boolean = false,

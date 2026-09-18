@@ -377,9 +377,9 @@
             "order": 10,
             "default": false,
             "loopBoardApplies": "restart",
-            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateWork.review` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates the PR and the loop squash-merges it on a pass before setting Review. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
-          "loopBoard.delegateWork.review": {
+          "loopBoard.delegateReview": {
             "type": "boolean",
             "scope": "application",
             "tags": [
@@ -388,6 +388,7 @@
             "order": 20,
             "default": true,
             "loopBoardApplies": "restart",
+            "loopBoardDependsOn": "loopBoard.delegateWork",
             "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass lets the loop squash-merge the PR and set Review (= merged, awaiting your tick); a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs and the loop does NOT merge — the implementer's PR goes to Review unmerged for you, exactly like the non-delegated flow. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           }
         }
