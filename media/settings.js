@@ -80,10 +80,11 @@
     }
     if (msg.type === 'settingsMigration') {
       migration = {
-        plan: msg.plan || { actions: [], writes: [], conflicts: 0, manual: 0 },
+        plan: msg.plan || { actions: [], writes: [], conflicts: 0, sweeps: 0, findings: 0 },
         done: !!msg.done,
         applied: msg.applied || 0,
         failures: msg.failures || [],
+        did: msg.did || '',
       };
       pending = null;
       render();
@@ -267,20 +268,23 @@
   // Nothing here decides anything. The host owns the plan (src/settingsmigrate.ts, unit-tested) and
   // REBUILDS it when the confirmation arrives, so this panel is a rendering of a decision already
   // made elsewhere — it cannot cause a write the host did not independently plan.
-  const KIND_LABEL = { migrate: 'Migrate', remove: 'Remove', conflict: 'Conflict', manual: 'By hand' };
+  const KIND_LABEL = { migrate: 'Migrate', remove: 'Remove', conflict: 'Conflict', sweep: 'Remove?' };
+  // Every row is executable — a row that could only tell the user to go and edit JSON themselves is
+  // not worth listing. The host re-derives the action from the key, so this is a request, not an
+  // instruction: it can never ask for a write the host did not independently plan.
+  const DO_LABEL = { migrate: 'Migrate', remove: 'Remove', conflict: 'Remove old', sweep: 'Remove' };
+  const DO_TITLE = {
+    migrate: 'Write the new key from this value, then delete this one.',
+    remove: 'Delete this key from your user settings.',
+    conflict: 'Delete this old key and keep the one you set by hand. Nothing else is touched.',
+    sweep: 'Delete this key from settings.json if it is there. If it is not, nothing happens.',
+  };
 
-  // A BY-HAND row is the only one the scan can never see resolved — it is raised because the key is
-  // unreadable, so nothing the user does to it is observable. Without this button it would be listed
-  // on every scan forever, including scans of a config that is already clean. `Mark as done` settles
-  // it for good (the host remembers it, and re-arms it if the key ever turns up set after all);
-  // `Cancel` below only closes the panel for now.
-  function ackButton(action) {
-    if (action.kind !== 'manual') return null;
+  function doButton(action) {
     return h('button', {
-      class: 'btn mig-ack', type: 'button',
-      title: 'I have dealt with this key — stop listing it. It comes back only if a later scan finds it actually set.',
-      onclick: () => vscode.postMessage({ type: 'settingsAckManual', key: action.key }),
-    }, 'Mark as done');
+      class: 'btn mig-do', type: 'button', title: DO_TITLE[action.kind] || '',
+      onclick: () => vscode.postMessage({ type: 'settingsMigrateKey', key: action.key }),
+    }, DO_LABEL[action.kind] || 'Apply');
   }
 
   function migrationLine(action) {
@@ -290,7 +294,7 @@
         h('code', {}, action.key),
         action.value === undefined ? null : h('span', { class: 'subtle' }, ' = ' + JSON.stringify(action.value)),
         ' — ' + action.detail),
-      ackButton(action));
+      doButton(action));
   }
 
   function migrationPanel() {
@@ -298,42 +302,60 @@
     const plan = migration.plan;
     const close = h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Close');
 
+    // What was just done, if anything — a per-row action re-scans, and a SWEEP is listed again by
+    // construction (the scan still cannot read the key), so this line is the only way the panel can
+    // say the removal ran. It is a report of a write, never a claim the user made.
+    const didLine = migration.did ? h('p', { class: 'mig-did' }, migration.did) : null;
+    const fails = migration.failures && migration.failures.length
+      ? h('ul', { class: 'mig-list' }, migration.failures.map((f) => h('li', { class: 'err' }, f)))
+      : null;
+
     if (migration.done) {
-      const left = plan.actions.length
-        ? h('p', {}, 'Still listed below — these need your decision; nothing was written for them.')
-        : null;
       return h('div', { class: 'migrate' },
         h('div', { class: 'mig-head' }, h('strong', {}, 'Migration finished'), close),
         h('p', {}, migration.applied === 0
           ? 'Nothing was written.'
           : 'Applied ' + migration.applied + ' change' + (migration.applied === 1 ? '' : 's') + ' to your user settings.'),
-        migration.failures.length
-          ? h('ul', { class: 'mig-list' }, migration.failures.map((f) => h('li', { class: 'err' }, f)))
+        fails,
+        plan.actions.length
+          ? h('p', {}, 'Still listed — each row below still has its own button.')
           : null,
-        left,
         plan.actions.length ? h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)) : null);
     }
 
-    if (!plan.actions.length) {
+    // `findings` and not `actions.length` decides the verdict. A SWEEP is not evidence of anything —
+    // it is an offer to delete a key the API cannot see — so a config whose only row is a sweep is a
+    // config with nothing known to be wrong, and it must keep reading that way. The offer stays on
+    // the page underneath, one click away, instead of being dressed up as an outstanding problem.
+    if (!plan.findings) {
       return h('div', { class: 'migrate' },
         h('div', { class: 'mig-head' }, h('strong', {}, 'Nothing to migrate'), close),
         h('p', {}, 'Every ', h('code', {}, 'loopBoard.*'),
-          ' key in your user settings is one LoopBoard still declares and reads. Nothing was changed.'));
+          ' key LoopBoard can read in your user settings is one it still declares and reads.'),
+        didLine,
+        fails,
+        plan.sweeps ? h('p', { class: 'subtle' }, 'One key it cannot read — delete it if you like:') : null,
+        plan.sweeps ? h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)) : null);
     }
 
+    // The bulk button only earns its place when it saves clicks: with a single automatic write the
+    // row's own button already is the whole action.
     const writes = (plan.writes || []).length;
     return h('div', { class: 'migrate' },
       h('div', { class: 'mig-head' },
-        h('strong', {}, 'Review before anything is written'),
-        h('span', { class: 'subtle' }, 'Nothing has changed yet.')),
+        h('strong', {}, 'Review — nothing is written until you press a button'),
+        close),
+      didLine,
+      fails,
       h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)),
       h('div', { class: 'mig-actions' },
-        writes
+        writes > 1
           ? h('button', {
               class: 'btn primary', type: 'button',
+              title: 'Run every row above except the conflicts, which need your decision.',
               onclick: () => vscode.postMessage({ type: 'settingsMigrate' }),
-            }, 'Apply ' + writes + ' change' + (writes === 1 ? '' : 's'))
-          : h('span', { class: 'subtle' }, 'Nothing here can be applied automatically.'),
+            }, 'Apply all ' + writes + ' changes')
+          : null,
         h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Cancel')));
   }
 

@@ -586,9 +586,11 @@ and likewise cannot be verified headless.
     is declared in the manifest as `loopBoardDependsOn`, no longer inferred from the key name).
 
     **“Migrate Config” — stale settings (untested in Docker — only the PLAN is:
-    `test/settingsmigrate.test.js` covers every rule, conflict and orphan case; the button, the
-    preview panel and the actual `update()` calls are `media/settings.js` + `controller.ts`, which
-    have no Docker coverage).** Back up your user `settings.json` first — this writes to it.
+    `test/settingsmigrate.test.js` covers every rule, conflict, orphan and blind-removal case plus
+    the per-row `actionWrites`; the button, the preview panel, the per-row buttons and the actual
+    `update()` calls are `media/settings.js` + `controller.ts`, which have no Docker coverage).**
+    Back up your user `settings.json` first — this writes to it. Throughout: **every listed row
+    carries its own button** — there is no row that only tells you to go and fix something by hand.
 
     *Nothing to do:* with no stale keys set, click **Migrate Config** (left of *Open in VSCode
     Settings*) → a panel says **Nothing to migrate**, and `settings.json` is byte-identical
@@ -600,7 +602,7 @@ and likewise cannot be verified headless.
     then remove this key.` and `REMOVE loopBoard.clearSessionAfterTask = true — … loopBoard.
     autoRecycle is what decides loopBoard.afterTask …`. **Nothing has changed yet** — check
     `settings.json` at this point and confirm it is untouched. Click **Cancel** → still untouched.
-    Click **Migrate Config** again, then **Apply 3 changes** → `settings.json` now has
+    Click **Migrate Config** again, then **Apply all 3 changes** → `settings.json` now has
     `"loopBoard.afterTask": "recycle"` and neither boolean, the page's *After a task* row reads
     `recycle` without a reload, and the panel reports `Applied 3 changes`. The behaviour must not
     have changed: finish a task with a loop running and confirm the terminal is recycled exactly as
@@ -608,9 +610,12 @@ and likewise cannot be verified headless.
 
     *Destination already set → conflict:* set `"loopBoard.afterTask": "none"` AND
     `"loopBoard.autoRecycle": true` → the panel shows one `CONFLICT` line naming both and saying
-    `left alone — loopBoard.afterTask is already set to "none"`, and there is **no Apply button**
-    (`Nothing here can be applied automatically`). `settings.json` is unchanged. This is the
-    assertion that matters most: a hand-set key is never overwritten.
+    `left out of Apply — loopBoard.afterTask is already set to "none"`, with **no bulk Apply button**
+    (a conflict contributes nothing to one, and one row does not earn a bulk button). `settings.json`
+    is unchanged. This is the assertion that matters most: a hand-set key is never overwritten.
+    The row does carry its own **Remove old** button — click it → `loopBoard.autoRecycle` is gone and
+    `"loopBoard.afterTask": "none"` is **still there, unchanged**. That button must never overwrite
+    the destination.
 
     *Orphan:* add `"loopBoard.customRules": ["x"]` (a real key this extension dropped in t-4a04) →
     it is listed as `REMOVE … LoopBoard has no setting by this name`. Apply → it is gone. Now add
@@ -619,36 +624,40 @@ and likewise cannot be verified headless.
     listed**, and after an Apply of anything else both are still in `settings.json`. Removing either
     would silently change which model spawns.
 
-    *Renamed key, and the case the API cannot see:* with `loopBoard.delegateWork` NOT set, add
+    *Renamed key while it is readable:* with `loopBoard.delegateWork` NOT set, add
     `"loopBoard.delegateWork.review": false` → it is listed as `MIGRATE … set
-    loopBoard.delegateReview to false`. Apply → `loopBoard.delegateReview: false` is in
-    `settings.json`, the old key is gone, and the Beta *Delegate review* toggle reads OFF. Now the
-    other half: set `"loopBoard.delegateWork": true` and hand-add `"loopBoard.delegateWork.review":
-    true` back → **Migrate Config lists it as `BY HAND`, not as a migration**, saying it cannot be
-    read while `loopBoard.delegateWork` is set. That is correct and not a bug: VSCode's
-    `toValuesTree` drops a child of a plain value (it logs `Ignoring loopBoard.delegateWork.review
-    as loopBoard.delegateWork is true`), so no extension API can see the key at all. Delete it by
-    hand via **Open in VSCode Settings**; confirm the panel stops listing it once
-    `loopBoard.delegateWork` is removed and the child is visible again.
+    loopBoard.delegateReview to false`. Click the row's own **Migrate** button →
+    `loopBoard.delegateReview: false` is in `settings.json`, the old key is gone, and the Beta
+    *Delegate review* toggle reads OFF.
 
-    *Settling the by-hand note — acknowledge, then gone (untested in Docker — only the decision is:
-    `test/settingsmigrate.test.js` covers shown / suppressed / revoked; the button and the
-    `globalState` write are `media/settings.js` + `controller.ts`):* with `"loopBoard.delegateWork":
-    true` set and the old child key NOT in `settings.json`, click **Migrate Config** → the one `BY
-    HAND` row is listed (correct: the API cannot see that you already dealt with it) and the row now
-    carries its own **Mark as done** button, distinct from the panel's **Cancel**. Click **Cancel**
-    first → the panel closes; click **Migrate Config** again → the row is BACK, because Cancel only
-    closes. Now click **Mark as done** → the panel immediately re-reads as **Nothing to migrate**.
-    Click **Migrate Config** again, and again after a window reload (`Developer: Reload Window`) →
-    still **Nothing to migrate**, with `settings.json` byte-identical throughout: the
-    acknowledgement is stored in the extension's `globalState`, never in `settings.json` and never
-    under `.loopboard/`. **Re-arming:** hand-add `"loopBoard.delegateWork.review": true` back and
-    REMOVE `"loopBoard.delegateWork"` → the key is readable again, so it is listed as a real
-    `MIGRATE` row (the acknowledgement must NOT suppress it). Apply, then put
-    `"loopBoard.delegateWork": true` back → the `BY HAND` row is listed once more, because the scan
-    that found the key actually set revoked the acknowledgement. With `loopBoard.debug: info`,
-    **Mark as done** writes one `info settings-migrate-ack` line and the revoking scan one `info
-    settings-migrate-ack-revoked` line to `.loopboard/debug.log`.
+    *The key that cannot be read but CAN be removed — the blind removal (untested in Docker: the
+    plan is, `test/settingsmigrate.test.js` pins that the sweep names the child key ALONE; the
+    `update()` that carries it out is `controller.ts`).* This is the step that proves VSCode's
+    read/write asymmetry, so do it exactly:
+    1. Put BOTH `"loopBoard.delegateWork": true` and `"loopBoard.delegateWork.review": true` in your
+       user `settings.json` by hand. The VSCode log shows `Ignoring loopBoard.delegateWork.review as
+       loopBoard.delegateWork is true` — the key is genuinely unreadable.
+    2. Click **Migrate Config** → the headline is **Nothing to migrate** (correct — the scan found
+       nothing it can prove is wrong) and underneath it, *One key it cannot read — delete it if you
+       like:* with one `REMOVE?` row for `loopBoard.delegateWork.review` and its own **Remove**
+       button. There must be NO advisory telling you to edit JSON yourself, and no *Mark as done*.
+    3. Click **Remove** → the panel says `Removed loopBoard.delegateWork.review from your user
+       settings, if it was there.` **Open `settings.json` and confirm: the
+       `"loopBoard.delegateWork.review"` line is gone AND `"loopBoard.delegateWork": true` is still
+       there, untouched.** That second half is the whole risk — a dotted key is one literal property
+       name, never a path, so the removal must not reach into the parent.
+    4. The `REMOVE?` row is listed again on the next scan. That is correct and not a nag: the API
+       still cannot read the key, the verdict still says **Nothing to migrate**, and pressing Remove
+       again is a byte-identical no-op — confirm that by taking a copy of `settings.json`, clicking
+       **Remove** on an already-clean config, and diffing. It must be identical, with no reformat.
+    5. Now remove `"loopBoard.delegateWork"` too → **Migrate Config** no longer offers the sweep at
+       all (nothing shadows the key any more) and says **Nothing to migrate** with nothing beneath.
+
+    *The acknowledgement is gone:* an earlier build stored a `loopboard.settingsMigrate.acknowledged`
+    key in the extension's `globalState`. Nothing reads it now, and activation deletes it. With
+    `loopBoard.debug: info`, the FIRST window reload after installing this build writes one `info
+    settings-migrate-ack-dropped` line to `.loopboard/debug.log` if you ever pressed the old *Mark as
+    done*; every later reload writes none. There is no *Mark as done* button anywhere on the page.
 
     *Known read-only blind spots (check, but a miss here is expected, not a bug):* run the orphan
     step again on a NON-DEFAULT VSCode profile, and again in a Remote/WSL/Container window. In
@@ -662,7 +671,9 @@ and likewise cannot be verified headless.
     writes to `.loopboard/debug.log`: a `verbose settings-migrate-scan` line listing each key and
     its planned kind, an `info settings-migrate-preview` line, an `info settings-migrate-choice`
     line, and one `info settings-migrate-write` line **per key** naming the key, whether it is a set
-    or a remove, and the value. With `loopBoard.debug: off` none of them appear.
+    or a remove, and the value. A per-row button logs the same `choice` + `write` pair for that one
+    key, and a blind removal's write line reads `remove if present (unreadable here)` — it must NOT
+    claim the key was there, because the host cannot know. With `loopBoard.debug: off` none appear.
 
     *Light and dark:* the panel's tags, list rules and the Apply button must be legible in both
     themes — it uses only `var(--vscode-*)` colours.

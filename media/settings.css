@@ -168,15 +168,16 @@ td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBo
   font-size: 10px; letter-spacing: .04em; text-transform: uppercase; font-weight: 600;
   background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #ffffff);
 }
-/* A conflict and a by-hand case are NOT written — they read as quieter, not louder, because the
-   panel is asking the user to decide rather than reporting a fault. */
-.mig-conflict .mig-tag, .mig-manual .mig-tag {
+/* A conflict and a blind removal are left OUT of the bulk Apply — they read as quieter, not louder,
+   because the panel is offering a choice rather than reporting a fault. */
+.mig-conflict .mig-tag, .mig-sweep .mig-tag {
   background: transparent; color: var(--vscode-descriptionForeground, #9d9d9d);
   border: 1px solid var(--vscode-widget-border, #454545);
 }
-/* The by-hand row's own affordance, pushed to the far end so it reads as belonging to that line and
-   not to the panel. Ordinary .btn chrome — settling a note is not a destructive act. */
-.mig-ack { flex: none; margin-left: auto; align-self: center; white-space: nowrap; }
+/* Each row's own action, pushed to the far end so it reads as belonging to that line and not to the
+   panel. Ordinary .btn chrome: every one of them is reversible by editing settings.json. */
+.mig-do { flex: none; margin-left: auto; align-self: center; white-space: nowrap; }
+.mig-did { color: var(--vscode-descriptionForeground, #9d9d9d); }
 .mig-line code {
   background: var(--vscode-textCodeBlock-background, #2a2a2a); border-radius: 3px; padding: 0 4px;
 }

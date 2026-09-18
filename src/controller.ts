@@ -15,7 +15,7 @@ import {
   ConfigPatch, MODEL_GRID_KEYS, SETTINGS_PREFIX,
 } from './settingsform';
 import { buildModelGrid, gridPatch } from './settingsgrid';
-import { MigrationPlan, SettingValues, buildMigrationPlan, manualAckKeys, scanKeys } from './settingsmigrate';
+import { MigrationPlan, SettingValues, actionWrites, buildMigrationPlan, scanKeys } from './settingsmigrate';
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
@@ -58,10 +58,13 @@ export const EXTENSION_ID = 'SinnConsulting.loopboard-todo';
 export const NATIVE_SETTINGS_FILTER = `@ext:${EXTENSION_ID}`;
 
 const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
-// By-hand migration advisories the user has settled (src/settingsmigrate.ts, ACKNOWLEDGEMENT). A
-// fact about THIS user's settings.json, not about the workspace tracker — so `globalState`, and
-// nothing under `.loopboard/`.
-const MIGRATE_ACK_KEY = 'loopboard.settingsMigrate.acknowledged';
+// DEAD KEY, kept only to be deleted. An earlier build of the migration panel could not remove
+// `loopBoard.delegateWork.review` (it is unreadable behind its scalar parent) and instead asked the
+// user to confirm they had dealt with it by hand, remembering that here. The removal turned out to
+// be possible after all — reading and writing are different code paths in VSCode, see
+// src/settingsmigrate.ts — so the advisory, the button and the claim are all gone. Every
+// activation clears the leftover so an existing install does not carry it forever.
+const DEAD_MIGRATE_ACK_KEY = 'loopboard.settingsMigrate.acknowledged';
 
 // The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
 // here so store.stageAttachment has one raw-bytes entry point regardless of source (drag-drop/
@@ -792,8 +795,8 @@ export class Controller {
         return this.onScanStale();
       case 'settingsMigrate':
         return this.onMigrateStale();
-      case 'settingsAckManual':
-        return this.onAckManual(String(msg.key ?? ''));
+      case 'settingsMigrateKey':
+        return this.onMigrateOne(String(msg.key ?? ''));
       case 'reveal':
         // `search` is forwarded verbatim and its ABSENCE is meaningful (t-1cdb): undefined means
         // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
@@ -991,54 +994,15 @@ export class Controller {
     return values;
   }
 
-  // The by-hand advisories this user has settled. Stored as a plain string array and read back
-  // defensively: `globalState` outlives any shape this code once wrote into it.
-  private acknowledgedManual(): string[] {
-    const raw = this.globalState.get<unknown>(MIGRATE_ACK_KEY);
-    return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : [];
-  }
-
   private stalePlan(): MigrationPlan {
     const declared = formKeys(this.settingsManifest());
-    return buildMigrationPlan(declared, this.collectSettingValues(declared), this.acknowledgedManual());
+    return buildMigrationPlan(declared, this.collectSettingValues(declared));
   }
 
-  // The plan, plus the one piece of bookkeeping it asks for: an acknowledgement the scan has
-  // DISPROVED (the key turned out to be readable and set) is forgotten here, which re-arms the
-  // advisory for the next time that key is hidden again. The plan itself is unaffected — a visible
-  // key is reported by the ordinary paths whatever the acknowledgement said.
-  private async settledStalePlan(): Promise<MigrationPlan> {
+  // Preview only — this NEVER writes. The page draws one line per affected key and asks; the writes
+  // arrive separately as `settingsMigrate` (all of them) or `settingsMigrateKey` (one row).
+  private onScanStale(): void {
     const plan = this.stalePlan();
-    if (plan.staleAcks.length) {
-      this.store.debugLog(
-        'info',
-        'settings-migrate-ack-revoked',
-        `${plan.staleAcks.join(', ')} — set after all, so the by-hand note is armed again`
-      );
-      const kept = this.acknowledgedManual().filter((key) => !plan.staleAcks.includes(key));
-      await this.globalState.update(MIGRATE_ACK_KEY, kept);
-    }
-    return plan;
-  }
-
-  // "Mark as done" on a by-hand row: the user says they have dealt with a key this API cannot see,
-  // and the advisory stands down for good (until a later scan finds the key set after all). Writes
-  // nothing to settings.json — the acknowledgement lives in globalState alone.
-  private async onAckManual(key: string): Promise<void> {
-    if (!manualAckKeys().includes(key)) {
-      this.store.debugLog('info', 'settings-migrate-ack-reject', `${key} — not a by-hand advisory`);
-      return;
-    }
-    const acknowledged = this.acknowledgedManual();
-    if (!acknowledged.includes(key)) await this.globalState.update(MIGRATE_ACK_KEY, [...acknowledged, key]);
-    this.store.debugLog('info', 'settings-migrate-ack', `${key} — settled by hand, not reported again`);
-    return this.onScanStale();
-  }
-
-  // Preview only — this NEVER writes. The page draws one line per affected key and asks; the write
-  // arrives separately as `settingsMigrate`.
-  private async onScanStale(): Promise<void> {
-    const plan = await this.settledStalePlan();
     this.store.debugLog(
       'verbose',
       'settings-migrate-scan',
@@ -1047,28 +1011,74 @@ export class Controller {
     this.store.debugLog(
       'info',
       'settings-migrate-preview',
-      plan.actions.length === 0
+      plan.findings === 0 && plan.sweeps === 0
         ? 'nothing to migrate'
-        : `${plan.actions.length} stale key(s), ${plan.writes.length} write(s) proposed, ` +
-          `${plan.conflicts} conflict(s), ${plan.manual} needing a hand`
+        : `${plan.findings} stale key(s), ${plan.writes.length} write(s) proposed, ` +
+          `${plan.conflicts} conflict(s), ${plan.sweeps} blind removal(s) offered`
     );
     SettingsPanel.current?.post({ type: 'settingsMigration', plan });
   }
 
-  // The confirmed write. The plan is REBUILT here rather than taken from the message: the page's
+  // The bulk confirmation. The plan is REBUILT here rather than taken from the message: the page's
   // copy is a snapshot that `settings.json` may have moved out from under, and the webview is never
   // trusted to say which keys get written.
   private async onMigrateStale(): Promise<void> {
-    const plan = await this.settledStalePlan();
+    const plan = this.stalePlan();
     if (plan.writes.length === 0) {
       this.store.debugLog('info', 'settings-migrate-choice', 'confirmed, but nothing is left to write');
       SettingsPanel.current?.post({ type: 'settingsMigration', plan, done: true, applied: 0, failures: [] });
       return;
     }
     this.store.debugLog('info', 'settings-migrate-choice', `confirmed — applying ${plan.writes.length} change(s)`);
+    const failures = await this.applyMigrationWrites(plan, plan.writes);
+    // Repaint from disk, then hand back the RE-SCANNED plan: what is still listed afterwards is
+    // what genuinely remains, not a stale echo of the preview. A sweep is listed again by
+    // construction — the scan cannot see that it just ran — so the panel says what was done instead.
+    await this.postSettings();
+    SettingsPanel.current?.post({
+      type: 'settingsMigration',
+      plan: this.stalePlan(),
+      done: true,
+      applied: plan.writes.length - failures.length,
+      failures,
+    });
+  }
+
+  // ONE row's button. Same discipline as the bulk path — the plan is rebuilt and the named key
+  // looked up in it, so the page can only ask for an action the host independently planned, and a
+  // key that is no longer stale (or never was) writes nothing at all.
+  private async onMigrateOne(key: string): Promise<void> {
+    const plan = this.stalePlan();
+    const action = plan.actions.find((a) => a.key === key);
+    if (!action) {
+      this.store.debugLog('info', 'settings-migrate-reject', `${key} — not a planned action, nothing written`);
+      SettingsPanel.current?.post({ type: 'settingsMigration', plan });
+      return;
+    }
+    const writes = actionWrites(action);
+    this.store.debugLog('info', 'settings-migrate-choice', `${key} — ${action.kind}, ${writes.length} write(s)`);
+    const failures = await this.applyMigrationWrites(plan, writes);
+    await this.postSettings();
+    SettingsPanel.current?.post({
+      type: 'settingsMigration',
+      plan: this.stalePlan(),
+      applied: writes.length - failures.length,
+      failures,
+      did: action.kind === 'sweep' ? `Removed ${key} from your user settings, if it was there.` : `Done: ${key}.`,
+    });
+  }
+
+  // The only place this feature touches `settings.json`. A `sweep` write is logged as what it is —
+  // it removes the key if present and is a byte-identical no-op if not, and the host cannot tell
+  // which happened, so the log must not claim either.
+  private async applyMigrationWrites(plan: MigrationPlan, writes: ConfigPatch[]): Promise<string[]> {
+    const blind = new Set(plan.actions.filter((a) => a.kind === 'sweep').map((a) => a.key));
     const failures: string[] = [];
-    for (const patch of plan.writes) {
-      const what = patch.value === undefined ? 'remove' : `set to ${JSON.stringify(patch.value)}`;
+    for (const patch of writes) {
+      const what =
+        patch.value !== undefined ? `set to ${JSON.stringify(patch.value)}`
+          : blind.has(patch.key) ? 'remove if present (unreadable here)'
+            : 'remove';
       this.store.debugLog('info', 'settings-migrate-write', `${patch.key} — ${what} (Global)`);
       try {
         await vscode.workspace.getConfiguration().update(patch.key, patch.value, vscode.ConfigurationTarget.Global);
@@ -1078,16 +1088,15 @@ export class Controller {
         failures.push(`${patch.key}: ${reason}`);
       }
     }
-    // Repaint from disk, then hand back the RE-SCANNED plan: what is still listed afterwards is
-    // what genuinely remains (the conflicts and the by-hand cases), not a stale echo of the preview.
-    await this.postSettings();
-    SettingsPanel.current?.post({
-      type: 'settingsMigration',
-      plan: this.stalePlan(),
-      done: true,
-      applied: plan.writes.length - failures.length,
-      failures,
-    });
+    return failures;
+  }
+
+  // One-time cleanup of the acknowledgement an earlier build stored (see DEAD_MIGRATE_ACK_KEY).
+  // Nothing reads it any more, so leaving it would be a key this extension never explains again.
+  private async forgetDeadMigrateAck(): Promise<void> {
+    if (this.globalState.get<unknown>(DEAD_MIGRATE_ACK_KEY) === undefined) return;
+    await this.globalState.update(DEAD_MIGRATE_ACK_KEY, undefined);
+    this.store.debugLog('info', 'settings-migrate-ack-dropped', `${DEAD_MIGRATE_ACK_KEY} — obsolete, removed`);
   }
 
   private async readTemplates(): Promise<{ todoText: string; loopText: string }> {
@@ -1101,6 +1110,7 @@ export class Controller {
   async autoHeal(): Promise<void> {
     const { todoText, loopText } = await this.readTemplates();
     await this.store.autoHeal(todoText, loopText);
+    await this.forgetDeadMigrateAck();
   }
 
   // First-run (and every subsequent activation) Getting Started prompt, gated on a globalState

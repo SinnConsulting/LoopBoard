@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  buildMigrationPlan, isOrphan, manualAckKeys, scanKeys, MIGRATIONS, LEGACY_HONOURED_KEYS,
+  buildMigrationPlan, actionWrites, isOrphan, scanKeys, MIGRATIONS, LEGACY_HONOURED_KEYS,
   AFTER_TASK_KEY, AUTO_RECYCLE_KEY, CLEAR_SESSION_KEY,
   DELEGATE_WORK_KEY, DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY,
 } = require('../out-test/settingsmigrate.js');
@@ -34,7 +34,8 @@ test('a clean config plans nothing and writes nothing', () => {
   assert.deepEqual(plan.actions, []);
   assert.deepEqual(plan.writes, []);
   assert.equal(plan.conflicts, 0);
-  assert.equal(plan.manual, 0);
+  assert.equal(plan.sweeps, 0);
+  assert.equal(plan.findings, 0);
 });
 
 test('an empty config plans nothing', () => {
@@ -72,83 +73,104 @@ test('a renamed key whose destination is already set is a conflict: reported, ne
   assert.equal(plan.conflicts, 1);
 });
 
-test('a renamed key hidden behind its scalar parent is reported as a by-hand case, not silence', () => {
-  // VSCode drops a child of a plain value, so with `loopBoard.delegateWork` set the old key cannot
-  // be read at all. Reporting nothing would be a clean bill of health the API cannot actually give.
+// ---- the key that cannot be READ but can be REMOVED ----
+// VSCode resolves a read through `toValuesTree`, which drops a child of a scalar, but computes a
+// removal as a JSON text edit on settings.json itself (`setProperty`, one literal path segment).
+// So with `loopBoard.delegateWork` set the old key is invisible AND deletable: the plan offers the
+// removal blind rather than asking the user to go and edit JSON by hand.
+
+test('a renamed key hidden behind its scalar parent is offered as a blind removal', () => {
   const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true });
   const action = byKey(plan, OLD_DELEGATE_REVIEW_KEY);
-  assert.equal(action.kind, 'manual');
-  assert.equal(action.value, undefined);
-  assert.match(action.detail, /cannot be read while loopBoard\.delegateWork is set/);
-  assert.deepEqual(plan.writes, []);
-  assert.equal(plan.manual, 1);
+  assert.equal(action.kind, 'sweep');
+  assert.equal(action.value, undefined, 'the scan cannot see a value, and must not invent one');
+  assert.match(action.detail, /cannot be READ while loopBoard\.delegateWork is set/);
+  assert.match(action.detail, /changes nothing if it is not/);
+  // It IS a write — that is the whole point — and it is a removal, never a value.
+  assert.deepEqual(plan.writes, [{ key: OLD_DELEGATE_REVIEW_KEY, value: undefined }]);
+  assert.equal(plan.sweeps, 1);
 });
 
-test('the by-hand report is not raised when the old key IS visible', () => {
+test('a blind removal is NOT a finding: a config with only one still has nothing to migrate', () => {
+  // The verdict the panel prints comes from `findings`. A sweep is an offer, not evidence — a clean
+  // config must not be made to look like an outstanding problem just because a key is unreadable.
+  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true });
+  assert.equal(plan.findings, 0);
+  assert.equal(plan.actions.length, 1);
+});
+
+test('a real finding alongside a blind removal is counted, and both are offered', () => {
+  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true, [AUTO_RECYCLE_KEY]: true });
+  assert.equal(plan.sweeps, 1);
+  assert.equal(plan.findings, 1);
+  // Destination writes still come before every removal; the removals themselves follow rule order.
+  assert.deepEqual(plan.writes, [
+    { key: AFTER_TASK_KEY, value: 'recycle' },
+    { key: OLD_DELEGATE_REVIEW_KEY, value: undefined },
+    { key: AUTO_RECYCLE_KEY, value: undefined },
+  ]);
+});
+
+test('no blind removal is offered when the old key IS visible', () => {
   const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: true });
-  assert.equal(plan.manual, 0);
+  assert.equal(plan.sweeps, 0);
+  assert.equal(plan.findings, 1);
   assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'migrate');
 });
 
-// ---- acknowledging a by-hand report ----
-// It is the one finding the scan can never see resolved (it exists BECAUSE the key is unreadable),
-// so without this it would be listed on every scan of an already-clean config, forever.
-
-test('an acknowledged by-hand report is not raised again', () => {
-  const values = { [DELEGATE_WORK_KEY]: true };
-  assert.equal(buildMigrationPlan(DECLARED, values, []).manual, 1, 'first scan must still say it');
-  const plan = buildMigrationPlan(DECLARED, values, [OLD_DELEGATE_REVIEW_KEY]);
-  assert.deepEqual(plan.actions, [], 'a clean config must report nothing at all once settled');
-  assert.equal(plan.manual, 0);
-  assert.deepEqual(plan.writes, []);
-  assert.deepEqual(plan.staleAcks, [], 'nothing disproved it, so the acknowledgement stands');
+test('no blind removal is offered when nothing shadows the key', () => {
+  assert.equal(buildMigrationPlan(DECLARED, {}).sweeps, 0);
+  assert.equal(buildMigrationPlan(DECLARED, { [DELEGATE_REVIEW_KEY]: true }).sweeps, 0);
 });
 
-test('an acknowledgement for another key does not silence the report', () => {
-  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true }, [AUTO_RECYCLE_KEY]);
-  assert.equal(plan.manual, 1);
-  assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'manual');
+// ---- per-row actions ----
+// Every row carries its own button, so a user can act on one finding and leave another. The host
+// looks the key up in a REBUILT plan and asks for exactly these writes.
+
+test('every planned action is executable on its own', () => {
+  const values = {
+    [OLD_DELEGATE_REVIEW_KEY]: false,
+    [AFTER_TASK_KEY]: 'none',
+    [AUTO_RECYCLE_KEY]: true,
+    'loopBoard.gone': 1,
+  };
+  const plan = buildMigrationPlan(DECLARED, values);
+  assert.ok(plan.actions.length >= 3);
+  for (const action of plan.actions) {
+    const writes = actionWrites(action);
+    assert.ok(writes.length >= 1, `${action.key} must have something to do`);
+    // Its own key is always removed, and it is always the LAST write, so an interrupted row cannot
+    // drop the source before its destination is stored.
+    assert.deepEqual(writes[writes.length - 1], { key: action.key, value: undefined });
+  }
 });
 
-test('an acknowledgement can NEVER suppress a real, readable finding — and is revoked by it', () => {
-  // Parent unset ⇒ the key is readable again. It is set after all, so the acknowledgement was
-  // wrong: the migration is planned exactly as if it had never been given, and the host is told to
-  // forget it so the advisory is armed again the next time the parent hides the key.
-  const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: false }, [OLD_DELEGATE_REVIEW_KEY]);
+test('a single migrate row writes its destination first, then drops the source', () => {
+  const plan = buildMigrationPlan(DECLARED, { [AUTO_RECYCLE_KEY]: true });
+  assert.deepEqual(actionWrites(byKey(plan, AUTO_RECYCLE_KEY)), [
+    { key: AFTER_TASK_KEY, value: 'recycle' },
+    { key: AUTO_RECYCLE_KEY, value: undefined },
+  ]);
+});
+
+test('a conflict row can be resolved by dropping the OLD key, never by overwriting the new one', () => {
+  const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: false, [DELEGATE_REVIEW_KEY]: true });
   const action = byKey(plan, OLD_DELEGATE_REVIEW_KEY);
-  assert.equal(action.kind, 'migrate');
-  assert.deepEqual(plan.writes, [
-    { key: DELEGATE_REVIEW_KEY, value: false },
+  assert.equal(action.kind, 'conflict');
+  assert.deepEqual(actionWrites(action), [{ key: OLD_DELEGATE_REVIEW_KEY, value: undefined }]);
+  assert.deepEqual(plan.writes, [], 'and it still contributes nothing to a bulk apply');
+});
+
+test('a blind removal row removes exactly one key — never its shadowing parent', () => {
+  // The risk worth pinning: VSCode treats a dotted key as ONE literal property name, so the write
+  // must name the child alone. A plan that also listed loopBoard.delegateWork would delete a live
+  // setting the user is actually using.
+  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true });
+  assert.deepEqual(actionWrites(byKey(plan, OLD_DELEGATE_REVIEW_KEY)), [
     { key: OLD_DELEGATE_REVIEW_KEY, value: undefined },
   ]);
-  assert.deepEqual(plan.staleAcks, [OLD_DELEGATE_REVIEW_KEY]);
-});
-
-test('a conflict on an acknowledged key is reported too, and revokes the acknowledgement', () => {
-  const plan = buildMigrationPlan(
-    DECLARED,
-    { [OLD_DELEGATE_REVIEW_KEY]: false, [DELEGATE_REVIEW_KEY]: true },
-    [OLD_DELEGATE_REVIEW_KEY]
-  );
-  assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'conflict');
-  assert.deepEqual(plan.staleAcks, [OLD_DELEGATE_REVIEW_KEY]);
-});
-
-test('a scan that CONFIRMS the key is gone keeps the acknowledgement', () => {
-  // Readable (no shadowing parent) and absent: the claim is true, so re-setting the parent later
-  // must not re-ask a question already answered.
-  const plan = buildMigrationPlan(DECLARED, {}, [OLD_DELEGATE_REVIEW_KEY]);
-  assert.deepEqual(plan.actions, []);
-  assert.deepEqual(plan.staleAcks, []);
-});
-
-test('only a shadowed source is acknowledgeable at all', () => {
-  const keys = manualAckKeys();
-  assert.deepEqual(keys, MIGRATIONS.filter((r) => r.shadowedBy).map((r) => r.sources[0]));
-  assert.ok(keys.includes(OLD_DELEGATE_REVIEW_KEY));
-  // The host validates the webview's key against this list, so a message naming any other key —
-  // including a perfectly ordinary migration source — must be refused.
-  assert.equal(keys.includes(AUTO_RECYCLE_KEY), false);
+  assert.equal(plan.writes.some((w) => w.key === DELEGATE_WORK_KEY), false);
+  assert.equal(plan.actions.some((a) => a.key === DELEGATE_WORK_KEY), false);
 });
 
 // ---- category 2: deprecated pair -> afterTask ----
