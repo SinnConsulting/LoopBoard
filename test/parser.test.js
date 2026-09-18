@@ -267,7 +267,7 @@ const REV_SRC = [
 
 test('a stale rev: line is recognized and dropped — never parsed, never an unknown line', () => {
   const doc = parseTodo(REV_SRC);
-  assert.equal(doc.entries[0].rev, undefined, 'no rev field survives on the entry');
+  assert.ok(!('rev' in doc.entries[0]), 'no rev property is set on the entry at all');
   assert.deepEqual(doc.entries[0].unknownLines, [], 'not preserved as an unparsed line');
   assert.deepEqual(doc.entries[1].unknownLines, [], 'same on a DRAFT entry');
   const out = serializeTodo(doc);
@@ -286,7 +286,7 @@ test('an index arriving WITH rev: lines is still a fixpoint after the first cano
 test('any rev: value is dropped, integer or not — the key means nothing now', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] Bad rev', '  - id: t-rv03', '  - phase: new', '  - rev: abc'].join('\n');
   const doc = parseTodo(src);
-  assert.equal(doc.entries[0].rev, undefined);
+  assert.ok(!('rev' in doc.entries[0]));
   assert.deepEqual(doc.entries[0].unknownLines, []);
   assert.doesNotMatch(serializeTodo(doc), /- rev:/);
 });

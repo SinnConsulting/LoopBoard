@@ -138,6 +138,12 @@ test('an edit confined to the task file still nudges — the fingerprint covers 
   // An appended worklog line is the same shape and must behave the same way.
   const appended = { ...before, worklog: ['2026-09-18'], detailRaw: '# t\n\n## Worklog\n\n- 2026-09-18\n' };
   assert.deepStrictEqual(computeNudges([before], [appended], DEFAULTS)[0].items[0].changes, ['worklog appended']);
+  // …and the signal is the TEXT, not the parsed detail fields: with EVERY other field byte-identical
+  // and only `detailRaw` moved (a reordered Meta block, a heading reflow), the nudge still fires.
+  // Pins the detail side the way the `raw: 'canonicalized'` case pins the index side — an
+  // implementation diffing parsed detail fields instead of the text would fail here and only here.
+  const reflowed = { ...before, detailRaw: before.detailRaw + '\n' };
+  assert.deepStrictEqual(computeNudges([before], [reflowed], DEFAULTS)[0].items[0].changes, ['changed']);
 });
 
 test('a brand-new entry is a change', () => {

@@ -34,6 +34,6 @@ paths:
   `main`; a PR is optional.
 * **Untouchable, verbatim:** the `@`-include lines (they pull in other instruction files —
   a dropped or reworded `@path` silently unloads a whole ruleset); the Non-negotiable list's
-  numbering; the Commands fenced code block; every rule cross-reference ("Rules 1-17", "Rule 2",
+  numbering; the Commands fenced code block; every rule cross-reference ("Rules 1-16", "Rule 2",
   "Rule 14" — they point at `.loopboard/LOOP.md`'s numbering); and every normative MUST/NEVER/ONLY
   clause, count, literal path, filename, and identifier.
