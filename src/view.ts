@@ -59,6 +59,12 @@ export interface LoopStatus {
     threshold: number;
     thresholdLabel: string; // e.g. "restart at 80%", from describeThreshold(); '' when off
   } | null;
+  // Live Agent-tool subagents of this slot's session (t-sbag), filled in by the controller from the
+  // same poll. LIVE ONLY — never a finished one: the list exists to explain a held-back restart, so
+  // an empty array means the sidebar's Agents section shows nothing for this slot. Nested agents
+  // are listed flat. Each entry is `describeAgent()`'s output, recomputed per repaint so the
+  // duration ticks between polls.
+  agents?: { id: string; label: string; duration: string }[];
 }
 
 export interface WebBoard {

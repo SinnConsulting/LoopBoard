@@ -273,8 +273,16 @@
           return btn;
         };
 
+        // A live subagent (t-sbag) blocks every AUTOMATIC restart, but never this button: a human
+        // clicking ♻ is deciding now. The tooltip warns and names them; the click is unchanged.
+        const live = l.agents || [];
+        const agentNote = live.length
+          ? ' — ' + live.length + ' subagent' + (live.length === 1 ? '' : 's') + ' still running'
+          : '';
+        const agentNames = live.length ? '\n' + live.map((a) => a.label).join('\n') : '';
+
         const playBtn = actionBtn('start', !l.running, withSchedule(spawnLabel, 'start'), 'spawnLoop', SVG.play);
-        const recycleBtn = actionBtn('restart', l.running, withSchedule('Restart with fresh context', 'restart'), 'recycleLoop', SVG.recycle);
+        const recycleBtn = actionBtn('restart', l.running, withSchedule('Restart with fresh context' + agentNote, 'restart') + agentNames, 'recycleLoop', SVG.recycle);
         const stopBtn = actionBtn('stop', l.running, withSchedule('Stop loop', 'stop'), 'stopLoop', SVG.stop);
 
         const row = h('div', { class: 'sb-row loop' }, body, playBtn, recycleBtn, stopBtn);
@@ -332,6 +340,26 @@
         }
       }
       sb.append(loops);
+
+      // Agents (t-sbag): one group per loop slot, one row per LIVE subagent — never a finished
+      // one. The section exists to explain why an automatic restart is being held back, so an
+      // empty one is hidden entirely and a workspace without subagents sees no new chrome.
+      // Read-only: a subagent can be neither opened nor stopped from out here.
+      const agentsSection = h('div', { class: 'sb-section' }, h('div', { class: 'sb-label' }, 'Agents'));
+      let anyAgents = false;
+      for (const l of board.loops) {
+        for (const a of l.agents || []) {
+          anyAgents = true;
+          // Same marquee as the In-Progress title above (incl. its reduced-motion opt-out): the
+          // label is long and the sidebar is narrow, and there is only ever ONE marquee in here.
+          agentsSection.append(h('div', { class: 'sb-row agent', title: l.name + ' · ' + a.label },
+            h('span', { class: 'agent-model' }, l.name),
+            h('span', { class: 'agent-dot pulse' }),
+            h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, a.label)),
+            h('span', { class: 'agent-duration' }, a.duration)));
+        }
+      }
+      if (anyAgents) sb.append(agentsSection);
     }
 
     sb.append(h('div', { class: 'spacer' }));

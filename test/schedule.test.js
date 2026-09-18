@@ -62,6 +62,20 @@ test('mayFire ignores In Progress entirely when force is on', () => {
   assert.strictEqual(mayFire(forced, ['opus']), true);
 });
 
+test('force overrides the live-subagent hold too (t-sbag)', () => {
+  // The busy list is a UNION now: In-Progress owners plus slots whose session still has a live
+  // subagent. `mayFire` cannot tell the two reasons apart — and must not: `force` already means
+  // "interrupt whatever is running", and the consent modal taken at arm time names the killed
+  // subagents. So a model that is busy for the subagent reason ALONE defers without force and
+  // fires with it, exactly as an In-Progress one does.
+  const busyForSubagentOnly = ['opus'];
+  assert.strictEqual(mayFire(armSchedule('opus', 'restart', 30, false, false, NOW), busyForSubagentOnly), false);
+  assert.strictEqual(mayFire(armSchedule('opus', 'restart', 30, false, true, NOW), busyForSubagentOnly), true);
+  assert.strictEqual(mayFire(armSchedule('opus', 'stop', 30, false, true, NOW), busyForSubagentOnly), true);
+  // A scheduled START still never defers: it interrupts nothing, subagents included.
+  assert.strictEqual(mayFire(armSchedule('opus', 'start', 30, false, false, NOW), busyForSubagentOnly), true);
+});
+
 test('deferSchedule marks pending and is idempotent', () => {
   const s = armSchedule('opus', 'restart', 30, true, false, NOW);
   const once = deferSchedule(s);

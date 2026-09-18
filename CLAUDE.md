@@ -101,12 +101,13 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   schedule map and its `setTimeout`s, SESSION-ONLY (nothing in `globalState`/`workspaceState`/
   `.loopboard/`, so a reload clears every schedule — matching terminals, which die with the window
   too). Force consent is a native modal taken ONCE at arm time (a scheduled action is unattended by
-  definition); fire time is silent and only logged. With `force` off the timer defers instead of
-  firing while that model owns the In-Progress task (a scheduled start never defers — `mayFire`
-  short-circuits it), and waits indefinitely — it fires on the same idle edge `maybeAutoRecycle`
-  watches, since the tracker is the only signal for "busy". A forced restart leaves the task
-  `phase: inprogress` with no worker, which Rule 2 turns into a board-wide block — hence the modal's
-  wording.
+  definition); fire time is silent and only logged. With `force` off the timer defers while that
+  model is BUSY and waits indefinitely; busy = In-Progress owner ∪ slots with a live subagent
+  (t-sbag: pure `src/subagents.ts`, `contextreader.readSubagents`, 30-min transcript-mtime staleness
+  cap; manual ♻ only warns in its tooltip; `force` and a scheduled start override it). The idle edge
+  is `maybeAutoRecycle`'s, but a finishing subagent writes no `.loopboard/` — so the context poll
+  re-runs the flushes too. A forced restart leaves the task `phase: inprogress` with no worker
+  (Rule 2 → board-wide block) and kills live subagents — hence the modal's wording.
 - Workspace custom rules (t-4a04): a hand-owned `<!-- loopboard:custom:begin/end -->` free-text
   section in `.loopboard/LOOP.md` — NO setting, NO reconciler, NO config listener (the earlier
   `loopBoard.customRules` + per-line-marker machinery was removed after human rejection; do not

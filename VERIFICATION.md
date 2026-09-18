@@ -82,6 +82,32 @@ questions, an HTML-comment template) and `index-unknown.md`:
   so a long deferral produces no burst of catch-up restarts.
 - `delayUntilFire` counts down and floors at 0; `describeSchedule` renders the countdown, `repeat`,
   `force` and the "waiting for task" state.
+- **Busy is a UNION now (t-sbag):** `mayFire`'s second argument is `busyModels` — In-Progress owners
+  plus slots with a live subagent — and one added case pins that `force: true` fires while the list
+  contains its model for the subagent reason ALONE, while the same schedule unforced defers and a
+  scheduled `start` still never defers.
+
+### Live subagents — `test/subagents.test.js` (t-sbag)
+Captured fixtures of Claude Code's undocumented `subagents/` layout, so a CLI reshape fails here
+rather than silently in the host (where the symptom is a restart that kills an agent mid-edit, or
+one that never fires):
+- **The async trap:** a `tool_result` on the meta's `toolUseId` whose text starts with
+  `Async agent launched successfully` is the LAUNCH RECEIPT and is not a finish; any other
+  `tool_result` on that id is a synchronous agent's real finish. `requestShape` is never used as the
+  discriminator (metas without it are asynchronous too).
+- **Notifications:** `<status>completed|failed|killed</status>` each finish the agent, and the two
+  lines Claude Code writes per finish (the `queue-operation` enqueue and the `user` message) dedupe
+  to ONE event; a non-terminal status is not a finish.
+- **Resume:** a `SendMessage` with `input.to === <id>` re-opens a finished agent (latest marker
+  wins), and its next notification finishes it again.
+- **`stoppedByUser: true`** in the meta drops the agent — there is no finish marker for that case.
+- **Staleness cutoff:** with NO finish marker either way, an agent transcript written 29 minutes ago
+  stays live and one written 31 minutes ago is dropped AND reported as stale (`AGENT_STALE_MS` is
+  30 min) — the backstop that stops a SIGKILLed session's leftovers holding every restart forever.
+- A **truncated last line** is carried across two chunks instead of being lost; an unparseable meta,
+  unparseable/irrelevant transcript lines and an empty `subagents/` directory all degrade to no rows.
+- `describeAgent` renders `agentType · description` + a duration (`20s`/`1m`/`2h 5m`), drops the
+  `· description` half when the meta has none, and renders no duration when the start is unknown.
 
 ## Manual — Extension Development Host (F5)
 
@@ -776,3 +802,41 @@ and likewise cannot be verified headless.
     → the whole row is gone and the card grows no rows (a collapsed card shows no model select at
     all — intended); expand → the row returns with the current values selected and focus stays on a
     select after a pick. Draft cards and the New Story composer are unchanged.
+
+39. **Live subagents block a loop restart + the Agents section (t-sbag):** host + webview only
+    (`src/contextreader.ts`, `src/controller.ts`, `media/sidebar.{js,css}`); the pure half is
+    `test/subagents.test.js`, this checklist is the acceptance path. Set `loopBoard.debug: verbose`
+    first — `.loopboard/debug.log` is where every assertion below is confirmed.
+
+    **The section fills and empties:** start a loop and give it work that delegates (a grooming
+    draft is the easy case — grooming never sets `phase: inprogress`, which is the whole point).
+    Within one poll (30 s) an **Agents** section appears directly under **Loops**, hidden until
+    then: one row per live subagent, `<slot> · <agentType> · <description>` with a ticking duration,
+    the long label marquee-scrolling with the same animation the In-Progress title uses (and
+    stopping under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
+    never grouped. Nothing in a row is clickable. When the agents finish, the rows disappear and the
+    whole section goes with them. `debug.log` shows an `agents-read <slot> N live: …` line per poll.
+
+    **The ♻ tooltip warns but the click still restarts:** while an agent is live, hover ♻ → the
+    tooltip reads `Restart with fresh context — N subagents still running (right-click to
+    schedule)` and names each agent on its own line. Click it → the loop restarts IMMEDIATELY, as
+    before. The manual button never refuses.
+
+    **A scheduled restart holds:** with a groom subagent running and NOTHING In Progress,
+    right-click ♻ → schedule a 1-minute restart with `Force` OFF. At the minute the loop does NOT
+    restart; the row shows `restart waiting for task` and `debug.log` records
+    `restart-defer <slot> — 1 live subagent: <agentType> · <description>, waiting for idle`. Let the
+    agent finish → the restart fires on the next poll after the section empties (`restart-fire`),
+    with no `.loopboard/` write in between — a finishing subagent touches no tracker file, so this
+    is the poll-driven idle edge, not a board refresh. Re-run with `Force` ON: the modal's detail
+    now says subagents are killed too, and the restart fires on time over the live agent.
+
+    **afterTask holds the same way:** set `loopBoard.afterTask` to `recycle`, let a worker finish a
+    task while one of its subagents is still running → no recycle at the idle edge, an
+    `aftertask-defer` line naming the agent, and the recycle fires once the agent is gone
+    (`auto-recycle <slot> (held for a live subagent)`). Same with `clear`.
+
+    **Degradation:** stop the loop → the section's rows for that slot vanish at once. With no
+    readable session (rename `~/.claude/sessions/` briefly) the log shows
+    `agents-read <slot> — could not read this session's subagents` and NOTHING is held back — an
+    unreadable path must never block a restart, and must never look like a confident "idle" either.
