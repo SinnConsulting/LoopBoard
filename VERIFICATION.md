@@ -507,8 +507,9 @@ and likewise cannot be verified headless.
     WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
     `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
     review on|off`. Run **LoopBoard: Sync Templates** on a workspace whose `LOOP.md` predates this
-    change → its Automation fence gains the `DELEGATED-WORK MODE` clause and the custom-rules
-    section is untouched.
+    change → its Automation fence gains the `DELEGATED-WORK MODE` clause, contains no `gh pr merge`
+    anywhere and names the never-merge rule (`NEVER merge a PR — merging is the HUMAN's action
+    alone`), and the custom-rules section is untouched.
 
 
 36. **Unique per-spawn session `--name` (t-x1t1):** the suffix generator, the prefix match and the
