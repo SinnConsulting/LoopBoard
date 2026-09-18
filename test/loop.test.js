@@ -247,7 +247,9 @@ test('template Automation block spells out the delegated-work mode the activatio
   assert.match(fence, /subagent effort ceiling/, 'implementer capped by the same ceiling as grooming');
   assert.match(fence, /no git worktree, no --no-verify/, 'implementer inherits the git contract');
   assert.match(fence, /writes any `\.loopboard\/` file/, 'subagents never write the tracker');
-  assert.match(fence, /gh pr merge <url> --squash --delete-branch/, 'pass path merges by squash');
+  assert.ok(!fence.includes('gh pr merge'), 'the loop never merges a PR — merging is the human\'s action alone');
+  assert.match(fence, /NEVER merge a PR/, 'the prohibition is stated, not merely implied by absence');
+  assert.match(fence, /Review = delivered with its PR still OPEN/, 'an open PR is the normal successful end state');
   assert.match(fence, /re-delegate ONCE/, 'fail path: one re-delegation');
   assert.match(fence, /second fail → `phase: feedback`/, 'then Feedback with the findings');
   assert.match(fence, /never self-accept/, 'Rule 1 gate survives');
