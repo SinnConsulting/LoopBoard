@@ -46,6 +46,10 @@
   // `pendingBoard`): hold it while a field is focused and flush on focusout.
   let pending = null;
   let errors = {}; // key or `slot/field` -> reason, cleared on the next accepted state
+  // The stale-settings panel: `{ plan, done, applied, failures }` or null when it is not open.
+  // Deliberately NOT part of `state`, which is replaced wholesale by every incoming form — the
+  // panel must survive the repaint its own writes trigger, or the result would flash and vanish.
+  let migration = null;
 
   function hasFocus() {
     const el = document.activeElement;
@@ -72,6 +76,17 @@
     if (msg.type === 'settings') {
       errors = {};
       apply({ form: msg.form, grid: msg.grid, extensionId: msg.extensionId, problem: msg.problem });
+      return;
+    }
+    if (msg.type === 'settingsMigration') {
+      migration = {
+        plan: msg.plan || { actions: [], writes: [], conflicts: 0, manual: 0 },
+        done: !!msg.done,
+        applied: msg.applied || 0,
+        failures: msg.failures || [],
+      };
+      pending = null;
+      render();
       return;
     }
     if (msg.type === 'settingsError') {
@@ -248,6 +263,65 @@
     ];
   }
 
+  // ---- stale settings: preview, then confirm ----
+  // Nothing here decides anything. The host owns the plan (src/settingsmigrate.ts, unit-tested) and
+  // REBUILDS it when the confirmation arrives, so this panel is a rendering of a decision already
+  // made elsewhere — it cannot cause a write the host did not independently plan.
+  const KIND_LABEL = { migrate: 'Migrate', remove: 'Remove', conflict: 'Conflict', manual: 'By hand' };
+
+  function migrationLine(action) {
+    return h('li', { class: 'mig-line mig-' + action.kind },
+      h('span', { class: 'mig-tag' }, KIND_LABEL[action.kind] || action.kind),
+      h('span', {},
+        h('code', {}, action.key),
+        action.value === undefined ? null : h('span', { class: 'subtle' }, ' = ' + JSON.stringify(action.value)),
+        ' — ' + action.detail));
+  }
+
+  function migrationPanel() {
+    if (!migration) return null;
+    const plan = migration.plan;
+    const close = h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Close');
+
+    if (migration.done) {
+      const left = plan.actions.length
+        ? h('p', {}, 'Still listed below — these need your decision; nothing was written for them.')
+        : null;
+      return h('div', { class: 'migrate' },
+        h('div', { class: 'mig-head' }, h('strong', {}, 'Migration finished'), close),
+        h('p', {}, migration.applied === 0
+          ? 'Nothing was written.'
+          : 'Applied ' + migration.applied + ' change' + (migration.applied === 1 ? '' : 's') + ' to your user settings.'),
+        migration.failures.length
+          ? h('ul', { class: 'mig-list' }, migration.failures.map((f) => h('li', { class: 'err' }, f)))
+          : null,
+        left,
+        plan.actions.length ? h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)) : null);
+    }
+
+    if (!plan.actions.length) {
+      return h('div', { class: 'migrate' },
+        h('div', { class: 'mig-head' }, h('strong', {}, 'Nothing to migrate'), close),
+        h('p', {}, 'Every ', h('code', {}, 'loopBoard.*'),
+          ' key in your user settings is one LoopBoard still declares and reads. Nothing was changed.'));
+    }
+
+    const writes = (plan.writes || []).length;
+    return h('div', { class: 'migrate' },
+      h('div', { class: 'mig-head' },
+        h('strong', {}, 'Review before anything is written'),
+        h('span', { class: 'subtle' }, 'Nothing has changed yet.')),
+      h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)),
+      h('div', { class: 'mig-actions' },
+        writes
+          ? h('button', {
+              class: 'btn primary', type: 'button',
+              onclick: () => vscode.postMessage({ type: 'settingsMigrate' }),
+            }, 'Apply ' + writes + ' change' + (writes === 1 ? '' : 's'))
+          : h('span', { class: 'subtle' }, 'Nothing here can be applied automatically.'),
+        h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Cancel')));
+  }
+
   // ---- topic list ----
   // The heading text and the nav entry are the SAME derivation, so a section can never be listed
   // under a name it is not drawn under.
@@ -286,6 +360,13 @@
     const wrap = h('div', { class: 'wrap' });
     wrap.append(h('header', {},
       h('h1', {}, 'LoopBoard Settings'),
+      // Next to the escape hatch, and deliberately BEFORE it: both are about settings that this
+      // page cannot show you — one because the key is stale, one because you want the raw JSON.
+      h('button', {
+        class: 'btn', type: 'button',
+        title: 'Look for loopBoard.* keys in your user settings that were renamed, deprecated or dropped — shows what it would do before changing anything',
+        onclick: () => { migration = null; vscode.postMessage({ type: 'settingsScanStale' }); },
+      }, 'Migrate Config'),
       h('button', {
         class: 'btn', type: 'button',
         title: 'Open the same settings in VSCode’s own Settings editor',
@@ -295,6 +376,8 @@
       'All LoopBoard settings are global (user) settings — they are not configurable per repository.'));
 
     if (state.problem) wrap.append(h('div', { class: 'banner' }, state.problem));
+    const migrateBox = migrationPanel();
+    if (migrateBox) wrap.append(migrateBox);
 
     for (const section of state.form.sections) {
       wrap.append(h('h2', { id: sectionId(section) },

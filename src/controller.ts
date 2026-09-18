@@ -12,9 +12,10 @@ import {
 } from './model';
 import {
   ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
-  ConfigPatch, MODEL_GRID_KEYS,
+  ConfigPatch, MODEL_GRID_KEYS, SETTINGS_PREFIX,
 } from './settingsform';
 import { buildModelGrid, gridPatch } from './settingsgrid';
+import { MigrationPlan, SettingValues, buildMigrationPlan, scanKeys } from './settingsmigrate';
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
@@ -783,6 +784,10 @@ export class Controller {
         return this.onSettingsReset(String(msg.key ?? ''));
       case 'gridPatch':
         return this.onGridPatch(msg.slot, msg.field, msg.value);
+      case 'settingsScanStale':
+        return this.onScanStale();
+      case 'settingsMigrate':
+        return this.onMigrateStale();
       case 'reveal':
         // `search` is forwarded verbatim and its ABSENCE is meaningful (t-1cdb): undefined means
         // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
@@ -932,6 +937,112 @@ export class Controller {
       return;
     }
     for (const patch of result.patches) await this.writeConfig(patch);
+  }
+
+  // ---- stale-settings migration (t-sgrp follow-up) ----
+
+  // Every `loopBoard.*` key the user has actually set, as a flat dotted map. Two passes, because
+  // neither alone is complete:
+  //   * BY NAME, for every key `scanKeys` asks for. A migration source under a declared SCALAR
+  //     parent (`loopBoard.delegateWork.review`) is not reachable by walking — VSCode's value tree
+  //     dropped it — so the known ids must be inspected directly rather than discovered.
+  //   * BY ENUMERATION, for keys the manifest never declared. The object
+  //     `getConfiguration('loopBoard')` returns is mixed in with the section's value TREE (and
+  //     unregistered keys survive into it), so its own property names are the only way an orphan is
+  //     ever found. Descent stops at the first path the manifest does not know: an undeclared
+  //     object is reported whole, so `{"loopBoard.gone": {"a": 1}}` is one orphan and not one per
+  //     leaf. A declared namespace is descended into instead, and the four API methods on the
+  //     returned object are skipped because they are functions.
+  // `inspect().globalValue` is the gate in both passes: it is the only scope this page writes, so a
+  // key that exists only in workspace settings is read, found to have no global value, and ignored.
+  private collectSettingValues(declared: string[]): SettingValues {
+    const root = vscode.workspace.getConfiguration();
+    const values: SettingValues = {};
+    const record = (key: string) => {
+      const globalValue = root.inspect(key)?.globalValue;
+      if (globalValue !== undefined) values[key] = globalValue;
+    };
+    for (const key of scanKeys(declared)) record(key);
+
+    const walk = (path: string, node: unknown) => {
+      const key = `${SETTINGS_PREFIX}${path}`;
+      if (declared.includes(key)) return; // already read by name above
+      // A namespace the manifest declares keys underneath (`loopBoard.models`, and a legacy object
+      // written at that level) — live configuration, so look inside rather than at it.
+      if (declared.some((d) => d.startsWith(`${key}.`))) {
+        if (node && typeof node === 'object' && !Array.isArray(node)) {
+          for (const [child, value] of Object.entries(node as Record<string, unknown>)) walk(`${path}.${child}`, value);
+        }
+        return;
+      }
+      record(key);
+    };
+    const section = vscode.workspace.getConfiguration('loopBoard') as unknown as Record<string, unknown>;
+    for (const [name, value] of Object.entries(section)) {
+      if (typeof value === 'function') continue;
+      walk(name, value);
+    }
+    return values;
+  }
+
+  private stalePlan(): MigrationPlan {
+    const declared = formKeys(this.settingsManifest());
+    return buildMigrationPlan(declared, this.collectSettingValues(declared));
+  }
+
+  // Preview only — this NEVER writes. The page draws one line per affected key and asks; the write
+  // arrives separately as `settingsMigrate`.
+  private async onScanStale(): Promise<void> {
+    const plan = this.stalePlan();
+    this.store.debugLog(
+      'verbose',
+      'settings-migrate-scan',
+      plan.actions.map((a) => `${a.key} → ${a.kind}`).join('; ') || 'no stale loopBoard.* keys'
+    );
+    this.store.debugLog(
+      'info',
+      'settings-migrate-preview',
+      plan.actions.length === 0
+        ? 'nothing to migrate'
+        : `${plan.actions.length} stale key(s), ${plan.writes.length} write(s) proposed, ` +
+          `${plan.conflicts} conflict(s), ${plan.manual} needing a hand`
+    );
+    SettingsPanel.current?.post({ type: 'settingsMigration', plan });
+  }
+
+  // The confirmed write. The plan is REBUILT here rather than taken from the message: the page's
+  // copy is a snapshot that `settings.json` may have moved out from under, and the webview is never
+  // trusted to say which keys get written.
+  private async onMigrateStale(): Promise<void> {
+    const plan = this.stalePlan();
+    if (plan.writes.length === 0) {
+      this.store.debugLog('info', 'settings-migrate-choice', 'confirmed, but nothing is left to write');
+      SettingsPanel.current?.post({ type: 'settingsMigration', plan, done: true, applied: 0, failures: [] });
+      return;
+    }
+    this.store.debugLog('info', 'settings-migrate-choice', `confirmed — applying ${plan.writes.length} change(s)`);
+    const failures: string[] = [];
+    for (const patch of plan.writes) {
+      const what = patch.value === undefined ? 'remove' : `set to ${JSON.stringify(patch.value)}`;
+      this.store.debugLog('info', 'settings-migrate-write', `${patch.key} — ${what} (Global)`);
+      try {
+        await vscode.workspace.getConfiguration().update(patch.key, patch.value, vscode.ConfigurationTarget.Global);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.store.debugLog('info', 'settings-migrate-failed', `${patch.key} — ${reason}`);
+        failures.push(`${patch.key}: ${reason}`);
+      }
+    }
+    // Repaint from disk, then hand back the RE-SCANNED plan: what is still listed afterwards is
+    // what genuinely remains (the conflicts and the by-hand cases), not a stale echo of the preview.
+    await this.postSettings();
+    SettingsPanel.current?.post({
+      type: 'settingsMigration',
+      plan: this.stalePlan(),
+      done: true,
+      applied: plan.writes.length - failures.length,
+      failures,
+    });
   }
 
   private async readTemplates(): Promise<{ todoText: string; loopText: string }> {

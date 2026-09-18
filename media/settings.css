@@ -144,6 +144,47 @@ td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBo
 }
 .banner[hidden] { display: none; }
 
+/* ---- stale-settings migration panel ----
+   Sits under the header, above the sections, and only while it is open. Neutral chrome on purpose:
+   it is a question, not an alarm — the only coloured text in it is a real failure (.err). Every
+   colour is a var(--vscode-*), like the rest of this file. */
+.migrate {
+  margin: 14px 0 4px; padding: 12px 14px; border-radius: 5px; font-size: 12px;
+  background: var(--vscode-textBlockQuote-background, #2a2a2a);
+  border: 1px solid var(--vscode-widget-border, #454545);
+}
+.mig-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.mig-head strong { font-size: 13px; }
+.mig-head .btn { margin-left: auto; }
+.migrate p { margin: 6px 0; }
+.mig-list { list-style: none; margin: 8px 0; padding: 0; }
+.mig-line {
+  display: flex; align-items: baseline; gap: 8px; padding: 5px 0;
+  border-top: 1px solid var(--vscode-widget-border, #3c3c3c);
+}
+.mig-list .err { border-top: 1px solid var(--vscode-widget-border, #3c3c3c); padding: 5px 0; }
+.mig-tag {
+  flex: none; min-width: 62px; text-align: center; border-radius: 3px; padding: 1px 6px;
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase; font-weight: 600;
+  background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #ffffff);
+}
+/* A conflict and a by-hand case are NOT written — they read as quieter, not louder, because the
+   panel is asking the user to decide rather than reporting a fault. */
+.mig-conflict .mig-tag, .mig-manual .mig-tag {
+  background: transparent; color: var(--vscode-descriptionForeground, #9d9d9d);
+  border: 1px solid var(--vscode-widget-border, #454545);
+}
+.mig-line code {
+  background: var(--vscode-textCodeBlock-background, #2a2a2a); border-radius: 3px; padding: 0 4px;
+}
+.mig-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.btn.primary {
+  background: var(--vscode-button-background, #0078d4);
+  color: var(--vscode-button-foreground, #ffffff);
+  border-color: var(--vscode-button-background, #0078d4);
+}
+.btn.primary:hover { background: var(--vscode-button-hoverBackground, #026ec1); }
+
 .foot {
   margin-top: 30px; padding-top: 14px;
   border-top: 1px solid var(--vscode-widget-border, #454545);

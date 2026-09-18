@@ -585,6 +585,69 @@ and likewise cannot be verified headless.
     Then turn *Delegate work* off on the page → the *Delegate review* row greys out (the dependency
     is declared in the manifest as `loopBoardDependsOn`, no longer inferred from the key name).
 
+    **“Migrate Config” — stale settings (untested in Docker — only the PLAN is:
+    `test/settingsmigrate.test.js` covers every rule, conflict and orphan case; the button, the
+    preview panel and the actual `update()` calls are `media/settings.js` + `controller.ts`, which
+    have no Docker coverage).** Back up your user `settings.json` first — this writes to it.
+
+    *Nothing to do:* with no stale keys set, click **Migrate Config** (left of *Open in VSCode
+    Settings*) → a panel says **Nothing to migrate**, and `settings.json` is byte-identical
+    afterwards. No dialog, no empty list, no write.
+
+    *Deprecated pair:* put `"loopBoard.autoRecycle": true` and `"loopBoard.clearSessionAfterTask":
+    true` in user settings, remove `loopBoard.afterTask`, click **Migrate Config** → the panel lists
+    exactly two lines: `MIGRATE loopBoard.autoRecycle = true — set loopBoard.afterTask to "recycle",
+    then remove this key.` and `REMOVE loopBoard.clearSessionAfterTask = true — … loopBoard.
+    autoRecycle is what decides loopBoard.afterTask …`. **Nothing has changed yet** — check
+    `settings.json` at this point and confirm it is untouched. Click **Cancel** → still untouched.
+    Click **Migrate Config** again, then **Apply 3 changes** → `settings.json` now has
+    `"loopBoard.afterTask": "recycle"` and neither boolean, the page's *After a task* row reads
+    `recycle` without a reload, and the panel reports `Applied 3 changes`. The behaviour must not
+    have changed: finish a task with a loop running and confirm the terminal is recycled exactly as
+    it was before the migration.
+
+    *Destination already set → conflict:* set `"loopBoard.afterTask": "none"` AND
+    `"loopBoard.autoRecycle": true` → the panel shows one `CONFLICT` line naming both and saying
+    `left alone — loopBoard.afterTask is already set to "none"`, and there is **no Apply button**
+    (`Nothing here can be applied automatically`). `settings.json` is unchanged. This is the
+    assertion that matters most: a hand-set key is never overwritten.
+
+    *Orphan:* add `"loopBoard.customRules": ["x"]` (a real key this extension dropped in t-4a04) →
+    it is listed as `REMOVE … LoopBoard has no setting by this name`. Apply → it is gone. Now add
+    `"loopBoard.defaultModel": "sonnet"` (undeclared but still honoured by `readDefaultModel`) and
+    `"loopBoard.models": {"opus": {"enabled": false}}` (the legacy container form) → **neither is
+    listed**, and after an Apply of anything else both are still in `settings.json`. Removing either
+    would silently change which model spawns.
+
+    *Renamed key, and the case the API cannot see:* with `loopBoard.delegateWork` NOT set, add
+    `"loopBoard.delegateWork.review": false` → it is listed as `MIGRATE … set
+    loopBoard.delegateReview to false`. Apply → `loopBoard.delegateReview: false` is in
+    `settings.json`, the old key is gone, and the Beta *Delegate review* toggle reads OFF. Now the
+    other half: set `"loopBoard.delegateWork": true` and hand-add `"loopBoard.delegateWork.review":
+    true` back → **Migrate Config lists it as `BY HAND`, not as a migration**, saying it cannot be
+    read while `loopBoard.delegateWork` is set. That is correct and not a bug: VSCode's
+    `toValuesTree` drops a child of a plain value (it logs `Ignoring loopBoard.delegateWork.review
+    as loopBoard.delegateWork is true`), so no extension API can see the key at all. Delete it by
+    hand via **Open in VSCode Settings**; confirm the panel stops listing it once
+    `loopBoard.delegateWork` is removed and the child is visible again.
+
+    *Known read-only blind spots (check, but a miss here is expected, not a bug):* run the orphan
+    step again on a NON-DEFAULT VSCode profile, and again in a Remote/WSL/Container window. In
+    either case an orphan may not be listed — application-scoped settings are re-read through a
+    scope-filtered model off the default profile, and a remote window parses local user settings
+    under `LOCAL_MACHINE_SCOPES`; an unregistered key has no scope to survive that filter. The
+    required outcome is that it is silently NOT listed. If it is ever listed with the wrong value,
+    or anything is written that the preview did not name, that IS a bug.
+
+    *Debug trace:* with `loopBoard.debug: verbose`, one **Migrate Config** click then an Apply
+    writes to `.loopboard/debug.log`: a `verbose settings-migrate-scan` line listing each key and
+    its planned kind, an `info settings-migrate-preview` line, an `info settings-migrate-choice`
+    line, and one `info settings-migrate-write` line **per key** naming the key, whether it is a set
+    or a remove, and the value. With `loopBoard.debug: off` none of them appear.
+
+    *Light and dark:* the panel's tags, list rules and the Apply button must be legible in both
+    themes — it uses only `var(--vscode-*)` colours.
+
     **Live sync, and the listener dying with the page:** with the page open, hand-edit
     `loopBoard.debug` in your user `settings.json` → the page repaints without a reload. Do the same
     while a text field is focused → the repaint is deferred until you blur (your caret is not
