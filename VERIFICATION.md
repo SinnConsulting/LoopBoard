@@ -496,3 +496,54 @@ and likewise cannot be verified headless.
     than staying dark. **Rescue path:** a session that did collide (an older build, or one started
     before this fix) is still resolved — its `loopboard-<slot>-<word>-<word>` name matches the same
     prefix, so its bar renders.
+
+37. **LoopBoard's own settings page (t-sgrp):** the manifest→form model, the grid's validation and
+    the manifest invariants are unit-tested (`test/settingsform.test.js`,
+    `test/settingsgrid.test.js`, `test/manifest-settings.test.js`); what only F5 can show is the
+    page itself, the config writes and the live listener.
+
+    **Opens instead of the native editor:** click the sidebar's **Settings** row → a `LoopBoard
+    Settings` editor tab opens (NOT VSCode's Settings editor). It shows four sections in order —
+    *Models & Slots*, *Agent Setup*, *Board & Workspace*, *Beta* with an `experimental` chip — and
+    the two deprecated keys (`loopBoard.autoRecycle`, `loopBoard.clearSessionAfterTask`) appear
+    nowhere on it. Descriptions render as markdown: backticks are code chips, `**Beta —**` is bold,
+    nothing shows raw markers. Compare against `docs/mockups/t-sgrp-settings-page.html` — structure
+    and feel should match; the footer there lists the deliberate departures.
+
+    **Light and dark:** switch the colour theme (e.g. Default Dark Modern → Default Light Modern)
+    with the page open → every label, input, switch and radio stays legible; nothing is a dark-only
+    hard-coded colour.
+
+    **Modified marker + reset:** change *Loop interval* to `2m` → a dot appears next to the label
+    and **Reset** appears. Check `settings.json` (user, not workspace): `"loopBoard.loopInterval":
+    "2m"` is in your USER settings file. Click **Reset** → the key disappears from user settings,
+    the field returns to `5m`, the dot and Reset go away.
+
+    **The grid:** all six columns edit in place. Toggle *Fable* off → its row fades and it vanishes
+    from the sidebar's Loops overview and the board's model selects. Click the *worker* radio on
+    another row → the previous one clears (single choice). Now try to turn OFF the slot that is the
+    default worker → the write is REFUSED with a reason naming it, and the toggle snaps back; same
+    for the default groomer, and same in reverse (making an OFF slot the default worker is refused).
+    Type `opus; rm -rf /` into a `--model` field → it turns red as you type and, on blur, is refused
+    with the reason shown and the field restored. Type `opus[1m]` → accepted. Set *groomers* to `0`
+    → it is clamped to `1`. The header hint reads `model · effort · groomers apply on the next ▶ / ♻`
+    — confirm it is true: with a loop running, change its effort, then ♻, and check the pasted
+    `/loop` line carries the NEW ceiling while the pre-♻ terminal did not.
+
+    **Live sync, and the listener dying with the page:** with the page open, hand-edit
+    `loopBoard.debug` in your user `settings.json` → the page repaints without a reload. Do the same
+    while a text field is focused → the repaint is deferred until you blur (your caret is not
+    stolen). Then click **Open in VSCode Settings** → the native `@ext:SinnConsulting.loopboard-todo`
+    view opens; change a value there → LoopBoard's page repaints too. Close the LoopBoard Settings
+    tab and hand-edit `settings.json` again → with `loopBoard.debug: verbose`, `.loopboard/debug.log`
+    records NO `settings-config-change` line (the listener was disposed with the panel).
+
+    **Scope is enforced:** put `"loopBoard.permissionMode": "bypassPermissions"` into a workspace's
+    `.vscode/settings.json` → VSCode marks it as not applicable in this scope, the settings page
+    still shows the user value, and a spawned loop's `--permission-mode` is the USER value. This is
+    the security-relevant assertion of the whole story.
+
+    **`@tag:experimental` (unverified here):** the two Beta keys carry `tags: ["experimental"]`.
+    Search `@tag:experimental` in VSCode's Settings editor and confirm extension-contributed keys
+    are picked up. If they are NOT, the tag is inert rather than wrong — drop it and keep the
+    section heading and the `**Beta —**` sentence, which carry the status on their own.

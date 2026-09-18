@@ -3,12 +3,18 @@ import * as vscode from 'vscode';
 import { Store } from './store';
 import { TerminalManager, isKnownModel } from './terminals';
 import { BoardPanel } from './panel';
+import { SettingsPanel } from './settingspanel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
   Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS,
   AfterTask, resolveAfterTask,
 } from './model';
+import {
+  ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
+  ConfigPatch, MODEL_GRID_KEYS,
+} from './settingsform';
+import { buildModelGrid, gridPatch } from './settingsgrid';
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
@@ -43,6 +49,13 @@ function today(): string {
 // Single source of truth for the Getting Started docs target — both the first-run popup and the
 // sidebar Help button open this URL (t-de8d).
 export const HELP_URL = 'https://github.com/SinnConsulting/LoopBoard#get-started';
+
+// LoopBoard's own id, used twice: to read its own `contributes.configuration` back at runtime (so
+// the settings page is drawn FROM the manifest and can never drift from it) and as the filter for
+// the native Settings editor the page keeps as an escape hatch.
+export const EXTENSION_ID = 'SinnConsulting.loopboard-todo';
+export const NATIVE_SETTINGS_FILTER = `@ext:${EXTENSION_ID}`;
+
 const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
 
 // The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
@@ -754,8 +767,22 @@ export class Controller {
         this.openBoard();
         return;
       case 'openSettings':
-        void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:SinnConsulting.loopboard-todo');
+        this.openSettings();
         return;
+      case 'openNativeSettings':
+        // The escape hatch t-set1's gear used to be. Settings search and JSON editing are NOT
+        // reproduced on LoopBoard's own page — this covers both.
+        this.store.debugLog('info', 'settings-native', NATIVE_SETTINGS_FILTER);
+        void vscode.commands.executeCommand('workbench.action.openSettings', NATIVE_SETTINGS_FILTER);
+        return;
+      case 'settingsReady':
+        return this.postSettings();
+      case 'settingsPatch':
+        return this.onSettingsPatch(String(msg.key ?? ''), msg.value);
+      case 'settingsReset':
+        return this.onSettingsReset(String(msg.key ?? ''));
+      case 'gridPatch':
+        return this.onGridPatch(msg.slot, msg.field, msg.value);
       case 'reveal':
         // `search` is forwarded verbatim and its ABSENCE is meaningful (t-1cdb): undefined means
         // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
@@ -769,6 +796,132 @@ export class Controller {
         if (!this.openBoard()) this.flushReveal();
         return;
     }
+  }
+
+  // ---- LoopBoard's own settings page (t-sgrp) ----
+
+  // The page's whole content comes from here: LoopBoard reads its OWN manifest back at runtime, so
+  // goals 1–3 (sections, Beta area, `scope: application`) define what the page looks like and a
+  // setting added later appears on it with no code change.
+  private settingsManifest(): ManifestSection[] {
+    const contributed = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON?.contributes?.configuration;
+    if (Array.isArray(contributed)) return contributed as ManifestSection[];
+    return contributed ? [contributed as ManifestSection] : [];
+  }
+
+  // Opens (or reveals) the page. The config listener is created WITH the panel and disposed with it
+  // — see SettingsPanel; the codebase gains no permanently installed config listener.
+  openSettings(): void {
+    this.store.debugLog('info', 'settings-open', 'LoopBoard settings page');
+    const { panel, created } = SettingsPanel.show(this.extensionUri, () => {
+      this.store.debugLog('info', 'settings-config-change', 'loopBoard.* changed — repainting the settings page');
+      void this.postSettings();
+    });
+    panel.onMessage((msg) => this.handleMessage(msg));
+    // A fresh panel's webview isn't listening yet; it asks with `settingsReady`.
+    if (!created) void this.postSettings();
+  }
+
+  private async postSettings(): Promise<void> {
+    if (!SettingsPanel.current) return;
+    const sections = this.settingsManifest();
+    const root = vscode.workspace.getConfiguration();
+    const values: ValueMap = {};
+    for (const key of formKeys(sections)) {
+      const inspected = root.inspect(key);
+      // Only these two scopes can exist: every LoopBoard key is `scope: application`, so a
+      // workspace value is not merely ignored — VSCode refuses to record one.
+      values[key] = { defaultValue: inspected?.defaultValue, globalValue: inspected?.globalValue };
+    }
+    this.store.debugLog('verbose', 'settings-render', `${sections.length} section(s), ${Object.keys(values).length} key(s)`);
+    const c = vscode.workspace.getConfiguration('loopBoard');
+    const grid = buildModelGrid(
+      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
+      readDefaultModel(c, 'defaultWorkerModel'),
+      readDefaultModel(c, 'defaultGroomerModel'),
+    );
+    SettingsPanel.current.post({
+      type: 'settings',
+      form: buildSettingsForm(sections, values),
+      grid,
+      extensionId: EXTENSION_ID,
+      // Only ever set if the extension could not read its own manifest — the page then has nothing
+      // to draw and must say so rather than render as an empty, working-looking form.
+      problem: sections.length === 0
+        ? 'LoopBoard could not read its own configuration manifest. Use “Open in VSCode Settings” instead.'
+        : undefined,
+    });
+  }
+
+  // The codebase's ONLY configuration write. Target is settled by goal 3 rather than chosen here:
+  // every key is `scope: application`, so Global is the only target VSCode would accept anyway.
+  private async writeConfig(patch: ConfigPatch): Promise<void> {
+    this.store.debugLog('info', 'settings-write', `${patch.key} = ${JSON.stringify(patch.value ?? null)} (Global)`);
+    let failure: string | undefined;
+    try {
+      await vscode.workspace.getConfiguration().update(patch.key, patch.value, vscode.ConfigurationTarget.Global);
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+      this.store.debugLog('info', 'settings-write-failed', `${patch.key} — ${failure}`);
+    }
+    // The config listener repaints too, but only when the value actually CHANGED — a no-op write
+    // fires no event, and the control would keep showing whatever the user typed.
+    await this.postSettings();
+    // Strictly after the repaint: a fresh form clears the page's error map, so posting the reason
+    // first would erase it again before the user ever saw it.
+    if (failure) SettingsPanel.current?.post({ type: 'settingsError', key: patch.key, reason: failure });
+  }
+
+  // Generic control edit. Re-validated against the manifest here because the webview is never
+  // trusted: it can post any value for any key, and this is the last gate before `update()`.
+  private async onSettingsPatch(key: string, raw: unknown): Promise<void> {
+    const form = buildSettingsForm(this.settingsManifest());
+    const control = findControl(form, key);
+    if (!control) {
+      this.store.debugLog('info', 'settings-reject', `${key} — not a settings-page control`);
+      SettingsPanel.current?.post({ type: 'settingsError', key, reason: 'not a setting this page owns.' });
+      return;
+    }
+    const result = toConfigPatch(control, raw);
+    if (!result.ok) {
+      // Nothing on disk changed, so no fresh form is posted: the page re-renders from the state it
+      // already has (putting the control back to the stored value) and shows the reason beside it.
+      this.store.debugLog('info', 'settings-reject', `${key} — ${result.reason}`);
+      SettingsPanel.current?.post({ type: 'settingsError', key, reason: result.reason });
+      return;
+    }
+    return this.writeConfig(result.patch);
+  }
+
+  // Per-setting reset — `update(key, undefined, Global)` removes the user value so the manifest
+  // default takes over again. Without it a custom page silently loses the one thing the native
+  // editor makes obvious.
+  private async onSettingsReset(key: string): Promise<void> {
+    const control = findControl(buildSettingsForm(this.settingsManifest()), key);
+    const known = control !== undefined || MODEL_GRID_KEYS.includes(key);
+    if (!known) {
+      SettingsPanel.current?.post({ type: 'settingsError', key, reason: 'not a setting this page owns.' });
+      return;
+    }
+    return this.writeConfig(resetPatch(key));
+  }
+
+  // One grid cell edit. The grid is a different PRESENTATION of ordinary settings, so it lands in
+  // the same write path; only the validation differs (pure, unit-tested in src/settingsgrid.ts).
+  private async onGridPatch(slot: unknown, field: unknown, raw: unknown): Promise<void> {
+    const c = vscode.workspace.getConfiguration('loopBoard');
+    const grid = buildModelGrid(
+      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
+      readDefaultModel(c, 'defaultWorkerModel'),
+      readDefaultModel(c, 'defaultGroomerModel'),
+    );
+    const result = gridPatch(grid, slot, field, raw);
+    if (!result.ok) {
+      this.store.debugLog('info', 'settings-reject', `${String(slot)}.${String(field)} — ${result.reason}`);
+      SettingsPanel.current?.post({ type: 'settingsError', slot, field, reason: result.reason });
+      return;
+    }
+    for (const patch of result.patches) await this.writeConfig(patch);
   }
 
   private async readTemplates(): Promise<{ todoText: string; loopText: string }> {

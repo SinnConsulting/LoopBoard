@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>LoopBoard Settings — mockup (t-sgrp)</title>
+<style>
+  :root[data-theme="dark"] {
+    --bg: #1f1f1f; --panel: #252526; --fg: #cccccc; --fg-strong: #ffffff; --desc: #9d9d9d;
+    --input-bg: #313131; --input-fg: #cccccc; --border: #3c3c3c; --accent: #0078d4;
+    --accent-fg: #ffffff; --modified: #e2c08d; --badge-bg: #37373d; --row-hover: #2a2d2e;
+    --off: #6e6e6e;
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --panel: #f3f3f3; --fg: #3b3b3b; --fg-strong: #1f1f1f; --desc: #6a6a6a;
+    --input-bg: #ffffff; --input-fg: #3b3b3b; --border: #cecece; --accent: #005fb8;
+    --accent-fg: #ffffff; --modified: #a67c00; --badge-bg: #e4e6f1; --row-hover: #f0f0f0;
+    --off: #a0a0a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  code, .key { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 28px 80px; }
+
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  h1 { font-size: 20px; font-weight: 600; color: var(--fg-strong); margin: 0; flex: 1; }
+  .subtle { color: var(--desc); font-size: 12px; }
+  .btn {
+    background: transparent; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .btn:hover { background: var(--row-hover); }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+  h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--desc); margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tag {
+    font-size: 10px; letter-spacing: .04em; text-transform: none; font-weight: 600;
+    background: var(--badge-bg); color: var(--fg); border-radius: 10px; padding: 1px 8px;
+  }
+
+  /* ---- generic setting row ---- */
+  .row { display: grid; grid-template-columns: 1fr 220px; gap: 18px; padding: 12px 10px; border-radius: 5px; align-items: start; }
+  .row:hover { background: var(--row-hover); }
+  .row .key { color: var(--fg-strong); font-weight: 500; display: flex; align-items: center; gap: 7px; }
+  .row .desc { color: var(--desc); margin-top: 3px; max-width: 60ch; }
+  .row .desc code { background: var(--badge-bg); border-radius: 3px; padding: 0 4px; }
+  .ctl { justify-self: end; display: flex; align-items: center; gap: 8px; }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--modified); flex: none; }
+  .reset { color: var(--accent); font-size: 11px; cursor: pointer; text-decoration: none; opacity: 0; }
+  .row.modified .reset { opacity: 1; }
+  .reset:hover { text-decoration: underline; }
+
+  select, input[type="text"], input[type="number"] {
+    background: var(--input-bg); color: var(--input-fg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 7px; font: inherit; font-size: 12px; width: 100%;
+  }
+  select:focus, input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+  input[type="number"] { width: 72px; }
+
+  .sw { position: relative; width: 34px; height: 18px; border-radius: 9px; background: var(--off);
+        cursor: pointer; flex: none; transition: background .12s ease; border: none; padding: 0; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+        border-radius: 50%; background: #fff; transition: transform .12s ease; }
+  .sw[aria-checked="true"] { background: var(--accent); }
+  .sw[aria-checked="true"]::after { transform: translateX(16px); }
+  .dependent { opacity: .45; pointer-events: none; }
+
+  /* ---- model grid ---- */
+  .grid-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 10px 10px; }
+  .grid-head .hint { color: var(--desc); font-size: 11px; margin-left: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 500; color: var(--desc); text-align: center; padding: 0 8px 8px; white-space: nowrap; }
+  th.left, td.left { text-align: left; }
+  td { padding: 9px 8px; border-top: 1px solid var(--border); text-align: center; vertical-align: middle; }
+  tbody tr:hover { background: var(--row-hover); }
+  .slot { display: flex; align-items: center; gap: 9px; font-weight: 500; color: var(--fg-strong); }
+  .slot .swatch { width: 8px; height: 8px; border-radius: 2px; }
+  tr.disabled td:not(.always) { opacity: .38; }
+  .radio { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--border);
+           background: transparent; cursor: pointer; padding: 0; display: inline-block; }
+  .radio[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--accent); }
+  td.model input { width: 130px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  td.model input.invalid { outline: 1px solid #f14c4c; outline-offset: -1px; }
+  .err { color: #f14c4c; font-size: 11px; margin-top: 3px; }
+  .stale { color: var(--modified); font-size: 11px; margin-left: 8px; }
+  .foot { margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--desc); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>LoopBoard Settings</h1>
+    <button class="btn" id="theme">Light</button>
+    <button class="btn">Open in VSCode Settings</button>
+  </header>
+  <div class="subtle">All LoopBoard settings are global (user) settings — they are not configurable per repository.</div>
+
+  <h2>Models &amp; Slots</h2>
+  <div class="grid-head">
+    <span class="subtle">Which slots exist, who they spawn, and how hard they think.</span>
+    <span class="hint">model · effort · groomers apply on the next ▶ / ♻</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th class="left">Slot</th><th>on</th><th>worker</th><th>groomer</th>
+        <th class="left">--model</th><th>effort</th><th>groomers</th>
+      </tr>
+    </thead>
+    <tbody id="slots">
+      <tr data-slot="opus">
+        <td class="left always"><span class="slot"><span class="swatch" style="background:#c586c0"></span>Opus</span></td>
+        <td class="always"><button class="sw" role="switch" aria-checked="true" data-enable></button></td>
+        <td><button class="radio" role="radio" aria-checked="false" data-worker></button></td>
+        <td><button class="radio" role="radio" aria-checked="true" data-groomer></button></td>
+        <td class="left model"><input type="text" value="opus[1m]" data-model /></td>
+        <td><select><option>low</option><option>medium</option><option selected>high</option><option>xhigh</option><option>max</option></select></td>
+        <td><input type="number" min="1" value="3" /></td>
+      </tr>
+      <tr data-slot="sonnet">
+        <td class="left always"><span class="slot"><span class="swatch" style="background:#4ec9b0"></span>Sonnet</span></td>
+        <td class="always"><button class="sw" role="switch" aria-checked="true" data-enable></button></td>
+        <td><button class="radio" role="radio" aria-checked="true" data-worker></button></td>
+        <td><button class="radio" role="radio" aria-checked="false" data-groomer></button></td>
+        <td class="left model"><input type="text" placeholder="default" data-model /></td>
+        <td><select><option>low</option><option>medium</option><option selected>high</option><option>xhigh</option><option>max</option></select></td>
+        <td><input type="number" min="1" value="3" /></td>
+      </tr>
+      <tr data-slot="fable" class="disabled">
+        <td class="left always"><span class="slot"><span class="swatch" style="background:#569cd6"></span>Fable</span></td>
+        <td class="always"><button class="sw" role="switch" aria-checked="false" data-enable></button></td>
+        <td><button class="radio" role="radio" aria-checked="false" data-worker></button></td>
+        <td><button class="radio" role="radio" aria-checked="false" data-groomer></button></td>
+        <td class="left model"><input type="text" placeholder="default" data-model /></td>
+        <td><select><option>low</option><option selected>medium</option><option>high</option><option>xhigh</option><option>max</option></select></td>
+        <td><input type="number" min="1" value="2" /></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Agent Setup</h2>
+
+  <div class="row modified">
+    <div>
+      <div class="key"><span class="dot"></span>Permission mode</div>
+      <div class="desc"><code>--permission-mode</code> passed to the <code>claude</code> CLI when spawning a loop. Frozen into the spawn command — a change reaches a running loop only after ♻.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a>
+      <select><option>auto</option><option selected>acceptEdits</option><option>bypassPermissions</option><option>dontAsk</option><option>default</option><option>plan</option></select>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="key">Loop interval</div>
+      <div class="desc">Interval passed to <code>/loop</code> (e.g. <code>1m</code>, <code>5m</code>).</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><input type="text" value="5m" /></div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="key">After a task</div>
+      <div class="desc">What to do with a model's loop terminal once it finishes a task.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a>
+      <select><option selected>none</option><option>clear</option><option>recycle</option></select>
+    </div>
+  </div>
+
+  <div class="row modified">
+    <div>
+      <div class="key"><span class="dot"></span>Context limit — percent</div>
+      <div class="desc">Restart a loop once its session fills this percentage of its context window. <code>0</code> never restarts for context size.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><input type="number" min="0" max="100" value="80" /></div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="key">Context limit — action</div>
+      <div class="desc">What to do when the context threshold trips.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a>
+      <select><option>clear</option><option selected>recycle</option></select>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="key">Nudge loops</div>
+      <div class="desc">When a board change gives one loop something to do, paste a line naming that task into that model's running terminal.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><button class="sw" role="switch" aria-checked="true"></button></div>
+  </div>
+
+  <h2>Board &amp; Workspace</h2>
+
+  <div class="row">
+    <div>
+      <div class="key">Max attachment size (MB)</div>
+      <div class="desc">Maximum size for an image attached to a task.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><input type="number" min="1" value="10" /></div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="key">Pulse template sync</div>
+      <div class="desc">Pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><button class="sw" role="switch" aria-checked="true"></button></div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="key">Debug trace</div>
+      <div class="desc">Appends timestamped lines to <code>.loopboard/debug.log</code>. Values are logged verbatim.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a>
+      <select><option selected>off</option><option>info</option><option>verbose</option></select>
+    </div>
+  </div>
+
+  <h2>Beta <span class="tag">experimental</span></h2>
+
+  <div class="row">
+    <div>
+      <div class="key">Delegate work to subagents</div>
+      <div class="desc"><strong>Beta —</strong> may change or be withdrawn. The loop delegates every code-editing step to an implementer subagent on its own slot model, which branches, commits and opens the PR.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><button class="sw" role="switch" aria-checked="false" id="delegate"></button></div>
+  </div>
+
+  <div class="row dependent" id="delegateReviewRow">
+    <div>
+      <div class="key">Review delegated work</div>
+      <div class="desc"><strong>Beta —</strong> only applies while delegated work is on. A review subagent reviews the PR; a pass lets the loop squash-merge it, a fail is handed back once.</div>
+    </div>
+    <div class="ctl"><a class="reset">Reset</a><button class="sw" role="switch" aria-checked="true"></button></div>
+  </div>
+
+  <div class="foot">
+    Static mockup for <strong>t-sgrp</strong> — the agreed visual reference for the settings page, wired to
+    nothing and shipped in no <code>.vsix</code> (<code>.vscodeignore</code> is an allowlist).
+    It hard-codes the non-model settings for illustration; the real page derives them from
+    <code>package.json &gt; contributes.configuration</code> instead. Every control there writes
+    <code>ConfigurationTarget.Global</code>, and the model grid is the one hand-built block.
+    <br /><br />
+    <strong>Where the shipped page (<code>media/settings.{html,css,js}</code>) departs from this,
+    deliberately:</strong> it has no light/dark switch — a webview inherits the editor's theme, and
+    every colour there is a <code>var(--vscode-*)</code>, which is what makes both themes work;
+    labels and descriptions are derived from the manifest, so they read
+    <em>Context limit — percent</em> rather than a hand-written phrase, and the descriptions are the
+    real <code>markdownDescription</code>s rendered through the board's markdown renderer
+    (<code>media/markdown.js</code>); the per-slot colour swatches are dropped, since no per-slot
+    colour exists anywhere else in the extension; and the grid carries no modified dot (the dot and
+    Reset belong to the generic rows, exactly as drawn here).
+  </div>
+</div>
+
+<script>
+  document.getElementById('theme').onclick = (e) => {
+    const root = document.documentElement;
+    const light = root.dataset.theme === 'light';
+    root.dataset.theme = light ? 'dark' : 'light';
+    e.target.textContent = light ? 'Light' : 'Dark';
+  };
+
+  const markModified = (el) => { const row = el.closest('.row'); if (row) row.classList.add('modified'); };
+
+  document.querySelectorAll('.sw').forEach((sw) => {
+    sw.onclick = () => {
+      const on = sw.getAttribute('aria-checked') === 'true';
+      sw.setAttribute('aria-checked', String(!on));
+      markModified(sw);
+      if (sw.dataset.enable !== undefined) sw.closest('tr').classList.toggle('disabled', on);
+      if (sw.id === 'delegate') document.getElementById('delegateReviewRow').classList.toggle('dependent', on);
+    };
+  });
+
+  ['worker', 'groomer'].forEach((role) => {
+    document.querySelectorAll('[data-' + role + ']').forEach((r) => {
+      r.onclick = () => {
+        document.querySelectorAll('[data-' + role + ']').forEach((o) => o.setAttribute('aria-checked', 'false'));
+        r.setAttribute('aria-checked', 'true');
+      };
+    });
+  });
+
+  // Mirrors isValidModelString (src/model.ts:36): /^[A-Za-z0-9._[\]-]+$/
+  const VALID = /^[A-Za-z0-9._[\]-]+$/;
+  document.querySelectorAll('[data-model]').forEach((input) => {
+    input.oninput = () => {
+      const cell = input.parentElement;
+      const bad = input.value !== '' && !VALID.test(input.value);
+      input.classList.toggle('invalid', bad);
+      let err = cell.querySelector('.err');
+      if (bad && !err) { err = document.createElement('div'); err.className = 'err'; cell.append(err); }
+      if (err) err.textContent = bad ? 'not a valid --model string — the built-in default is used' : '';
+    };
+  });
+
+  document.querySelectorAll('select, input').forEach((el) => el.addEventListener('change', () => markModified(el)));
+  document.querySelectorAll('.reset').forEach((a) => a.onclick = () => a.closest('.row').classList.remove('modified'));
+</script>
+</body>
+</html>

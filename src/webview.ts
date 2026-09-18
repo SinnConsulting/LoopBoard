@@ -11,12 +11,16 @@ function nonce(): string {
 export async function renderHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
-  page: 'board' | 'sidebar'
+  page: 'board' | 'sidebar' | 'settings'
 ): Promise<string> {
   const mediaUri = vscode.Uri.joinPath(extensionUri, 'media');
   const htmlUri = vscode.Uri.joinPath(mediaUri, `${page}.html`);
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, `${page}.css`));
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, `${page}.js`));
+  // Shared markdown renderer (t-sgrp): loaded by the pages that render markdown (board, settings)
+  // ahead of their own script. A page whose template has no {{markdownUri}} placeholder simply
+  // ignores the substitution.
+  const markdownUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, 'markdown.js'));
   const codiconUri = webview.asWebviewUri(vscode.Uri.joinPath(mediaUri, 'codicon', 'codicon.css'));
   const n = nonce();
   const bytes = await vscode.workspace.fs.readFile(htmlUri);
@@ -33,5 +37,6 @@ export async function renderHtml(
     .replace(/{{nonce}}/g, n)
     .replace(/{{styleUri}}/g, styleUri.toString())
     .replace(/{{scriptUri}}/g, scriptUri.toString())
+    .replace(/{{markdownUri}}/g, markdownUri.toString())
     .replace(/{{codiconUri}}/g, codiconUri.toString());
 }
