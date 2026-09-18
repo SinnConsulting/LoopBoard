@@ -1042,13 +1042,15 @@
             h('span', { class: 'muted-11' }, t.groomer === GROOMER_HOLD
               ? 'on hold — pick a groomer to have the loop structure this into a story'
               : 'the loop will structure this into a story')),
-          isCollapsedCard ? null : textEl,
-          isCollapsedCard ? null : attachEl,
+          // Selects sit directly under the badge row, above the draft text (t-720f) — the same
+          // head → selects → body order an ordinary card already uses in renderCard.
           isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel,
             h('span', { class: 'muted-11' }, 'Work with'),
             workSel),
+          isCollapsedCard ? null : textEl,
+          isCollapsedCard ? null : attachEl,
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
