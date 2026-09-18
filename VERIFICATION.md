@@ -510,8 +510,9 @@ and likewise cannot be verified headless.
     WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
     `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
     review on|off`. Run **LoopBoard: Sync Templates** on a workspace whose `LOOP.md` predates this
-    change → its Automation fence gains the `DELEGATED-WORK MODE` clause and the custom-rules
-    section is untouched.
+    change → its Automation fence gains the `DELEGATED-WORK MODE` clause, contains no `gh pr merge`
+    anywhere and names the never-merge rule (`NEVER merge a PR — merging is the HUMAN's action
+    alone`), and the custom-rules section is untouched.
 
 
 36. **Unique per-spawn session `--name` (t-x1t1):** the suffix generator, the prefix match and the
@@ -779,3 +780,21 @@ and likewise cannot be verified headless.
     → the whole row is gone and the card grows no rows (a collapsed card shows no model select at
     all — intended); expand → the row returns with the current values selected and focus stays on a
     select after a pick. Draft cards and the New Story composer are unchanged.
+
+40. **Draft selects row above the draft text (t-720f):** webview-only (`media/board.js`
+    `renderDraft`), a pure re-order of the `.card-head` children — the source-text pin in
+    `test/board-patch-echo.test.js` is order-independent, so this checklist is the acceptance path.
+    On a **draft** card the labelled row `Groom with [select] Work with [select]` now sits BETWEEN
+    the `Draft` badge/id-chip/hold-badge row and the draft text — no longer below the text and
+    attachments. The `added <date>` line stays last, at the bottom of the card (deliberately not a
+    chip). The row is separated from the draft text by the same **8px** gap every other vertical
+    gap in the card uses (`added` line, attachments area) — the text must NOT butt flush against
+    the bottom edge of the `Work with` select, and clicking the text must open the inline textarea
+    with that same 8px above it. Pick another groomer → `TODO.md` shows `- groomer: <model>` on
+    that draft's entry and the card repaints on pick; pick `On hold` → `groomer: none` and the
+    `on hold — not groomed` badge plus its hint appear. Pick another model under `Work with` →
+    `model:` is written to the same entry. Click the draft text → the inline editor opens BELOW
+    the selects row and saving still rewrites the title. Collapse the draft → the selects row,
+    text, attachments and `added` line are all gone and the card grows no rows (t-eb64's
+    decision); expand → they return in the new order with the current values selected. An
+    ordinary (non-draft) card's row (item 38) is unchanged.
