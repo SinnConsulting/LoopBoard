@@ -611,9 +611,11 @@ export class Controller {
 
   // Every toast is captured here so it survives past the webview (t-0143) — warnings are what
   // matter in a bug report, so they log at info; routine success/info toasts stay verbose-only.
-  private toast(level: 'info' | 'success' | 'warning', text: string, taskId?: string, icon?: string): void {
+  // `kind` is a machine discriminator the webview keys behaviour on (today only
+  // 'sameFieldConflict', t-bbad: force-flush the deferred board) — never match on `text`.
+  private toast(level: 'info' | 'success' | 'warning', text: string, taskId?: string, icon?: string, kind?: string): void {
     this.store.debugLog(level === 'warning' ? 'info' : 'verbose', 'toast', `${level}${taskId ? ' ' + taskId : ''} — ${text}`);
-    BoardPanel.current?.post({ type: 'toast', level, text, taskId, icon });
+    BoardPanel.current?.post({ type: 'toast', level, text, taskId, icon, kind });
   }
 
   async handleMessage(msg: any): Promise<void> {
@@ -1188,7 +1190,7 @@ export class Controller {
   private async onPatch(patch: FieldPatch): Promise<void> {
     const outcome = await this.store.applyFieldPatch(patch);
     if (outcome.status === 'conflict') {
-      this.toast('warning', `Task changed on disk — your edit to ${patch.field} was not applied.`, patch.taskId);
+      this.toast('warning', `Task changed on disk — your edit to ${patch.field} was not applied.`, patch.taskId, undefined, 'sameFieldConflict');
     } else if (outcome.status === 'notfound') {
       this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', patch.taskId);
     }

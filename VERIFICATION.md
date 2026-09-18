@@ -468,9 +468,37 @@ and likewise cannot be verified headless.
     section shows the new text); nothing typed is lost. Separately, type an answer draft without
     saving, fold the questions panel and unfold it → the draft is still there.
 
+34. **Card selects commit on pick (t-bbad):** the echo + repaint is webview-only
+    (`media/board.js`), so alongside the source-text guard `test/board-patch-echo.test.js` this
+    checklist is the acceptance path. On a `groomer: none` draft, pick a real groomer → the
+    `on hold — not groomed` pill and the "on hold — pick a groomer…" line disappear in the same
+    frame, before any outside click, and `TODO.md` shows the new `groomer:` with a `rev:` bump.
+    Without clicking out, pick a THIRD value → it lands on disk with no "Task changed on disk"
+    toast. Without clicking out, pick the ORIGINAL value back → disk returns to it. Without
+    clicking out, collapse another card (forcing a full `render()`) → the select still shows the
+    picked value and still has focus. Repeat the same four steps on the draft **Work with** select
+    and on a full card's head **Model** select.
+
+    **Keyboard:** focus a select and arrow through the options without opening it → every step
+    lands and focus never leaves the select.
+
+    **Open dropdown survives a loop write:** open a dropdown and leave it open while a loop writes
+    `TODO.md` → the dropdown is NOT torn down.
+
+    **Conflict snaps back without a click-out:** edit `model:` for that task in `TODO.md` by hand,
+    then pick a different model on the card without clicking out → the "Task changed on disk"
+    toast appears AND the card snaps back to the on-disk value immediately.
+
+    **Title editors:** edit a card title and Save, and edit a draft's text and Save → the new text
+    paints immediately, with no flash of the old title.
+
+    **Unchanged surfaces:** New Story composer — pick a groomer and a worker model, Save Draft →
+    the new draft carries both. Sidebar — right-click ▶/♻/■, click presets and toggle
+    Repeat/Force → each reflects immediately.
+
 35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
-    clause are unit-tested; what only F5 can show is the real terminal line. (Item 34 is claimed by
-    t-bbad's open PR.) With both delegation settings at their defaults, start a loop
+    clause are unit-tested; what only F5 can show is the real terminal line. With both delegation
+    settings at their defaults, start a loop
     → the pasted `/loop` line reads `… with a subagent effort ceiling of <effort> and a grooming
     concurrency cap of <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text.
     Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
@@ -733,3 +761,18 @@ and likewise cannot be verified headless.
     Search `@tag:experimental` in VSCode's Settings editor and confirm extension-contributed keys
     are picked up. If they are NOT, the tag is inert rather than wrong — drop it and keep the
     section heading and the `**Beta —**` sentence, which carry the status on their own.
+
+38. **Groomer select on New cards + labelled selects row (t-eb64):** webview-only (`media/board.js`),
+    guarded by a source-text pin in `test/board-patch-echo.test.js`; this checklist is the acceptance
+    path. On a groomed (non-draft) **New** card: directly below the chip row there is a labelled
+    row `Groom with [select] Work with [select]`, the same idiom as a draft card, and the head row
+    holds only the collapse chevron, type icon, title, Promote and delete — no select. Pick another
+    groomer → `TODO.md` shows `- groomer: <model>` on that entry, only its `rev:` bumps, and the
+    card repaints on pick (no click-out). Pick `On hold` → `groomer: none` and the `on hold — not
+    groomed` chip appears; pick a real groomer → it clears. Pick `default (<model>)` in either
+    select → that entry's `groomer:` / `model:` line disappears with no conflict toast. On a
+    **Backlog**, **In Progress**, **Feedback** and **Review** card the row carries ONLY `Work with`
+    + its select, and changing it writes `model:` exactly as before. Collapse a card of each phase
+    → the whole row is gone and the card grows no rows (a collapsed card shows no model select at
+    all — intended); expand → the row returns with the current values selected and focus stays on a
+    select after a pick. Draft cards and the New Story composer are unchanged.

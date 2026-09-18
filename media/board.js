@@ -137,6 +137,11 @@
   let lastSyncTs = Date.now();
   let flashSet = new Set(); // task ids to flash on next render
   let pendingBoard = null;
+  // One-shot (t-bbad): set by a same-field-conflict toast so the NEXT board message applies even
+  // while a select/field still has focus — the optimistic echo is provably wrong at that point and
+  // must be replaced by what disk holds without waiting for a click-out. Every other toast leaves
+  // the deferral alone (it would wipe a field the user is mid-editing).
+  let forceNextBoard = false;
   let pendingRender = false; // an async/external repaint deferred while a field is focused
   // Global "gate in flight" guard (t-a9d5): swallows a second gate click (Approve/Accept/Demote)
   // on ANY card between a click and the confirming board message, so a click landing on a
@@ -444,6 +449,16 @@
     target[key] = value;
     sendPatch(taskId, field, value, base, questionIndex);
   }
+  // Card selects (t-bbad): the pick IS the commit. Echo through commitPatch (so the next patch's
+  // `base` is the value just picked — no false same-field conflict on a second pick, and picking
+  // the original value back really writes it) and repaint only this card so the hold badge,
+  // explainer and chips update in the same frame instead of waiting for a click-out to flush the
+  // deferred board. `change` fires after the native popup has closed, so replacing the node
+  // never tears down an open dropdown. Field name and board-object key coincide for both fields.
+  function commitSelect(t, key, value) {
+    commitPatch(t.id, key, value, t[key] || '', t, key);
+    repaintCard(t);
+  }
 
   // Explicit-save model (Rule: no field patches on blur or on typing) — every editable field
   // commits only via its Save button or this Cmd/Ctrl+S shortcut while the field is focused.
@@ -525,7 +540,7 @@
   // input/textarea carries `data-field` (+ `data-qindex` for per-question answers).
   function captureActiveField() {
     const el = document.activeElement;
-    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return null;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && el.tagName !== 'SELECT')) return null;
     const field = el.getAttribute('data-field');
     if (!field) return null;
     const card = el.closest('[data-task]');
@@ -950,7 +965,7 @@
         const val = ta.value.trim();
         u.editingDraft = false;
         u.draftText = null;
-        sendPatch(t.id, 'title', val, t.title);
+        commitPatch(t.id, 'title', val, t.title, t, 'title');
         render();
       };
       const saveBtn = h('button', {
@@ -980,25 +995,25 @@
     // "Groom with" selector: which model expands this draft into a story (absent = default).
     const groomDefOpt = groomerDefaultOpt();
     const groomVal = groomerSelectValue(t.groomer, groomDefOpt);
-    const groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with' });
+    const groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with', 'data-field': 'groomer' });
     for (const opt of groomerOptions(groomDefOpt)) {
       const o = h('option', { value: opt }, opt);
       if (opt === groomVal) o.selected = true;
       groomSel.append(o);
     }
-    groomSel.addEventListener('change', (e) => sendPatch(t.id, 'groomer', normGroomerValue(e.target.value, groomDefOpt), t.groomer || ''));
+    groomSel.addEventListener('change', (e) => commitSelect(t, 'groomer', normGroomerValue(e.target.value, groomDefOpt)));
 
     // "Work with" selector (t-827c): which model later WORKS this story once it reaches Backlog
     // (the `model:` field, Rule 15) — mirrors the groomer select above; same default-unset idiom.
     const workDefOpt = workerDefaultOpt();
     const workVal = t.model || workDefOpt;
-    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with' });
+    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with', 'data-field': 'model' });
     for (const opt of modelOptions(workDefOpt)) {
       const o = h('option', { value: opt }, opt);
       if (opt === workVal) o.selected = true;
       workSel.append(o);
     }
-    workSel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, workDefOpt), t.model || ''));
+    workSel.addEventListener('change', (e) => commitSelect(t, 'model', normModelValue(e.target.value, workDefOpt)));
 
     // Draft attachments (t-att1): a drop/paste on a draft stages image bytes and appends their
     // markdown links to the draft's task-file ## Description; the shared attachments area lists
@@ -1096,7 +1111,7 @@
     if (!old) { scheduleRender(); return; }
     const active = document.activeElement;
     let restore = null;
-    if (active && active.tagName === 'TEXTAREA' && old.contains(active)) {
+    if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'SELECT') && old.contains(active)) {
       restore = {
         field: active.getAttribute('data-field') || (active.classList.contains('draft-edit') ? 'draft' : null),
         qindex: active.getAttribute('data-qindex'),
@@ -1107,11 +1122,16 @@
     const fresh = t.isDraft ? renderDraft(t) : renderCard(t);
     old.replaceWith(fresh);
     if (!restore || !restore.field) return;
+    // Tag-agnostic selector (t-bbad): a SELECT keeps focus across the repaint too — on
+    // Windows/Linux arrow keys on a closed select fire one `change` per keypress, so losing focus
+    // on the first arrow would break keyboard picking outright. A select has no caret to restore.
     const sel = restore.field === 'draft' ? 'textarea.draft-edit'
-      : restore.qindex != null ? 'textarea[data-field="answer"][data-qindex="' + restore.qindex + '"]'
-      : 'textarea[data-field="' + restore.field + '"]';
-    const ta = fresh.querySelector(sel);
-    if (ta) { ta.focus(); try { ta.setSelectionRange(restore.start, restore.end); } catch (e) { /* detached */ } }
+      : restore.qindex != null ? '[data-field="answer"][data-qindex="' + restore.qindex + '"]'
+      : '[data-field="' + restore.field + '"]';
+    const el = fresh.querySelector(sel);
+    if (!el) return;
+    el.focus();
+    if (restore.start != null) { try { el.setSelectionRange(restore.start, restore.end); } catch (e) { /* detached */ } }
   }
   function wireAttachDropAndPaste(card, taskId) {
     card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
@@ -1306,7 +1326,7 @@
         const val = input.value.trim();
         u.editingTitle = false;
         u.titleDraft = null;
-        sendPatch(t.id, 'title', val, t.title);
+        commitPatch(t.id, 'title', val, t.title, t, 'title');
         render();
       };
       const saveBtn = h('button', {
@@ -1327,18 +1347,38 @@
     }
     head.append(titleWrap);
 
-    const modelDefOpt = workerDefaultOpt();
-    const modelVal = t.model || modelDefOpt;
-    const sel = h('select', { class: 'model-select', 'aria-label': 'Model' });
-    for (const opt of modelOptions(modelDefOpt)) {
+    // Labelled selects row (t-eb64): lives BELOW the chips, hidden when collapsed — mirroring the
+    // draft card, so the head row carries no select any more. `Work with` (the `model:` field,
+    // Rule 15) on every phase; New cards additionally get `Groom with` (Rule 14) ahead of it, the
+    // only phase where grooming is still routed. Store represents "no model" as ''; map the display
+    // "default (<model>)" value to '' so base matches disk and a re-picked default never trips a
+    // false same-field conflict. Both commit through commitSelect (t-bbad: echo + repaint on pick).
+    const workDefOpt = workerDefaultOpt();
+    const workVal = t.model || workDefOpt;
+    const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with', 'data-field': 'model' });
+    for (const opt of modelOptions(workDefOpt)) {
       const o = h('option', { value: opt }, opt);
-      if (opt === modelVal) o.selected = true;
-      sel.append(o);
+      if (opt === workVal) o.selected = true;
+      workSel.append(o);
     }
-    // Store represents "no model" as ''; map the display "default (<model>)" value to '' so
-    // base matches the on-disk value and we don't trip a false conflict.
-    sel.addEventListener('change', (e) => sendPatch(t.id, 'model', normModelValue(e.target.value, modelDefOpt), t.model || ''));
-    head.append(sel);
+    workSel.addEventListener('change', (e) => commitSelect(t, 'model', normModelValue(e.target.value, workDefOpt)));
+    let groomSel = null;
+    if (t.phase === 'new') {
+      const groomDefOpt = groomerDefaultOpt();
+      const groomVal = groomerSelectValue(t.groomer, groomDefOpt);
+      groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with', 'data-field': 'groomer' });
+      for (const opt of groomerOptions(groomDefOpt)) {
+        const o = h('option', { value: opt }, opt);
+        if (opt === groomVal) o.selected = true;
+        groomSel.append(o);
+      }
+      groomSel.addEventListener('change', (e) => commitSelect(t, 'groomer', normGroomerValue(e.target.value, groomDefOpt)));
+    }
+    const selectsRow = h('div', { class: 'card-selects', style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
+      groomSel ? h('span', { class: 'muted-11' }, 'Groom with') : null,
+      groomSel,
+      h('span', { class: 'muted-11' }, 'Work with'),
+      workSel);
     if (variant === 'new') {
       // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the
       // button down via render()'s `root.textContent = ''` — waiting for `click` risks it being
@@ -1423,6 +1463,9 @@
     if (u.acting) card.append(h('div', { class: 'working' }, h('span', { class: 'loop-dot on pulse' }), 'working…'));
 
     if (!isCollapsedCard) {
+      // selects row first, directly under the chips (t-eb64)
+      card.append(selectsRow);
+
       // No detail file: since t-6ab4, draft creation eager-scaffolds tasks/<id>.md, so this only
       // fires for an entry that predates that change or had its task file deleted out-of-band.
       if (!t.hasDetailFile) {
@@ -2115,12 +2158,16 @@
       const incoming = msg.board;
       // Flag changed cards for the refresh flash.
       flashSet = computeChanged(prev, incoming);
-      if (isEditing()) {
+      if (isEditing() && !forceNextBoard) {
         pendingBoard = incoming;
         return;
       }
+      forceNextBoard = false;
       applyBoard(incoming);
     } else if (msg.type === 'toast') {
+      // The host posts this toast BEFORE the refresh that carries the corrected board, so the
+      // flag is armed here and consumed by that next board message. Discriminator, not text.
+      if (msg.kind === 'sameFieldConflict') forceNextBoard = true;
       if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
       pushToast(msg.level, msg.text, action, msg.icon);
