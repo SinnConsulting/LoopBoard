@@ -631,6 +631,25 @@ and likewise cannot be verified headless.
     hand via **Open in VSCode Settings**; confirm the panel stops listing it once
     `loopBoard.delegateWork` is removed and the child is visible again.
 
+    *Settling the by-hand note — acknowledge, then gone (untested in Docker — only the decision is:
+    `test/settingsmigrate.test.js` covers shown / suppressed / revoked; the button and the
+    `globalState` write are `media/settings.js` + `controller.ts`):* with `"loopBoard.delegateWork":
+    true` set and the old child key NOT in `settings.json`, click **Migrate Config** → the one `BY
+    HAND` row is listed (correct: the API cannot see that you already dealt with it) and the row now
+    carries its own **Mark as done** button, distinct from the panel's **Cancel**. Click **Cancel**
+    first → the panel closes; click **Migrate Config** again → the row is BACK, because Cancel only
+    closes. Now click **Mark as done** → the panel immediately re-reads as **Nothing to migrate**.
+    Click **Migrate Config** again, and again after a window reload (`Developer: Reload Window`) →
+    still **Nothing to migrate**, with `settings.json` byte-identical throughout: the
+    acknowledgement is stored in the extension's `globalState`, never in `settings.json` and never
+    under `.loopboard/`. **Re-arming:** hand-add `"loopBoard.delegateWork.review": true` back and
+    REMOVE `"loopBoard.delegateWork"` → the key is readable again, so it is listed as a real
+    `MIGRATE` row (the acknowledgement must NOT suppress it). Apply, then put
+    `"loopBoard.delegateWork": true` back → the `BY HAND` row is listed once more, because the scan
+    that found the key actually set revoked the acknowledgement. With `loopBoard.debug: info`,
+    **Mark as done** writes one `info settings-migrate-ack` line and the revoking scan one `info
+    settings-migrate-ack-revoked` line to `.loopboard/debug.log`.
+
     *Known read-only blind spots (check, but a miss here is expected, not a bug):* run the orphan
     step again on a NON-DEFAULT VSCode profile, and again in a Remote/WSL/Container window. In
     either case an orphan may not be listed — application-scoped settings are re-read through a

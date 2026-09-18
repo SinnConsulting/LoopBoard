@@ -174,6 +174,9 @@ td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBo
   background: transparent; color: var(--vscode-descriptionForeground, #9d9d9d);
   border: 1px solid var(--vscode-widget-border, #454545);
 }
+/* The by-hand row's own affordance, pushed to the far end so it reads as belonging to that line and
+   not to the panel. Ordinary .btn chrome — settling a note is not a destructive act. */
+.mig-ack { flex: none; margin-left: auto; align-self: center; white-space: nowrap; }
 .mig-line code {
   background: var(--vscode-textCodeBlock-background, #2a2a2a); border-radius: 3px; padding: 0 4px;
 }

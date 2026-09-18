@@ -131,6 +131,32 @@ export interface MigrationPlan {
   // invisible behind a scalar parent. Both are reported, neither is written.
   conflicts: number;
   manual: number;
+  // Acknowledgements this scan has DISPROVED — the host should forget them (see ACKNOWLEDGEMENT).
+  staleAcks: string[];
+}
+
+// ---- ACKNOWLEDGEMENT of a by-hand advisory ----
+//
+// A `manual` row is the one finding the scan can never see resolved: it is raised because the
+// shadowing parent is set, and the key it is about is invisible for exactly that reason. Left
+// alone it is a permanent nag — it would reappear on every scan of an already-clean config, which
+// turns "nothing to do" into what looks like an outstanding problem. So a human can settle it once
+// ("I checked; it is not in my settings.json" / "I deleted it"), and the host remembers that in its
+// own per-user storage and passes it back in here.
+//
+// The acknowledgement gates the ADVISORY ONLY — never a real finding. While the key is unreadable
+// there is nothing else it could gate; the moment the parent is unset the key becomes readable and
+// every ordinary path (migrate / remove / conflict) runs untouched, because none of them consults
+// `acknowledged` at all.
+//
+// RE-ARMING: an acknowledgement is a claim about the user's settings file, and a later scan can
+// CONTRADICT it — if the key turns out to be readable AND present, the user plainly did not deal
+// with it. Such an acknowledgement is listed in `staleAcks` so the host drops it, and the advisory
+// is armed again for the next time the parent hides the key. A scan that finds the key readable and
+// ABSENT is the opposite: it CONFIRMS the claim, so the acknowledgement stands and re-setting the
+// parent later does not re-raise a question already answered.
+export function manualAckKeys(): string[] {
+  return MIGRATIONS.filter((rule) => rule.shadowedBy).map((rule) => rule.sources[0]);
 }
 
 function show(value: unknown): string {
@@ -163,22 +189,35 @@ export function isOrphan(key: string, declared: string[], handled: string[]): bo
   return !declared.some((d) => d.startsWith(`${key}.`));
 }
 
-export function buildMigrationPlan(declared: string[], values: SettingValues): MigrationPlan {
+export function buildMigrationPlan(
+  declared: string[],
+  values: SettingValues,
+  // Advisory keys a human has already settled by hand. See ACKNOWLEDGEMENT above — it suppresses
+  // the `manual` row and nothing else.
+  acknowledged: string[] = []
+): MigrationPlan {
   const actions: PlannedAction[] = [];
   const destinationWrites: ConfigPatch[] = [];
   const removals: ConfigPatch[] = [];
   let conflicts = 0;
   let manual = 0;
+  const staleAcks: string[] = [];
   const handled: string[] = [];
 
   for (const rule of MIGRATIONS) {
     for (const source of rule.sources) handled.push(source);
     const present = rule.sources.filter((source) => values[source] !== undefined);
 
+    // The key is readable and set, so the acknowledgement that said it was dealt with is wrong.
+    // Drop it: the finding below is reported either way, and the advisory must be armed again for
+    // the next time the parent hides this key.
+    for (const key of present) if (acknowledged.includes(key)) staleAcks.push(key);
+
     if (present.length === 0) {
       // Nothing visible. If a parent that would HIDE a source is set, say so rather than report a
-      // clean bill of health that only holds because the API cannot see round the corner.
-      if (rule.shadowedBy && values[rule.shadowedBy] !== undefined) {
+      // clean bill of health that only holds because the API cannot see round the corner — unless
+      // the human has already settled it, in which case saying it again forever is the worse lie.
+      if (rule.shadowedBy && values[rule.shadowedBy] !== undefined && !acknowledged.includes(rule.sources[0])) {
         manual += 1;
         actions.push({
           key: rule.sources[0],
@@ -257,5 +296,5 @@ export function buildMigrationPlan(declared: string[], values: SettingValues): M
     });
   }
 
-  return { actions, writes: [...destinationWrites, ...removals], conflicts, manual };
+  return { actions, writes: [...destinationWrites, ...removals], conflicts, manual, staleAcks };
 }

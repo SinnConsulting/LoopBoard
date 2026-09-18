@@ -15,7 +15,7 @@ import {
   ConfigPatch, MODEL_GRID_KEYS, SETTINGS_PREFIX,
 } from './settingsform';
 import { buildModelGrid, gridPatch } from './settingsgrid';
-import { MigrationPlan, SettingValues, buildMigrationPlan, scanKeys } from './settingsmigrate';
+import { MigrationPlan, SettingValues, buildMigrationPlan, manualAckKeys, scanKeys } from './settingsmigrate';
 import { FieldPatch } from './merge';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
@@ -58,6 +58,10 @@ export const EXTENSION_ID = 'SinnConsulting.loopboard-todo';
 export const NATIVE_SETTINGS_FILTER = `@ext:${EXTENSION_ID}`;
 
 const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
+// By-hand migration advisories the user has settled (src/settingsmigrate.ts, ACKNOWLEDGEMENT). A
+// fact about THIS user's settings.json, not about the workspace tracker — so `globalState`, and
+// nothing under `.loopboard/`.
+const MIGRATE_ACK_KEY = 'loopboard.settingsMigrate.acknowledged';
 
 // The webview can only carry attachment bytes as base64 in a postMessage; decode back to bytes
 // here so store.stageAttachment has one raw-bytes entry point regardless of source (drag-drop/
@@ -788,6 +792,8 @@ export class Controller {
         return this.onScanStale();
       case 'settingsMigrate':
         return this.onMigrateStale();
+      case 'settingsAckManual':
+        return this.onAckManual(String(msg.key ?? ''));
       case 'reveal':
         // `search` is forwarded verbatim and its ABSENCE is meaningful (t-1cdb): undefined means
         // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
@@ -985,15 +991,54 @@ export class Controller {
     return values;
   }
 
+  // The by-hand advisories this user has settled. Stored as a plain string array and read back
+  // defensively: `globalState` outlives any shape this code once wrote into it.
+  private acknowledgedManual(): string[] {
+    const raw = this.globalState.get<unknown>(MIGRATE_ACK_KEY);
+    return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : [];
+  }
+
   private stalePlan(): MigrationPlan {
     const declared = formKeys(this.settingsManifest());
-    return buildMigrationPlan(declared, this.collectSettingValues(declared));
+    return buildMigrationPlan(declared, this.collectSettingValues(declared), this.acknowledgedManual());
+  }
+
+  // The plan, plus the one piece of bookkeeping it asks for: an acknowledgement the scan has
+  // DISPROVED (the key turned out to be readable and set) is forgotten here, which re-arms the
+  // advisory for the next time that key is hidden again. The plan itself is unaffected — a visible
+  // key is reported by the ordinary paths whatever the acknowledgement said.
+  private async settledStalePlan(): Promise<MigrationPlan> {
+    const plan = this.stalePlan();
+    if (plan.staleAcks.length) {
+      this.store.debugLog(
+        'info',
+        'settings-migrate-ack-revoked',
+        `${plan.staleAcks.join(', ')} — set after all, so the by-hand note is armed again`
+      );
+      const kept = this.acknowledgedManual().filter((key) => !plan.staleAcks.includes(key));
+      await this.globalState.update(MIGRATE_ACK_KEY, kept);
+    }
+    return plan;
+  }
+
+  // "Mark as done" on a by-hand row: the user says they have dealt with a key this API cannot see,
+  // and the advisory stands down for good (until a later scan finds the key set after all). Writes
+  // nothing to settings.json — the acknowledgement lives in globalState alone.
+  private async onAckManual(key: string): Promise<void> {
+    if (!manualAckKeys().includes(key)) {
+      this.store.debugLog('info', 'settings-migrate-ack-reject', `${key} — not a by-hand advisory`);
+      return;
+    }
+    const acknowledged = this.acknowledgedManual();
+    if (!acknowledged.includes(key)) await this.globalState.update(MIGRATE_ACK_KEY, [...acknowledged, key]);
+    this.store.debugLog('info', 'settings-migrate-ack', `${key} — settled by hand, not reported again`);
+    return this.onScanStale();
   }
 
   // Preview only — this NEVER writes. The page draws one line per affected key and asks; the write
   // arrives separately as `settingsMigrate`.
   private async onScanStale(): Promise<void> {
-    const plan = this.stalePlan();
+    const plan = await this.settledStalePlan();
     this.store.debugLog(
       'verbose',
       'settings-migrate-scan',
@@ -1014,7 +1059,7 @@ export class Controller {
   // copy is a snapshot that `settings.json` may have moved out from under, and the webview is never
   // trusted to say which keys get written.
   private async onMigrateStale(): Promise<void> {
-    const plan = this.stalePlan();
+    const plan = await this.settledStalePlan();
     if (plan.writes.length === 0) {
       this.store.debugLog('info', 'settings-migrate-choice', 'confirmed, but nothing is left to write');
       SettingsPanel.current?.post({ type: 'settingsMigration', plan, done: true, applied: 0, failures: [] });

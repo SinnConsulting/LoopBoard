@@ -269,13 +269,28 @@
   // made elsewhere — it cannot cause a write the host did not independently plan.
   const KIND_LABEL = { migrate: 'Migrate', remove: 'Remove', conflict: 'Conflict', manual: 'By hand' };
 
+  // A BY-HAND row is the only one the scan can never see resolved — it is raised because the key is
+  // unreadable, so nothing the user does to it is observable. Without this button it would be listed
+  // on every scan forever, including scans of a config that is already clean. `Mark as done` settles
+  // it for good (the host remembers it, and re-arms it if the key ever turns up set after all);
+  // `Cancel` below only closes the panel for now.
+  function ackButton(action) {
+    if (action.kind !== 'manual') return null;
+    return h('button', {
+      class: 'btn mig-ack', type: 'button',
+      title: 'I have dealt with this key — stop listing it. It comes back only if a later scan finds it actually set.',
+      onclick: () => vscode.postMessage({ type: 'settingsAckManual', key: action.key }),
+    }, 'Mark as done');
+  }
+
   function migrationLine(action) {
     return h('li', { class: 'mig-line mig-' + action.kind },
       h('span', { class: 'mig-tag' }, KIND_LABEL[action.kind] || action.kind),
       h('span', {},
         h('code', {}, action.key),
         action.value === undefined ? null : h('span', { class: 'subtle' }, ' = ' + JSON.stringify(action.value)),
-        ' — ' + action.detail));
+        ' — ' + action.detail),
+      ackButton(action));
   }
 
   function migrationPanel() {

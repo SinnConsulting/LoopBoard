@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  buildMigrationPlan, isOrphan, scanKeys, MIGRATIONS, LEGACY_HONOURED_KEYS,
+  buildMigrationPlan, isOrphan, manualAckKeys, scanKeys, MIGRATIONS, LEGACY_HONOURED_KEYS,
   AFTER_TASK_KEY, AUTO_RECYCLE_KEY, CLEAR_SESSION_KEY,
   DELEGATE_WORK_KEY, DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY,
 } = require('../out-test/settingsmigrate.js');
@@ -88,6 +88,67 @@ test('the by-hand report is not raised when the old key IS visible', () => {
   const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: true });
   assert.equal(plan.manual, 0);
   assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'migrate');
+});
+
+// ---- acknowledging a by-hand report ----
+// It is the one finding the scan can never see resolved (it exists BECAUSE the key is unreadable),
+// so without this it would be listed on every scan of an already-clean config, forever.
+
+test('an acknowledged by-hand report is not raised again', () => {
+  const values = { [DELEGATE_WORK_KEY]: true };
+  assert.equal(buildMigrationPlan(DECLARED, values, []).manual, 1, 'first scan must still say it');
+  const plan = buildMigrationPlan(DECLARED, values, [OLD_DELEGATE_REVIEW_KEY]);
+  assert.deepEqual(plan.actions, [], 'a clean config must report nothing at all once settled');
+  assert.equal(plan.manual, 0);
+  assert.deepEqual(plan.writes, []);
+  assert.deepEqual(plan.staleAcks, [], 'nothing disproved it, so the acknowledgement stands');
+});
+
+test('an acknowledgement for another key does not silence the report', () => {
+  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true }, [AUTO_RECYCLE_KEY]);
+  assert.equal(plan.manual, 1);
+  assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'manual');
+});
+
+test('an acknowledgement can NEVER suppress a real, readable finding — and is revoked by it', () => {
+  // Parent unset ⇒ the key is readable again. It is set after all, so the acknowledgement was
+  // wrong: the migration is planned exactly as if it had never been given, and the host is told to
+  // forget it so the advisory is armed again the next time the parent hides the key.
+  const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: false }, [OLD_DELEGATE_REVIEW_KEY]);
+  const action = byKey(plan, OLD_DELEGATE_REVIEW_KEY);
+  assert.equal(action.kind, 'migrate');
+  assert.deepEqual(plan.writes, [
+    { key: DELEGATE_REVIEW_KEY, value: false },
+    { key: OLD_DELEGATE_REVIEW_KEY, value: undefined },
+  ]);
+  assert.deepEqual(plan.staleAcks, [OLD_DELEGATE_REVIEW_KEY]);
+});
+
+test('a conflict on an acknowledged key is reported too, and revokes the acknowledgement', () => {
+  const plan = buildMigrationPlan(
+    DECLARED,
+    { [OLD_DELEGATE_REVIEW_KEY]: false, [DELEGATE_REVIEW_KEY]: true },
+    [OLD_DELEGATE_REVIEW_KEY]
+  );
+  assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'conflict');
+  assert.deepEqual(plan.staleAcks, [OLD_DELEGATE_REVIEW_KEY]);
+});
+
+test('a scan that CONFIRMS the key is gone keeps the acknowledgement', () => {
+  // Readable (no shadowing parent) and absent: the claim is true, so re-setting the parent later
+  // must not re-ask a question already answered.
+  const plan = buildMigrationPlan(DECLARED, {}, [OLD_DELEGATE_REVIEW_KEY]);
+  assert.deepEqual(plan.actions, []);
+  assert.deepEqual(plan.staleAcks, []);
+});
+
+test('only a shadowed source is acknowledgeable at all', () => {
+  const keys = manualAckKeys();
+  assert.deepEqual(keys, MIGRATIONS.filter((r) => r.shadowedBy).map((r) => r.sources[0]));
+  assert.ok(keys.includes(OLD_DELEGATE_REVIEW_KEY));
+  // The host validates the webview's key against this list, so a message naming any other key —
+  // including a perfectly ordinary migration source — must be refused.
+  assert.equal(keys.includes(AUTO_RECYCLE_KEY), false);
 });
 
 // ---- category 2: deprecated pair -> afterTask ----
