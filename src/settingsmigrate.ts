@@ -131,6 +131,8 @@ export type StaleReason = 'renamed' | 'deprecated' | 'orphan';
 //     valid and provably harmless — it deletes the property if it is in `settings.json` and is a
 //     byte-for-byte no-op if it is not (see the header note). What is impossible is reporting in
 //     advance which of the two it will be, so the row says so and the user presses the button.
+//     Like a conflict it is NEVER part of a bulk apply: the scan has no evidence anything is there,
+//     so it must not ride along on a click the user made about something else.
 export type ActionKind = 'migrate' | 'remove' | 'conflict' | 'sweep';
 
 export interface PlannedAction {
@@ -147,13 +149,16 @@ export interface MigrationPlan {
   actions: PlannedAction[];
   // Exactly what a BULK apply will `update()`, in order: every destination write first, then every
   // removal. A run interrupted halfway therefore leaves a value stored twice rather than lost.
-  // Conflicts contribute nothing here; a per-row button is the only way to act on one.
+  // Conflicts and sweeps contribute NOTHING here — a per-row button is the only way to act on
+  // either, because neither is a write the scan can justify on the user's behalf. So the count on
+  // the Apply button is a count of changes that are certainly changes.
   writes: ConfigPatch[];
   // Rules that stood down because their destination is already set by hand.
   conflicts: number;
   // Blind removals offered for a key this scan could not read. Counted APART from `findings`
   // because a sweep is not evidence of anything: a config with nothing but sweeps is a config with
   // nothing known to be wrong, and the panel must keep saying so rather than manufacture a problem.
+  // The page keeps them out of the main list entirely, behind a collapsed disclosure.
   sweeps: number;
   // Everything the scan actually found — `actions.length - sweeps`. This, and not `actions.length`,
   // is what decides whether there is anything to migrate.
@@ -215,9 +220,10 @@ export function buildMigrationPlan(declared: string[], values: SettingValues): M
       // rather than report a clean bill of health the API cannot actually give. It is a real
       // action, not a note: pressing it deletes the key if it is there and does nothing at all if
       // it is not, and either way the user is done with it in one click.
+      // Deliberately NOT pushed onto `removals`: a sweep is never carried by a bulk apply, only by
+      // its own button inside the page's collapsed "legacy keys" disclosure.
       if (rule.shadowedBy && values[rule.shadowedBy] !== undefined) {
         sweeps += 1;
-        removals.push({ key: rule.sources[0], value: undefined });
         actions.push({
           key: rule.sources[0],
           kind: 'sweep',

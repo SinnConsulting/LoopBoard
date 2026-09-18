@@ -178,6 +178,21 @@ td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBo
    panel. Ordinary .btn chrome: every one of them is reversible by editing settings.json. */
 .mig-do { flex: none; margin-left: auto; align-self: center; white-space: nowrap; }
 .mig-did { color: var(--vscode-descriptionForeground, #9d9d9d); }
+/* Keys the configuration API cannot read live behind a native <details>, deliberately quiet: the
+   summary is description-coloured and normal weight, so a collapsed disclosure reads as a footnote
+   under "Nothing to migrate" rather than as a second finding. Expanded it is set off by a rule, not
+   by a fill, so it never competes with the panel it sits in. */
+.mig-legacy { margin-top: 10px; }
+.mig-legacy > summary {
+  cursor: pointer; list-style-position: outside; width: fit-content;
+  color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 11px;
+}
+.mig-legacy > summary:hover { color: var(--vscode-foreground, #cccccc); }
+.mig-legacy > summary:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }
+.mig-legacy[open] > summary { margin-bottom: 6px; }
+.mig-legacy[open] {
+  padding-top: 8px; border-top: 1px solid var(--vscode-widget-border, #454545);
+}
 .mig-line code {
   background: var(--vscode-textCodeBlock-background, #2a2a2a); border-radius: 3px; padding: 0 4px;
 }

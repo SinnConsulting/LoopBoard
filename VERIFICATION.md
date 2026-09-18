@@ -631,27 +631,40 @@ and likewise cannot be verified headless.
     *Delegate review* toggle reads OFF.
 
     *The key that cannot be read but CAN be removed — the blind removal (untested in Docker: the
-    plan is, `test/settingsmigrate.test.js` pins that the sweep names the child key ALONE; the
-    `update()` that carries it out is `controller.ts`).* This is the step that proves VSCode's
+    plan is, `test/settingsmigrate.test.js` pins that the sweep names the child key ALONE and that it
+    never reaches `plan.writes`; the disclosure, its open state and the `update()` that carries it out
+    are `media/settings.{js,css}` + `controller.ts`).* This is the step that proves VSCode's
     read/write asymmetry, so do it exactly:
     1. Put BOTH `"loopBoard.delegateWork": true` and `"loopBoard.delegateWork.review": true` in your
        user `settings.json` by hand. The VSCode log shows `Ignoring loopBoard.delegateWork.review as
        loopBoard.delegateWork is true` — the key is genuinely unreadable.
-    2. Click **Migrate Config** → the headline is **Nothing to migrate** (correct — the scan found
-       nothing it can prove is wrong) and underneath it, *One key it cannot read — delete it if you
-       like:* with one `REMOVE?` row for `loopBoard.delegateWork.review` and its own **Remove**
-       button. There must be NO advisory telling you to edit JSON yourself, and no *Mark as done*.
-    3. Click **Remove** → the panel says `Removed loopBoard.delegateWork.review from your user
-       settings, if it was there.` **Open `settings.json` and confirm: the
-       `"loopBoard.delegateWork.review"` line is gone AND `"loopBoard.delegateWork": true` is still
-       there, untouched.** That second half is the whole risk — a dotted key is one literal property
-       name, never a path, so the removal must not reach into the parent.
-    4. The `REMOVE?` row is listed again on the next scan. That is correct and not a nag: the API
-       still cannot read the key, the verdict still says **Nothing to migrate**, and pressing Remove
-       again is a byte-identical no-op — confirm that by taking a copy of `settings.json`, clicking
-       **Remove** on an already-clean config, and diffing. It must be identical, with no reformat.
-    5. Now remove `"loopBoard.delegateWork"` too → **Migrate Config** no longer offers the sweep at
-       all (nothing shadows the key any more) and says **Nothing to migrate** with nothing beneath.
+    2. Click **Migrate Config** → the panel says **Nothing to migrate** and *nothing else that reads
+       as an outstanding item*: no `REMOVE?` row, no *Removed …, if it was there* sentence. The only
+       other thing on it is a quiet, COLLAPSED disclosure reading *Legacy keys this page cannot read
+       (1)*, description-coloured and normal weight. There must be NO advisory telling you to edit
+       JSON yourself, and no *Mark as done*.
+    3. Click the disclosure open → a short explanation, then one `REMOVE?` row for
+       `loopBoard.delegateWork.review` with its own **Remove** button. Nothing has been written yet —
+       check `settings.json` and confirm both keys are still there. **Opening the Migrate Config
+       panel must never sweep on its own.**
+    4. Click **Remove** → the confirmation `Removed loopBoard.delegateWork.review from your user
+       settings, if it was there.` appears **inside the disclosure**, which stays OPEN, and the
+       headline outside it still just reads *Nothing to migrate*. **Open `settings.json` and confirm:
+       the `"loopBoard.delegateWork.review"` line is gone AND `"loopBoard.delegateWork": true` is
+       still there, untouched.** That second half is the whole risk — a dotted key is one literal
+       property name, never a path, so the removal must not reach into the parent.
+    5. Close the panel and click **Migrate Config** again → the disclosure is back and COLLAPSED, and
+       the default view is a bare *Nothing to migrate*. The row inside it is listed again; that is
+       correct and no longer visible noise, because the API still cannot read the key. Pressing
+       **Remove** on an already-clean config is a byte-identical no-op — confirm by copying
+       `settings.json`, opening the disclosure, clicking **Remove**, and diffing. Identical, no
+       reformat.
+    6. Now remove `"loopBoard.delegateWork"` too → **Migrate Config** shows **Nothing to migrate**
+       with *no disclosure at all* (nothing shadows the key any more).
+    7. With a real finding present as well — add `"loopBoard.autoRecycle": true` — the review list
+       shows ONLY the `MIGRATE` row and the button reads **Apply all 2 changes** (destination + its
+       removal). The blind removal is NOT in that count and is NOT in that list; it is still down in
+       the collapsed disclosure, independent of the findings above it.
 
     *The acknowledgement is gone:* an earlier build stored a `loopboard.settingsMigrate.acknowledged`
     key in the extension's `globalState`. Nothing reads it now, and activation deletes it. With
@@ -675,8 +688,10 @@ and likewise cannot be verified headless.
     key, and a blind removal's write line reads `remove if present (unreadable here)` — it must NOT
     claim the key was there, because the host cannot know. With `loopBoard.debug: off` none appear.
 
-    *Light and dark:* the panel's tags, list rules and the Apply button must be legible in both
-    themes — it uses only `var(--vscode-*)` colours.
+    *Light and dark:* the panel's tags, list rules, the Apply button and the *Legacy keys* disclosure
+    (collapsed summary, its hover state, its keyboard focus ring, and the rule above it when open)
+    must be legible in both themes — it uses only `var(--vscode-*)` colours. Tab to the summary and
+    press Enter: it must toggle with a visible focus ring.
 
     **Live sync, and the listener dying with the page:** with the page open, hand-edit
     `loopBoard.debug` in your user `settings.json` → the page repaints without a reload. Do the same

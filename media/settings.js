@@ -50,6 +50,10 @@
   // Deliberately NOT part of `state`, which is replaced wholesale by every incoming form — the
   // panel must survive the repaint its own writes trigger, or the result would flash and vanish.
   let migration = null;
+  // Whether the "legacy keys" disclosure is expanded. Module-level, so it survives the repaint its
+  // own Remove triggers — `migration` is replaced wholesale by every incoming `settingsMigration`,
+  // and a disclosure that collapsed itself the moment you used it would hide its own result.
+  let legacyOpen = false;
 
   function hasFocus() {
     const el = document.activeElement;
@@ -85,6 +89,9 @@
         applied: msg.applied || 0,
         failures: msg.failures || [],
         did: msg.did || '',
+        // Which kind of row produced `did`, so the report lands where the click did: a sweep's
+        // result belongs inside the disclosure, never in the default view.
+        didKind: msg.didKind || '',
       };
       pending = null;
       render();
@@ -297,15 +304,45 @@
       doButton(action));
   }
 
+  // ---- the disclosure for keys that cannot be read ----
+  // A SWEEP row can never be seen resolved: it exists because the key is invisible to the
+  // configuration API, so the scan lists it again immediately after removing it. Shown in the
+  // default view that reads as the panel reporting a finished removal and re-offering the same
+  // removal in the same breath — which is exactly what confused the first build. So it lives behind
+  // a collapsed disclosure instead: out of the default view entirely, still one click from being
+  // dealt with, and never written unless the user opens this and presses Remove.
+  function legacyDisclosure() {
+    const plan = migration.plan;
+    const rows = plan.actions.filter((a) => a.kind === 'sweep');
+    if (!rows.length) return null;
+    // The result of a Remove is reported HERE, beside the button that caused it — never in the
+    // default view, which must stay a plain verdict.
+    const didLine = migration.did && migration.didKind === 'sweep'
+      ? h('p', { class: 'mig-did' }, migration.did)
+      : null;
+    return h('details', {
+      class: 'mig-legacy', open: legacyOpen,
+      ontoggle: (ev) => { legacyOpen = ev.target.open; },
+    },
+      h('summary', {}, 'Legacy keys this page cannot read (' + rows.length + ')'),
+      h('p', { class: 'subtle' },
+        'VSCode hides a setting that is written as a child of another setting, so LoopBoard cannot ',
+        'tell whether these are in your ', h('code', {}, 'settings.json'), '. Deleting one works ',
+        'even though reading it does not — and does nothing at all if it was never there.'),
+      didLine,
+      h('ul', { class: 'mig-list' }, rows.map(migrationLine)));
+  }
+
   function migrationPanel() {
     if (!migration) return null;
     const plan = migration.plan;
     const close = h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Close');
 
-    // What was just done, if anything — a per-row action re-scans, and a SWEEP is listed again by
-    // construction (the scan still cannot read the key), so this line is the only way the panel can
-    // say the removal ran. It is a report of a write, never a claim the user made.
-    const didLine = migration.did ? h('p', { class: 'mig-did' }, migration.did) : null;
+    // Findings only — sweeps are drawn by `legacyDisclosure`, which is independent of all of this.
+    const rows = plan.actions.filter((a) => a.kind !== 'sweep');
+    const didLine = migration.did && migration.didKind !== 'sweep'
+      ? h('p', { class: 'mig-did' }, migration.did)
+      : null;
     const fails = migration.failures && migration.failures.length
       ? h('ul', { class: 'mig-list' }, migration.failures.map((f) => h('li', { class: 'err' }, f)))
       : null;
@@ -317,16 +354,13 @@
           ? 'Nothing was written.'
           : 'Applied ' + migration.applied + ' change' + (migration.applied === 1 ? '' : 's') + ' to your user settings.'),
         fails,
-        plan.actions.length
-          ? h('p', {}, 'Still listed — each row below still has its own button.')
-          : null,
-        plan.actions.length ? h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)) : null);
+        rows.length ? h('p', {}, 'Still listed — each row below still has its own button.') : null,
+        rows.length ? h('ul', { class: 'mig-list' }, rows.map(migrationLine)) : null,
+        legacyDisclosure());
     }
 
-    // `findings` and not `actions.length` decides the verdict. A SWEEP is not evidence of anything —
-    // it is an offer to delete a key the API cannot see — so a config whose only row is a sweep is a
-    // config with nothing known to be wrong, and it must keep reading that way. The offer stays on
-    // the page underneath, one click away, instead of being dressed up as an outstanding problem.
+    // `findings` and not `actions.length` decides the verdict: a sweep is an offer, not evidence, so
+    // a config with nothing but sweeps has nothing known to be wrong and must read that way.
     if (!plan.findings) {
       return h('div', { class: 'migrate' },
         h('div', { class: 'mig-head' }, h('strong', {}, 'Nothing to migrate'), close),
@@ -334,12 +368,12 @@
           ' key LoopBoard can read in your user settings is one it still declares and reads.'),
         didLine,
         fails,
-        plan.sweeps ? h('p', { class: 'subtle' }, 'One key it cannot read — delete it if you like:') : null,
-        plan.sweeps ? h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)) : null);
+        legacyDisclosure());
     }
 
     // The bulk button only earns its place when it saves clicks: with a single automatic write the
-    // row's own button already is the whole action.
+    // row's own button already is the whole action. Neither conflicts nor sweeps are in the count —
+    // `plan.writes` holds only the writes that are certainly writes.
     const writes = (plan.writes || []).length;
     return h('div', { class: 'migrate' },
       h('div', { class: 'mig-head' },
@@ -347,7 +381,7 @@
         close),
       didLine,
       fails,
-      h('ul', { class: 'mig-list' }, plan.actions.map(migrationLine)),
+      h('ul', { class: 'mig-list' }, rows.map(migrationLine)),
       h('div', { class: 'mig-actions' },
         writes > 1
           ? h('button', {
@@ -356,7 +390,8 @@
               onclick: () => vscode.postMessage({ type: 'settingsMigrate' }),
             }, 'Apply all ' + writes + ' changes')
           : null,
-        h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Cancel')));
+        h('button', { class: 'btn', type: 'button', onclick: () => { migration = null; render(); } }, 'Cancel')),
+      legacyDisclosure());
   }
 
   // ---- topic list ----

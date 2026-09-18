@@ -1064,7 +1064,11 @@ export class Controller {
       plan: this.stalePlan(),
       applied: writes.length - failures.length,
       failures,
+      // A sweep's report is worded for a write whose outcome the host genuinely cannot observe, and
+      // `didKind` sends the page where to put it — beside the button that caused it, inside the
+      // collapsed "legacy keys" disclosure, never in the default view.
       did: action.kind === 'sweep' ? `Removed ${key} from your user settings, if it was there.` : `Done: ${key}.`,
+      didKind: action.kind,
     });
   }
 

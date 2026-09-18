@@ -86,9 +86,9 @@ test('a renamed key hidden behind its scalar parent is offered as a blind remova
   assert.equal(action.value, undefined, 'the scan cannot see a value, and must not invent one');
   assert.match(action.detail, /cannot be READ while loopBoard\.delegateWork is set/);
   assert.match(action.detail, /changes nothing if it is not/);
-  // It IS a write — that is the whole point — and it is a removal, never a value.
-  assert.deepEqual(plan.writes, [{ key: OLD_DELEGATE_REVIEW_KEY, value: undefined }]);
   assert.equal(plan.sweeps, 1);
+  // It is executable — but ONLY through its own button.
+  assert.deepEqual(actionWrites(action), [{ key: OLD_DELEGATE_REVIEW_KEY, value: undefined }]);
 });
 
 test('a blind removal is NOT a finding: a config with only one still has nothing to migrate', () => {
@@ -99,16 +99,22 @@ test('a blind removal is NOT a finding: a config with only one still has nothing
   assert.equal(plan.actions.length, 1);
 });
 
-test('a real finding alongside a blind removal is counted, and both are offered', () => {
+test('a blind removal is NEVER carried by a bulk apply', () => {
+  // The scan has no evidence anything is there, so it must not ride along on a click the user made
+  // about something else — and the count on the Apply button must be a count of certain changes.
+  // Its own button in the page's collapsed "legacy keys" disclosure is the only way it runs.
+  assert.deepEqual(buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true }).writes, []);
+});
+
+test('a real finding alongside a blind removal is counted separately, and only the finding is bulk', () => {
   const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true, [AUTO_RECYCLE_KEY]: true });
   assert.equal(plan.sweeps, 1);
   assert.equal(plan.findings, 1);
-  // Destination writes still come before every removal; the removals themselves follow rule order.
   assert.deepEqual(plan.writes, [
     { key: AFTER_TASK_KEY, value: 'recycle' },
-    { key: OLD_DELEGATE_REVIEW_KEY, value: undefined },
     { key: AUTO_RECYCLE_KEY, value: undefined },
   ]);
+  assert.equal(plan.writes.some((w) => w.key === OLD_DELEGATE_REVIEW_KEY), false);
 });
 
 test('no blind removal is offered when the old key IS visible', () => {
