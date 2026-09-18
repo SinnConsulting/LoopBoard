@@ -5,8 +5,9 @@ const { routeEntry, computeNudges, formatNudge, describeChanges, mergeNudgeItems
 const DEFAULTS = { worker: 'opus', groomer: 'sonnet' };
 
 let seq = 0;
-// A minimal composed Task (index entry + detail), the shape computeNudges diffs. `rev` is the
-// change marker, so a caller that wants "this entry changed" just passes a different rev.
+// A minimal composed Task (index entry + detail), the shape computeNudges diffs. Change detection
+// is a TEXT fingerprint of both halves (t-f1b0): `raw` is the index block, `detailRaw` the
+// tasks/<id>.md text — so a caller that wants "this entry changed" passes a different one of them.
 function entry(over = {}) {
   seq += 1;
   return {
@@ -20,7 +21,7 @@ function entry(over = {}) {
     feedback: [],
     unknownLines: [],
     raw: 'raw',
-    rev: 1,
+    detailRaw: 'detail',
     worklog: [],
     links: [],
     dependsOn: [],
@@ -115,18 +116,28 @@ test('the first board of a session nudges nobody', () => {
 });
 
 test('an unchanged entry is not nudged again, a changed one is', () => {
-  const before = entry({ phase: 'backlog', model: 'opus', rev: 3 });
+  const before = entry({ phase: 'backlog', model: 'opus', raw: 'one' });
   assert.deepStrictEqual(computeNudges([before], [{ ...before }], DEFAULTS), []);
-  const routes = computeNudges([before], [{ ...before, rev: 4 }], DEFAULTS);
+  const routes = computeNudges([before], [{ ...before, raw: 'two' }], DEFAULTS);
   assert.strictEqual(routes.length, 1);
   assert.strictEqual(routes[0].model, 'opus');
   assert.strictEqual(routes[0].items[0].reason, 'backlog');
 });
 
-test('an entry with no rev at all falls back to a raw comparison', () => {
-  const before = entry({ phase: 'backlog', model: 'opus', rev: undefined, raw: 'one' });
-  assert.deepStrictEqual(computeNudges([before], [{ ...before }], DEFAULTS), []);
-  assert.strictEqual(computeNudges([before], [{ ...before, raw: 'two' }], DEFAULTS).length, 1);
+// The capability the removed `rev:` marker existed for (t-f1b0): a human edits the Description or
+// a worklog line in tasks/<id>.md and the index block does not move at all. With an index-only
+// fingerprint the owning loop would never hear about it.
+test('an edit confined to the task file still nudges — the fingerprint covers the detail text', () => {
+  const before = entry({ phase: 'backlog', model: 'opus', description: 'old', raw: 'unchanged index block' });
+  const next = { ...before, description: 'new', detailRaw: '# t\n\n## Description\n\nnew\n' };
+  assert.strictEqual(before.raw, next.raw, 'the index block is byte-identical — only the detail moved');
+  const routes = computeNudges([before], [next], DEFAULTS);
+  assert.strictEqual(routes.length, 1);
+  assert.strictEqual(routes[0].model, 'opus');
+  assert.deepStrictEqual(routes[0].items[0].changes, ['description edited']);
+  // An appended worklog line is the same shape and must behave the same way.
+  const appended = { ...before, worklog: ['2026-09-18'], detailRaw: '# t\n\n## Worklog\n\n- 2026-09-18\n' };
+  assert.deepStrictEqual(computeNudges([before], [appended], DEFAULTS)[0].items[0].changes, ['worklog appended']);
 });
 
 test('a brand-new entry is a change', () => {
@@ -137,29 +148,29 @@ test('a brand-new entry is a change', () => {
 });
 
 test('changes that give no loop work nudge nobody', () => {
-  const before = entry({ phase: 'review', model: 'opus', rev: 1 });
-  assert.deepStrictEqual(computeNudges([before], [{ ...before, rev: 2 }], DEFAULTS), []);
+  const before = entry({ phase: 'review', model: 'opus' });
+  assert.deepStrictEqual(computeNudges([before], [{ ...before, raw: 'moved' }], DEFAULTS), []);
 });
 
 test('a Backlog nudge is suppressed while any task is In Progress (Rule 2)', () => {
-  const backlog = entry({ phase: 'backlog', model: 'opus', rev: 1 });
+  const backlog = entry({ phase: 'backlog', model: 'opus' });
   const busy = entry({ phase: 'inprogress', model: 'fable' });
-  const next = [{ ...backlog, rev: 2 }, busy];
+  const next = [{ ...backlog, raw: 'moved' }, busy];
   assert.deepStrictEqual(computeNudges([backlog, busy], next, DEFAULTS), []);
   // …but grooming and notes never set inprogress, so they still route.
-  const draft = entry({ isDraft: true, groomer: 'fable', rev: 1 });
-  const routes = computeNudges([backlog, busy, draft], [{ ...backlog, rev: 2 }, busy, { ...draft, rev: 2 }], DEFAULTS);
+  const draft = entry({ isDraft: true, groomer: 'fable' });
+  const routes = computeNudges([backlog, busy, draft], [{ ...backlog, raw: 'moved' }, busy, { ...draft, raw: 'moved' }], DEFAULTS);
   assert.strictEqual(routes.length, 1);
   assert.strictEqual(routes[0].model, 'fable');
   assert.strictEqual(routes[0].items[0].reason, 'groom');
 });
 
 test('changes are grouped per loop, and each change reaches exactly one loop', () => {
-  const a = entry({ phase: 'feedback', model: 'opus', questions: [q('a', 'yes')], rev: 1 });
-  const b = entry({ phase: 'review', model: 'opus', feedback: ['fix it'], rev: 1 });
-  const c = entry({ phase: 'new', groomer: 'fable', notes: ['note'], rev: 1 });
+  const a = entry({ phase: 'feedback', model: 'opus', questions: [q('a', 'yes')] });
+  const b = entry({ phase: 'review', model: 'opus', feedback: ['fix it'] });
+  const c = entry({ phase: 'new', groomer: 'fable', notes: ['note'] });
   const prev = [a, b, c];
-  const next = [{ ...a, rev: 2 }, { ...b, rev: 2 }, { ...c, rev: 2 }];
+  const next = [{ ...a, raw: 'moved' }, { ...b, raw: 'moved' }, { ...c, raw: 'moved' }];
   const routes = computeNudges(prev, next, DEFAULTS);
   assert.strictEqual(routes.length, 2);
   const byModel = Object.fromEntries(routes.map((r) => [r.model, r.items]));
@@ -257,12 +268,17 @@ test('several fields moving at once are all named', () => {
   );
 });
 
-test('a rev bump with no visible field delta still yields a descriptor', () => {
-  const before = entry({ phase: 'backlog', model: 'opus', rev: 1 });
-  assert.deepStrictEqual(describeChanges(before, { ...before, rev: 2, raw: 'canonicalized' }), ['changed']);
+test('a text change with no visible field delta still yields a descriptor', () => {
+  const before = entry({ phase: 'backlog', model: 'opus' });
+  assert.deepStrictEqual(describeChanges(before, { ...before, raw: 'canonicalized' }), ['changed']);
   // …and it still produces a nudge, never a dropped one.
-  const routes = computeNudges([before], [{ ...before, rev: 2, raw: 'canonicalized' }], DEFAULTS);
+  const routes = computeNudges([before], [{ ...before, raw: 'canonicalized' }], DEFAULTS);
   assert.deepStrictEqual(routes[0].items[0].changes, ['changed']);
+  // A question TEXT edit is the same case: the fingerprint sees it, the descriptors only count
+  // questions, so the ['changed'] fallback is what keeps it reachable.
+  const asked = entry({ phase: 'backlog', model: 'opus', questions: [q('old text')] });
+  const reworded = { ...asked, questions: [q('new text')], raw: 'reworded' };
+  assert.deepStrictEqual(computeNudges([asked], [reworded], DEFAULTS)[0].items[0].changes, ['changed']);
 });
 
 // ---- mergeNudgeItems: a task held for a downed terminal unions its descriptors ----
@@ -331,8 +347,8 @@ test('no task text of any kind reaches the nudge line, in any reason branch', ()
   ];
   const seen = new Set();
   for (const [reason, next] of cases) {
-    const prev = { ...entry({ id: next.id }), rev: 1 };
-    const routes = computeNudges([prev], [{ ...next, rev: 2 }], DEFAULTS);
+    const prev = { ...entry({ id: next.id }), raw: 'before' };
+    const routes = computeNudges([prev], [{ ...next, raw: 'after' }], DEFAULTS);
     assert.strictEqual(routes.length, 1, reason + ' should route somewhere');
     const items = routes[0].items;
     assert.strictEqual(items[0].reason, reason);

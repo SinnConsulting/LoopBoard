@@ -50,7 +50,6 @@ parses tolerantly, rewrites canonical form on save, preserves unrecognized lines
   - model: opus | sonnet | fable        (optional; absent = default model; Rule 15)
   - groomer: opus | sonnet | fable | none  (optional; absent = default model; none = on
                                           hold, no groomer; Rule 14)
-  - rev: <n>                            (optional; writer-managed change marker; Rule 17)
   - question: <text>                    (repeatable, single line; Feedback & New)
     - answer: <text or blank>
     - suggestion: <text>                (repeatable, up to 3; groomer-proposed answer; Rule 14)
@@ -180,12 +179,6 @@ use. Detail stays in `tasks/<id>.md`.
 16. Honor `note:` sub-bullets on the index entry (unprocessed human instructions): apply, append
     `<today>` to the task file's `## Worklog`, delete the `note:` sub-bullet. A lingering `note:`
     = not yet applied. Notes are index-only (visible every index pass); nothing in the task file.
-17. `rev:` is a per-task change marker the EXTENSION manages — monotonic integer bumped only when
-    that task's content (its index block or its `tasks/<id>.md`) actually changes. Workers NEVER
-    write `rev:` (writing to detect a change would trip other loops); read it to tell WHICH tasks
-    changed since your last pass — compare each id's `rev:` to what you recorded last pass and act
-    on ids whose `rev:` moved (plus ids that are new or gone). Absent = treat as 0 on pre-existing
-    trackers.
 
 Legend: `[ ]` awaiting the human's gate · `[x]` human approved.
 <!-- loopboard:sync:rules:end -->

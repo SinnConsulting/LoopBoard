@@ -29,10 +29,9 @@ export function serializeEntry(entry: IndexEntry): string[] {
   if (entry.id) out.push(`  - id: ${entry.id}`);
 
   if (entry.isDraft) {
-    // Drafts carry no phase line (implicitly new); only optional model/groomer/rev.
+    // Drafts carry no phase line (implicitly new); only optional model/groomer.
     if (entry.model) out.push(`  - model: ${entry.model}`);
     if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
-    if (entry.rev !== undefined) out.push(`  - rev: ${entry.rev}`);
     for (const u of entry.unknownLines) out.push(u);
     return out;
   }
@@ -40,7 +39,6 @@ export function serializeEntry(entry: IndexEntry): string[] {
   out.push(`  - phase: ${entry.phase}`);
   if (entry.model) out.push(`  - model: ${entry.model}`);
   if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
-  if (entry.rev !== undefined) out.push(`  - rev: ${entry.rev}`);
   for (const q of entry.questions) {
     out.push(`  - question: ${q.text}`);
     out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));

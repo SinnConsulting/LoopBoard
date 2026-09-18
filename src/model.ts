@@ -171,7 +171,6 @@ export interface IndexEntry {
   isDraft: boolean;
   model?: Model;
   groomer?: GroomerValue; // which model grooms this task (absent = default model; 'none' = on hold)
-  rev?: number; // monotonic per-task change marker; bumped by the writer only when content changes
   questions: Question[];
   notes: string[]; // unprocessed human worker-notes (Rule 16): applied then deleted, index-only
   feedback: string[]; // Review change requests (Rule 13): index-only, removed when addressed
@@ -195,8 +194,11 @@ export interface TaskDetail {
   raw: string;
 }
 
-// Composed view used by view.ts / the webview: index metadata + detail content.
-export type Task = IndexEntry & TaskDetail & { hasDetailFile: boolean };
+// Composed view used by view.ts / the webview: index metadata + detail content. The two `raw`
+// fields collapse in the intersection, so the composed task carries the detail file's own text
+// separately as `detailRaw` — without it a change confined to `tasks/<id>.md` would be invisible
+// to nudge.ts's change detection (t-f1b0, the signal that replaced the removed `rev:` marker).
+export type Task = IndexEntry & TaskDetail & { hasDetailFile: boolean; detailRaw: string };
 
 // The parsed index file (`.loopboard/TODO.md`).
 export interface IndexDoc {

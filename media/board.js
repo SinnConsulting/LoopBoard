@@ -191,7 +191,7 @@
 
   // ---- held answers (t-5e6d) ----
   // A story is complete only when EVERY question is answered — a 2/3 index state helps nobody and
-  // costs a write, a `rev:` bump and a nudge that sends the groomer at a half-answered story.
+  // costs a write and a nudge that sends the groomer at a half-answered story.
   // So a saved answer is HELD here — `{ [taskId]: { [qIndex]: { text, q } } }`, `q` being the
   // question text the answer was given to — until the last blank question is filled; then the
   // whole set flushes as ONE `answers` field patch. Held answers ride the `vscode.setState` blob
@@ -1769,7 +1769,7 @@
 
     // The batched write (t-5e6d): ONE `answers` patch carrying the whole set, positional and
     // newline-joined, with the on-disk set as its base — so it is still a single field patch on a
-    // single file, one `rev:` bump and one nudge. The local echo mirrors the same values into the
+    // single file and one nudge. The local echo mirrors the same values into the
     // live board object (t-ff54's idiom) and repaints.
     //
     // The value is POSITIONAL, so a newline inside one answer would shift every later answer onto
