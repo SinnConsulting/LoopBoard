@@ -23,6 +23,14 @@
 !media/sidebar.html
 !media/sidebar.css
 !media/sidebar.js
+!media/settings.html
+!media/settings.css
+!media/settings.js
+
+# Shared markdown renderer — src/webview.ts injects it into every page that renders markdown
+# (board, settings) ahead of that page's own script.
+!media/markdown.js
+
 !media/codicon/codicon.css
 !media/codicon/codicon.ttf
 

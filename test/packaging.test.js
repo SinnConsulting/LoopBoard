@@ -52,6 +52,12 @@ function referencedAssets() {
     }
   }
 
+  // src/webview.ts also injects shared media scripts every page loads ahead of its own (t-sgrp:
+  // media/markdown.js), written as joinPath(mediaUri, '<file>.js').
+  for (const m of read('src', 'webview.ts').matchAll(/joinPath\(mediaUri,\s*'([\w.-]+\.js)'\)/g)) {
+    assets.add('media/' + m[1]);
+  }
+
   // src/webview.ts injects the codicon stylesheet, which in turn @font-faces its own .ttf.
   for (const m of read('src', 'webview.ts').matchAll(/'codicon',\s*'([^']+)'/g)) {
     assets.add('media/codicon/' + m[1]);
