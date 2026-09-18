@@ -2,8 +2,8 @@
    t-sgrp). Loaded as a plain classic script under the page's CSP nonce BEFORE the page script, and
    exposed as one global — the webviews have no module loader and zero runtime dependencies.
 
-   Supports ATX headings, - / * and 1. lists, **bold**, *italic*/_italic_, `code`,
-   [text](scheme://url), and blank-line paragraph breaks.
+   Supports ATX headings, - / * and 1. lists, **bold**, italic in either *asterisk* or _underscore_
+   form, `code`, [text](scheme://url), and blank-line paragraph breaks.
 
    All user text is HTML-escaped FIRST, so the only tags in the output are the ones we emit; link
    hrefs are limited to any absolute `scheme://...` URL (t-adf2 — matches the `link:` meta chip's
