@@ -15,6 +15,7 @@ const {
   isValidEffort,
   AFTER_TASK_MODES,
   resolveAfterTask,
+  resolveHeldAfterTask,
 } = require('../out-test/model.js');
 
 test('the built-in model slots are exactly opus/sonnet/fable', () => {
@@ -166,6 +167,30 @@ test('an unrecognized afterTask value falls back rather than disabling the featu
   assert.equal(resolveAfterTask('RECYCLE', true, false), 'recycle');
   assert.equal(resolveAfterTask('', false, true), 'clear');
   assert.equal(resolveAfterTask('nonsense', false, false), 'none');
+});
+
+test('a HELD afterTask action on a stopped loop is swallowed, never turned into a start', () => {
+  // t-sbag: an afterTask recycle deferred by a live subagent waits indefinitely, so the human can
+  // click ■ (or ♻, which disposes and respawns) in between. `TerminalManager.recycle` disposes
+  // only IF a terminal exists but ALWAYS respawns 400 ms later — so firing a held recycle at a
+  // stopped slot would start a fresh loop seconds after the human stopped it, and firing a second
+  // one into a manual restart's respawn window would tear down the terminal it just created. Same
+  // rule as `appliesTo` for scheduled actions: an action that no longer applies does NOTHING.
+  assert.deepEqual(resolveHeldAfterTask('recycle', false), { act: 'skip', reason: 'not-running' });
+  assert.deepEqual(resolveHeldAfterTask('clear', false), { act: 'skip', reason: 'not-running' });
+  // ...and 'not-running' outranks 'off', so the log never explains a swallowed hold with the wrong
+  // reason.
+  assert.deepEqual(resolveHeldAfterTask('none', false), { act: 'skip', reason: 'not-running' });
+});
+
+test('a HELD afterTask action on a running loop performs the CURRENT mode', () => {
+  // The mode is re-read at fire time rather than remembered: what is configured now is what should
+  // happen now, and `none` drops the hold instead of acting on a setting the user has since turned
+  // off. `clear` must also be gated on running — `clearSession` early-returns with no terminal,
+  // which would otherwise log a success for something that did not happen.
+  assert.deepEqual(resolveHeldAfterTask('recycle', true), { act: 'recycle' });
+  assert.deepEqual(resolveHeldAfterTask('clear', true), { act: 'clear' });
+  assert.deepEqual(resolveHeldAfterTask('none', true), { act: 'skip', reason: 'off' });
 });
 
 test('afterTask defaults to none with no config at all', () => {

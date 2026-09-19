@@ -8,7 +8,7 @@ import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
   Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS,
-  AfterTask, resolveAfterTask,
+  AfterTask, resolveAfterTask, resolveHeldAfterTask,
 } from './model';
 import {
   ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
@@ -23,6 +23,7 @@ import {
 } from './schedule';
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
+import { AgentRow, describeAgent } from './subagents';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
@@ -118,6 +119,15 @@ export class Controller {
   // looked at. Released only by a reading with a DIFFERENT id, never by ■ or ▶: a ▶ after ■ starts
   // a new process with a new id, so the guard is inert there and still covers the same race.
   private contextEnded = new Map<Model, string>();
+  // Live subagents per slot (t-sbag), filled by the same poll as `contextUsage`. `agentBusy` is the
+  // SECOND busy signal next to the tracker's In-Progress task: a loop whose session still has an
+  // Agent-tool subagent working is not idle, however idle `.loopboard/` looks (grooming never sets
+  // `phase: inprogress`). `agentRows` is what the sidebar's Agents section draws and what the debug
+  // log names a held-back restart with. `afterTaskPending` is the afterTask recycle/clear held at
+  // the idle edge because a subagent was still running — the same shape as `contextPending`.
+  private agentBusy = new Set<Model>();
+  private agentRows = new Map<Model, AgentRow[]>();
+  private afterTaskPending = new Set<Model>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
   // awaits file IO.
@@ -198,6 +208,9 @@ export class Controller {
         : pending && l.running
           ? { used: 0, window: 0, percent: 0, pending, label: 'restart waiting for task', threshold, thresholdLabel }
           : null;
+      // Live subagents (t-sbag): rendered per repaint so each row's duration ticks between the
+      // 30 s polls. A stopped loop has no session and therefore no agents.
+      l.agents = (l.running ? this.agentRows.get(l.id) ?? [] : []).map((r) => describeAgent(r, now));
     }
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);
     web.todoMissing = this.store.todoMissing;
@@ -233,6 +246,7 @@ export class Controller {
     // is the only place "is this model busy?" is knowable (terminal output can never be read).
     this.flushPendingRestarts(board);
     this.flushPendingContext(board);
+    this.flushAfterTask(board);
     // Re-measure on every refresh as well as on the interval (t-2b89 review feedback): a loop's
     // turn ends by writing `.loopboard/` markdown, which is exactly what triggers a refresh — so
     // the bar tracks the conversation instead of trailing it by up to a poll. Cheap: each read is
@@ -288,10 +302,17 @@ export class Controller {
     if (!prev || this.config().afterTask !== 'recycle') return;
     const inProgressBy = (b: Board, model: Model): number =>
       b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? this.config().defaultWorkerModel) === model).length;
+    const busy = this.busyModels(next);
     for (const model of BUILTIN_MODEL_IDS) {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {
+        // The task is done but the session may not be (t-sbag): a subagent it spawned can still be
+        // mid-edit, and recycling now kills it. Hold exactly like a deferred schedule does.
+        if (busy.includes(model)) {
+          this.holdAfterTask(model, next);
+          continue;
+        }
         // Automatic lifecycle recycle — never steal focus from whatever the user is doing on the
         // board (e.g. typing in an answer field).
         this.store.debugLog('info', 'auto-recycle', model);
@@ -311,14 +332,66 @@ export class Controller {
     if (!prev || cfg.afterTask !== 'clear') return;
     const inProgressBy = (b: Board, model: Model): number =>
       b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? cfg.defaultWorkerModel) === model).length;
+    const busy = this.busyModels(next);
     for (const model of BUILTIN_MODEL_IDS) {
       const before = inProgressBy(prev, model);
       const after = inProgressBy(next, model);
       if (before > 0 && after === 0) {
+        // Same hold as auto-recycle (t-sbag): `/clear` throws away the context a live subagent's
+        // parent session is still working in.
+        if (busy.includes(model)) {
+          this.holdAfterTask(model, next);
+          continue;
+        }
         this.store.debugLog('info', 'clear-session', model);
         this.clearContextTrip(model, 'clear-session');
         this.terminals.clearSession(model);
       }
+    }
+  }
+
+  // ---- afterTask held by a live subagent (t-sbag) ----
+
+  // Records the hold. Idempotent: at most one afterTask action is ever pending per model, exactly
+  // like a deferred schedule, and it waits indefinitely.
+  private holdAfterTask(model: Model, board: Board): void {
+    this.afterTaskPending.add(model);
+    this.store.debugLog('info', 'aftertask-defer', `${model} — ${this.describeBusy(model, board)}, waiting for idle`);
+  }
+
+  // Drops a hold that something else has already satisfied. Logged (at info) whenever there really
+  // was one: a hold that silently disappears is as hard to explain as one that silently fires.
+  private cancelAfterTask(model: Model, reason: string): void {
+    if (!this.afterTaskPending.delete(model)) return;
+    this.store.debugLog('info', 'aftertask-cancel', `${model} (${reason})`);
+  }
+
+  // The held recycle/clear fires on the same idle edge deferred schedules watch — which, for a
+  // subagent, is a poll rather than a board write (a finishing subagent touches no `.loopboard/`
+  // file). The MODE is re-read here instead of remembered: what is configured now is what should
+  // happen now, and `none` simply drops the hold.
+  private flushAfterTask(board: Board): void {
+    if (this.afterTaskPending.size === 0) return;
+    const busy = this.busyModels(board);
+    const mode = this.config().afterTask;
+    for (const model of [...this.afterTaskPending]) {
+      if (busy.includes(model)) continue;
+      this.afterTaskPending.delete(model);
+      // The slot may have been stopped or restarted by hand since the hold was recorded, and
+      // `terminals.recycle` on a stopped slot is a plain START (dispose-if-present, then always
+      // respawn). `resolveHeldAfterTask` is the pure guard against that — see its comment.
+      const running = this.terminals.status().some((l) => l.id === model && l.running);
+      const held = resolveHeldAfterTask(mode, running);
+      if (held.act === 'skip') {
+        this.store.debugLog('info', 'aftertask-skip', held.reason === 'off'
+          ? `${model} — afterTask is off now, nothing to do`
+          : `${model} — loop is not running, nothing to restart`);
+        continue;
+      }
+      this.store.debugLog('info', held.act === 'clear' ? 'clear-session' : 'auto-recycle', `${model} (held for a live subagent)`);
+      this.clearContextTrip(model, held.act === 'clear' ? 'clear-session' : 'auto-recycle');
+      if (held.act === 'clear') this.terminals.clearSession(model);
+      else this.terminals.recycle(model, true);
     }
   }
 
@@ -340,6 +413,11 @@ export class Controller {
     if (!this.contextReader) return;
     const cfg = this.config();
     let changed = false;
+    // A subagent finishing writes nothing to `.loopboard/`, so nothing refreshes the board and the
+    // deferral flushes that run there never happen. This poll is the ONLY place that edge is
+    // visible — hence the flush pair (plus the afterTask hold) runs here too whenever the busy set
+    // actually moved (t-sbag).
+    let busyChanged = false;
     for (const m of cfg.models) {
       if (!m.enabled) continue;
       if (!this.terminals.status().some((l) => l.id === m.id && l.running)) {
@@ -351,7 +429,23 @@ export class Controller {
         this.rememberEndedSession(m.id);
         this.contextTripped.delete(m.id);
         this.contextPending.delete(m.id);
+        // Drop a held afterTask action for the same reason `contextPending` is dropped here: it was
+        // recorded against a session that no longer exists, and `terminals.recycle` would start a
+        // fresh loop rather than restart one (t-sbag). `flushAfterTask` guards this too; dropping
+        // it at the source means a stopped loop never leaves a live hold behind at all.
+        this.cancelAfterTask(m.id, 'loop is not running');
+        // A stopped loop's session is gone, and with it every subagent it owned.
+        if (this.forgetAgents(m.id)) {
+          changed = true;
+          busyChanged = true;
+        }
         continue;
+      }
+      // Read the subagents FIRST: the context read below has several early exits, and the busy
+      // signal must be refreshed on every poll regardless of whether a measurement came back.
+      if (await this.pollSubagents(m.id)) {
+        changed = true;
+        busyChanged = true;
       }
       const reading = await this.contextReader.read(m.id, m.model);
       if (!reading) {
@@ -387,22 +481,64 @@ export class Controller {
       // An UNKNOWN board defers too (the constructor polls before the first refresh): with no
       // board there is no way to tell whether this slot owns the In-Progress task, and the
       // fail-open direction is the forbidden one.
-      if (!this.lastBoard || this.inProgressModels(this.lastBoard).includes(m.id)) {
+      if (!this.lastBoard || this.busyModels(this.lastBoard).includes(m.id)) {
         // NEVER forced: killing a worker mid-task would leave its task `phase: inprogress` with
-        // nobody on it, which Rule 2 turns into a board-wide block. Wait for the idle edge instead.
+        // nobody on it, which Rule 2 turns into a board-wide block. A live subagent holds it the
+        // same way (t-sbag) — restarting would kill the agent mid-edit. Wait for the idle edge.
         this.contextPending.add(m.id);
-        this.store.debugLog('info', 'context-defer', `${m.id} — task in progress, waiting for idle`);
+        const why = this.lastBoard ? this.describeBusy(m.id, this.lastBoard) : 'board not loaded yet';
+        this.store.debugLog('info', 'context-defer', `${m.id} — ${why}, waiting for idle`);
         changed = true;
         continue;
       }
       this.fireContextRestart(m.id, cfg.contextAction);
       changed = true;
     }
+    // The idle edge a finishing subagent produces (t-sbag). Each flush re-checks `busyModels`, so
+    // running them here can only release a hold that is genuinely over.
+    if (busyChanged && this.lastBoard) {
+      this.flushPendingRestarts(this.lastBoard);
+      this.flushPendingContext(this.lastBoard);
+      this.flushAfterTask(this.lastBoard);
+    }
     if (changed) await this.postBoard();
+  }
+
+  // Re-reads one slot's live subagents and updates the busy signal. Returns whether the live set
+  // changed — a repaint (the rows and their durations are on the sidebar) and a flush attempt.
+  private async pollSubagents(model: Model): Promise<boolean> {
+    if (!this.contextReader) return false;
+    const now = Date.now();
+    const rows = await this.contextReader.readSubagents(model, now);
+    // Logged on EVERY poll: this is the trail that explains a restart that did not happen. A read
+    // failure is named as such — it must never look like a confident "nothing is running".
+    this.store.debugLog('verbose', 'agents-read', rows === undefined
+      ? `${model} — could not read this session's subagents`
+      : `${model} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}`);
+    // A failed read is treated as "nothing live": an unreadable path must not hold every automatic
+    // restart of this slot forever. Only a subagent we can actually SEE blocks one.
+    const live = rows ?? [];
+    const before = this.agentRows.get(model) ?? [];
+    const same = before.length === live.length && before.every((r, i) => r.id === live[i].id);
+    this.agentRows.set(model, live);
+    if (live.length) this.agentBusy.add(model);
+    else this.agentBusy.delete(model);
+    return !same;
+  }
+
+  // Drops a slot's subagent state (its session is gone). Returns whether anything was actually
+  // dropped, so a stopped loop only forces one repaint.
+  private forgetAgents(model: Model): boolean {
+    const hadRows = (this.agentRows.get(model) ?? []).length > 0;
+    this.agentRows.delete(model);
+    return this.agentBusy.delete(model) || hadRows;
   }
 
   private fireContextRestart(model: Model, action: ContextAction): void {
     this.contextPending.delete(model);
+    // This path does not go through `clearContextTrip`, so it cancels the held afterTask action
+    // itself — same rule: one restart, not two (t-sbag).
+    this.cancelAfterTask(model, `context ${action}`);
     // The measurement belongs to the session we are about to end; the next poll measures the new
     // one. Its id is kept as the stale-session guard (t-c7a2) — this is the path the observed
     // restart storm took, and for `action: 'clear'` there is no terminal close/open event to route
@@ -417,7 +553,7 @@ export class Controller {
   // A pending context trip fires on the same idle edge deferred schedules watch.
   private flushPendingContext(board: Board): void {
     if (this.contextPending.size === 0) return;
-    const busy = this.inProgressModels(board);
+    const busy = this.busyModels(board);
     const action = this.config().contextAction;
     for (const model of [...this.contextPending]) {
       if (!busy.includes(model)) this.fireContextRestart(model, action);
@@ -427,6 +563,13 @@ export class Controller {
   // Any restart of a loop — timed, manual ♻, stop, afterTask — invalidates a pending context trip
   // and its hysteresis marker: both were measured against a session that no longer exists.
   private clearContextTrip(model: Model, reason: string): void {
+    // A held afterTask action goes with it (t-sbag). Whatever restarted this loop — the normal
+    // idle edge, a manual ♻, a ■, a timed action — has already given the slot the fresh session
+    // the hold was waiting to give it, and firing the hold on top would be a SECOND restart:
+    // `terminals.recycle` disposes and respawns 400 ms later, so a duplicate lands inside that
+    // window and tears down the terminal the first one just created. Placed above the early return
+    // below, which only guards the context-trip half.
+    this.cancelAfterTask(model, reason);
     // Remember-then-drop runs UNCONDITIONALLY (t-c7a2); only the log line is conditional on there
     // having been a trip. The old early return skipped a loop that never tripped — but ending its
     // session still leaves a stale bar (threshold 50, loop at 41%, ♻ → the row keeps showing 41%
@@ -462,13 +605,37 @@ export class Controller {
   // ---- scheduled loop restarts (t-77d1) ----
 
   // Which models currently own an In-Progress task, with an absent `model:` resolved to the default
-  // — the same test maybeAutoRecycle uses. This is the ONLY signal for "busy"; terminal output can
-  // never be read (CLAUDE.md, src/terminals.ts).
+  // — the same test maybeAutoRecycle uses. This was the only signal for "busy" until t-sbag added
+  // live subagents beside it (see busyModels); terminal output still can never be read (CLAUDE.md,
+  // src/terminals.ts), so these two files are all there is.
   private inProgressModels(board: Board): Model[] {
     const dflt = this.config().defaultWorkerModel;
     const busy = new Set<Model>();
     for (const t of board.tasks) if (t.phase === 'inprogress') busy.add(t.model ?? dflt);
     return [...busy];
+  }
+
+  // The full "do not restart this loop automatically" set (t-sbag): the tracker's In-Progress
+  // owners UNION the slots whose session still has a live subagent. Every AUTOMATIC restart
+  // decision reads this; the manual ♻ button deliberately does not — a human clicking now is
+  // warned in the tooltip and then obeyed.
+  private busyModels(board: Board): Model[] {
+    const busy = new Set<Model>(this.inProgressModels(board));
+    for (const model of this.agentBusy) busy.add(model);
+    return [...busy];
+  }
+
+  // Why a slot counts as busy, for the log line that explains a deferral. Both reasons can hold at
+  // once, and a deferral nobody can explain is the failure mode of the subagent hold.
+  private describeBusy(model: Model, board: Board): string {
+    const reasons: string[] = [];
+    if (this.inProgressModels(board).includes(model)) reasons.push('task in progress');
+    const rows = this.agentRows.get(model) ?? [];
+    if (rows.length) {
+      const now = Date.now();
+      reasons.push(`${rows.length} live subagent${rows.length === 1 ? '' : 's'}: ${rows.map((r) => describeAgent(r, now).label).join(', ')}`);
+    }
+    return reasons.length ? reasons.join(' + ') : 'busy';
   }
 
   // Arms (or replaces) a model's schedule and starts its timer. Force consent is taken by the
@@ -511,9 +678,10 @@ export class Controller {
   private onRestartDue(model: Model): void {
     const schedule = this.restartSchedules.get(model);
     if (!schedule) return;
-    if (!this.lastBoard || !mayFire(schedule, this.inProgressModels(this.lastBoard))) {
+    if (!this.lastBoard || !mayFire(schedule, this.busyModels(this.lastBoard))) {
       this.restartSchedules.set(model, deferSchedule(schedule));
-      this.store.debugLog('info', 'restart-defer', `${model} — task in progress, waiting for idle`);
+      const why = this.lastBoard ? this.describeBusy(model, this.lastBoard) : 'board not loaded yet';
+      this.store.debugLog('info', 'restart-defer', `${model} — ${why}, waiting for idle`);
       void this.refresh('restart-defer');
       return;
     }
@@ -550,11 +718,12 @@ export class Controller {
     void this.refresh('restart-fire');
   }
 
-  // Called after every board load: any restart that was held back fires as soon as its model has no
-  // In-Progress task left.
+  // Called after every board load (and after a subagent poll that moved the busy set): any restart
+  // that was held back fires as soon as its model has neither an In-Progress task nor a live
+  // subagent left.
   private flushPendingRestarts(board: Board): void {
     if (this.restartSchedules.size === 0) return;
-    const busy = this.inProgressModels(board);
+    const busy = this.busyModels(board);
     for (const schedule of [...this.restartSchedules.values()]) {
       if (schedule.pending && mayFire(schedule, busy)) this.fireRestart(schedule);
     }
@@ -600,7 +769,7 @@ export class Controller {
       message,
       {
         modal: true,
-        detail: `A forced ${verb} kills the session mid-task. The task stays \`phase: inprogress\` in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Confirming now also covers the ${verb} itself — it fires later without asking again.`,
+        detail: `A forced ${verb} kills the session mid-task. The task stays \`phase: inprogress\` in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Any subagents the session still has running are killed with it, mid-edit. Confirming now also covers the ${verb} itself — it fires later without asking again.`,
       },
       confirmLabel
     );

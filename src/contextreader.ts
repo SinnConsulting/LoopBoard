@@ -10,6 +10,10 @@ import {
   ContextUsage, matchesSlot, newestPointer, parseSessionPointer, parseTranscriptUsage,
   contextPercent, windowSizeFor, SessionPointer,
 } from './context';
+import {
+  AGENT_STALE_MS, AgentEntry, AgentRow, MarkerCarry, MarkerEvent, agentIdFromMetaName,
+  agentTranscriptName, foldAgents, parseAgentMeta, parseAgentStart, scanMarkers,
+} from './subagents';
 
 // The extension host is Node, so the environment is available at runtime — but `@types/node` is
 // forbidden (zero devDependencies beyond typescript + @types/vscode), hence this minimal ambient
@@ -19,6 +23,12 @@ declare const process: { env: Record<string, string | undefined> };
 // Transcripts grow to tens of MB and only the LAST assistant line matters, so decode just the tail.
 // 256 KB comfortably spans several turns even with large tool results.
 const TAIL_BYTES = 256 * 1024;
+
+// How much of an agent's own transcript is decoded to find its start timestamp (t-sbag). Only the
+// FIRST line carries it, but that line holds the agent's whole prompt — 64 KB covers every prompt
+// observed and keeps a multi-MB agent transcript from being turned into a string. A longer first
+// line simply yields no start, and the row renders without a duration.
+const AGENT_HEAD_BYTES = 64 * 1024;
 
 const DECODER = new TextDecoder();
 
@@ -35,6 +45,19 @@ export class ContextReader {
   private cache = new Map<string, { size: number; usage: ContextUsage }>();
   // sessionId -> resolved transcript Uri, so the projects/ scan happens once per session.
   private transcripts = new Map<string, vscode.Uri>();
+  // Subagent marker scan (t-sbag). A finish marker can sit anywhere in the parent transcript, so
+  // unlike `readUsage`'s tail this needs the WHOLE file — once. Afterwards only the bytes past
+  // `offset` are decoded and parsed, `carry` holds what the next scan needs (the half-written last
+  // line, and the ids already reported finished), and `events` accumulates the markers seen so far.
+  // That list is bounded by the number of AGENTS, not by the size of the transcript, because
+  // `scanMarkers` is given the session's known ids and drops markers naming anything else — every
+  // ordinary tool_result in the file would otherwise look like a synchronous agent's finish.
+  private markers = new Map<string, { offset: number; carry: MarkerCarry; events: MarkerEvent[] }>();
+  // agent id -> start ms, or undefined when the first transcript line held no readable timestamp.
+  // The NEGATIVE answer is cached too (`has`, never `get`, decides): an agent whose opening prompt
+  // is longer than AGENT_HEAD_BYTES would otherwise re-read its whole growing transcript every
+  // poll, for a duration string.
+  private agentStarts = new Map<string, number | undefined>();
 
   constructor(
     private getCwd: () => string,
@@ -152,5 +175,125 @@ export class ContextReader {
     const percent = contextPercent(usage.used, window);
     this.log('verbose', 'context-read', `${model} ${usage.used}/${window} (${percent}%) session ${sessionId}`);
     return { sessionId, used: usage.used, window, percent };
+  }
+
+  // ---- live subagents (t-sbag) ----
+
+  // The live Agent-tool subagents of this slot's session. Reuses the session id and transcript Uri
+  // `read()` already resolves — there is no second discovery path.
+  //
+  // `undefined` means COULD NOT READ (no session, no transcript, an unreadable transcript);
+  // `[]` means read fine and nothing is live. The caller shows the same thing for both but logs
+  // them apart: a read failure must never masquerade as "idle" silently.
+  async readSubagents(model: Model, now: number): Promise<AgentRow[] | undefined> {
+    const dir = this.claudeDir();
+    if (!dir) return undefined;
+    const sessionId = await this.findSessionId(model, dir);
+    if (!sessionId) return undefined;
+    const transcript = await this.findTranscript(dir, sessionId);
+    if (!transcript) return undefined;
+    // `projects/<slug>/<sessionId>.jsonl` -> `projects/<slug>/<sessionId>/subagents`.
+    const agentsDir = vscode.Uri.joinPath(transcript, '..', sessionId, 'subagents');
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(agentsDir);
+    } catch {
+      // No `subagents/` directory at all: this session never spawned one. That is a real, readable
+      // "nothing is live", not a failure.
+      return [];
+    }
+    const metas: AgentEntry[] = [];
+    for (const [name, type] of entries) {
+      if (type !== vscode.FileType.File) continue;
+      const id = agentIdFromMetaName(name);
+      if (!id) continue;
+      let meta;
+      try {
+        meta = parseAgentMeta(DECODER.decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(agentsDir, name))));
+      } catch {
+        continue;
+      }
+      if (!meta) continue;
+      // The agent's own transcript is its heartbeat; without an mtime there is no way to tell a
+      // working agent from a killed session's leftover, so the record is skipped entirely.
+      let mtime: number;
+      try {
+        mtime = (await vscode.workspace.fs.stat(vscode.Uri.joinPath(agentsDir, agentTranscriptName(id)))).mtime;
+      } catch {
+        continue;
+      }
+      metas.push({ ...meta, id, mtime, startedAt: this.agentStarts.get(id) });
+    }
+    // Nothing was ever spawned here — skip the transcript scan entirely rather than walking
+    // several MB to answer a question with no subjects.
+    if (metas.length === 0) return [];
+    // Both id spaces a marker can name this session's agents by.
+    const known = metas.flatMap((m) => [m.id, m.toolUseId]);
+    const events = await this.readMarkers(transcript, sessionId, known);
+    if (!events) return undefined;
+    const { rows, stale } = foldAgents(metas, events, now);
+    for (const id of stale) {
+      // Spelled out because this is the one drop that is NOT evidence the agent ended: it stopped
+      // counting as live purely because it went quiet, and a restart may fire on the back of it.
+      this.log('verbose', 'agents-stale', `${model} agent ${id} — silent for over ${Math.round(AGENT_STALE_MS / 60000)}m (no finish marker, dropped for silence — a held restart may now fire)`);
+    }
+    for (const row of rows) {
+      if (row.startedAt === undefined) row.startedAt = await this.readAgentStart(agentsDir, row.id);
+    }
+    return rows;
+  }
+
+  // Every finish/resume marker seen in this session's parent transcript so far. Read whole once,
+  // then delta-only: `vscode.workspace.fs` has no ranged read, so the file is still loaded, but
+  // only the new bytes are decoded and parsed — which is where the cost of a 10 MB transcript is.
+  private async readMarkers(uri: vscode.Uri, sessionId: string, known: readonly string[]): Promise<MarkerEvent[] | undefined> {
+    let state = this.markers.get(sessionId);
+    if (!state) {
+      state = { offset: 0, carry: { partial: '', seen: [] }, events: [] };
+      this.markers.set(sessionId, state);
+    }
+    let size: number;
+    try {
+      size = (await vscode.workspace.fs.stat(uri)).size;
+    } catch {
+      return undefined;
+    }
+    if (size === state.offset) return state.events;
+    // Shorter than what we already consumed = a different file under the same name; start over
+    // rather than decode a delta that was never appended.
+    if (size < state.offset) {
+      state.offset = 0;
+      state.carry = { partial: '', seen: [] };
+      state.events = [];
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await vscode.workspace.fs.readFile(uri);
+    } catch {
+      return undefined;
+    }
+    // A multi-byte character split across the previous read's end decodes to a replacement
+    // character here; it lands inside the carried line, which then fails JSON.parse and is skipped.
+    const scan = scanMarkers(DECODER.decode(state.offset > 0 ? bytes.slice(state.offset) : bytes), known, state.carry);
+    state.offset = bytes.byteLength;
+    state.carry = scan.carry;
+    if (scan.events.length) state.events = state.events.concat(scan.events);
+    return state.events;
+  }
+
+  private async readAgentStart(agentsDir: vscode.Uri, id: string): Promise<number | undefined> {
+    // `has`, not `get`: a miss is cached as `undefined` and must not be retried every poll.
+    if (this.agentStarts.has(id)) return this.agentStarts.get(id);
+    let bytes: Uint8Array;
+    try {
+      bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(agentsDir, agentTranscriptName(id)));
+    } catch {
+      // NOT cached: the file was unreadable this once (mid-write, a permission blip), which says
+      // nothing about its content — unlike a head that genuinely carries no timestamp.
+      return undefined;
+    }
+    const started = parseAgentStart(DECODER.decode(bytes.slice(0, AGENT_HEAD_BYTES)));
+    this.agentStarts.set(id, started);
+    return started;
   }
 }
