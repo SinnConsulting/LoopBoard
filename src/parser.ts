@@ -15,7 +15,6 @@
 //     - phase: new | backlog | inprogress | feedback | review   (omitted for DRAFTs = new)
 //     - model: opus | sonnet | fable        (optional)
 //     - groomer: opus | sonnet | fable | none  (optional; `none` = on hold, no groomer)
-//     - rev: <n>                             (optional; monotonic change marker, writer-managed)
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
@@ -23,6 +22,7 @@
 //     - feedback: <text>                     (repeatable; Review change request, Rule 13)
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
 //   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
+//   `rev:` was removed from the grammar (t-f1b0) and is recognized only to be DROPPED, see below.
 //   `completed:` is canonical in DONE.md entries only.
 // ========================================================================================
 
@@ -83,12 +83,15 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
         if (v === GROOMER_HOLD || KNOWN_MODELS.includes(v as Model)) entry.groomer = v as GroomerValue;
         else return false;
         return true;
+      // Removed key (t-f1b0): the writer-managed change marker is gone from the grammar, but every
+      // existing tracker still carries `- rev: <n>` lines. Recognize and silently DISCARD them —
+      // the same recognize-and-drop the removed `owner:` key gets in taskfile.ts — so a stale line
+      // never lands in unknownLines (which would relocate it to the bottom of the entry and draw a
+      // flagged "unparsed line" chip on every card). Any value is dropped, not just an integer:
+      // the key means nothing now, so there is no such thing as a well-formed one. The line simply
+      // vanishes on the next canonical write; there is no migration pass.
       case 'rev':
-        if (/^\d+$/.test(v)) {
-          entry.rev = parseInt(v, 10);
-          return true;
-        }
-        return false;
+        return true;
       case 'completed':
         if (!allowCompleted) return false; // canonical in DONE.md only (§2.1)
         entry.completed = v;

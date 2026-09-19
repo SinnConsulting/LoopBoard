@@ -40,7 +40,8 @@ touch one of these, leave that span byte-identical and compress only the prose a
    matches `/^##\s+Automation\b/i` and requires a fenced block in that slice to build the
    ~200-char bootstrap prompt that spawns every loop terminal. That block's text must also stay
    apostrophe-free (it rides as single-quoted shell argv).
-3. **Rule numbering 1–17.** CLAUDE.md, TODO.md entries, task files, and LOOP.md itself
+3. **Rule numbering 1–16** (the count today — preserve whatever the INPUT has; never renumber or
+   invent a rule to reach a particular range). CLAUDE.md, TODO.md entries, task files, and LOOP.md itself
    cross-reference rules by number ("Rule 16", "Rule 9"). Renumbering or merging rules breaks
    every reference silently.
 4. **The task-index-format and task-file-format fenced code blocks.** Field names, their fixed
@@ -120,7 +121,8 @@ Before writing anything, verify against the input:
 - All six marker comments present, unmodified, and in the same order.
 - The `## Automation` heading and its first fenced block are intact, byte-identical, and still
   apostrophe-free.
-- Rules are still numbered 1–17 with no gaps, merges, or reorders.
+- Rules are still numbered exactly as the INPUT numbers them (1–16 today), with no gaps, merges,
+  or reorders. A mismatch means fix the OUTPUT — never add a rule to reach the number here.
 - The task-index-format and task-file-format fenced blocks are byte-identical to the input.
 - Every code fence, inline code span, and URL in the input still appears, byte-identical, in the
   output.

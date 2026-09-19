@@ -46,7 +46,7 @@ touch one of these, leave that span byte-identical and compress only the prose a
    items breaks every reference silently.
 3. **The Commands fenced code block.** Those are literal `make` targets an agent copies and runs;
    the fence is a contract, not prose.
-4. **Every rule cross-reference** — "Rules 1-17", "Rule 2", "Rule 14", and any other pointer into
+4. **Every rule cross-reference** — "Rules 1-16", "Rule 2", "Rule 14", and any other pointer into
    `.loopboard/LOOP.md`'s numbering. The numbers are load-bearing and are asserted by the sibling
    `template-loop-compress` skill's own self-check.
 5. **Every normative clause.** MUST / NEVER / ONLY statements, exact counts, literal paths,
@@ -109,7 +109,7 @@ Before writing anything, verify against the input:
 - The Commands fenced block is byte-identical.
 - Every code fence, inline code span, and URL in the input still appears, byte-identical, in the
   output.
-- Every rule cross-reference ("Rule N", "Rules 1-17") still present, same numbers.
+- Every rule cross-reference ("Rule N", "Rules 1-16") still present, same numbers as the input.
 - Every "Critical learnings" entry still present as an entry — count them in and out.
 - Spot-check a sample of MUST/NEVER/ONLY clauses, counts, settings keys and paths from the input
   against the output — each must still be present with the same force.
