@@ -121,6 +121,25 @@ export function resolveAfterTask(
   return 'none';
 }
 
+// What a HELD afterTask action should do when its idle edge finally arrives (t-sbag). A hold can
+// outlive the state it was recorded in: the slot's terminal may have been stopped or restarted by
+// hand in the meantime, and both `TerminalManager.recycle` (dispose-if-present, then ALWAYS
+// respawn) and `clearSession` (early-returns with no terminal) would then do the wrong thing — the
+// first by silently starting a loop the human just stopped, the second by logging a success for a
+// no-op. So the decision is made here, once, and mirrors `appliesTo` in src/schedule.ts: an action
+// that no longer applies is SWALLOWED, never turned into something else.
+export type HeldAfterTask =
+  | { act: 'recycle' | 'clear' }
+  | { act: 'skip'; reason: 'off' | 'not-running' };
+
+export function resolveHeldAfterTask(mode: AfterTask, running: boolean): HeldAfterTask {
+  // Order matters only for the log line: a stopped loop is the more specific reason, and the one
+  // worth naming, since "afterTask is off" would be a misleading explanation for a swallowed hold.
+  if (!running) return { act: 'skip', reason: 'not-running' };
+  if (mode === 'none') return { act: 'skip', reason: 'off' };
+  return { act: mode };
+}
+
 // A model slot after applying user config: the actual spawn string + whether it is active.
 export interface ResolvedModel {
   id: Model;

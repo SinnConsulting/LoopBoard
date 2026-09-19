@@ -81,6 +81,44 @@ questions, an HTML-comment template) and `index-unknown.md`:
   so a long deferral produces no burst of catch-up restarts.
 - `delayUntilFire` counts down and floors at 0; `describeSchedule` renders the countdown, `repeat`,
   `force` and the "waiting for task" state.
+- **Busy is a UNION now (t-sbag):** `mayFire`'s second argument is `busyModels` — In-Progress owners
+  plus slots with a live subagent — and one added case pins that `force: true` fires while the list
+  contains its model for the subagent reason ALONE, while the same schedule unforced defers and a
+  scheduled `start` still never defers.
+
+### Live subagents — `test/subagents.test.js` (t-sbag)
+Captured fixtures of Claude Code's undocumented `subagents/` layout, so a CLI reshape fails here
+rather than silently in the host (where the symptom is a restart that kills an agent mid-edit, or
+one that never fires):
+- **The async trap:** a `tool_result` on the meta's `toolUseId` whose text starts with
+  `Async agent launched successfully` is the LAUNCH RECEIPT and is not a finish; any other
+  `tool_result` on that id is a synchronous agent's real finish. `requestShape` is never used as the
+  discriminator (metas without it are asynchronous too).
+- **Notifications:** `<status>completed|failed|killed</status>` each finish the agent, and the two
+  lines Claude Code writes per finish (the `queue-operation` enqueue and the `user` message) dedupe
+  to ONE event; a non-terminal status is not a finish.
+- **Resume:** a `SendMessage` with `input.to === <id>` re-opens a finished agent (latest marker
+  wins), and its next notification finishes it again.
+- **`stoppedByUser: true`** in the meta drops the agent — there is no finish marker for that case.
+- **Staleness cutoff:** with NO finish marker either way, an agent transcript written 59 minutes ago
+  stays live and one written 61 minutes ago is dropped AND reported as stale (`AGENT_STALE_MS` is
+  60 min) — the backstop that stops a SIGKILLed session's leftovers holding every restart forever.
+  The cut is on SILENCE, not on age: an agent 8 hours into its work stays live as long as it keeps
+  writing, and a 45-minute quiet stretch (a Docker build, a slow suite) no longer drops it.
+- **A resumed agent is timed from the RESUME**, not from its original spawn — it keeps its id and
+  appends to the same transcript, so the first line still holds the spawn instant and the row used
+  to include every idle gap since. The later of two resumes wins; an undated resume keeps the last
+  dated one; a resume for another agent re-times nothing; an agent never resumed is unchanged.
+- **Dedupe is by id, not by adjacency:** the two halves of one notification dedupe to a single
+  event even with unrelated lines between them AND when the byte-delta cut lands between them
+  (the carry holds the seen ids); a `SendMessage` resume clears that marker, so the resumed agent's
+  NEXT finish is reported rather than swallowed as a duplicate.
+- **Only markers naming a known agent count:** a `tool_result` for an ordinary tool call is ignored,
+  which is what keeps the accumulated event list O(agents) instead of O(tool calls in a 10 MB file).
+- A **truncated last line** is carried across two chunks instead of being lost; an unparseable meta,
+  unparseable/irrelevant transcript lines and an empty `subagents/` directory all degrade to no rows.
+- `describeAgent` renders `agentType · description` + a duration (`20s`/`1m`/`2h 5m`), drops the
+  `· description` half when the meta has none, and renders no duration when the start is unknown.
 
 ## Manual — Extension Development Host (F5)
 
@@ -780,6 +818,75 @@ and likewise cannot be verified headless.
     → the whole row is gone and the card grows no rows (a collapsed card shows no model select at
     all — intended); expand → the row returns with the current values selected and focus stays on a
     select after a pick. Draft cards and the New Story composer are unchanged.
+
+39. **Live subagents block a loop restart + the Agents section (t-sbag):** host + webview only
+    (`src/contextreader.ts`, `src/controller.ts`, `media/sidebar.{js,css}`); the pure half is
+    `test/subagents.test.js`, this checklist is the acceptance path. Set `loopBoard.debug: verbose`
+    first — `.loopboard/debug.log` is where every assertion below is confirmed.
+
+    **The section fills and empties:** start a loop and give it work that delegates (a grooming
+    draft is the easy case — grooming never sets `phase: inprogress`, which is the whole point).
+    Within one poll (30 s) an **Agents** section appears directly under **Loops**, hidden until
+    then: one row per live subagent, `<slot> · <agentType> · <description>` with a ticking duration,
+    the long label marquee-scrolling with the same animation the In-Progress title uses (and
+    stopping under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
+    never grouped. Nothing in a row is clickable. When the agents finish, the rows disappear and the
+    whole section goes with them. `debug.log` shows an `agents-read <slot> N live: …` line per poll.
+
+    **The duration is the CURRENT stretch** (human-observed defect, PR #157): while an agent runs,
+    its row's duration tracks the elapsed time in that agent's own terminal status line. Then send
+    that agent a follow-up message so it resumes (delegated-work mode does this constantly) → the
+    row restarts from the resume, NOT from the original spawn; a row reading `14m` for an agent
+    59 s into its resumed stretch is the bug this replaced. An agent that was never resumed still
+    counts from its spawn.
+
+    **A quiet agent is not dropped:** `AGENT_STALE_MS` is 60 minutes and the cut is on the agent
+    transcript's mtime, so an agent blocked on one long operation (a Docker image build, a slow
+    suite) is NOT dropped at 30 minutes and no held restart kills it mid-work. Past the hour the
+    drop is deliberate and explicable: `debug.log` carries
+    `agents-stale <slot> agent <id> — silent for over 60m (no finish marker, dropped for silence — a
+    held restart may now fire)`, and the restart that follows is the documented backstop against a
+    killed session's leftover metas, not a mystery.
+
+    **The ♻ tooltip warns but the click still restarts:** while an agent is live, hover ♻ → the
+    tooltip reads `Restart with fresh context — N subagents still running (right-click to
+    schedule)` and names each agent on its own line. Click it → the loop restarts IMMEDIATELY, as
+    before. The manual button never refuses.
+
+    **A scheduled restart holds:** with a groom subagent running and NOTHING In Progress,
+    right-click ♻ → schedule a 1-minute restart with `Force` OFF. At the minute the loop does NOT
+    restart; the row shows `restart waiting for task` and `debug.log` records
+    `restart-defer <slot> — 1 live subagent: <agentType> · <description>, waiting for idle`. Let the
+    agent finish → the restart fires on the next poll after the section empties (`restart-fire`),
+    with no `.loopboard/` write in between — a finishing subagent touches no tracker file, so this
+    is the poll-driven idle edge, not a board refresh. Re-run with `Force` ON: the modal's detail
+    now says subagents are killed too, and the restart fires on time over the live agent.
+
+    **afterTask holds the same way:** set `loopBoard.afterTask` to `recycle`, let a worker finish a
+    task while one of its subagents is still running → no recycle at the idle edge, an
+    `aftertask-defer` line naming the agent, and the recycle fires once the agent is gone
+    (`auto-recycle <slot> (held for a live subagent)`). Same with `clear`.
+
+    **A hold never becomes a second restart, and never becomes a start** (PR #157 review). The
+    decision itself is pure and covered by `resolveHeldAfterTask` in `test/model.test.js`; the
+    wiring that feeds it is host-only, so check all four paths with `afterTask: recycle` and a hold
+    recorded (worker finishes while one of its subagents is still running):
+    - Click **■** → the loop stops and STAYS stopped. No terminal reappears 400 ms later, and
+      `debug.log` shows `aftertask-cancel <slot> (loop stopped)` (or
+      `(loop is not running)` from the next poll) and no `auto-recycle`.
+    - Click **♻** → exactly ONE restart. `aftertask-cancel <slot> (manual restart)`, and no second
+      `loop-recycle` in the log afterwards.
+    - Let the loop claim another task and finish it with no agent live → exactly ONE recycle
+      (`auto-recycle` followed by `aftertask-cancel <slot> (auto-recycle)`), not two.
+    - Close the loop's terminal from VSCode's terminal panel while the hold is pending → the hold is
+      swallowed, `aftertask-skip <slot> — loop is not running, nothing to restart` at worst; no loop
+      is started. Repeat the same four with `afterTask: clear` — a `clear-session` line must never
+      appear for a slot with no terminal.
+
+    **Degradation:** stop the loop → the section's rows for that slot vanish at once. With no
+    readable session (rename `~/.claude/sessions/` briefly) the log shows
+    `agents-read <slot> — could not read this session's subagents` and NOTHING is held back — an
+    unreadable path must never block a restart, and must never look like a confident "idle" either.
 
 40. **Draft selects row above the draft text (t-720f):** webview-only (`media/board.js`
     `renderDraft`), a pure re-order of the `.card-head` children — the source-text pin in

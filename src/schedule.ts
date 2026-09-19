@@ -93,15 +93,19 @@ export function delayUntilFire(schedule: RestartSchedule, now: number): number {
 }
 
 // The one question the timer callback asks. `force` bypasses the check entirely; otherwise the
-// restart is only allowed when this model does not own an In-Progress task. "Busy" is knowable ONLY
-// from the tracker (terminal output can never be read), so `inProgressModels` is derived from
-// `.loopboard/TODO.md` by the caller, with an absent `model:` already resolved to the default.
-export function mayFire(schedule: RestartSchedule, inProgressModels: readonly Model[]): boolean {
+// restart is only allowed when this model is not busy. "Busy" is never read from the terminal (its
+// output is unreadable) — the caller derives `busyModels` from the two things that ARE on disk: who
+// owns an In-Progress task in `.loopboard/TODO.md` (absent `model:` already resolved to the
+// default) and whose session still has a live subagent (t-sbag).
+//
+// `force` overriding BOTH is deliberate: force already means "interrupt whatever is running", and
+// the consent modal taken at arm time names the killed subagents as well as the mid-flight task.
+export function mayFire(schedule: RestartSchedule, busyModels: readonly Model[]): boolean {
   // A scheduled start has no worker to cut off — spawning a terminal for a model whose task is
   // In Progress is exactly what a human would want, so it never defers.
   if (!supportsForce(schedule.action)) return true;
   if (schedule.force) return true;
-  return !inProgressModels.includes(schedule.model);
+  return !busyModels.includes(schedule.model);
 }
 
 // Marks a schedule as waiting for its model to go idle. Idempotent — at most one restart is ever
