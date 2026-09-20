@@ -213,3 +213,33 @@ test('DONE entries carry description/delivered through from their task file', ()
   assert.equal(web.phases.done[0].description, 'Story text.');
   assert.equal(web.phases.done[0].delivered, 'What shipped.');
 });
+
+test('WebTask carries problem/goals for an active task, defaulting to empty strings (t-2191)', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [
+      task({ id: 't-1', problem: 'It is broken.', description: 'Story.', goals: '- Fix it.' }),
+      task({ id: 't-2' }),
+    ],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const [withSections, without] = web.phases.backlog;
+  assert.equal(withSections.problem, 'It is broken.');
+  assert.equal(withSections.goals, '- Fix it.');
+  // A task file with neither section yields '' — the board renders its "add one" affordance
+  // without a null check.
+  assert.equal(without.problem, '');
+  assert.equal(without.goals, '');
+});
+
+test('DONE entries carry problem/goals through as well, so the Done card can show them (t-2191)', () => {
+  const [entry] = parseDone('## Tasks\n\n- [x] Shipped\n  - id: t-1\n  - completed: 2026-07-01');
+  const board = {
+    preamble: '',
+    done: [{ ...entry, problem: 'It was broken.', description: 'Story.', goals: '- Fixed.', delivered: 'What shipped.' }],
+    tasks: [],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(web.phases.done[0].problem, 'It was broken.');
+  assert.equal(web.phases.done[0].goals, '- Fixed.');
+});

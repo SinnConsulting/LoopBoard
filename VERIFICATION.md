@@ -34,9 +34,16 @@ questions, an HTML-comment template) and `index-unknown.md`:
   rewritten from the index title**; Meta keys emit in canonical order; unknown headings/keys
   preserved + flagged (fixpoint holds); a legacy `## Feedback` section (feedback now lives in the
   index, not the task file) is preserved verbatim as unrecognized content, not parsed.
+- **`## Problem` / `## Goals` (t-2191):** parsed like Description and emitted in canonical order
+  (Meta → Problem → Description → Goals → Worklog → Delivered) however the input ordered them;
+  empty ones dropped rather than written back as bare headings; free markdown either way (prose
+  Goals round-trip — the parser polices neither length nor bullet shape); a hand-written section in
+  a pre-t-2191 file is recognized instead of landing in `unknownLines`, and relocates on save.
 
 ### Merge routing + patches — `test/merge.test.js`
-- `patchTarget` routes title/model/groomer/answer/note/feedback → index, description → detail.
+- `patchTarget` routes title/model/groomer/answer/note/feedback → index, description/problem/goals
+  → detail; `problem`/`goals` apply and conflict on a stale base exactly like `description`, a
+  `problem` patch leaves description/goals untouched, and a whitespace value drops the section.
 - `applyPatch` (index) and `applyDetailPatch` (detail) keep disk-wins conflict semantics; answer
   patch targets the right question; model `default (opus)` clears the field; unknown id → notfound.
 - `note` and `feedback` each edit their whole set as one value: newline-split, empties dropped →
@@ -51,6 +58,8 @@ questions, an HTML-comment template) and `index-unknown.md`:
   its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `note` derives from `notes[]`;
   `feedback` derives from `feedback[]`; DONE cards render from the slim IndexEntry (no composed
   detail).
+- `WebTask` carries `problem`/`goals` for active tasks AND for DONE entries, defaulting to `''`
+  when the task file has neither section (t-2191).
 
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
@@ -905,3 +914,35 @@ and likewise cannot be verified headless.
     text, attachments and `added` line are all gone and the card grows no rows (t-eb64's
     decision); expand → they return in the new order with the current values selected. An
     ordinary (non-draft) card's row (item 38) is unchanged.
+
+41. **Problem / Description / Goals sections on the card (t-2191):** the storage half is covered by
+    the Docker suite; everything below is webview-only (`media/board.js` `renderDetailSection` +
+    `DETAIL_SECTIONS`, `media/board.css`) and cannot reach it, so this checklist is the acceptance
+    path.
+    - On any non-draft card the three sections render in file order — **Problem, Description,
+      Goals** — each with the t-aee3 chevron, an uppercase section title, and (when folded) a
+      one-line preview: the first non-empty line, markdown stripped, which for Goals is the first
+      bullet. Empty sections still show their header plus the italic `Add a problem statement…` /
+      `Add a description…` / `Add goals…` affordance.
+    - Click (or Enter on) a section → its textarea opens with the current text; **Save**,
+      **Cmd/Ctrl+S** and a click OUTSIDE the card all commit; **ESC** cancels in ONE press and
+      releases focus. Collapsing an open editor with the chevron commits first (nothing typed is
+      lost). Opening a second section commits the first.
+    - Problem and Goals have **no ＋ Attach button**, and dropping/pasting a file while one of them
+      is open must NOT stage an attachment or insert a link (attachments stay Description-only).
+      Description keeps ＋ Attach, drag-drop and ⌘V exactly as before.
+    - With `loopBoard.debug: verbose`, saving Problem or Goals writes **only**
+      `.loopboard/tasks/<id>.md` — `debug.log` shows one `patch` line naming the field and
+      `.loopboard/TODO.md` is byte-for-byte unchanged on disk. The file on disk shows the section
+      in canonical order (Problem above Description, Goals below it).
+    - **Collapse all** / **Expand all** folds and unfolds all three sections on every card in the
+      tab; per-section folds survive a tab hop and a panel hide/reveal (they ride `vscode.setState`).
+    - The tab **filter** matches text that appears only in Problem or only in Goals (the box's
+      placeholder now reads "id, title or story text").
+    - **Done tab:** expanding an accepted row shows Delivered, then Problem, Description and Goals
+      read-only (only the sections that exist), each markdown-rendered with clickable links; a row
+      whose task file has none of the four is not expandable at all.
+    - **No backfill:** an existing task file without the two sections opens with both empty and its
+      `TODO.md` entry untouched; a task file that already had a hand-written `## Problem` at the
+      BOTTOM shows it in the Problem section and moves it to its canonical slot on the next save,
+      with no "unparsed line" chip left on the card.

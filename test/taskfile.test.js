@@ -18,8 +18,14 @@ test('parses every canonical section', () => {
   assert.equal(d.started, '2026-07-08');
   assert.deepEqual(d.links, ['https://example.com/pr/141']);
   assert.deepEqual(d.dependsOn, ['t-9c2e', 't-dd01']);
+  assert.ok(d.problem.startsWith('Failed webhook deliveries are dropped'));
   assert.ok(d.description.startsWith('Retries for failed webhook deliveries.'));
   assert.ok(d.description.includes('Second paragraph'), 'multi-line description preserved');
+  assert.equal(
+    d.goals,
+    '- A failed delivery is retried with exponential backoff before it is dropped.\n- The retry count is visible in the dispatcher\'s metrics.',
+    'Goals is free markdown, kept verbatim — never parsed into a list',
+  );
   assert.deepEqual(d.worklog, [
     '2026-07-08',
     '2026-07-09 (opus): claim blocked\n  continuation line one\n  continuation line two',
@@ -60,6 +66,59 @@ test('missing sections are omitted on write', () => {
   assert.ok(out.includes('## Description'));
   assert.ok(!out.includes('## Meta'));
   assert.ok(!out.includes('## Worklog'));
+  // t-2191: Problem/Goals are optional — a task file that predates them stays exactly as it was.
+  assert.ok(!out.includes('## Problem'));
+  assert.ok(!out.includes('## Goals'));
+});
+
+// ---- Problem / Goals (t-2191) ----
+
+test('Problem and Goals are emitted in canonical order however the input ordered them', () => {
+  const src = [
+    '# X (t-1)', '',
+    '## Goals', '', '- Ships.', '',
+    '## Delivered', '', 'Shipped.', '',
+    '## Description', '', 'Story.', '',
+    '## Problem', '', 'It is broken.', '',
+    '## Meta', '- added: 2026-09-20',
+  ].join('\n');
+  const out = serializeTaskFile(parseTaskFile(src), 'X', 't-1');
+  const headings = out.split('\n').filter((l) => l.startsWith('## '));
+  assert.deepEqual(headings, ['## Meta', '## Problem', '## Description', '## Goals', '## Delivered']);
+});
+
+test('an empty Problem/Goals section is dropped, not written back as a bare heading', () => {
+  const d = parseTaskFile('# X (t-1)\n\n## Problem\n\n\n## Goals\n\n## Description\n\nStory.\n');
+  assert.equal(d.problem, undefined);
+  assert.equal(d.goals, undefined);
+  const out = serializeTaskFile(d, 'X', 't-1');
+  assert.ok(!out.includes('## Problem'));
+  assert.ok(!out.includes('## Goals'));
+  assert.ok(!d.unknownLines.length, 'an empty known section is not unknown content');
+});
+
+test('Problem and Goals are free markdown: prose Goals and a multi-paragraph Problem round-trip', () => {
+  const src = [
+    '# X (t-1)', '',
+    '## Problem', '', 'First sentence.', '', 'Second paragraph.', '',
+    '## Goals', '', 'Written as prose rather than bullets, which the parser must not police.', '',
+  ].join('\n');
+  const d = parseTaskFile(src);
+  assert.equal(d.problem, 'First sentence.\n\nSecond paragraph.');
+  assert.equal(d.goals, 'Written as prose rather than bullets, which the parser must not police.');
+  const once = serializeTaskFile(d, 'X', 't-1');
+  assert.equal(serializeTaskFile(parseTaskFile(once), 'X', 't-1'), once, 'fixpoint holds');
+});
+
+test('a hand-written Problem/Goals in a pre-t-2191 file is recognized, not left as unknown content', () => {
+  // Before t-2191 these headings landed in unknownLines and were re-emitted at the BOTTOM of the
+  // file. They are now parsed content and relocate to their canonical slot on the next save — the
+  // same "recognize" direction as the dropped `owner:` key (t-33cb).
+  const d = parseTaskFile('# X (t-1)\n\n## Description\n\nStory.\n\n## Problem\n\nWhy.\n');
+  assert.equal(d.problem, 'Why.');
+  assert.deepEqual(d.unknownLines, []);
+  const out = serializeTaskFile(d, 'X', 't-1');
+  assert.ok(out.indexOf('## Problem') < out.indexOf('## Description'));
 });
 
 test('H1 is rewritten from the index title on save', () => {

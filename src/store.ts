@@ -234,7 +234,13 @@ export class Store {
     for (const entry of doneEntries) {
       const detailText = await this.readFile(this.taskUri(entry.id));
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-      done.push({ ...entry, description: detail.description, delivered: detail.delivered });
+      done.push({
+        ...entry,
+        problem: detail.problem,
+        description: detail.description,
+        goals: detail.goals,
+        delivered: detail.delivered,
+      });
     }
     // Once per session: prune cache dirs whose task exists in neither index nor DONE (a task
     // removed outside the board strands its attachments — cleanup otherwise only fires on

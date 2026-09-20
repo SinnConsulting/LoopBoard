@@ -7,7 +7,9 @@
 import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS } from './model';
 
 export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'answers' | 'note' | 'feedback';
-export type DetailField = 'description';
+// The three free-markdown story sections of `tasks/<id>.md` (t-2191). All three patch the SAME
+// file through the same generic path — a patch names one section and touches only that one.
+export type DetailField = 'description' | 'problem' | 'goals';
 export type PatchField = IndexField | DetailField;
 
 export interface FieldPatch {
@@ -124,6 +126,10 @@ export function currentDetailFieldValue(detail: TaskDetail, field: DetailField):
   switch (field) {
     case 'description':
       return detail.description ?? '';
+    case 'problem':
+      return detail.problem ?? '';
+    case 'goals':
+      return detail.goals ?? '';
   }
 }
 
@@ -131,6 +137,12 @@ function setDetailFieldValue(detail: TaskDetail, field: DetailField, value: stri
   switch (field) {
     case 'description':
       detail.description = value.trim() ? value : undefined;
+      break;
+    case 'problem':
+      detail.problem = value.trim() ? value : undefined;
+      break;
+    case 'goals':
+      detail.goals = value.trim() ? value : undefined;
       break;
   }
 }

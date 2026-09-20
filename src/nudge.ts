@@ -89,7 +89,8 @@ function changed(prev: Task, next: Task): boolean {
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `${n} ${many}`);
 
 // What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
-// echoed — title, question, answer, note, feedback, description, worklog, delivered. Metadata ENUM
+// echoed — title, question, answer, note, feedback, problem, description, goals, worklog,
+// delivered. Metadata ENUM
 // values (`phase`/`model`/`groomer`) are board state, not task content, and ARE named verbatim so
 // the loop is saved a lookup; counts and 1-based question positions carry no text either.
 //
@@ -131,7 +132,9 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
   }
 
   // Detail changes are named per SECTION, never collapsed to a bare "detail changed".
+  if ((prev.problem ?? '') !== (next.problem ?? '')) out.push('problem edited');
   if ((prev.description ?? '') !== (next.description ?? '')) out.push('description edited');
+  if ((prev.goals ?? '') !== (next.goals ?? '')) out.push('goals edited');
   if ((prev.delivered ?? '') !== (next.delivered ?? '')) out.push('delivered edited');
   if (next.worklog.length > prev.worklog.length) out.push('worklog appended');
   else if (prev.worklog.join('\n') !== next.worklog.join('\n')) out.push('worklog edited');
