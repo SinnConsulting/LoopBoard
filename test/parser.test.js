@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { parseTodo, parseDone } = require('../out-test/parser.js');
-const { serializeTodo, serializeDone, serializeEntry } = require('../out-test/writer.js');
+const { serializeTodo, serializeDone } = require('../out-test/writer.js');
 
 const FIX = path.join(process.cwd(), 'test', 'fixtures');
 function readFix(name) {
@@ -246,47 +246,49 @@ test('empty index (no ## Tasks) parses to zero entries', () => {
   assert.equal(doc.entries.length, 0);
 });
 
-// ------------------------------------------------------------------ rev: change marker (t-9d5c)
+// -------------------------------------------- rev: removed from the grammar, dropped on parse (t-f1b0)
 
 const REV_SRC = [
   '# TODO',
   '',
   '## Tasks',
   '',
-  '- [ ] Task with a rev marker',
+  '- [ ] Task from a tracker that still has rev markers',
   '  - id: t-rv01',
   '  - phase: backlog',
   '  - model: opus',
   '  - rev: 3',
+  '',
+  '- [ ] DRAFT: a draft with one too',
+  '  - id: t-rv02',
+  '  - groomer: fable',
+  '  - rev: 12',
 ].join('\n');
 
-test('rev: parses as an integer and serializes after groomer', () => {
+test('a stale rev: line is recognized and dropped — never parsed, never an unknown line', () => {
   const doc = parseTodo(REV_SRC);
-  assert.equal(doc.entries[0].rev, 3);
-  const lines = serializeTodo(doc).split('\n');
-  const modelIdx = lines.findIndex((l) => l.trim() === '- model: opus');
-  assert.match(lines[modelIdx + 1], /- rev: 3/, 'rev follows model/groomer');
+  assert.ok(!('rev' in doc.entries[0]), 'no rev property is set on the entry at all');
+  assert.deepEqual(doc.entries[0].unknownLines, [], 'not preserved as an unparsed line');
+  assert.deepEqual(doc.entries[1].unknownLines, [], 'same on a DRAFT entry');
+  const out = serializeTodo(doc);
+  assert.doesNotMatch(out, /- rev:/, 'the line is gone from the canonical write');
+  // The whole point of recognize-and-drop: no flagged chip on any card, on any entry.
+  assert.deepEqual(parseTodo(out).entries.map((e) => e.unknownLines), [[], []]);
 });
 
-test('rev: is fixpoint-stable and round-trips (parse->write->parse)', () => {
+test('an index arriving WITH rev: lines is still a fixpoint after the first canonical write', () => {
   const once = serializeTodo(parseTodo(REV_SRC));
   const twice = serializeTodo(parseTodo(once));
   assert.equal(twice, once, 'idempotent as text');
-  assert.equal(parseTodo(once).entries[0].rev, 3, 'value preserved');
+  assert.equal(parseTodo(once).entries.length, 2, 'both entries survive the drop');
 });
 
-test('missing rev: tolerated (undefined), never emitted', () => {
-  const src = ['# TODO', '', '## Tasks', '', '- [ ] No rev', '  - id: t-rv02', '  - phase: new'].join('\n');
-  const doc = parseTodo(src);
-  assert.equal(doc.entries[0].rev, undefined);
-  assert.doesNotMatch(serializeTodo(doc), /- rev:/);
-});
-
-test('non-integer rev: lands in unknownLines (preserved, not parsed)', () => {
+test('any rev: value is dropped, integer or not — the key means nothing now', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] Bad rev', '  - id: t-rv03', '  - phase: new', '  - rev: abc'].join('\n');
   const doc = parseTodo(src);
-  assert.equal(doc.entries[0].rev, undefined);
-  assert.deepEqual(doc.entries[0].unknownLines, ['  - rev: abc']);
+  assert.ok(!('rev' in doc.entries[0]));
+  assert.deepEqual(doc.entries[0].unknownLines, []);
+  assert.doesNotMatch(serializeTodo(doc), /- rev:/);
 });
 
 // ---------------------------------------------------- delete: removal round-trips (t-d58a)
@@ -325,19 +327,4 @@ test('removing a DONE entry round-trips the remaining accepted rows', () => {
   assert.deepEqual(reparsed.map((e) => e.id), ['t-dn02'], 'only the removed row is gone');
   assert.equal(reparsed[0].completed, '2026-07-21', 'survivor fields intact');
   assert.equal(serializeDone(parseDone(out)), out, 'fixpoint after removal');
-});
-
-test('serializeEntry differs ONLY in the rev line when rev changes (fingerprint excludes rev)', () => {
-  // The store bumps rev iff the entry serialized WITHOUT rev changes; this proves re-emitting a
-  // bumped rev is the sole textual delta on an otherwise-unchanged entry (no self-perpetuating bump).
-  const base = parseTodo(REV_SRC).entries[0];
-  const a = serializeEntry({ ...base, rev: 3 }).join('\n');
-  const b = serializeEntry({ ...base, rev: 4 }).join('\n');
-  assert.notEqual(a, b);
-  assert.equal(a.replace('- rev: 3', ''), b.replace('- rev: 4', ''), 'only the rev line differs');
-  // And with rev excluded entirely, the two fingerprints are identical.
-  assert.equal(
-    serializeEntry({ ...base, rev: undefined }).join('\n'),
-    serializeEntry({ ...base, rev: 99 }).join('\n').replace('\n  - rev: 99', ''),
-  );
 });

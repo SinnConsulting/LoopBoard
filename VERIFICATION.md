@@ -23,11 +23,10 @@ questions, an HTML-comment template) and `index-unknown.md`:
   verbatim; `completed:` is canonical in DONE.md only (an unknown line in the TODO index).
 - HTML-comment task-like lines are **not** parsed as entries; DRAFT serializes minimally (no
   `phase:`); model+groomer round-trip on drafts; ids assigned on write; DONE.md round-trips.
-- **`rev:` change marker (t-9d5c):** parses as an integer, serializes after `model:`/`groomer:`,
-  is **fixpoint-stable** (parse→write→parse) and round-trips its value; a missing `rev:` stays
-  `undefined` and is never emitted; a non-integer `rev:` lands in `unknownLines`. `serializeEntry`
-  differs ONLY in the `rev` line when `rev` changes (proving the store's rev-excluded fingerprint
-  is a sound bump trigger).
+- **`rev:` removed from the grammar (t-f1b0, was t-9d5c):** a stale `- rev: <n>` line on an entry
+  or a DRAFT is recognized and **dropped** — never parsed onto the entry, never in `unknownLines`
+  (so it draws no flagged chip), never re-emitted — for any value, integer or not; an index that
+  arrives WITH `rev:` lines is still a **fixpoint** after the first canonical write.
 
 ### Task-file parser/writer — `test/taskfile.test.js` (§2.2)
 - Parses every canonical section; **fixpoint** and byte-for-byte round-trip of a full fixture.
@@ -161,11 +160,15 @@ New v2 checklist (from REFACTORING.md Phase 8):
    RUNS: the `--model` value is single-quoted, so zsh does not glob-expand `haiku[1m]` and abort with
    "no matches found".
 
-10. **`rev:` bump (t-9d5c):** edit one task's title (or description) on the board → only THAT
-    entry's `rev:` in `.loopboard/TODO.md` increments; every other entry's `rev:` is untouched.
-    Editing a task's description (a `tasks/<id>.md` write) also bumps that entry's `rev:` in the
-    index. Re-saving with no change (same value) does NOT bump. A task with no `rev:` yet gains
-    `rev: 1` on its first content-changing save.
+10. **`rev:` removal (t-f1b0):** on a workspace whose `.loopboard/TODO.md` still carries `- rev:`
+    lines, edit any one task's title → the save rewrites the whole index and EVERY entry's `rev:`
+    line is gone, with no "unparsed line" warning chip on any card and no other content changed.
+    Then, on a **Backlog** task with nothing In Progress and `loopBoard.debug: verbose`, edit its
+    **description** (a `tasks/<id>.md` write) → `.loopboard/TODO.md` is byte-for-byte UNCHANGED on
+    disk (one file per save is back), and that task's loop is still nudged, the line naming
+    `description edited` — the detail-side change signal that replaced `rev:`. Append a
+    `## Worklog` line to the same `tasks/<id>.md` by hand → one more nudge, naming
+    `worklog appended`.
 11. **Delivered/Feedback/Note render as markdown (t-7a94):** a Review card whose Delivered note
     contains `` `code` ``, `**bold**`, a bare `https://…` URL, and a `-`/`1.` list renders all of
     them formatted (code chip, emphasis, clickable link, list) — same in the DONE-archive expanded
@@ -397,8 +400,8 @@ and likewise cannot be verified headless.
 30. **Batched answer saves (t-5e6d):** open a New story with three questions. Answer the first and
     Save → the row collapses with an amber rail and a `held` tag, the count reads `1 / 3 answered`
     with a tooltip saying answers are held until all three are filled, and `.loopboard/TODO.md` is
-    UNCHANGED on disk (no `rev:` bump, and with `loopBoard.debug: verbose` no `patch` line and no
-    nudge). Same for the second. Answer the third → exactly ONE `patch … answers … applied rev+`
+    UNCHANGED on disk (with `loopBoard.debug: verbose`, no `patch` line and no
+    nudge). Same for the second. Answer the third → exactly ONE `patch … answers … applied`
     line appears, all three answers are in the index, and the groomer loop is nudged once. Repeat
     using **Save All** and using a suggestion's **Accept** — same result. Hide the panel and
     re-open it (and **Developer: Reload Webviews**) with two answers held: they are still shown as
@@ -414,7 +417,7 @@ and likewise cannot be verified headless.
     answered question** and Save → the row stays held with the new text and, after the next board
     refresh, still shows YOUR text (it must not revert to the old on-disk answer). **Clear** an
     answered question to blank and Save → the blank is written straight through (`patch … answer
-    … applied rev+`), the count drops and the retraction survives a refresh. On a fully answered
+    … applied`), the count drops and the retraction survives a refresh. On a fully answered
     story, edit two answers and press **Save All** → exactly ONE `answers` patch, carrying both new
     values (not one stale). Save an answer containing a **newline** as the last blank → the flush
     succeeds with the newline folded to a space; no "Task changed on disk" toast. Finally, save a
@@ -510,7 +513,7 @@ and likewise cannot be verified headless.
     (`media/board.js`), so alongside the source-text guard `test/board-patch-echo.test.js` this
     checklist is the acceptance path. On a `groomer: none` draft, pick a real groomer → the
     `on hold — not groomed` pill and the "on hold — pick a groomer…" line disappear in the same
-    frame, before any outside click, and `TODO.md` shows the new `groomer:` with a `rev:` bump.
+    frame, before any outside click, and `TODO.md` shows the new `groomer:`.
     Without clicking out, pick a THIRD value → it lands on disk with no "Task changed on disk"
     toast. Without clicking out, pick the ORIGINAL value back → disk returns to it. Without
     clicking out, collapse another card (forcing a full `render()`) → the select still shows the
@@ -806,7 +809,7 @@ and likewise cannot be verified headless.
     path. On a groomed (non-draft) **New** card: directly below the chip row there is a labelled
     row `Groom with [select] Work with [select]`, the same idiom as a draft card, and the head row
     holds only the collapse chevron, type icon, title, Promote and delete — no select. Pick another
-    groomer → `TODO.md` shows `- groomer: <model>` on that entry, only its `rev:` bumps, and the
+    groomer → `TODO.md` shows `- groomer: <model>` on that entry, no other entry changes, and the
     card repaints on pick (no click-out). Pick `On hold` → `groomer: none` and the `on hold — not
     groomed` chip appears; pick a real groomer → it clears. Pick `default (<model>)` in either
     select → that entry's `groomer:` / `model:` line disappears with no conflict toast. On a

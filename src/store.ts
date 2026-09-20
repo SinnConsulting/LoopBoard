@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
-import { serializeTodo, serializeDone, serializeEntry } from './writer';
+import { serializeTodo, serializeDone } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
 import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
@@ -55,17 +55,6 @@ function sanitizeAttachmentFilename(name: string): string {
 
 function emptyDetail(): TaskDetail {
   return { worklog: [], links: [], dependsOn: [], unknownLines: [], raw: '' };
-}
-
-// Canonical serialization of an index entry with `rev:` EXCLUDED — the input to the rev bump
-// decision so bumping rev never counts as a content change (avoids a self-perpetuating bump).
-function indexFingerprint(entry: IndexEntry): string {
-  return serializeEntry({ ...entry, rev: undefined }).join('\n');
-}
-
-// Increment the writer-managed change marker. Absent (pre-existing tracker) counts as 0.
-function bumpRev(entry: IndexEntry): void {
-  entry.rev = (entry.rev ?? 0) + 1;
 }
 
 export class Store {
@@ -219,6 +208,10 @@ export class Store {
       completed: detail.completed, // detail owns Meta.completed on active tasks
       unknownLines: [...entry.unknownLines, ...detail.unknownLines],
       raw: entry.raw,
+      // The spread would otherwise drop the detail file's own text (both halves call the field
+      // `raw`); nudge.ts fingerprints index + detail text to see a `tasks/<id>.md`-only edit
+      // (t-f1b0), so it is kept under its own name.
+      detailRaw: detail.raw,
       hasDetailFile,
     };
   }
@@ -318,7 +311,6 @@ export class Store {
     // as `[name](path)` (image name, then the path in brackets).
     if (entry.isDraft) {
       entry.title = `${entry.title} [${safeName}](${relPath})`;
-      bumpRev(entry);
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
       return { status: 'applied', path: relPath, title: entry.title };
     }
@@ -328,9 +320,9 @@ export class Store {
     const link = `[${safeName}](${relPath})`;
     detail.description = detail.description ? `${detail.description}\n\n${link}` : link;
     await this.ensureTasksDir();
+    // ONE file per save (non-negotiable 4): the description lives in the task file, and with the
+    // `rev:` marker gone (t-f1b0) nothing in the index needs touching for a detail-only change.
     await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
-    bumpRev(entry);
-    await this.atomicWrite(this.todoUri, serializeTodo(doc));
     // Return the task's new Description so the webview can mirror it verbatim — the store stays
     // the single owner of the append format.
     return { status: 'applied', path: relPath, description: detail.description };
@@ -365,7 +357,6 @@ export class Store {
       }
       if (title !== entry.title) {
         entry.title = title;
-        bumpRev(entry);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
         this.debugLog('verbose', 'resolvePendingLinks', `${taskId} -> ${files.length} link(s), ${removedTokens.length} removed`);
       }
@@ -442,8 +433,9 @@ export class Store {
       const strippedNote = noteJoined.replace(linkRe, '').replace(/[ \t]{2,}/g, ' ').trim();
       const noteChanged = strippedNote !== noteJoined;
       if (noteChanged) entry.notes = strippedNote ? strippedNote.split('\n') : [];
-      if (descChanged || titleChanged || noteChanged) {
-        bumpRev(entry);
+      // Only the INDEX halves (title on a draft, note text) need the index rewritten; a description
+      // strip is a task-file write on its own since the `rev:` bump it used to persist is gone.
+      if (titleChanged || noteChanged) {
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
       }
       this.debugLog('verbose', 'detach', `${taskId} -> ${relPath}`);
@@ -467,18 +459,14 @@ export class Store {
     return this.writeLock.run(async () => {
       if (patchTarget(patch.field) === 'index') {
         const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
-        const entry = doc.entries.find((e) => e.id === patch.taskId);
-        const before = entry ? indexFingerprint(entry) : undefined;
         const result = applyPatch(doc, patch);
         if (result.status !== 'applied') {
           // A same-field disk-wins conflict silently drops a human edit — an especially important line.
           if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${patch.field} -> ${patch.value}`);
           return { status: result.status };
         }
-        const bumped = entry !== undefined && before !== undefined && indexFingerprint(entry) !== before;
-        if (bumped) bumpRev(entry!);
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
-        this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied${bumped ? ' rev+' : ''} = ${patch.value}`);
+        this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied = ${patch.value}`);
         return { status: 'applied' };
       }
       // Detail patch: need the index entry for its id + title (writer rewrites the H1).
@@ -487,23 +475,17 @@ export class Store {
       if (!entry) return { status: 'notfound' };
       const detailText = await this.readFile(this.taskUri(entry.id));
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-      const beforeDetail = serializeTaskFile(detail, entry.title, entry.id);
       const result = applyDetailPatch(detail, patch);
       if (result.status !== 'applied') {
         if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${patch.field} -> ${patch.value}`);
         return { status: result.status };
       }
       await this.ensureTasksDir();
-      const afterDetail = serializeTaskFile(detail, entry.title, entry.id);
-      await this.atomicWrite(this.taskUri(entry.id), afterDetail);
-      // A detail-file change bumps the index entry's rev so a loop that reads only TODO.md still
-      // sees the task changed (the original miss this feature fixes). Readers never write.
-      const bumped = afterDetail !== beforeDetail;
-      if (bumped) {
-        bumpRev(entry);
-        await this.atomicWrite(this.todoUri, serializeTodo(doc));
-      }
-      this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied${bumped ? ' rev+' : ''} = ${patch.value}`);
+      // ONE file per save again (t-f1b0): the detail patch used to write TODO.md a second time
+      // purely to persist a `rev:` bump. The loop now learns about a detail-only edit from the
+      // nudge, whose fingerprint covers the task file's text.
+      await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
+      this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied = ${patch.value}`);
       return { status: 'applied' };
     });
   }
@@ -517,10 +499,8 @@ export class Store {
 
       const detailText = await this.readFile(this.taskUri(entry.id));
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-      const before = indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id);
       promoteIndex(entry);
       promoteDetail(detail, today);
-      if (indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id) !== before) bumpRev(entry);
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
 
       await this.ensureTasksDir();
@@ -545,10 +525,8 @@ export class Store {
 
     const detailText = await this.readFile(this.taskUri(entry.id));
     const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-    const before = indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id);
     demoteIndex(entry);
     demoteDetail(detail, today);
-    if (indexFingerprint(entry) + '\0' + serializeTaskFile(detail, entry.title, entry.id) !== before) bumpRev(entry);
     await this.atomicWrite(this.todoUri, serializeTodo(doc));
 
     await this.ensureTasksDir();

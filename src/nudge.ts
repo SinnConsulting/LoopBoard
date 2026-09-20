@@ -76,11 +76,14 @@ export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model:
   return null;
 }
 
-// True when this entry's content moved since the previous board. `rev:` is the writer-managed
-// change marker (Rule 17) and is the primary signal; `raw` is the fallback for a pre-existing
-// tracker whose entries carry no `rev:` at all.
-function changed(prev: IndexEntry, next: IndexEntry): boolean {
-  return (prev.rev ?? 0) !== (next.rev ?? 0) || prev.raw !== next.raw;
+// True when this task's content moved since the previous board — a TEXT fingerprint of both halves
+// of the task: `raw` is the index entry's block, `detailRaw` the `tasks/<id>.md` text store.compose
+// keeps beside it. Both are needed (t-f1b0): the index block alone misses a Description edit or an
+// appended Worklog, which is exactly what the removed writer-managed `rev:` marker existed to
+// surface. Comparing text rather than parsed fields is deliberate — it also catches a question or
+// note TEXT edit, which describeChanges only counts.
+function changed(prev: Task, next: Task): boolean {
+  return prev.raw !== next.raw || prev.detailRaw !== next.detailRaw;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `${n} ${many}`);
@@ -138,8 +141,9 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
   if (prev.links.join(',') !== next.links.join(',')) out.push(`meta link ${next.links.length ? 'set' : 'cleared'}`);
   if (prev.dependsOn.join(',') !== next.dependsOn.join(',')) out.push('depends on edited');
 
-  // `rev:` moved but no field above differs — a canonicalizing rewrite, or edits coalesced into one
-  // refresh. The nudge is still sent (never dropped); the loop falls back to its ordinary re-read.
+  // The text fingerprint moved but no field above differs — a canonicalizing rewrite, a question or
+  // note text edit (counted, not compared, above), or edits coalesced into one refresh. The nudge is
+  // still sent (never dropped); the loop falls back to its ordinary re-read.
   return out.length ? out : ['changed'];
 }
 
