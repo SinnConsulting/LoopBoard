@@ -928,9 +928,14 @@ and likewise cannot be verified headless.
       **Cmd/Ctrl+S** and a click OUTSIDE the card all commit; **ESC** cancels in ONE press and
       releases focus. Collapsing an open editor with the chevron commits first (nothing typed is
       lost). Opening a second section commits the first.
-    - Problem and Goals have **no ＋ Attach button**, and dropping/pasting a file while one of them
-      is open must NOT stage an attachment or insert a link (attachments stay Description-only).
-      Description keeps ＋ Attach, drag-drop and ⌘V exactly as before.
+    - Problem and Goals have **no ＋ Attach button** and no field-scoped attach wiring, so nothing
+      is ever inserted into THEIR text. Dropping/pasting a file while one of them is open is not
+      blocked, though: the event bubbles to the pre-existing whole-card handler
+      (`wireAttachDropAndPaste`, unchanged by t-2191) and the link is appended to **`## Description`**
+      — the same place a drop anywhere else on the card lands. That is the expected result here,
+      not a defect: only `wireFieldAttach` stops propagation, and Problem/Goals deliberately do not
+      use it (attachments stay Description-only, t-2191 scope boundary). Description keeps
+      ＋ Attach, drag-drop and ⌘V inserting at the caret in its OWN text, exactly as before.
     - With `loopBoard.debug: verbose`, saving Problem or Goals writes **only**
       `.loopboard/tasks/<id>.md` — `debug.log` shows one `patch` line naming the field and
       `.loopboard/TODO.md` is byte-for-byte unchanged on disk. The file on disk shows the section

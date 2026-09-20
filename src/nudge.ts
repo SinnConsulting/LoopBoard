@@ -90,9 +90,9 @@ const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `$
 
 // What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
 // echoed — title, question, answer, note, feedback, problem, description, goals, worklog,
-// delivered. Metadata ENUM
-// values (`phase`/`model`/`groomer`) are board state, not task content, and ARE named verbatim so
-// the loop is saved a lookup; counts and 1-based question positions carry no text either.
+// delivered. Metadata ENUM values (`phase`/`model`/`groomer`) are board state, not task content,
+// and ARE named verbatim so the loop is saved a lookup; counts and 1-based question positions
+// carry no text either.
 //
 // Both boards already carry index AND detail content (store.load composes every task on every
 // refresh), so this is a pure computation over data in hand.
