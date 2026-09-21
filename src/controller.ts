@@ -280,10 +280,16 @@ export class Controller {
   private maybeNudge(prev: Board | undefined, next: Board): void {
     const cfg = this.config();
     if (!cfg.nudgeLoops) return;
+    // Suppressed items come back through `skipped` (t-6cbf) purely so the automatic decision is
+    // visible in the log; the pure module does no logging of its own.
+    const skipped: NudgeItem[] = [];
     const routes = computeNudges(prev?.tasks, next.tasks, {
       worker: cfg.defaultWorkerModel,
       groomer: cfg.defaultGroomerModel,
-    });
+    }, skipped);
+    for (const item of skipped) {
+      this.store.debugLog('verbose', 'nudge-skip', `${item.taskId}:${item.reason} — task-file-only change on a New/DRAFT task, no grooming work`);
+    }
     for (const route of routes) {
       const held = this.pendingNudges.get(route.model) ?? [];
       // De-duplicate on task id: a task edited twice while its loop was down is named once, with

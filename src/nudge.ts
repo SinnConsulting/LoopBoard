@@ -86,6 +86,20 @@ function changed(prev: Task, next: Task): boolean {
   return prev.raw !== next.raw || prev.detailRaw !== next.detailRaw;
 }
 
+// The New/DRAFT carve-out of that fingerprint (t-6cbf): a change confined to `tasks/<id>.md`, with
+// the index block byte-identical, gives NO loop grooming work — every piece of grooming work is
+// signalled on the INDEX side (the DRAFT line, a `note:`, a filled `answer:`). Such a change is by
+// construction either the groomer subagent mid-write — it writes the task file first and replaces
+// the DRAFT line after, so nudging here pastes "is a draft to groom" into the very loop that is
+// grooming it, costing a whole empty pass — or a human touching a story the groomer re-reads on its
+// next real trigger anyway. Covers both shapes at once, since both are the same detail-first write:
+// the first groom (DRAFT line standing, reason `groom`) and the re-groom (answers all filled,
+// reason `regroom`). Scoped to New/DRAFT only: from Backlog onward a detail-only edit is real work
+// for the worker and still nudges (t-f1b0).
+function detailOnlyGrooming(prev: Task, next: Task): boolean {
+  return (next.isDraft || next.phase === 'new') && prev.raw === next.raw;
+}
+
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `${n} ${many}`);
 
 // What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
@@ -170,10 +184,15 @@ export function mergeNudgeItems(held: NudgeItem[], incoming: NudgeItem[]): Nudge
 //
 // `prev === undefined` (the first board load of a session) yields nothing: everything would look
 // new and every loop would be nudged about a board it is about to read anyway.
+//
+// `skipped` is an optional OUT array: every item a suppression dropped is pushed into it so the
+// caller can log the decision (t-6cbf). The module stays logger-free — the debug line is written at
+// the controller/store boundary.
 export function computeNudges(
   prev: Task[] | undefined,
   next: Task[],
   defaults: NudgeDefaults,
+  skipped?: NudgeItem[],
 ): NudgeRoute[] {
   if (!prev) return [];
   const before = new Map(prev.map((e) => [e.id, e]));
@@ -189,6 +208,10 @@ export function computeNudges(
     const route = routeEntry(entry, defaults);
     if (!route) continue;
     if (route.reason === 'backlog' && busy) continue;
+    if (was && detailOnlyGrooming(was, entry)) {
+      skipped?.push({ taskId: entry.id, reason: route.reason, changes: describeChanges(was, entry) });
+      continue;
+    }
     const items = routes.get(route.model) ?? [];
     items.push({ taskId: entry.id, reason: route.reason, changes: describeChanges(was, entry) });
     routes.set(route.model, items);
