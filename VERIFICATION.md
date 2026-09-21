@@ -963,3 +963,22 @@ and likewise cannot be verified headless.
     edit that DRAFT's title in `.loopboard/TODO.md` → the nudge IS pasted (`nudge-route`, reason
     `groom`); and edit a **Backlog** task's description from the board → its worker loop is still
     nudged with `description edited`, exactly as item 10 describes.
+
+43. **In Progress as its own sidebar section (t-87ac):** webview-only (`media/sidebar.js` render +
+    `media/sidebar.css`), no payload change — `computeConcurrency` is untouched — so this checklist
+    is the only acceptance path. With ONE task In Progress the sidebar shows, BETWEEN the Loops
+    rows and the Agents section, an `IN PROGRESS` header in the same uppercase `.sb-label` style as
+    `AGENTS`, then a single row reading `<Model>  <title> (<id>)` — the model column is the loop
+    slot's display name (`Opus`, not `opus`), and a task with NO `model:` line shows the **default**
+    model's name, never a blank. The row lines up with the Agents rows below it (same 22px height,
+    same 16px indent) and carries **NO pulsing dot and NO age/duration column**; the Agents rows
+    still have both. Click the row → the board opens on that task in the In Progress tab, as the
+    old inline status line did; the tooltip still reads `Open the in-progress task on the board`.
+    Give the task a very long title → it marquee-scrolls and the `(<id>)` stays readable on the
+    return leg; with **reduced motion** enabled in the OS it holds still instead. Move the task out
+    of In Progress → the whole section including its `IN PROGRESS` header is gone (no "none" row,
+    no empty header), exactly as Agents disappears with no live subagent. Put **two** tasks In
+    Progress (Rule 2 breach) → **two** rows appear, one per task, each with its own owner model, and
+    the ⚠ `limit breached` marker appears ONCE in the section header, not per row. With Backlog work
+    queued behind them, the `Active Queue: …` hint row still renders once, underneath the rows and
+    inside the new section.
