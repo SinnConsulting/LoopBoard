@@ -23,7 +23,7 @@ function readFix(name) {
 
 test('patchTarget routes fields to the right file', () => {
   for (const f of ['title', 'model', 'groomer', 'answer', 'answers', 'note', 'feedback']) assert.equal(patchTarget(f), 'index', f);
-  for (const f of ['description']) assert.equal(patchTarget(f), 'detail', f);
+  for (const f of ['description', 'problem', 'goals']) assert.equal(patchTarget(f), 'detail', f);
 });
 
 test('applyPatch applies an index field when no conflict', () => {
@@ -79,6 +79,37 @@ test('applyDetailPatch detects a same-field detail conflict', () => {
   const detail = parseTaskFile(readFix('taskfile-full.md'));
   const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'description', value: 'x', base: 'STALE' });
   assert.equal(r.status, 'conflict');
+});
+
+test('applyDetailPatch applies problem and goals, and conflicts on a stale base (t-2191)', () => {
+  for (const field of ['problem', 'goals']) {
+    const detail = parseTaskFile(readFix('taskfile-full.md'));
+    const applied = applyDetailPatch(detail, { taskId: 't-cc01', field, value: 'New text', base: detail[field] });
+    assert.equal(applied.status, 'applied', field);
+    assert.equal(detail[field], 'New text', field);
+
+    const stale = parseTaskFile(readFix('taskfile-full.md'));
+    const conflict = applyDetailPatch(stale, { taskId: 't-cc01', field, value: 'x', base: 'STALE' });
+    assert.equal(conflict.status, 'conflict', field);
+    assert.notEqual(stale[field], 'x', field + ' must be left on the disk value');
+  }
+});
+
+test('a problem patch touches ONLY problem — description and goals are untouched (t-2191)', () => {
+  const detail = parseTaskFile(readFix('taskfile-full.md'));
+  const description = detail.description;
+  const goals = detail.goals;
+  const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'problem', value: 'Rewritten.', base: detail.problem });
+  assert.equal(r.status, 'applied');
+  assert.equal(detail.problem, 'Rewritten.');
+  assert.equal(detail.description, description);
+  assert.equal(detail.goals, goals);
+});
+
+test('clearing problem or goals to whitespace drops the section (same trim rule as description)', () => {
+  const detail = parseTaskFile(readFix('taskfile-full.md'));
+  applyDetailPatch(detail, { taskId: 't-cc01', field: 'goals', value: '   \n  ', base: detail.goals });
+  assert.equal(detail.goals, undefined);
 });
 
 test('note is an index field: edits the whole set, split on newlines, drop empties', () => {

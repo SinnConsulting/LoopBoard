@@ -67,6 +67,10 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   comments must not parse as entries).
 - Emoji canonicalization: index parser strips leading ❓ from question text; task-file parser strips
   ⚠️ from `## Feedback`; writers re-add them.
+- Task-file heading order: `## Meta` → `## Problem` → `## Description` → `## Goals` → `## Worklog`
+  → `## Delivered` (t-2191). Problem/Goals are groomer-owned free markdown (no length/shape
+  validation) and the yardstick review judges `## Delivered` against; all three story sections share
+  ONE board renderer (`renderDetailSection`/`DETAIL_SECTIONS`), attachments stay Description-only.
 - Task file `tasks/<id>.md` is eager-scaffolded on draft create (t-6ab4: `store.createDraft` writes
   a skeleton — `added: <today>`, everything else empty and so omitted by `serializeTaskFile`, same
   shape the writer already canonicalizes an empty detail to). Missing file (only possible for

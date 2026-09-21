@@ -144,6 +144,9 @@ test('an edit confined to the task file still nudges — the fingerprint covers 
   // implementation diffing parsed detail fields instead of the text would fail here and only here.
   const reflowed = { ...before, detailRaw: before.detailRaw + '\n' };
   assert.deepStrictEqual(computeNudges([before], [reflowed], DEFAULTS)[0].items[0].changes, ['changed']);
+  // t-2191: a re-groom that only rewrote Problem or Goals is the same index-silent shape.
+  const regroomed = { ...before, problem: 'why', goals: '- done when', detailRaw: '# t\n\n## Problem\n\nwhy\n' };
+  assert.deepStrictEqual(computeNudges([before], [regroomed], DEFAULTS)[0].items[0].changes, ['problem edited', 'goals edited']);
 });
 
 test('a brand-new entry is a change', () => {
@@ -251,6 +254,14 @@ test('notes and feedback are counted, never quoted', () => {
 test('detail changes are named per section, and Meta per field', () => {
   const before = entry({ description: 'old', worklog: ['2026-09-01'] });
   assert.deepStrictEqual(describeChanges(before, { ...before, description: 'new' }), ['description edited']);
+  // t-2191: the two groomer-owned sections are named individually, never folded into
+  // 'description edited' — a re-groom that only rewrote Goals has to be visible as such.
+  assert.deepStrictEqual(describeChanges(before, { ...before, problem: 'why' }), ['problem edited']);
+  assert.deepStrictEqual(describeChanges(before, { ...before, goals: '- done when' }), ['goals edited']);
+  assert.deepStrictEqual(
+    describeChanges(before, { ...before, problem: 'why', description: 'new', goals: '- done when' }),
+    ['problem edited', 'description edited', 'goals edited'],
+  );
   assert.deepStrictEqual(describeChanges(before, { ...before, delivered: 'shipped' }), ['delivered edited']);
   assert.deepStrictEqual(
     describeChanges(before, { ...before, worklog: ['2026-09-01', '2026-09-02'] }),
@@ -331,13 +342,17 @@ test('no task text of any kind reaches the nudge line, in any reason branch', ()
     suggestion: 'SENTINEL-SUGGESTION',
     note: 'SENTINEL-NOTE',
     feedback: 'SENTINEL-FEEDBACK',
+    problem: 'SENTINEL-PROBLEM',
     description: 'SENTINEL-DESCRIPTION',
+    goals: 'SENTINEL-GOALS',
     worklog: 'SENTINEL-WORKLOG',
     delivered: 'SENTINEL-DELIVERED',
   };
   const loaded = (over) => entry({
     title: SENTINELS.title,
+    problem: SENTINELS.problem,
     description: SENTINELS.description,
+    goals: SENTINELS.goals,
     worklog: [SENTINELS.worklog],
     delivered: SENTINELS.delivered,
     ...over,

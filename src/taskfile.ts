@@ -2,8 +2,11 @@
 // under `node --test`.
 //
 // Pure content, no frontmatter: the index owns title/phase/model/groomer/questions/notes/feedback.
-// Fixed headings (Meta, Description, Worklog, Delivered), all optional; the writer emits canonical
-// order, omits empty sections, and rewrites the H1 from the index title. Unknown headings/keys
+// Fixed headings (Meta, Problem, Description, Goals, Worklog, Delivered), all optional; the writer
+// emits canonical order, omits empty sections, and rewrites the H1 from the index title. Problem
+// and Goals (t-2191) are groomer-owned free markdown — the parser validates NEITHER their length
+// nor their bullet shape, so a Goals section written as prose still round-trips; "short and
+// factual" / "a bullet list" is LOOP.md rule text, not a grammar. Unknown headings/keys
 // (including a legacy `## Feedback` section — feedback now lives in the index, not migrated) are
 // preserved verbatim and flagged. Fixpoint: serializeTaskFile(parseTaskFile(x)) is idempotent.
 
@@ -83,9 +86,19 @@ export function parseTaskFile(text: string): TaskDetail {
         }
         break;
       }
+      case 'problem': {
+        const b = trimBlankEdges(body);
+        if (b.length) detail.problem = b.join('\n');
+        break;
+      }
       case 'description': {
         const b = trimBlankEdges(body);
         if (b.length) detail.description = b.join('\n');
+        break;
+      }
+      case 'goals': {
+        const b = trimBlankEdges(body);
+        if (b.length) detail.goals = b.join('\n');
         break;
       }
       case 'worklog': {
@@ -133,7 +146,10 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
   if (detail.dependsOn.length) meta.push(`- depends on: ${detail.dependsOn.join(', ')}`);
   if (meta.length) blocks.push(['## Meta', ...meta].join('\n'));
 
+  // Canonical order (t-2191): Problem frames the story, Description tells it, Goals close it.
+  if (detail.problem) blocks.push(`## Problem\n\n${detail.problem}`);
   if (detail.description) blocks.push(`## Description\n\n${detail.description}`);
+  if (detail.goals) blocks.push(`## Goals\n\n${detail.goals}`);
   if (detail.worklog.length) {
     const worklogLines = detail.worklog.flatMap((d) => {
       const [first, ...rest] = d.split('\n');

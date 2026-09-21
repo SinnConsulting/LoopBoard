@@ -207,7 +207,12 @@ export interface TaskDetail {
   worklog: string[];
   links: string[];
   dependsOn: string[];
+  // Groomer-owned bookends around the story (t-2191): `problem` is why the task exists (short and
+  // factual), `goals` is what "done" means (a bullet list the reviewer judges `delivered` against).
+  // Both free markdown like `description`, both optional — existing task files simply have neither.
+  problem?: string;
   description?: string;
+  goals?: string;
   delivered?: string;
   unknownLines: string[]; // preserved verbatim, flagged in UI
   raw: string;
@@ -225,9 +230,9 @@ export interface IndexDoc {
   entries: IndexEntry[];
 }
 
-// DONE.md entries, each carrying its task file's description/delivered for the Done-tab card
-// expansion (t-628b) — everything else about a done task stays index-only.
-export type DoneEntry = IndexEntry & Pick<TaskDetail, 'description' | 'delivered'>;
+// DONE.md entries, each carrying its task file's problem/description/goals/delivered for the
+// Done-tab card expansion (t-628b, t-2191) — everything else about a done task stays index-only.
+export type DoneEntry = IndexEntry & Pick<TaskDetail, 'problem' | 'description' | 'goals' | 'delivered'>;
 
 export interface Board {
   preamble: string; // index preamble (round-tripped verbatim)

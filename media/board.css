@@ -204,9 +204,13 @@ textarea { resize: vertical; }
 .unparsed-help { font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); margin-top: 6px; }
 
 .desc-wrap { margin-top: 12px; position: relative; }
-/* t-aee3: foldable Description section. The header is always rendered; only the body below it
-   goes. min-width: 0 on both the row and the preview is what lets the preview actually ellipsise
-   instead of forcing the card wider. */
+/* t-2191: Problem/Description/Goals stack as three of these. The rendered body carries a -6px
+   margin, so consecutive sections need a little more room than a lone Description did, or the next
+   section's header crowds the previous section's text. */
+.desc-wrap + .desc-wrap { margin-top: 18px; }
+/* t-aee3: foldable story section (one per Problem/Description/Goals). The header is always
+   rendered; only the body below it goes. min-width: 0 on both the row and the preview is what lets
+   the preview actually ellipsise instead of forcing the card wider. */
 .desc-head { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 4px; }
 .desc-head .section-title { margin-bottom: 0; flex-shrink: 0; }
 .desc-preview {

@@ -100,11 +100,11 @@
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
   // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
-  // `sections[phaseKey][taskId] = { description?: boolean, questions?: boolean }`. A section with
-  // no entry falls back to the tab default, which is what makes "expand one card after Collapse
-  // all" show both sections folded. New key, so there is nothing to migrate — an unrecognized
-  // value just means "no overrides", i.e. everything follows the default. Ids are never pruned,
-  // for the same reason as `collapsed` above.
+  // `sections[phaseKey][taskId] = { problem?, description?, goals?, questions?: boolean }`. A
+  // section with no entry falls back to the tab default, which is what makes "expand one card
+  // after Collapse all" show every section folded. New key, so there is nothing to migrate — an
+  // unrecognized value just means "no overrides", i.e. everything follows the default. Ids are
+  // never pruned, for the same reason as `collapsed` above.
   let sections = saved.sections && typeof saved.sections === 'object' ? saved.sections : {};
   // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
   // `collapsed` map): seed the old values into every phase bucket so an upgrade keeps the view the
@@ -149,7 +149,8 @@
   // fires a second, wrong-card gate action. Cleared in applyBoard when the confirming board lands.
   let gateInFlight = false;
   // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
-  // tab's cards by id/title/description — no cross-phase search, no next/prev nav (filter-only).
+  // tab's cards by id/title/problem/description/goals — no cross-phase search, no next/prev nav
+  // (filter-only).
   // The bar is always visible and cannot be dismissed — searchOpen stays true forever.
   let searchOpen = true;
   // The filter is TWO LAYERS (t-1cdb), because "clear" means two different things depending on
@@ -371,7 +372,11 @@
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
       || (t.title || '').toLowerCase().includes(q)
-      || (t.description || '').toLowerCase().includes(q);
+      // All three story sections (t-2191) — a filter that read only Description would miss text
+      // the groomer put in Problem or Goals.
+      || (t.problem || '').toLowerCase().includes(q)
+      || (t.description || '').toLowerCase().includes(q)
+      || (t.goals || '').toLowerCase().includes(q);
   }
   function filterList(list) {
     return effectiveQuery().trim() ? list.filter(matchesQuery) : list;
@@ -618,7 +623,7 @@
   function renderSearchBar(shownCount, totalCount) {
     const input = h('input', {
       class: 'search-input', id: 'search-input', type: 'text', 'aria-label': 'Filter tasks in this tab',
-      placeholder: 'Filter this tab by id, title or description…',
+      placeholder: 'Filter this tab by id, title or story text…',
     });
     input.value = effectiveQuery();
     input.addEventListener('input', (e) => {
@@ -874,6 +879,16 @@
     );
   }
 
+  // One read-only section of an expanded Done row. Four of them now (Delivered + the three story
+  // sections, t-2191), so the markdown render + link wiring lives here once.
+  function doneDetailBlock(label, text) {
+    const body = h('div', { class: 'done-detail-text', html: mdToHtml(text) });
+    body.querySelectorAll('a[data-mdlink]').forEach((a) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+    });
+    return h('div', {}, h('div', { class: 'section-title' }, label), body);
+  }
+
   function renderDone(list) {
     const wrap = h('div', {});
     if (list.length === 0 && effectiveQuery().trim()) {
@@ -882,7 +897,15 @@
     }
     for (const t of list) {
       const u = getUi(t.id);
-      const hasDetail = !!((t.description && t.description.trim()) || (t.delivered && t.delivered.trim()));
+      // Delivered first (what shipped), then the story in file order: Problem → Description →
+      // Goals — Delivered is read against Goals, so both have to be on the same expanded row.
+      const doneSections = [
+        ['Delivered', t.delivered],
+        ['Problem', t.problem],
+        ['Description', t.description],
+        ['Goals', t.goals],
+      ].filter(([, text]) => text && text.trim());
+      const hasDetail = doneSections.length > 0;
       const toggleOpen = () => { u.doneOpen = !u.doneOpen; render(); };
       const row = h('div', {
         class: 'done-row-item' + (hasDetail ? ' clickable' : ''),
@@ -910,20 +933,7 @@
       wrap.append(row);
       if (hasDetail && u.doneOpen) {
         const detail = h('div', { class: 'done-detail' });
-        if (t.delivered && t.delivered.trim()) {
-          const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
-          delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
-            a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-          });
-          detail.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
-        }
-        if (t.description && t.description.trim()) {
-          const desc = h('div', { class: 'done-detail-text', html: mdToHtml(t.description) });
-          desc.querySelectorAll('a[data-mdlink]').forEach((a) => {
-            a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-          });
-          detail.append(h('div', {}, h('div', { class: 'section-title' }, 'Description'), desc));
-        }
+        for (const [label, text] of doneSections) detail.append(doneDetailBlock(label, text));
         wrap.append(detail);
       }
     }
@@ -1489,8 +1499,8 @@
         }
       }
 
-      // description
-      card.append(renderDescription(t));
+      // story sections, in the task file's canonical order: Problem → Description → Goals (t-2191)
+      for (const section of DETAIL_SECTIONS) card.append(renderDetailSection(t, section));
 
       // attachments area (t-att1 rework: same block as on drafts, with per-image delete)
       const attArea = renderAttachmentsArea(t);
@@ -1595,81 +1605,102 @@
     return '';
   }
 
-  function renderDescription(t) {
+  // The three free-markdown story sections of tasks/<id>.md (t-2191), rendered by ONE
+  // implementation: Problem, Description, Goals. A second copy of the editor would drift, so the
+  // FIELD NAME drives everything — the fold key in `sections[...]`, `data-field`, the patch field,
+  // and the per-field editor state on the transient `ui[id]` map. `attach` is Description-only:
+  // attachments belong to the story text, and controller.ts's field-scoped attach allowlist
+  // deliberately does not carry problem/goals, so those two get no ＋ Attach and no drop/paste.
+  const DETAIL_SECTIONS = [
+    { field: 'problem', label: 'Problem', placeholder: 'Add a problem statement…', attach: false },
+    { field: 'description', label: 'Description', placeholder: 'Add a description…', attach: true },
+    { field: 'goals', label: 'Goals', placeholder: 'Add goals…', attach: false },
+  ];
+
+  function renderDetailSection(t, section) {
+    const field = section.field;
     const u = getUi(t.id);
+    if (!u.sectionEditing) u.sectionEditing = {};
+    if (!u.sectionDrafts) u.sectionDrafts = {};
+    if (!u.sectionNeedsFocus) u.sectionNeedsFocus = {};
+    const current = () => t[field] || '';
     const wrap = h('div', { class: 'desc-wrap' });
-    const folded = isSectionCollapsed(t.id, 'description');
+    const folded = isSectionCollapsed(t.id, field);
     // Assigned below when the editor is open. The chevron lives INSIDE .desc-wrap, so t-471a's
     // click-outside commit never fires for it — collapsing has to commit explicitly, or the fold
     // would silently drop whatever was typed (t-aee3 decision 3).
     let commitOpenEditor = null;
     const head = h('div', { class: 'desc-head' },
-      sectionToggle(t.id, 'description', 'description', () => { if (commitOpenEditor) commitOpenEditor(); }),
-      h('div', { class: 'section-title' }, 'Description'));
+      sectionToggle(t.id, field, section.label.toLowerCase(), () => { if (commitOpenEditor) commitOpenEditor(); }),
+      h('div', { class: 'section-title' }, section.label));
     if (folded) {
-      // Empty description => no preview, but the header still renders so the "Add a description…"
-      // affordance stays one click away.
-      const preview = descPreview(t.description);
+      // Empty section => no preview, but the header still renders so the "Add a …" affordance
+      // stays one click away. For Goals the preview is the first bullet, markers stripped.
+      const preview = descPreview(current());
       if (preview) head.append(h('div', { class: 'desc-preview', title: preview }, preview));
       wrap.append(head);
       return wrap;
     }
     wrap.append(head);
-    if (u.editingDesc) {
-      const ta = h('textarea', { class: 'desc', rows: '2', placeholder: 'Add a description…', 'data-field': 'description' });
-      ta.value = u.descDraft != null ? u.descDraft : (t.description || '');
+    if (u.sectionEditing[field]) {
+      const ta = h('textarea', { class: 'desc', rows: '2', placeholder: section.placeholder, 'data-field': field });
+      ta.value = u.sectionDrafts[field] != null ? u.sectionDrafts[field] : current();
       autoGrow(ta);
       // Split so the collapse chevron can commit WITHOUT a render of its own — toggleSection
       // renders straight after, and two repaints in one tick is one wasted rebuild of every card.
       commitOpenEditor = () => {
         clearActiveEditor(wrap);
         const val = ta.value;
-        u.editingDesc = false;
-        u.descDraft = null;
-        commitPatch(t.id, 'description', val, t.description || '', t, 'description');
+        u.sectionEditing[field] = false;
+        u.sectionDrafts[field] = null;
+        commitPatch(t.id, field, val, current(), t, field);
       };
-      const commitDesc = () => {
+      const commitSection = () => {
         commitOpenEditor();
         render();
       };
       const saveBtn = h('button', {
         class: 'btn-sm primary field-save-btn', type: 'button',
-        disabled: ta.value === (t.description || ''),
-        title: 'Save (Cmd/Ctrl+S)', onclick: commitDesc,
+        disabled: ta.value === current(),
+        title: 'Save (Cmd/Ctrl+S)', onclick: commitSection,
       }, 'Save');
-      ta.addEventListener('input', () => { u.descDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === (t.description || ''); });
+      ta.addEventListener('input', () => { u.sectionDrafts[field] = ta.value; autoGrow(ta); saveBtn.disabled = ta.value === current(); });
       ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDesc = false; u.descDraft = null; }, wrap); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitDesc(); }
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.sectionEditing[field] = false; u.sectionDrafts[field] = null; }, wrap); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitSection(); }
       });
-      const stageDesc = wireFieldAttach(ta, t.id, 'description', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        commitDesc();
-      });
-      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
-      // alongside the existing silent drag-drop/paste support.
-      const descAttachBtn = h('button', {
-        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
-        onclick: () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.addEventListener('change', () => { if (input.files && input.files[0]) stageDesc(input.files[0]); });
-          input.click();
-        },
-      }, '＋ Attach');
-      wrap.append(ta, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-        saveBtn, descAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
-      setActiveEditor(wrap, commitDesc); // click-outside commits (t-471a) — the bug this story fixes
+      const controls = [saveBtn];
+      if (section.attach) {
+        const stageDesc = wireFieldAttach(ta, t.id, field, undefined, (path, filename) => {
+          insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+          commitSection();
+        });
+        // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+        // alongside the existing silent drag-drop/paste support.
+        controls.push(h('button', {
+          class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+          onclick: () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.addEventListener('change', () => { if (input.files && input.files[0]) stageDesc(input.files[0]); });
+            input.click();
+          },
+        }, '＋ Attach'));
+      }
+      controls.push(h('span', { class: 'qa-hint' }, section.attach ? '⌘V pastes screenshots · ⌘S saves' : '⌘S saves'));
+      wrap.append(ta, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } }, controls));
+      setActiveEditor(wrap, commitSection); // click-outside commits (t-471a)
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
-      if (u.descNeedsFocus) { u.descNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
+      if (u.sectionNeedsFocus[field]) { u.sectionNeedsFocus[field] = false; requestAnimationFrame(() => ta.focus()); }
     } else {
-      const hasDesc = !!(t.description && t.description.trim());
-      const view = hasDesc
-        ? h('div', { class: 'desc-rendered', role: 'button', tabindex: '0', html: mdToHtml(t.description) })
-        : h('div', { class: 'desc-rendered desc-empty', role: 'button', tabindex: '0' }, 'Add a description…');
-      view.addEventListener('click', () => { u.editingDesc = true; u.descNeedsFocus = true; render(); });
-      view.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); u.editingDesc = true; u.descNeedsFocus = true; render(); } });
+      const open = () => { u.sectionEditing[field] = true; u.sectionNeedsFocus[field] = true; render(); };
+      const has = !!current().trim();
+      const view = has
+        ? h('div', { class: 'desc-rendered', role: 'button', tabindex: '0', html: mdToHtml(current()) })
+        : h('div', { class: 'desc-rendered desc-empty', role: 'button', tabindex: '0' }, section.placeholder);
+      view.addEventListener('click', open);
+      view.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); open(); } });
       view.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });

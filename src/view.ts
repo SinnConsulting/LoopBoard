@@ -17,7 +17,11 @@ export interface WebTask {
   worklog: string[];
   links: string[];
   dependsOn: { id: string; met: boolean }[];
+  // The three story sections of the task file (t-2191), always strings ('' when the section is
+  // absent) so the board can render an "add one" affordance without a null check.
+  problem: string;
   description: string;
+  goals: string;
   note: string | null;
   questions: { text: string; answer: string; answered: boolean; suggestions: string[] }[];
   feedback: string | null;
@@ -125,7 +129,9 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     worklog: t.worklog,
     links: t.links,
     dependsOn: t.dependsOn.map((id) => ({ id, met: doneIds.has(id) })),
+    problem: t.problem ?? '',
     description: t.description ?? '',
+    goals: t.goals ?? '',
     note: t.notes.length ? t.notes.join('\n') : null,
     questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0, suggestions: q.suggestions || [] })),
     feedback: t.feedback.length ? t.feedback.join('\n') : null,
@@ -150,7 +156,9 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     worklog: [],
     links: [],
     dependsOn: [],
+    problem: e.problem ?? '',
     description: e.description ?? '',
+    goals: e.goals ?? '',
     note: null,
     questions: [],
     feedback: null,
