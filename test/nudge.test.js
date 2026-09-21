@@ -188,6 +188,61 @@ test('changes are grouped per loop, and each change reaches exactly one loop', (
   assert.strictEqual(routes.reduce((n, r) => n + r.items.length, 0), 3);
 });
 
+// ---- the New/DRAFT detail-only carve-out (t-6cbf) ----
+
+// The grooming subagent writes tasks/<id>.md FIRST and replaces the `- [ ] DRAFT:` line after, so
+// between its two writes the board would nudge "is a draft to groom" into the very loop that is
+// grooming it — one wholly empty pass per groomed draft.
+test('a DRAFT whose change is confined to the task file nudges nobody (t-6cbf)', () => {
+  const before = entry({ isDraft: true, groomer: 'fable', raw: '- [ ] DRAFT: t-1 — do a thing' });
+  const next = { ...before, problem: 'why', goals: '- done when', detailRaw: '# t\n\n## Problem\n\nwhy\n' };
+  assert.strictEqual(before.raw, next.raw, 'the index block is byte-identical — only the detail moved');
+  assert.deepStrictEqual(computeNudges([before], [next], DEFAULTS), []);
+  // The suppression is surfaced for the controller's verbose debug line: task id + the reason it
+  // WOULD have carried.
+  const skipped = [];
+  computeNudges([before], [next], DEFAULTS, skipped);
+  assert.strictEqual(skipped.length, 1);
+  assert.strictEqual(skipped[0].taskId, before.id);
+  assert.strictEqual(skipped[0].reason, 'groom');
+});
+
+test('the re-groom shape is suppressed the same way — all answers filled, detail-only change (t-6cbf)', () => {
+  const before = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one')], raw: 'index block' });
+  assert.deepStrictEqual(routeEntry(before, DEFAULTS), { model: 'fable', reason: 'regroom' });
+  const next = { ...before, worklog: ['2026-09-21'], detailRaw: '# t\n\n## Worklog\n\n- 2026-09-21\n' };
+  assert.deepStrictEqual(computeNudges([before], [next], DEFAULTS), []);
+  const skipped = [];
+  computeNudges([before], [next], DEFAULTS, skipped);
+  assert.deepStrictEqual(skipped.map((i) => [i.taskId, i.reason]), [[before.id, 'regroom']]);
+});
+
+test('the carve-out is New/DRAFT only — a Backlog task-file-only change still nudges (t-6cbf)', () => {
+  const before = entry({ phase: 'backlog', model: 'opus', description: 'old', raw: 'index block' });
+  const next = { ...before, description: 'new', detailRaw: '# t\n\n## Description\n\nnew\n' };
+  const skipped = [];
+  const routes = computeNudges([before], [next], DEFAULTS, skipped);
+  assert.deepStrictEqual(skipped, []);
+  assert.strictEqual(routes.length, 1);
+  assert.strictEqual(routes[0].model, 'opus');
+  assert.deepStrictEqual(routes[0].items.map((i) => i.reason), ['backlog']);
+});
+
+test('an INDEX-side edit on a New/DRAFT task still nudges its groomer (t-6cbf)', () => {
+  const draft = entry({ isDraft: true, groomer: 'fable', raw: '- [ ] DRAFT: t-1 — do a thing' });
+  const edited = { ...draft, title: 'do a different thing', raw: '- [ ] DRAFT: t-1 — do a different thing' };
+  assert.deepStrictEqual(computeNudges([draft], [edited], DEFAULTS)[0].items.map((i) => i.reason), ['groom']);
+  // A `note:` added to the entry, with the detail file moving in the same refresh.
+  const noted = { ...draft, notes: ['retitle this'], raw: draft.raw + '\n  - note: retitle this', detailRaw: 'detail 2' };
+  assert.deepStrictEqual(computeNudges([draft], [noted], DEFAULTS)[0].items.map((i) => i.reason), ['note']);
+  // The human filling the last blank answer on a groomed New task — the real re-groom trigger.
+  const asked = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one')], raw: 'index block' });
+  const answered = { ...asked, questions: [q('pick one', 'this one')], raw: 'index block + answer' };
+  const routes = computeNudges([asked], [answered], DEFAULTS);
+  assert.strictEqual(routes[0].model, 'fable');
+  assert.deepStrictEqual(routes[0].items.map((i) => i.reason), ['regroom']);
+});
+
 // ---- describeChanges: which FIELD moved, never its text (t-f8bd) ----
 
 test('a task the previous board did not have is a new entry', () => {

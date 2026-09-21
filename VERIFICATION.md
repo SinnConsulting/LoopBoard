@@ -951,3 +951,15 @@ and likewise cannot be verified headless.
       `TODO.md` entry untouched; a task file that already had a hand-written `## Problem` at the
       BOTTOM shows it in the Problem section and moves it to its canonical slot on the next save,
       with no "unparsed line" chip left on the card.
+42. **A New/DRAFT task-file write nudges nobody (t-6cbf):** the predicate is covered by the Docker
+    suite; what only an Extension Development Host shows is the terminal staying quiet and the
+    `nudge-skip` line landing. With `loopBoard.nudgeLoops: true`, `loopBoard.debug: verbose` and a
+    loop terminal running for the groomer model, edit a DRAFT's `tasks/<id>.md` by hand (add a
+    `## Problem` paragraph, save) while its `- [ ] DRAFT:` line in `.loopboard/TODO.md` is left
+    byte-identical → NOTHING is pasted into that terminal, and `.loopboard/debug.log` gains one
+    `nudge-skip` line naming the task id, `groom`, and the task-file-only reason. Repeat on a
+    groomed **New** task whose questions are all answered (append a `## Worklog` line to its task
+    file) → same, with `regroom` as the reason. Then prove the negatives on the same running loop:
+    edit that DRAFT's title in `.loopboard/TODO.md` → the nudge IS pasted (`nudge-route`, reason
+    `groom`); and edit a **Backlog** task's description from the board → its worker loop is still
+    nudged with `description edited`, exactly as item 10 describes.
