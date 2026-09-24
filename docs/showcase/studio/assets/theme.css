@@ -1,0 +1,59 @@
+/* The --vscode-* variables VS Code injects into every webview, approximating the Dark Modern
+ * theme. The variable list is what `grep -ohE '\-\-vscode-[A-Za-z0-9-]+' media/*.css media/*.js`
+ * reports. Fonts are named explicitly so the recording only depends on the studio image. */
+:root {
+  --vscode-font-family: "Inter", "DejaVu Sans", sans-serif;
+  --vscode-editor-font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-disabledForeground: #6f6f6f;
+  --vscode-errorForeground: #f85149;
+  --vscode-focusBorder: #0078d4;
+  --vscode-editor-background: #1f1f1f;
+  --vscode-editorWidget-background: #202020;
+  --vscode-editorLineNumber-foreground: #6e7681;
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-sideBar-background: #181818;
+  --vscode-panel-border: #2b2b2b;
+  --vscode-widget-border: #313131;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.36);
+  --vscode-badge-background: #616161;
+  --vscode-badge-foreground: #f8f8f8;
+  --vscode-button-background: #0078d4;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-input-background: #313131;
+  --vscode-input-border: #3c3c3c;
+  --vscode-input-foreground: #cccccc;
+  --vscode-dropdown-background: #313131;
+  --vscode-dropdown-foreground: #cccccc;
+  --vscode-settings-textInputBackground: #313131;
+  --vscode-settings-textInputBorder: #3c3c3c;
+  --vscode-settings-textInputForeground: #cccccc;
+  --vscode-settings-dropdownBackground: #313131;
+  --vscode-settings-dropdownForeground: #cccccc;
+  --vscode-inputValidation-errorBackground: #5a1d1d;
+  --vscode-inputValidation-errorBorder: #be1100;
+  --vscode-inputValidation-errorForeground: #ffffff;
+  --vscode-inputValidation-warningBackground: #352a05;
+  --vscode-inputValidation-warningBorder: #cca700;
+  --vscode-inputValidation-warningForeground: #cccccc;
+  --vscode-list-activeSelectionBackground: #04395e;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-progressBar-background: #0078d4;
+  --vscode-testing-iconPassed: #73c991;
+  --vscode-textBlockQuote-background: #2b2b2b;
+  --vscode-textCodeBlock-background: #2b2b2b;
+  --vscode-textLink-foreground: #4daafc;
+  --vscode-gitDecoration-modifiedResourceForeground: #e2c08d;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-yellow: #cca700;
+}
+/* Scrollbars as VS Code draws them in webviews (thin, translucent, no arrows). */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }

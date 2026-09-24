@@ -1,0 +1,8 @@
+{
+  "name": "loopboard-showcase-studio",
+  "private": true,
+  "description": "Records the docs/showcase GIFs. Deliberately separate from the root package.json (whose devDependencies must stay typescript + @types/vscode); installed only inside this directory's Dockerfile.",
+  "dependencies": {
+    "playwright": "1.55.1"
+  }
+}
