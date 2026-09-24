@@ -168,6 +168,7 @@ export class Controller {
       afterTask: readAfterTask(c),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
+      sidebarMarquee: c.get<boolean>('sidebarMarquee', false),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
       // 0 (the default) = the context threshold is off entirely; the indicator still renders.
       contextPercent: sanitizeContextPercent(c.get<number>('contextLimit.percent', 0)),
@@ -216,6 +217,7 @@ export class Controller {
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
     web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
+    web.sidebarMarquee = cfg.sidebarMarquee;
     // Recomputed on every refresh (and again right after a sync click via the refresh() it
     // triggers) so the pulse reflects live disk state rather than a cached snapshot (t-pul1).
     if (cfg.pulseTemplateSync && !this.store.todoMissing) {

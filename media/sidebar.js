@@ -340,11 +340,14 @@
           // `t.model` is already resolved host-side (the default model when the entry carries no
           // `model:` line), so the raw id only ever shows for a slot that no longer exists.
           const slot = board.loops.find((l) => l.id === t.model);
-          // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
-          // long title stays fully readable without widening the sidebar.
-          inProgress.append(h('button', { class: 'sb-row agent click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
+          // A long title truncates with `…` by default, the `(<id>)` pinned and never cut; with
+          // `loopBoard.sidebarMarquee` on, the whole `<title> (<id>)` marquee-scrolls instead (see
+          // setupMarquees). The native tooltip carries the full text either way (t-9a29) — the
+          // aria-label keeps saying what a click does.
+          const full = (t.title || t.id) + ' (' + t.id + ')';
+          inProgress.append(h('button', { class: 'sb-row agent click', type: 'button', title: full + '\nClick to open on the board', 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
             h('span', { class: 'agent-model' }, slot ? slot.name : t.model),
-            h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, (t.title || t.id) + ' (' + t.id + ')'))));
+            marquee(h('span', { class: 'marquee-text' }, t.title || t.id), h('span', { class: 'marquee-id' }, '\u00a0(' + t.id + ')'))));
         }
         if (c.message) {
           inProgress.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
@@ -361,12 +364,13 @@
       for (const l of board.loops) {
         for (const a of l.agents || []) {
           anyAgents = true;
-          // Same marquee as the In-Progress title above (incl. its reduced-motion opt-out): the
-          // label is long and the sidebar is narrow, and there is only ever ONE marquee in here.
+          // Same marquee as the In-Progress title above (incl. its reduced-motion opt-out and its
+          // default-off truncation): the label is long and the sidebar is narrow, and there is only
+          // ever ONE marquee in here. The row's title already carries the full label.
           agentsSection.append(h('div', { class: 'sb-row agent', title: l.name + ' · ' + a.label },
             h('span', { class: 'agent-model' }, l.name),
             h('span', { class: 'agent-dot pulse' }),
-            h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, a.label)),
+            marquee(h('span', { class: 'marquee-text' }, a.label)),
             h('span', { class: 'agent-duration' }, a.duration)));
         }
       }
@@ -386,15 +390,22 @@
     setupMarquees();
   }
 
-  // A long In-Progress title scrolls (marquee) instead of truncating — but only when it actually
-  // overflows its row. Measured after paint; the shift distance + duration scale with the overflow.
+  // The one sidebar marquee box (In-Progress title, Agents label). `loopBoard.sidebarMarquee` off
+  // (the default, t-9a29) marks the box `.truncate`: the text holds still and ends in `…`.
+  function marquee(...parts) {
+    return h('div', { class: 'loop-marquee' + (board.sidebarMarquee ? '' : ' truncate') }, h('span', { class: 'loop-marquee-inner' }, parts));
+  }
+
+  // With `loopBoard.sidebarMarquee` on, a long In-Progress title / Agents label scrolls (marquee)
+  // instead of truncating — but only when it actually overflows its row. Measured after paint; the
+  // shift distance + duration scale with the overflow. Off, nothing ever gets `.scrolling`.
   function setupMarquees() {
     requestAnimationFrame(() => {
       document.querySelectorAll('.loop-marquee').forEach((box) => {
         const inner = box.firstElementChild;
         if (!inner) return;
         const overflow = inner.scrollWidth - box.clientWidth;
-        if (overflow > 2) {
+        if (board.sidebarMarquee && overflow > 2) {
           box.classList.add('scrolling');
           box.style.setProperty('--marquee-shift', -overflow + 'px');
           box.style.setProperty('--marquee-dur', Math.max(4, overflow / 25) + 's');

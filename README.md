@@ -217,6 +217,7 @@ ordered exactly as both settings pages render them.
 |---|---|---|
 | `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
 | `loopBoard.pulseTemplateSync` | `true` | Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way). |
+| `loopBoard.sidebarMarquee` | `false` | Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way. |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 
 ### LoopBoard: Beta (experimental)

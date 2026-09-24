@@ -270,7 +270,8 @@ test('every key the code reads is still declared in the manifest', () => {
   for (const key of [
     'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel',
-    'loopBoard.maxAttachmentSizeMB', 'loopBoard.pulseTemplateSync', 'loopBoard.nudgeLoops',
+    'loopBoard.maxAttachmentSizeMB', 'loopBoard.pulseTemplateSync', 'loopBoard.sidebarMarquee',
+    'loopBoard.nudgeLoops',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
     'loopBoard.delegateWork', 'loopBoard.delegateReview',
     'loopBoard.models.opus.enabled', 'loopBoard.models.opus.model',
@@ -282,4 +283,17 @@ test('every key the code reads is still declared in the manifest', () => {
   ]) {
     assert.ok(declared.has(key), `${key} is read by src/ but no longer declared`);
   }
+});
+
+test('the sidebar marquee is an opt-in live boolean in Board & Workspace, off by default (t-9a29)', () => {
+  const board = sections.find((s) => s.title === 'LoopBoard: Board & Workspace');
+  const prop = board.properties['loopBoard.sidebarMarquee'];
+  assert.ok(prop, 'loopBoard.sidebarMarquee must be declared in Board & Workspace');
+  assert.equal(prop.type, 'boolean');
+  assert.equal(prop.default, false, 'the sidebar must hold still unless the human opts in');
+  assert.equal(prop.scope, 'application');
+  assert.equal(prop.loopBoardApplies, 'live');
+  // Sits right after the pulse toggle, its sibling sidebar-animation switch.
+  const keys = Object.entries(board.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
+  assert.equal(keys.indexOf('loopBoard.sidebarMarquee'), keys.indexOf('loopBoard.pulseTemplateSync') + 1);
 });

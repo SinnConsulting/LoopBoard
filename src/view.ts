@@ -77,6 +77,7 @@ export interface WebBoard {
   templatesOutOfDate?: boolean; // set by the controller; pulses the sidebar Synchronise Templates row
   maxAttachmentSizeMB?: number; // set by the controller; lets the composer reject an oversized
   // attachment at attach time instead of only at Save Draft (t-5f50)
+  sidebarMarquee?: boolean; // set by the controller; opts the sidebar's long labels into scrolling (t-9a29)
   workspaceName: string;
   defaultWorkerModel: Model; // owns tasks with no model:; labels the board's Model select default
   defaultGroomerModel: Model; // grooms tasks with no groomer:; labels the draft Groom-with default
