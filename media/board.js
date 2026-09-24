@@ -1533,9 +1533,60 @@
     return el;
   }
 
+  // ---- question status (t-4b75) ----
+  // THE counting rule for a card's questions, shared by the Open questions panel head
+  // (renderQuestions' updateHead) and the chips-row status chip (questionChip), so a collapsed and
+  // an expanded card can never disagree. Kept self-contained (no closure over board state) because
+  // test/question-status.test.js evaluates this exact function from the source text: it takes the
+  // EFFECTIVE answers, i.e. the held overlay (t-5e6d) already applied by questionStatus().
+  function summarizeQuestions(answers, phase) {
+    const given = answers.map((a) => String(a == null ? '' : a).trim().length > 0);
+    const total = given.length;
+    const answered = given.filter(Boolean).length;
+    return {
+      given,
+      answered,
+      total,
+      waiting: answered < total,
+      // t-6936: a New story whose questions are all answered but still present owes a re-groom.
+      regroomPending: phase === 'new' && total > 0 && answered === total,
+      label: answered + ' / ' + total + ' answered',
+    };
+  }
+  // An answer counts whether it is on disk or only held on the board (t-5e6d).
+  function effectiveAnswer(t, j) {
+    const held = heldAnswer(t.id, j);
+    return held != null ? held : t.questions[j].answer;
+  }
+  function questionStatus(t) {
+    return summarizeQuestions(t.questions.map((q, j) => effectiveAnswer(t, j)), t.phase);
+  }
+  const REGROOM_TIP = 'Answers not folded into the story yet — the groomer loop still owes this a pass.';
+  // Tooltip while anything is still blank (t-5e6d): the count is exactly where a human asks
+  // "why has nothing happened yet?", and the answer is that the board is holding the saved ones.
+  function questionWaitTip(t) {
+    return t.phase === 'new'
+      ? 'The groomer waits until every question is answered — answers are held on the board and written to the index only when all ' + t.questions.length + ' are filled.'
+      : 'The worker resumes only when every question is answered — answers are held on the board until then.';
+  }
+  // Question-status chip (t-4b75): on every card that renders the questions panel with at least
+  // one question (Feedback, New), collapsed or expanded. Amber `.qa-pending` while anything is
+  // owed (blank answers, or a New re-groom), a neutral `.chip` on a fully answered Feedback card —
+  // the worker resumes and nothing is owed. `data-qchip` is the hook updateHead refreshes in place.
+  function questionChip(t) {
+    if (t.isDraft || !t.questions || !t.questions.length) return null;
+    if (t.phase !== 'feedback' && t.phase !== 'new') return null;
+    const s = questionStatus(t);
+    if (s.regroomPending) return h('span', { class: 'qa-pending', 'data-qchip': '1', title: REGROOM_TIP }, 're-groom pending');
+    if (s.waiting) return h('span', { class: 'qa-pending', 'data-qchip': '1', title: questionWaitTip(t) }, s.label);
+    return h('span', { class: 'chip', 'data-qchip': '1' }, s.label);
+  }
+
   function renderChips(t) {
     const chips = h('div', { class: 'chips' });
     chips.append(idChip(t.id));
+    const qChip = questionChip(t);
+    if (qChip) chips.append(qChip);
     const hold = holdBadge(t);
     if (hold) chips.append(hold);
     if (t.added) chips.append(h('span', { class: 'chip mono' }, 'added ' + t.added));
@@ -1730,15 +1781,11 @@
     if (!qFolded) panel.append(list);
 
     // An answer is "given" whether it is on disk or only held (t-5e6d) — the meter and the count
-    // track the human's progress through the story, not what has been written yet.
-    const answerAt = (j) => {
-      const held = heldAnswer(t.id, j);
-      return held != null ? held : t.questions[j].answer;
-    };
-    const isGiven = (j) => answerAt(j).trim().length > 0;
+    // track the human's progress through the story, not what has been written yet. The rule is
+    // the shared questionStatus() (t-4b75), the same one the chips-row question chip uses.
+    const answerAt = (j) => effectiveAnswer(t, j);
+    const isGiven = (j) => questionStatus(t).given[j];
     const isHeld = (j) => heldAnswer(t.id, j) != null;
-    let answered = 0;
-    for (let j = 0; j < t.questions.length; j++) if (isGiven(j)) answered++;
     const countEl = h('span', { class: 'qa-count' }, '');
     const meterSegs = [];
     const meter = h('div', { class: 'qa-meter', title: 'Progress' });
@@ -1755,19 +1802,22 @@
     // answering the last question flips it immediately with no board refresh. Feedback cards never
     // show it — a fully-answered Feedback card means the worker resumes, which is correct.
     const pendingEl = h('span', { class: 'qa-pending' }, 're-groom pending');
-    pendingEl.title = 'Answers not folded into the story yet — the groomer loop still owes this a pass.';
-    // Tooltip while anything is still blank (t-5e6d): the count is exactly where a human asks
-    // "why has nothing happened yet?", and the answer is that the board is holding the saved ones.
-    const WAIT_TIP = isNew
-      ? 'The groomer waits until every question is answered — answers are held on the board and written to the index only when all ' + t.questions.length + ' are filled.'
-      : 'The worker resumes only when every question is answered — answers are held on the board until then.';
+    pendingEl.title = REGROOM_TIP;
+    const WAIT_TIP = questionWaitTip(t);
+    // Runs in place (no repaint) as each row is saved. It also swaps the chips-row question chip
+    // (t-4b75) from the SAME status, so the chip and this head change together on one save. The
+    // first call runs before the panel is attached — the chip rendered with the card is current.
     const updateHead = () => {
-      countEl.textContent = answered + ' / ' + t.questions.length + ' answered';
-      meterSegs.forEach((seg, i) => seg.classList.toggle('is-answered', isGiven(i)));
-      pendingEl.hidden = !(isNew && t.questions.length > 0 && answered === t.questions.length);
-      const waiting = answered < t.questions.length;
-      countEl.title = waiting ? WAIT_TIP : '';
-      meter.title = waiting ? WAIT_TIP : 'Progress';
+      const s = questionStatus(t);
+      countEl.textContent = s.label;
+      meterSegs.forEach((seg, i) => seg.classList.toggle('is-answered', s.given[i]));
+      pendingEl.hidden = !s.regroomPending;
+      countEl.title = s.waiting ? WAIT_TIP : '';
+      meter.title = s.waiting ? WAIT_TIP : 'Progress';
+      const card = panel.closest('.card');
+      const oldChip = card && card.querySelector('.chips [data-qchip]');
+      const newChip = oldChip && questionChip(t);
+      if (newChip) oldChip.replaceWith(newChip);
     };
     updateHead();
     const headRight = h('div', { class: 'qa-head-right' }, meter);
@@ -1909,7 +1959,6 @@
         const given = val.trim().length > 0;
         const wasGiven = qLine.contains(editBtn);
         if (given !== wasGiven) {
-          answered += given ? 1 : -1;
           item.classList.toggle('is-answered', given);
           if (given) qLine.replaceChild(editBtn, posMarker);
           else qLine.replaceChild(posMarker, editBtn);
