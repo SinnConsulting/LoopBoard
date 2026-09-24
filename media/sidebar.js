@@ -320,29 +320,37 @@
         if (restartDraft && restartDraft.model === l.id) wrap.append(renderRestartPopover(l));
         loops.append(wrap);
       }
+      sb.append(loops);
+
       // Global single-task limit (LOOP.md Rule 2): surface when a task is In Progress so a human
       // sees the limit holding back prepared work — or being breached (>1 In Progress at once).
+      // Laid out as its own section with ONE row per task (t-87ac), mirroring the Agents section
+      // below: same `.sb-row.agent` sizing and same model-name first column, minus the status dot
+      // and the duration. Empty means gone — header included — exactly as Agents behaves.
       const c = board.concurrency;
       if (c && c.inProgress.length) {
-        const inProg = c.inProgress.map((t) => (t.title || t.id) + ' (' + t.id + ')').join(', ');
-        // Clicking the status lands the board directly on the In-Progress task (by id when there's the
-        // usual single one; otherwise just the In Progress tab, which shows the breached set).
-        const revealMsg = c.inProgress.length === 1
-          ? { type: 'reveal', taskId: c.inProgress[0].id, phase: 'inprogress' }
-          : { type: 'reveal', phase: 'inprogress' };
-        const revealLabel = c.inProgress.length === 1 ? 'Open the in-progress task on the board' : 'Show the In Progress tab';
-        // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
-        // long title stays fully readable without widening the sidebar.
-        loops.append(h('button', { class: 'sb-row loop-status click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage(revealMsg) },
-          h('span', { class: 'loop-status-label' },
+        // The breach marker belongs to the whole section, so it is drawn once in the header rather
+        // than repeated on every row.
+        const inProgress = h('div', { class: 'sb-section' },
+          h('div', { class: 'sb-label' },
             c.breached ? h('span', { class: 'codicon codicon-warning' }) : null,
-            (c.breached ? ' limit breached — ' : '') + 'In Progress:'),
-          h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, inProg))));
-        if (c.message) {
-          loops.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
+            c.breached ? 'In Progress — limit breached' : 'In Progress'));
+        const revealLabel = 'Open the in-progress task on the board';
+        for (const t of c.inProgress) {
+          // `t.model` is already resolved host-side (the default model when the entry carries no
+          // `model:` line), so the raw id only ever shows for a slot that no longer exists.
+          const slot = board.loops.find((l) => l.id === t.model);
+          // The title marquee-scrolls (see setupMarquees) rather than truncating with an ellipsis, so a
+          // long title stays fully readable without widening the sidebar.
+          inProgress.append(h('button', { class: 'sb-row agent click', type: 'button', title: revealLabel, 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
+            h('span', { class: 'agent-model' }, slot ? slot.name : t.model),
+            h('div', { class: 'loop-marquee' }, h('span', { class: 'loop-marquee-inner' }, (t.title || t.id) + ' (' + t.id + ')'))));
         }
+        if (c.message) {
+          inProgress.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
+        }
+        sb.append(inProgress);
       }
-      sb.append(loops);
 
       // Agents (t-sbag): one group per loop slot, one row per LIVE subagent — never a finished
       // one. The section exists to explain why an automatic restart is being held back, so an
