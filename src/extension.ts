@@ -57,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   store.debugLog('info', 'activate', folder.name);
   store.startWatching();
-  void controller.autoHeal().then(() => controller.refresh());
+  void controller.autoHeal().then(() => controller.autoSyncTemplates()).then(() => controller.refresh());
   void controller.maybeShowGettingStarted();
 }
 

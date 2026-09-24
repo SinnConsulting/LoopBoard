@@ -189,7 +189,7 @@ test('the real manifest renders as the four agreed sections', () => {
   );
   assert.deepEqual(
     form.sections.find((s) => s.title === 'Board & Workspace').controls.map((c) => c.key),
-    ['loopBoard.maxAttachmentSizeMB', 'loopBoard.pulseTemplateSync', 'loopBoard.sidebarMarquee', 'loopBoard.debug']
+    ['loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee', 'loopBoard.debug']
   );
 });
 

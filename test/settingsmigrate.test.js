@@ -13,6 +13,7 @@ const {
   buildMigrationPlan, actionWrites, isOrphan, scanKeys, MIGRATIONS, LEGACY_HONOURED_KEYS,
   AFTER_TASK_KEY, AUTO_RECYCLE_KEY, CLEAR_SESSION_KEY,
   DELEGATE_WORK_KEY, DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY,
+  AUTO_SYNC_TEMPLATES_KEY, PULSE_TEMPLATE_SYNC_KEY,
 } = require('../out-test/settingsmigrate.js');
 const { formKeys } = require('../out-test/settingsform.js');
 const { resolveAfterTask } = require('../out-test/model.js');
@@ -252,6 +253,18 @@ test('the migrated afterTask value IS what resolveAfterTask honours today, for e
         assert.equal(write.value, honoured, `${recycle}/${clear} must migrate to the honoured mode`);
       }
     }
+  }
+});
+
+test('a stored pulseTemplateSync (either value) is removed as deprecated, never migrated onto autoSyncTemplates (t-4dce)', () => {
+  for (const value of [true, false]) {
+    const plan = buildMigrationPlan(DECLARED, { [PULSE_TEMPLATE_SYNC_KEY]: value });
+    const action = byKey(plan, PULSE_TEMPLATE_SYNC_KEY);
+    assert.equal(action.kind, 'remove', `${value}: a pulse preference carries nothing over`);
+    assert.equal(action.reason, 'deprecated', `${value}: listed as deprecated, not as an anonymous orphan`);
+    assert.equal(action.target, AUTO_SYNC_TEMPLATES_KEY);
+    assert.deepEqual(plan.writes, [{ key: PULSE_TEMPLATE_SYNC_KEY, value: undefined }]);
+    assert.ok(!plan.writes.some((w) => w.key === AUTO_SYNC_TEMPLATES_KEY), `${value}: the target must never be written`);
   }
 });
 
