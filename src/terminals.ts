@@ -153,13 +153,13 @@ export class TerminalManager {
     // The bootstrap prompt names the LOGICAL slot (model), so the worker claims `model: <slot>`
     // tasks; the terminal itself spawns with the resolved (possibly 1M-suffixed) --model string.
     // `resolved.effort` and `resolved.groomConcurrency` are already validated (resolveModels
-    // defaults invalid/absent to 'high' / 3). Both are frozen at spawn: a settings change reaches
-    // this slot only on its next start/restart (♻), exactly like the interval.
+    // defaults invalid/absent to 'medium' / 3). Both are frozen at spawn — effort as the
+    // `--effort` flag (buildClaudeBase), the cap in the prompt: a settings change reaches this slot
+    // only on its next start/restart (♻), exactly like the interval.
     const cmd = buildLoopCommand(
       this.getLoopText(),
       model,
       cfg.interval,
-      resolved?.effort,
       resolved?.groomConcurrency,
       cfg.delegateWork,
       cfg.delegateReview
@@ -174,11 +174,16 @@ export class TerminalManager {
     // or a recycle respawning before the old process let go — would take the bare name first and
     // this session would be renamed `nameSource: "collision"` for its whole life, hiding the bar.
     // `matchesSlot` reads the bare `loopboard-<slot>` as a prefix, so the reader needs nothing more.
-    const base = buildClaudeBase(cfg.permissionMode, modelString, spawnSessionName(model, sessionSuffix(Math.random())));
+    const base = buildClaudeBase(
+      cfg.permissionMode,
+      modelString,
+      spawnSessionName(model, sessionSuffix(Math.random())),
+      resolved?.effort
+    );
     this.log(
       'info',
       'loop-spawn',
-      `${model} -> --model ${modelString} (effort ${resolved?.effort ?? 'high'}, groom cap ${sanitizeGroomConcurrency(resolved?.groomConcurrency)}, ` +
+      `${model} -> --model ${modelString} (effort ${resolved?.effort ?? 'medium'}, groom cap ${sanitizeGroomConcurrency(resolved?.groomConcurrency)}, ` +
         `delegate ${cfg.delegateWork === true ? 'on' : 'off'}, review ${cfg.delegateReview === false ? 'off' : 'on'})`
     );
     if (cmd) {

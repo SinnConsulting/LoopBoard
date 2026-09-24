@@ -138,7 +138,7 @@ test('an empty --model CLEARS the override rather than being rejected', () => {
   );
 });
 
-test('effort is checked against the declared ceiling levels', () => {
+test('effort is checked against the declared effort levels', () => {
   assert.deepEqual(
     gridPatch(grid(), 'fable', 'effort', 'max'),
     { ok: true, patches: [{ key: 'loopBoard.models.fable.effort', value: 'max' }] }

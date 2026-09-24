@@ -549,8 +549,9 @@ and likewise cannot be verified headless.
 35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
     clause are unit-tested; what only F5 can show is the real terminal line. With both delegation
     settings at their defaults, start a loop
-    → the pasted `/loop` line reads `… with a subagent effort ceiling of <effort> and a grooming
-    concurrency cap of <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text.
+    → the pasted `/loop` line reads `… running as model <slot> with a grooming concurrency cap of
+    <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text, no effort (t-cffc:
+    effort is the `--effort <level>` flag on the spawn line, item 46).
     Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
     `Delegate work to subagents.`; additionally set `loopBoard.delegateReview` to `false` and
     ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
@@ -629,7 +630,7 @@ and likewise cannot be verified headless.
     with the reason shown and the field restored. Type `opus[1m]` → accepted. Set *groomers* to `0`
     → it is clamped to `1`. The header hint reads `⟳ model · effort · groomers apply on the next loop
     start (▶) or restart (♻)` — confirm it is true: with a loop running, change its effort, then ♻,
-    and check the pasted `/loop` line carries the NEW ceiling while the pre-♻ terminal did not.
+    and check the spawn line carries the NEW `--effort <level>` while the pre-♻ terminal did not.
 
     **The "applies on" marker (untested in Docker — the marker itself is `media/settings.js` + CSS;
     only the classification, the wording and the manifest sentence are unit-tested in
@@ -1021,3 +1022,15 @@ and likewise cannot be verified headless.
     reload; hover a scrolling row → it pauses mid-scroll, move the pointer away → it resumes from
     there. Enable **reduced motion** in the OS → the rows hold still even with the setting on.
     **Toggle off** again → both stop and truncate with `…`, no reload.
+
+46. **Effort is the loop's `--effort` startup flag, default `medium` (t-cffc):** `buildClaudeBase`
+    (flag, `medium` fallback, invalid-value hardening), the prompt without a ceiling, the template
+    wording and the manifest defaults are unit-tested; the live CLI is F5 only. With no effort set,
+    start each slot's loop (▶) → the typed command line carries `--effort medium`, and `/effort`
+    (or the status line) in that interactive session shows `medium`. Set one slot's effort to `high`
+    in the settings grid, ♻ it → its line now carries `--effort high` and the session shows `high`;
+    the other slots are unchanged. With `loopBoard.debug` at `info`, each spawn's `loop-spawn` line
+    names `effort <level>`. **Interactive-REPL inheritance (confirmed for `claude -p` only):** let
+    the loop groom a New task, then open that grooming subagent's `subagents/*.jsonl` transcript
+    under `~/.claude/projects/<encoded cwd>/` → its assistant messages carry `"effort"` equal to the
+    loop's session level.

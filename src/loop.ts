@@ -37,20 +37,25 @@ export function sanitizeLoopInterval(s: string): string {
 // cwd, and the session file records no ppid). It is derived from the fixed slot id, never from
 // configuration, so it needs no quoting or escaping. Preferred over pinning `--session-id` because
 // `/clear` starts a NEW session id in the same process — the name survives, the id does not.
-export function buildClaudeBase(permissionMode: string, modelString: string, sessionName?: string): string {
+//
+// `effort` (t-cffc) is the slot's `loopBoard.models.<slot>.effort`, passed as `--effort <level>`
+// on EVERY spawn — the loop session's reasoning effort; subagents it spawns run at the same level.
+// Spliced unquoted, so it is validated against EFFORT_LEVELS here (invalid/absent -> 'medium'),
+// the same hardening as permissionMode — a raw config value never reaches the shell line.
+export function buildClaudeBase(permissionMode: string, modelString: string, sessionName?: string, effort?: string): string {
   const name = sessionName ? ` --name ${sessionName}` : '';
-  return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}'${name}`;
+  const level = typeof effort === 'string' && isValidEffort(effort) ? effort : 'medium';
+  return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}' --effort ${level}${name}`;
 }
 
 // Build the tiny bootstrap prompt pasted into a loop terminal: it only names the model, the
-// interval, the subagent effort ceiling, the grooming cap and (t-e3c3) the delegated-work mode; the
-// worker reads the full standing instructions from
+// interval, the grooming cap and (t-e3c3) the delegated-work mode; the worker reads the full
+// standing instructions from
 // `.loopboard/LOOP.md`'s ## Automation section on every pass (so editing that section retunes
-// running loops). The effort ceiling rides here (like loopInterval) because it is per-slot and
-// only used at grooming time (Rule 14) — changing it needs a terminal recycle, same as interval.
-// The grooming concurrency cap (t-23ce) rides the same channel for the same reason: the sync path
-// copies template blocks byte-for-byte with no interpolation, so LOOP.md cannot carry a configured
-// NUMBER — only the prompt can. LOOP.md carries the BEHAVIOUR, phrased against "the grooming cap
+// running loops). Effort is NOT here (t-cffc): it is a `claude --effort` startup flag
+// (buildClaudeBase). The grooming concurrency cap (t-23ce) rides the prompt because it is per-slot
+// and the sync path copies template blocks byte-for-byte with no interpolation, so LOOP.md cannot
+// carry a configured NUMBER — only the prompt can. LOOP.md carries the BEHAVIOUR, phrased against "the grooming cap
 // named in your bootstrap prompt", so the two halves stay in step without duplicating the value.
 //
 // LOOP.md contains several fenced blocks (layout, workflow, grammars), so we must NOT grab the
@@ -60,7 +65,6 @@ export function buildLoopCommand(
   loopText: string,
   model: Model,
   interval: string,
-  effort: string = 'high',
   groomConcurrency?: number,
   // t-e3c3: `loopBoard.delegateWork` / `loopBoard.delegateReview`. Only an activation PHRASE
   // rides here — the behaviour for each mode lives in LOOP.md's Automation block. A non-boolean
@@ -87,15 +91,13 @@ export function buildLoopCommand(
   const section = lines.slice(start, end).join('\n');
   if (!/```[^\n]*\n[\s\S]*?```/.test(section)) return undefined;
 
-  const groomEffort = isValidEffort(effort) ? effort : 'high';
   const groomCap = sanitizeGroomConcurrency(groomConcurrency);
   const delegate = delegateWork === true;
   const review = delegateReview !== false;
   // Apostrophe-free by construction (single-quoted argv); each mode's line must stay < 300 chars.
   const delegatePhrase = !delegate ? '' : review ? ' Delegate work to subagents.' : ' Delegate work to subagents without review.';
   return (
-    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model} with a subagent effort ceiling of ${groomEffort} ` +
-    `and a grooming concurrency cap of ${groomCap}. ` +
+    `/loop ${sanitizeLoopInterval(interval)} You are running as model ${model} with a grooming concurrency cap of ${groomCap}. ` +
     `Open .loopboard/LOOP.md, read the loop worker instructions in its Automation section, and follow them exactly for this and every pass.` +
     delegatePhrase
   );

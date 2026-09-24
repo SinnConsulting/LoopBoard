@@ -111,7 +111,7 @@ test('sessionName(model) stays the bare prefix — matchesSlot builds its prefix
 
 test('buildClaudeBase renders the suffixed name onto the spawn line', () => {
   const line = buildClaudeBase('auto', 'opus', spawnSessionName('opus', sessionSuffix(0.5)));
-  assert.equal(line, "claude --permission-mode auto --model 'opus' --name loopboard-opus-8000");
+  assert.equal(line, "claude --permission-mode auto --model 'opus' --effort medium --name loopboard-opus-8000");
 });
 
 test('usage = the LAST main-chain assistant line, summing the three input counters', () => {
