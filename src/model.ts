@@ -38,10 +38,9 @@ export function isValidModelString(s: string): boolean {
   return MODEL_STRING_RE.test(s);
 }
 
-// Subagent reasoning-effort ceiling — grooming (Rule 14) and, with `loopBoard.delegateWork` on,
-// the implementer/review subagents (t-e3c3): the worker picks low..this ceiling by
-// story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly
-// asks for deep reasoning. Order matters (Faster -> Smarter).
+// Reasoning effort a slot's loop session is started with, passed as `claude --effort <level>`
+// (t-cffc, buildClaudeBase); every subagent the loop spawns runs at that same session effort.
+// Same five levels as the CLI's `--effort`. Order matters (Faster -> Smarter).
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORT_LEVELS)[number];
 export function isValidEffort(s: string): s is Effort {
@@ -54,7 +53,7 @@ export function isValidEffort(s: string): s is Effort {
 export interface ModelConfigObject {
   enabled?: boolean; // default true; false hides the slot from the Loops overview + board selects
   model?: string; // custom `--model` string; empty/invalid => the built-in default (REPLACE when set)
-  effort?: string; // subagent effort ceiling for this slot; invalid/absent => 'high'
+  effort?: string; // loop session `--effort` for this slot; invalid/absent => 'medium'
   groomConcurrency?: number; // max grooming subagents per pass; invalid/absent => 3
 }
 export type ModelConfigEntry = string | ModelConfigObject;
@@ -90,7 +89,7 @@ export function readModelsConfig(get: <T>(key: string, dflt: T) => T): ModelsCon
     cfg[id] = {
       enabled: get<boolean>(`models.${id}.enabled`, true),
       model: get<string>(`models.${id}.model`, ''),
-      effort: get<string>(`models.${id}.effort`, 'high'),
+      effort: get<string>(`models.${id}.effort`, 'medium'),
       groomConcurrency: get<number>(`models.${id}.groomConcurrency`, DEFAULT_GROOM_CONCURRENCY),
     };
   }
@@ -146,7 +145,7 @@ export interface ResolvedModel {
   label: string;
   model: string; // validated `--model` string to spawn
   enabled: boolean;
-  effort: Effort; // validated subagent effort ceiling (Rule 14 / t-e3c3); defaults to 'high'
+  effort: Effort; // validated loop session `--effort` (t-cffc); defaults to 'medium'
   groomConcurrency: number; // validated cap on grooming subagents per pass; defaults to 3
 }
 
@@ -158,7 +157,7 @@ export function resolveModels(config?: ModelsConfig): ResolvedModel[] {
     const c = asConfigObject(cfg[m.id]);
     const override = typeof c.model === 'string' ? c.model.trim() : '';
     const model = override && isValidModelString(override) ? override : m.model;
-    const effort = typeof c.effort === 'string' && isValidEffort(c.effort) ? c.effort : 'high';
+    const effort = typeof c.effort === 'string' && isValidEffort(c.effort) ? c.effort : 'medium';
     const groomConcurrency = sanitizeGroomConcurrency(c.groomConcurrency);
     return { id: m.id, label: m.label, model, enabled: c.enabled !== false, effort, groomConcurrency };
   });

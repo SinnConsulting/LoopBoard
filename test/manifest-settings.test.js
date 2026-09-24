@@ -31,7 +31,7 @@ const BETA_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateReview'];
 // activation and no setting needs a window reload.
 //
 // This list is the SPAWN-COMMAND reality, hand-kept against `src/loop.ts`: `buildClaudeBase`
-// (permissionMode, the resolved `--model` string) and `buildLoopCommand` (interval, effort,
+// (permissionMode, the resolved `--model` string, `--effort`) and `buildLoopCommand` (interval,
 // groomConcurrency, delegateWork, delegateReview) are the only places a setting is baked in.
 // Adding a setting to package.json without classifying it — or classifying one this list does not
 // know — turns the suite red, which is the whole point: an absent marker on the settings page is
@@ -261,6 +261,20 @@ test('the model grid may speak for its slot keys: the classification it claims i
   for (const key of ['loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel']) {
     assert.equal(all[key].loopBoardApplies, 'live', `${key} is a radio column the grid note does not cover`);
   }
+});
+
+// t-cffc: the effort default is stated twice — the manifest (what the settings page and the native
+// editor show as the default) and the `'medium'` fallbacks in src/model.ts / src/loop.ts (what a
+// spawn actually passes to `--effort` when the key is unset). Pin both to the same level.
+test('every slot effort defaults to medium, matching the resolveModels / buildClaudeBase fallback', () => {
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  const { resolveModels } = require('../out-test/model.js');
+  const { buildClaudeBase } = require('../out-test/loop.js');
+  for (const slot of ['opus', 'sonnet', 'fable']) {
+    assert.equal(all[`loopBoard.models.${slot}.effort`].default, 'medium', `${slot} effort default`);
+    assert.equal(resolveModels({}).find((m) => m.id === slot).effort, 'medium', `${slot} resolveModels fallback`);
+  }
+  assert.ok(buildClaudeBase('auto', 'opus').includes(' --effort medium'), 'buildClaudeBase fallback');
 });
 
 test('every key the code reads is still declared in the manifest', () => {

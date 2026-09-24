@@ -233,7 +233,7 @@
       });
       modelInput.addEventListener('change', () => gridEdit(row.id, 'model', modelInput.value));
 
-      const effort = h('select', { 'aria-label': row.label + ' effort ceiling' });
+      const effort = h('select', { 'aria-label': row.label + ' effort' });
       for (const level of grid.efforts) {
         effort.append(h('option', { value: level, selected: level === row.effort }, level));
       }

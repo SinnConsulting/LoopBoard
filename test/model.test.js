@@ -32,13 +32,13 @@ test('isValidModelString admits the [1m] suffix and org aliases, rejects shell m
   assert.ok(!isValidModelString(''));
 });
 
-test('resolveModels defaults: every slot enabled, --model equals its id, effort defaults to high', () => {
+test('resolveModels defaults: every slot enabled, --model equals its id, effort defaults to medium', () => {
   const r = resolveModels(undefined);
   assert.equal(r.length, 3);
   for (const m of r) {
     assert.equal(m.enabled, true);
     assert.equal(m.model, m.id);
-    assert.equal(m.effort, 'high');
+    assert.equal(m.effort, 'medium');
   }
 });
 
@@ -50,15 +50,15 @@ test('EFFORT_LEVELS / isValidEffort: the five ordered stops, rejects garbage', (
   assert.ok(!isValidEffort(''));
 });
 
-test('a valid per-slot effort REPLACES the default; invalid falls back to high', () => {
+test('a valid per-slot effort REPLACES the default; invalid falls back to medium', () => {
   const r = resolveModels({ opus: { effort: 'xhigh' }, sonnet: { effort: 'extreme' } });
   assert.equal(r.find((m) => m.id === 'opus').effort, 'xhigh');
-  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'high'); // invalid -> default
+  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'medium'); // invalid -> default
 });
 
 test('string-shorthand model config still resolves effort to the default (no effort field to set)', () => {
   const r = resolveModels({ sonnet: 'sonnet[1m]' });
-  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'high');
+  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'medium');
 });
 
 test('a valid override REPLACES the default --model string; invalid is ignored', () => {
@@ -98,10 +98,10 @@ test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig
   assert.equal(cfg.opus.enabled, true);
   assert.equal(cfg.opus.effort, 'xhigh');
   assert.equal(cfg.sonnet.enabled, false);
-  // Unset slots fall back to the passed defaults (enabled true, empty override, high effort).
+  // Unset slots fall back to the passed defaults (enabled true, empty override, medium effort).
   assert.equal(cfg.fable.enabled, true);
   assert.equal(cfg.fable.model, '');
-  assert.equal(cfg.fable.effort, 'high');
+  assert.equal(cfg.fable.effort, 'medium');
   // Flows straight through resolveModels: override applied, disabled slot dropped from enabled set.
   const r = resolveModels(cfg);
   assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');

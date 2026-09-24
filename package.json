@@ -128,9 +128,9 @@
               "max"
             ],
             "order": 50,
-            "default": "high",
+            "default": "medium",
             "loopBoardApplies": "restart",
-            "markdownDescription": "Subagent reasoning-effort ceiling for the Opus slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "Reasoning effort the Opus slot's loop session is started with, passed as `claude --effort`. Every subagent the loop spawns (grooming, and with `loopBoard.delegateWork` on the implementer and review subagents) runs at the same effort. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.opus.groomConcurrency": {
             "type": "number",
@@ -168,9 +168,9 @@
               "max"
             ],
             "order": 90,
-            "default": "high",
+            "default": "medium",
             "loopBoardApplies": "restart",
-            "markdownDescription": "Subagent reasoning-effort ceiling for the Sonnet slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "Reasoning effort the Sonnet slot's loop session is started with, passed as `claude --effort`. Every subagent the loop spawns (grooming, and with `loopBoard.delegateWork` on the implementer and review subagents) runs at the same effort. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.sonnet.groomConcurrency": {
             "type": "number",
@@ -208,9 +208,9 @@
               "max"
             ],
             "order": 130,
-            "default": "high",
+            "default": "medium",
             "loopBoardApplies": "restart",
-            "markdownDescription": "Subagent reasoning-effort ceiling for the Fable slot — grooming subagents (Rule 14 in `LOOP.md`) and, with `loopBoard.delegateWork` on, the implementer and review subagents too — the loop chooses low..this ceiling by story complexity, reserving xhigh/max for when the ceiling allows it and the story explicitly asks for deep reasoning. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "Reasoning effort the Fable slot's loop session is started with, passed as `claude --effort`. Every subagent the loop spawns (grooming, and with `loopBoard.delegateWork` on the implementer and review subagents) runs at the same effort. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.fable.groomConcurrency": {
             "type": "number",
@@ -385,7 +385,7 @@
             "order": 10,
             "default": false,
             "loopBoardApplies": "restart",
-            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model under that slot's `.effort` ceiling; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates that PR before the loop sets Review. Either way the loop never merges: a delivered task sits in Review with its PR still open, waiting for you to tick it and merge. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model, running at the loop session's effort (that slot's `.effort`); the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates that PR before the loop sets Review. Either way the loop never merges: a delivered task sits in Review with its PR still open, waiting for you to tick it and merge. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.delegateReview": {
             "type": "boolean",
@@ -397,7 +397,7 @@
             "default": true,
             "loopBoardApplies": "restart",
             "loopBoardDependsOn": "loopBoard.delegateWork",
-            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same `.effort` ceiling) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "**Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same session effort) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           }
         }
       }
