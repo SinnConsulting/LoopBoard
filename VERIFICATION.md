@@ -838,7 +838,7 @@ and likewise cannot be verified headless.
     Within one poll (30 s) an **Agents** section appears directly under **Loops**, hidden until
     then: one row per live subagent, `<slot> · <agentType> · <description>` with a ticking duration,
     the long label held still and ending in `…` by default; with `loopBoard.sidebarMarquee` on
-    (t-9a29, item 44) it marquee-scrolls with the same animation the In-Progress title uses (and
+    (t-9a29, item 45) it marquee-scrolls with the same animation the In-Progress title uses (and
     stops under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
     never grouped. Nothing in a row is clickable. When the agents finish, the rows disappear and the
     whole section goes with them. `debug.log` shows an `agents-read <slot> N live: …` line per poll.
@@ -975,7 +975,7 @@ and likewise cannot be verified headless.
     same 16px indent) and carries **NO pulsing dot and NO age/duration column**; the Agents rows
     still have both. Click the row → the board opens on that task in the In Progress tab, as the
     old inline status line did; the tooltip reads `<title> (<id>)` then `Click to open on the board`
-    (t-9a29, item 44). Give the task a very long title → by default it holds still, the title ends
+    (t-9a29, item 45). Give the task a very long title → by default it holds still, the title ends
     in `…` and the `(<id>)` stays fully visible; with `loopBoard.sidebarMarquee` on it
     marquee-scrolls and the `(<id>)` stays readable on the return leg; with **reduced motion**
     enabled in the OS it holds still instead. Move the task out
@@ -986,7 +986,28 @@ and likewise cannot be verified headless.
     queued behind them, the `Active Queue: …` hint row still renders once, underneath the rows and
     inside the new section.
 
-44. **Sidebar marquee is opt-in; full text on hover (t-9a29):** the setting's manifest shape is
+44. **Question-status chip on collapsed and expanded cards (t-4b75):** the counting rule
+    (`summarizeQuestions` in `media/board.js`) is evaluated from source and the wiring pinned by
+    `test/question-status.test.js`; the rendering and the in-place refresh are webview-only, so this
+    checklist is the acceptance path. Collapse a **Feedback** card with 1 of 3 answers on disk →
+    its chips row shows, right after the id chip, an amber `1 / 3 ANSWERED` chip (the same amber as
+    the hold badge) whose tooltip says the worker resumes only when every question is answered.
+    Collapse a **New** card with questions, some blank → same amber `N / M answered` chip, tooltip
+    about the groomer waiting. A **New** card with every answer filled but the questions still
+    present → amber `RE-GROOM PENDING` chip with the panel badge's tooltip. A **Feedback** card with
+    every answer filled → a neutral grey chip reading `N / N answered`, no amber. A card with NO
+    questions (Backlog, In Progress, Review, a New card the groomer left no questions on) and every
+    DRAFT card → no question chip. Expand any of those cards → the chips row is identical (the chip
+    is still there) and the Open questions panel head reads the same count. On an expanded New card
+    with three blank questions, **Save** the first answer (held, not yet on disk, t-5e6d) → the chip
+    AND the panel's count both flip to `1 / 3 answered` in the same instant, with no repaint (the
+    focused textarea/caret is not lost); collapse the card → the chip still reads `1 / 3 answered`.
+    Answer the remaining two → the chip and the panel badge turn `re-groom pending` together.
+    Retract an on-disk answer on a Feedback card (clear it, Save) → the chip goes back from neutral
+    to amber with the lower count, in step with the panel head. Fold only the questions section
+    (t-aee3) → the panel head and the chip still agree.
+
+45. **Sidebar marquee is opt-in; full text on hover (t-9a29):** the setting's manifest shape is
     pinned by `test/manifest-settings.test.js`; the truncation, the tooltip and the pause live only
     in `media/sidebar.{js,css}` (vanilla webview, no pure half), so this checklist is their only
     acceptance path. Put a task with a very long title In Progress and run a loop with a delegated
