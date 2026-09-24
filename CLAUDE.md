@@ -34,10 +34,11 @@ Storage: everything under `.loopboard/` — `TODO.md` (slim task index, grammar 
 ```
 make install         # npm install in Docker
 make build           # tsc -> out/                 (extension host)
-make test            # tsc tsconfig.test.json -> out-test/, node --test 'test/*.test.js'
+make test            # build, tsc tsconfig.test.json -> out-test/, node --test 'test/*.test.js'
+make e2e             # Playwright webview suite in its own image (UPDATE=1 rewrites screenshots)
 make package         # vsce package -> loopboard-todo-<version>.vsix
-make check           # build + test (no .vsix) — MUST pass before any commit
-make check PACKAGE=1 # build + test + package — opt-in packaging check on the same command
+make check           # build + test + e2e (no .vsix) — MUST pass before any commit
+make check PACKAGE=1 # + package — opt-in packaging check on the same command
 make clean
 ```
 
@@ -49,10 +50,12 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   `writer.ts` (index file), `taskfile.ts` (per-task detail file), `model.ts`, `merge.ts`,
   `gates.ts`, `loop.ts`, `view.ts` — compiled by `tsconfig.test.json` (`types: []`) into
   `out-test/`.
-- VSCode-touching (manual F5 verification only): `extension.ts`, `store.ts`, `controller.ts`,
-  `panel.ts`, `sidebar.ts`, `terminals.ts`, `webview.ts` — main `tsconfig.json` → `out/`.
+- VSCode-touching: `extension.ts`, `store.ts`, `controller.ts`, `panel.ts`, `sidebar.ts`,
+  `terminals.ts`, `webview.ts` — main `tsconfig.json` → `out/`. `store`/`controller`/`panel`/
+  `webview` ARE covered headless by `test/host.test.js` (fake `vscode` injected via
+  `test/fake-vscode.js`); `extension.ts` + `terminals.ts` stay F5-only.
 - Webview assets: `media/board.{html,css,js}`, `media/sidebar.{html,css,js}` — vanilla JS, CSP
-  nonce, VSCode theme variables only.
+  nonce, VSCode theme variables only; covered by the Playwright suite in `test-e2e/` (`make e2e`).
 - Keep new logic pure/testable; wrap `vscode` imports as thinly as possible.
 
 ## Critical learnings (do not rediscover)
@@ -147,7 +150,9 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   (index: `DECISIONS.md`; append at the bottom); update `VERIFICATION.md` when the verification
   story changes.
 - Manual checklist (M3–M6, F5 Extension Development Host) lives in `VERIFICATION.md`; headless
-  sessions cannot run it — say so, never claim it done.
+  sessions cannot run it — say so, never claim it done. What is left genuinely manual after the
+  host + webview suites: activation, real terminals, real-host asset URIs/CSP, native VS Code
+  chrome (`VERIFICATION.md`'s "What is NOT covered" list).
 - `DONE.md` may be absent until first Review acceptance; store treats missing as empty — keep it
   that way.
 - `media/template-todo.md` + `media/template-loop.md` (scaffold for fresh `.loopboard/` workspaces).

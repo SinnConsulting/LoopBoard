@@ -18,9 +18,11 @@ Never branch directly off a bare task id (`t-33cb-…`) — the `task/` prefix i
 ## Why
 
 `.github/workflows/build.yml` triggers on `push` with `branches: ['task/**']`. Any other branch
-name silently skips the per-branch build + test + `.vsix` artifact, so no reviewer can install the
-build under review. The trigger also carries `paths-ignore: ['**/*.md']` — doc-only pushes
-intentionally produce no build.
+name silently skips the per-branch build + test + `.vsix` artifact (and the `e2e` job), so no
+reviewer can install the build under review. The trigger also carries a `paths:` allowlist —
+`src/`, `media/`, `test/`, `test-e2e/`, `scripts/`, the manifests and tsconfigs, `.vscodeignore`
+and the workflow itself — so fixture and template markdown still builds while doc-only pushes
+intentionally produce none.
 
 `.github/workflows/release.yml` triggers on push to `main`; releases stay entirely on `main`.
 

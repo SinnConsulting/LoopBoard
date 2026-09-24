@@ -6,3 +6,7 @@ out-test/
 TODO.md
 DONE.md
 .loopboard
+# Playwright run artifacts (traces, diff images). The committed baselines under
+# test-e2e/__screenshots__/ are NOT ignored — they are the assertion.
+test-e2e/test-results/
+test-e2e/playwright-report/

@@ -4,8 +4,8 @@
 // feature appends to Critical learnings and Conventions.
 //
 // This budget is what stops that. It is the ONLY enforcement that binds an editor who never reads
-// .claude/rules/claude-md-compress.md: build.yml carries paths-ignore ['**/*.md'] so a doc-only
-// push produces no CI at all, and a delegated implementer subagent cannot invoke the
+// .claude/rules/claude-md-compress.md: build.yml's `paths:` allowlist does not cover CLAUDE.md,
+// so a doc-only push produces no CI at all, and a delegated implementer subagent cannot invoke the
 // claude-md-compress skill unless one is explicitly handed to it. `make check` is mandatory before
 // any commit, so this test is the backstop no agent can skip.
 //
