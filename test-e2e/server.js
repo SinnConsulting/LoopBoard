@@ -53,6 +53,7 @@ function renderPage(page, theme) {
     .replace(/{{nonce}}/g, n)
     .replace(/{{styleUri}}/g, `/media/${page}.css`)
     .replace(/{{scriptUri}}/g, `/media/${page}.js`)
+    .replace(/{{markdownUri}}/g, '/media/markdown.js')
     .replace(/{{codiconUri}}/g, '/media/codicon/codicon.css')
     // Theme selector for the light/dark screenshot pair.
     .replace('<html lang="en">', `<html lang="en" data-theme="${theme === 'dark' ? 'dark' : 'light'}">`)

@@ -179,7 +179,6 @@ test('promote: New -> Backlog rewrites TODO.md canonically and posts a refreshed
     '- [ ] Add rate limiting middleware to the public REST API',
     '  - id: t-aa01',
     '  - phase: backlog',
-    '  - rev: 1',
   ]);
   // Canonical write-back (CLAUDE.md non-negotiable #3): the whole file is already a fixpoint.
   assert.equal(serializeTodo(parseTodo(todo)), todo, 'TODO.md is written back canonically');
@@ -259,7 +258,6 @@ test('demote: Backlog -> New, and a second demote is refused as a conflict', asy
     '  - id: t-dd01',
     '  - phase: new',
     '  - model: sonnet',
-    '  - rev: 1',
   ]);
   assert.ok(phaseIds(ctx.board(), 'new').includes('t-dd01'));
   assert.deepEqual(ctx.toasts().map((t) => t.text), ['Demoted to New']);
@@ -286,9 +284,8 @@ test('a model patch is a field-level patch on ONE file (the index) and leaves ev
     '  - id: t-dd01',
     '  - phase: backlog',
     '  - model: opus',
-    '  - rev: 1',
   ]);
-  // Only that entry's model + rev moved; no other entry changed.
+  // Only that entry's model moved; no other entry changed.
   for (const id of ['t-aa01', 't-aa02', 't-bb01', 't-cc01', 't-ee01']) {
     assert.deepEqual(entryLines(after, id), entryLines(before, id), `${id} untouched`);
   }
@@ -303,12 +300,12 @@ test('a model patch is a field-level patch on ONE file (the index) and leaves ev
     '- [ ] Migrate integration tests from Jest to node:test',
     '  - id: t-dd01',
     '  - phase: backlog',
-    '  - rev: 2',
   ]);
 });
 
-test('a description patch targets ONLY the detail file, and bumps the index entry rev', async () => {
+test('a description patch targets ONLY the detail file and never rewrites TODO.md (t-f1b0)', async () => {
   const ctx = await mount();
+  const before = ctx.read('TODO.md');
   await ctx.send({
     type: 'patch',
     patch: { taskId: 't-cc01', field: 'description', value: 'Rewritten body.', base: 'Retries for failed webhook deliveries.\n\nSecond paragraph with **bold** and a `code` span.' },
@@ -316,7 +313,7 @@ test('a description patch targets ONLY the detail file, and bumps the index entr
   const detail = fs.readFileSync(path.join(ctx.dir, '.loopboard', 'tasks', 't-cc01.md'), 'utf8');
   assert.match(detail, /## Description\n\nRewritten body\./);
   assert.match(detail, /## Worklog/, 'untouched sections survive');
-  assert.match(entryLines(ctx.read('TODO.md'), 't-cc01').join('\n'), /- rev: 1/);
+  assert.equal(ctx.read('TODO.md'), before, 'one file per save: no index rev bump');
 });
 
 // ---------------------------------------------------------------- (5) conflict
@@ -395,7 +392,7 @@ test('the debug sink records verbose per-patch detail at level verbose', async (
   await ctx.send({ type: 'patch', patch: { taskId: 't-dd01', field: 'model', value: 'opus', base: 'sonnet' } });
   await ctx.store.flushDebug();
   const log = ctx.read('debug.log');
-  assert.match(log, /\tpatch\tt-dd01 model -> applied rev\+ = opus$/m);
+  assert.match(log, /\tpatch\tt-dd01 model -> applied = opus$/m);
   assert.match(log, /\tdispatch\tpatch$/m);
 });
 

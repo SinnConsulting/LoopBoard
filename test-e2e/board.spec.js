@@ -114,11 +114,12 @@ test('the model select maps "default (opus)" to an empty value', async ({ page }
     { type: 'patch', patch: { taskId: 't-bb01', field: 'model', value: '', base: 'opus' } },
   ]);
 
-  // And back the other way: an explicit slot id is sent verbatim.
+  // And back the other way: an explicit slot id is sent verbatim. The pick above was echoed into
+  // the local board (t-bbad), so this patch's base is the value just picked, not the stale 'opus'.
   await select.selectOption('sonnet');
   expect((await sentOfType(page, 'patch')).at(-1)).toEqual({
     type: 'patch',
-    patch: { taskId: 't-bb01', field: 'model', value: 'sonnet', base: 'opus' },
+    patch: { taskId: 't-bb01', field: 'model', value: 'sonnet', base: '' },
   });
 });
 
