@@ -119,7 +119,7 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   construction because `sync.ts` matches only the `loopboard:sync:` namespace (regression test in
   `test/sync.test.js`). `media/template-loop.md` ends with the EMPTY section outside every sync
   marker: fresh workspaces scaffold it, Sync never adds it to existing files. Caveat: a LOOP.md with NO sync markers at all is legacy-replaced wholesale
-  on Sync (backed up to `LOOP.md.bkp`). The gear opens LoopBoard's OWN settings page (t-sgrp),
+  on Sync, activation auto-sync included, no modal (backed up to `LOOP.md.bkp`). The gear opens LoopBoard's OWN settings page (t-sgrp),
   drawn from `contributes.configuration` (every key `scope: application`, so writes are always
   Global); its `loopBoard.*` config listener lives and dies with that panel — `src/` has none
   otherwise, and configuration is still read on demand.
@@ -152,8 +152,10 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   that way.
 - `media/template-todo.md` + `media/template-loop.md` (scaffold for fresh `.loopboard/` workspaces).
   `template-loop.md` is not hand-mirrored: its marked sections are the source `src/sync.ts`'s
-  `syncMarkedSections` pushes into every workspace's `.loopboard/LOOP.md` on Sync and activation
-  auto-heal (`store.syncTemplates`/`store.autoHeal`). Compressing it is scoped by
+  `syncMarkedSections` pushes into every workspace's `.loopboard/LOOP.md` on Sync (settings-page
+  button, and once per activation while `loopBoard.autoSyncTemplates` is on — t-4dce; never on
+  refresh/watch) and activation auto-heal (`store.syncTemplates`/`store.autoHeal`; drift plan =
+  pure `planSync`). Compressing it is scoped by
   `.claude/rules/template-loop-compress.md` (`paths:` → `media/template-loop.md`) to the
   `template-loop-compress` skill (`.claude/skills/template-loop-compress/`); `CLAUDE.md` has the
   same pair (`.claude/rules/claude-md-compress.md`, `.claude/skills/claude-md-compress/`). Each

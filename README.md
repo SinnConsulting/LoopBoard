@@ -168,7 +168,9 @@ The sidebar's **Settings** row opens LoopBoard's own settings page: the same key
 four sections, with the three model slots drawn as one clickable grid (on · worker · groomer ·
 `--model` · effort · groomers) instead of fourteen flat rows. It carries a modified marker and a
 per-setting reset, and keeps an **Open in VSCode Settings** escape hatch to the native
-`@ext:SinnConsulting.loopboard-todo` view for settings search and JSON editing.
+`@ext:SinnConsulting.loopboard-todo` view for settings search and JSON editing. Its header also
+holds **Synchronise Templates**, which previews and (after a confirm) syncs this window's
+`.loopboard/` TODO.md and LOOP.md to the shipped templates.
 
 These stay ordinary VSCode settings — `settings.json` and Settings Sync are unaffected — with one
 deliberate restriction: **every `loopBoard.*` key is `"scope": "application"`, so it can only be set
@@ -216,7 +218,7 @@ ordered exactly as both settings pages render them.
 | Setting | Default | Description |
 |---|---|---|
 | `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
-| `loopBoard.pulseTemplateSync` | `true` | Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way). |
+| `loopBoard.autoSyncTemplates` | `true` | Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page. |
 | `loopBoard.sidebarMarquee` | `false` | Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way. |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 
@@ -262,11 +264,14 @@ Rule above, they win in this workspace.
   rewrites or validates the section; what you save is exactly what stays.
 - **Workspace-isolated by construction.** The text lives in this workspace's `.loopboard/LOOP.md`
   and can apply nowhere else.
-- **Synchronise Templates never touches it.** Sync rewrites only `loopboard:sync:`-marked template
-  blocks; the `loopboard:custom` markers (and any other text outside sync markers) survive
+- **Template sync never touches it.** Sync runs automatically once per activation (window load or
+  extension update) while `loopBoard.autoSyncTemplates` is on (the default), and on demand from the
+  **Synchronise Templates** button on the settings page. It rewrites only `loopboard:sync:`-marked
+  template blocks; the `loopboard:custom` markers (and any other text outside sync markers) survive
   verbatim. The one caveat: a `LOOP.md` with **no** `loopboard:sync:` markers at all is treated as
-  legacy and replaced wholesale on Sync (backed up to `LOOP.md.bkp` first) — any modern `LOOP.md`
-  has those markers.
+  legacy and replaced wholesale — on activation too, without asking — after its previous text is
+  backed up to `.loopboard/LOOP.md.bkp`, and a warning popup says so. Any modern `LOOP.md` has
+  those markers.
 - **Precedence is prose.** A custom rule that contradicts a predefined Rule wins in this workspace
   because the lead-in says so and workers read it — nothing is enforced by the extension.
 

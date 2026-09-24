@@ -240,3 +240,171 @@ test('syncTodoPreamble (marked) is surgical and preserves prose outside the mark
   assert.match(text, /A hand-written note the user added below the marker\./);
   assert.match(text, /Keep me/);
 });
+
+// ---- activation auto-sync (t-4dce): pure plan, decision, popup ----
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { planSync, decideAutoSync, autoSyncPopup, describeSyncChanges, LOOP_BACKUP_PATH } = require('../out-test/sync.js');
+
+const TODO_TPL = fs.readFileSync(path.join(__dirname, '..', 'media', 'template-todo.md'), 'utf8');
+const LOOP_TPL = fs.readFileSync(path.join(__dirname, '..', 'media', 'template-loop.md'), 'utf8');
+
+const ENTRIES = ['- [ ] Keep me', '  - id: t-aaaa', '  - phase: new', '', '- [x] Me too', '  - id: t-bbbb', '  - phase: backlog', ''].join('\n');
+const withEntries = (todo) => todo.replace('_(none)_\n', ENTRIES);
+const CUSTOM_RULES = [
+  '<!-- loopboard:custom:begin -->',
+  '## Custom rules (workspace)',
+  '',
+  '1. PRs must be created before moving to in review. Otherwise task not done.',
+  '<!-- loopboard:custom:end -->',
+].join('\n');
+const withCustom = (loop) => loop.replace(/<!-- loopboard:custom:begin -->[\s\S]*<!-- loopboard:custom:end -->/, CUSTOM_RULES);
+// Stale the prose inside one marked block of `text`, leaving its markers in place.
+const staleBlock = (text, id) =>
+  text.replace(new RegExp(`(<!-- loopboard:sync:${id}:begin -->\\n)`), '$1Stale line from an older build.\n');
+
+// Apply a plan's writes the way store.syncTemplates does and return the resulting files.
+function applyPlan(todo, loop, plan) {
+  return {
+    todo: plan.writes.todo ?? todo,
+    loop: plan.writes.loop ?? loop,
+    backup: plan.writes.loopBackup,
+  };
+}
+
+const TODO_CUR = withEntries(TODO_TPL);
+const LOOP_CUR = withCustom(LOOP_TPL);
+
+test('planSync: files that already match the templates are up to date and write nothing', () => {
+  const plan = planSync(TODO_CUR, LOOP_CUR, TODO_TPL, LOOP_TPL);
+  assert.equal(plan.upToDate, true);
+  assert.equal(plan.todo, 'none');
+  assert.equal(plan.loop, 'none');
+  assert.deepEqual(plan.summary, []);
+  assert.deepEqual(plan.writes, {});
+});
+
+test('planSync: a missing or empty file is created whole from its template', () => {
+  for (const absent of [undefined, '', '  \n']) {
+    const plan = planSync(absent, absent, TODO_TPL, LOOP_TPL);
+    assert.equal(plan.todo, 'create');
+    assert.equal(plan.loop, 'create');
+    assert.equal(plan.writes.todo, TODO_TPL);
+    assert.equal(plan.writes.loop, LOOP_TPL);
+    assert.equal(plan.writes.loopBackup, undefined, 'nothing to back up');
+    assert.equal(plan.summary.length, 2);
+  }
+});
+
+test('planSync: marked LOOP.md drift updates only the drifted blocks, no backup', () => {
+  const loop = staleBlock(staleBlock(LOOP_CUR, 'rules'), 'automation');
+  const plan = planSync(TODO_CUR, loop, TODO_TPL, LOOP_TPL);
+  assert.equal(plan.todo, 'none');
+  assert.equal(plan.loop, 'sections');
+  assert.deepEqual(plan.loopSectionIds, ['rules', 'automation']);
+  assert.equal(plan.writes.loopBackup, undefined);
+  assert.deepEqual(plan.summary, ['LOOP.md: 2 section(s) out of date (rules, automation).']);
+});
+
+test('planSync: marked TODO.md intro drift is an intro update', () => {
+  const plan = planSync(staleBlock(TODO_CUR, 'todo-intro'), LOOP_CUR, TODO_TPL, LOOP_TPL);
+  assert.equal(plan.todo, 'intro');
+  assert.equal(plan.loop, 'none');
+  assert.deepEqual(plan.summary, ['TODO.md: intro out of date.']);
+});
+
+test('planSync: an unmarked TODO.md preamble is a legacy replacement', () => {
+  const legacy = ['# TODO', '', 'Old intro from before markers.', '', '## Tasks', '', ENTRIES].join('\n');
+  const plan = planSync(legacy, LOOP_CUR, TODO_TPL, LOOP_TPL);
+  assert.equal(plan.todo, 'legacy');
+  assert.match(plan.writes.todo, /loopboard:sync:todo-intro:begin/);
+  assert.doesNotMatch(plan.writes.todo, /Old intro from before markers\./);
+  assert.ok(plan.writes.todo.includes(ENTRIES), 'every task entry survives the legacy preamble replacement');
+});
+
+test('planSync: an unmarked LOOP.md is a legacy full replacement, backed up first', () => {
+  const legacy = '# LOOP\n\nHand-written rules from before markers.\n';
+  const plan = planSync(TODO_CUR, legacy, TODO_TPL, LOOP_TPL);
+  assert.equal(plan.loop, 'legacy');
+  assert.equal(plan.writes.loopBackup, legacy, 'the previous LOOP.md is what the backup holds');
+  assert.equal(plan.writes.loop, LOOP_TPL);
+  assert.match(plan.summary[0], /LOOP\.md\.bkp/);
+});
+
+test('decideAutoSync: none when the setting is off or nothing drifted; apply for marked AND legacy drift', () => {
+  const upToDate = planSync(TODO_CUR, LOOP_CUR, TODO_TPL, LOOP_TPL);
+  const marked = planSync(TODO_CUR, staleBlock(LOOP_CUR, 'rules'), TODO_TPL, LOOP_TPL);
+  const legacyLoop = planSync(TODO_CUR, '# old LOOP\n', TODO_TPL, LOOP_TPL);
+  const legacyTodo = planSync('# TODO\n\nold\n\n## Tasks\n\n' + ENTRIES, LOOP_CUR, TODO_TPL, LOOP_TPL);
+  assert.equal(decideAutoSync(upToDate, true), 'none');
+  assert.equal(decideAutoSync(upToDate, false), 'none');
+  for (const plan of [marked, legacyLoop, legacyTodo]) {
+    assert.equal(decideAutoSync(plan, true), 'apply');
+    assert.equal(decideAutoSync(plan, false), 'none', 'setting off: activation never writes template content');
+  }
+});
+
+test('autoSyncPopup: nothing for an up-to-date plan', () => {
+  assert.equal(autoSyncPopup(planSync(TODO_CUR, LOOP_CUR, TODO_TPL, LOOP_TPL)), undefined);
+});
+
+test('autoSyncPopup: marked-section updates and created files are an info naming each change', () => {
+  const sections = autoSyncPopup(planSync(TODO_CUR, staleBlock(staleBlock(LOOP_CUR, 'rules'), 'automation'), TODO_TPL, LOOP_TPL));
+  assert.deepEqual(sections, { level: 'info', message: 'LoopBoard: synced templates — LOOP.md: 2 section(s) updated (rules, automation).' });
+  const both = autoSyncPopup(planSync(staleBlock(TODO_CUR, 'todo-intro'), undefined, TODO_TPL, LOOP_TPL));
+  assert.equal(both.level, 'info');
+  assert.match(both.message, /TODO\.md: intro updated/);
+  assert.match(both.message, /LOOP\.md created from the template/);
+});
+
+test('autoSyncPopup: a legacy LOOP.md is a warning that says it was replaced and names LOOP.md.bkp', () => {
+  const popup = autoSyncPopup(planSync(staleBlock(TODO_CUR, 'todo-intro'), '# old LOOP\n', TODO_TPL, LOOP_TPL));
+  assert.equal(popup.level, 'warning');
+  assert.match(popup.message, /LOOP\.md predated the marker format and was replaced/);
+  assert.ok(popup.message.includes(LOOP_BACKUP_PATH), 'names the backup path');
+  assert.equal(LOOP_BACKUP_PATH, '.loopboard/LOOP.md.bkp');
+  assert.match(popup.message, /Also synced: TODO\.md: intro updated\./, 'routine changes riding along are still named');
+});
+
+test('autoSyncPopup: a legacy TODO.md is a warning that the intro was replaced with task entries untouched', () => {
+  const popup = autoSyncPopup(planSync('# TODO\n\nold\n\n## Tasks\n\n' + ENTRIES, LOOP_CUR, TODO_TPL, LOOP_TPL));
+  assert.equal(popup.level, 'warning');
+  assert.match(popup.message, /TODO\.md's intro predated the marker format and was replaced \(task entries untouched\)\./);
+});
+
+test('describeSyncChanges: the debug reason spells out legacy replacements with the backup path', () => {
+  const plan = planSync('# TODO\n\nold\n\n## Tasks\n\n' + ENTRIES, '# old LOOP\n', TODO_TPL, LOOP_TPL);
+  assert.equal(describeSyncChanges(plan), 'LEGACY: LOOP.md replaced whole, backup .loopboard/LOOP.md.bkp; LEGACY: TODO.md preamble replaced whole');
+  const marked = planSync(TODO_CUR, staleBlock(LOOP_CUR, 'rules'), TODO_TPL, LOOP_TPL);
+  assert.equal(describeSyncChanges(marked), 'LOOP.md: 1 section(s) updated (rules)');
+});
+
+test('fixpoint: re-planning after applying any plan is up to date, so the next activation is a no-op', () => {
+  const cases = {
+    missing: [undefined, undefined],
+    empty: ['', '  \n'],
+    marked: [staleBlock(TODO_CUR, 'todo-intro'), staleBlock(staleBlock(LOOP_CUR, 'rules'), 'loop-intro')],
+    legacy: ['# TODO\n\nold\n\n## Tasks\n\n' + ENTRIES, '# old LOOP\n\nhand text\n'],
+  };
+  for (const [name, [todo, loop]] of Object.entries(cases)) {
+    const plan = planSync(todo, loop, TODO_TPL, LOOP_TPL);
+    assert.equal(plan.upToDate, false, `${name}: starts out of date`);
+    const after = applyPlan(todo, loop, plan);
+    const again = planSync(after.todo, after.loop, TODO_TPL, LOOP_TPL);
+    assert.equal(again.upToDate, true, `${name}: ${again.summary.join(' | ')}`);
+    assert.deepEqual(again.writes, {}, `${name}: nothing left to write`);
+  }
+});
+
+test('auto-sync on the marked path leaves the loopboard:custom block and every task entry byte-identical (t-4a04)', () => {
+  const todo = staleBlock(TODO_CUR, 'todo-intro');
+  const loop = staleBlock(staleBlock(LOOP_CUR, 'rules'), 'automation');
+  const plan = planSync(todo, loop, TODO_TPL, LOOP_TPL);
+  assert.equal(decideAutoSync(plan, true), 'apply');
+  const after = applyPlan(todo, loop, plan);
+  assert.ok(after.loop.includes(CUSTOM_RULES), 'custom block survives auto-sync byte-identical');
+  assert.equal(after.loop.split(CUSTOM_RULES).length - 1, 1, 'custom block appears exactly once');
+  assert.equal(after.todo.slice(after.todo.indexOf('## Tasks')), todo.slice(todo.indexOf('## Tasks')), 'task entries byte-identical');
+  assert.equal(after.backup, undefined, 'the marked path takes no backup');
+});

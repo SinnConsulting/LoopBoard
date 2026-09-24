@@ -351,7 +351,7 @@ New v2 checklist (from REFACTORING.md Phase 8):
     longer exists — Settings → Extensions → LoopBoard shows no such row, and a leftover value in
     settings.json is ignored as an unknown key (no toast, no log line). Hand-add a
     `<!-- loopboard:custom:begin/end -->` section with free text to `.loopboard/LOOP.md` (shape in
-    README's "Workspace custom rules"), then run **Synchronise Templates** → the section is
+    README's "Workspace custom rules"), then press **Synchronise Templates** (settings-page header) → the section is
     byte-identical afterwards; reload the window → still untouched (the extension never reads or
     writes it, so no `custom-rules` events appear in `.loopboard/debug.log` at any level). In a
     fresh workspace, **LoopBoard: Initialize Workspace** scaffolds a LOOP.md whose tail already
@@ -556,7 +556,7 @@ and likewise cannot be verified headless.
     ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
     WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
     `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
-    review on|off`. Run **LoopBoard: Sync Templates** on a workspace whose `LOOP.md` predates this
+    review on|off`. Press **Synchronise Templates** (settings-page header) on a workspace whose `LOOP.md` predates this
     change → its Automation fence gains the `DELEGATED-WORK MODE` clause, contains no `gh pr merge`
     anywhere and names the never-merge rule (`NEVER merge a PR — merging is the HUMAN's action
     alone`), and the custom-rules section is untouched.
@@ -638,7 +638,7 @@ and likewise cannot be verified headless.
     description — *Permission mode*, *Loop interval*, and both Beta rows (*Delegate work*, *Delegate
     review*) — plus the model grid's header note, which says the same thing for `--model`,
     `effort` and `groomers`. EVERY other row has nothing there: *After a task*, *Context limit —
-    percent/action*, *Nudge loops*, *Max attachment size MB*, *Pulse template sync*, *Debug* and the
+    percent/action*, *Nudge loops*, *Max attachment size MB*, *Auto sync templates*, *Debug* and the
     grid's `on` / `default worker` / `default groomer` columns show no marker at all, and there is no
     "applies immediately" chip anywhere. Read the marked rows and the grid note side by side: the
     wording must be identical, not two phrasings of the same fact. In a light and a dark theme the
@@ -1021,3 +1021,30 @@ and likewise cannot be verified headless.
     reload; hover a scrolling row → it pauses mid-scroll, move the pointer away → it resumes from
     there. Enable **reduced motion** in the OS → the rows hold still even with the setting on.
     **Toggle off** again → both stop and truncate with `…`, no reload.
+
+46. **Templates auto-sync on activation; Sync button on the settings page (t-4dce):** the drift
+    plan, the auto-sync decision, the popup wording, the re-plan fixpoint and the custom-section
+    invariant are unit-tested (`test/sync.test.js`), the manifest shape and the `pulseTemplateSync`
+    migration too; the activation wiring, the real popups and both webviews are host-only, so this
+    item is their acceptance path. Set `loopBoard.debug` to `info` throughout.
+    **Sidebar:** the Synchronise Templates row is gone (Help, Settings, New Story remain) and
+    nothing in the sidebar pulses for template drift. **Button:** open the settings page (gear) →
+    the header shows **Synchronise Templates** next to Migrate Config, its tooltip says it syncs
+    THIS window's `.loopboard/`; on an up-to-date workspace it shows the "already match" info
+    toast; after hand-editing text inside a `loopboard:sync:` block of `.loopboard/LOOP.md` it
+    shows the modal naming that section, **Sync** → the success toast and the block is restored.
+    **No mid-session revert:** hand-edit inside a `loopboard:sync:` block, then edit tasks, press
+    Refresh, let the watcher fire → the edit stays. **Auto-sync:** reload the window → the block is
+    restored without a click, an info toast reads `LoopBoard: synced templates — LOOP.md: 1
+    section(s) updated (<id>).`, and `debug.log` has one `template-autosync` line `applied — …`
+    plus its `popup` line; reload again → no toast, `template-autosync skipped — up to date`.
+    **Legacy LOOP.md:** replace `.loopboard/LOOP.md` with text that has no `loopboard:sync:`
+    markers, reload → a non-modal WARNING says LOOP.md predated the marker format and names
+    `.loopboard/LOOP.md.bkp`, that file holds the old text, LOOP.md is the current template, and
+    the log line reads `applied — LEGACY: LOOP.md replaced whole, backup .loopboard/LOOP.md.bkp`.
+    **Setting off:** untick *Auto sync templates* on the settings page, hand-edit a marked block,
+    reload → nothing is written, no toast, log `skipped — setting off (1 part(s) out of date)`;
+    the settings-page button still syncs. With a hand-added `loopboard:custom` section present,
+    every path above leaves it byte-identical and every task entry in TODO.md untouched. With a
+    stale `loopBoard.pulseTemplateSync` in user settings, **Migrate Config** lists it as
+    deprecated → `loopBoard.autoSyncTemplates` with a Remove action that does not set the new key.

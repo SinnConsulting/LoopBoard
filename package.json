@@ -336,13 +336,13 @@
             "loopBoardApplies": "live",
             "markdownDescription": "Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance."
           },
-          "loopBoard.pulseTemplateSync": {
+          "loopBoard.autoSyncTemplates": {
             "type": "boolean",
             "scope": "application",
             "order": 20,
             "default": true,
             "loopBoardApplies": "live",
-            "markdownDescription": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
+            "markdownDescription": "Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page."
           },
           "loopBoard.sidebarMarquee": {
             "type": "boolean",

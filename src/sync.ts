@@ -119,3 +119,120 @@ export function syncTodoPreamble(
   }
   return { text: serializeTodo(doc), changed, legacy: legacy && changed };
 }
+
+// Where a legacy (unmarked) LOOP.md is saved before the one-time full replacement.
+export const LOOP_BACKUP_PATH = '.loopboard/LOOP.md.bkp';
+
+// What a sync would do to each file. `legacy` = the file predates the marker format and is
+// replaced whole (TODO.md: only the preamble — task entries round-trip verbatim; LOOP.md: the whole
+// file, after a backup to LOOP_BACKUP_PATH).
+export type TodoChange = 'none' | 'create' | 'intro' | 'legacy';
+export type LoopChange = 'none' | 'create' | 'sections' | 'legacy';
+
+export interface SyncPlan {
+  summary: string[]; // the manual confirm modal's preview lines
+  upToDate: boolean;
+  todo: TodoChange;
+  loop: LoopChange;
+  loopSectionIds: string[]; // `loop: 'sections'` only: the marked blocks that change
+  // Exactly what applying the plan writes, in write order: TODO.md, then LOOP.md's backup, then
+  // LOOP.md. An absent field is a file left untouched.
+  writes: { todo?: string; loopBackup?: string; loop?: string };
+}
+
+// The one classification of template drift (t-4dce), shared by the manual preview, the manual
+// Sync and activation auto-sync, so what the modal promises, what the popup reports and what gets
+// written cannot disagree. `undefined` = the file does not exist.
+export function planSync(
+  todoText: string | undefined,
+  loopText: string | undefined,
+  todoTemplate: string,
+  loopTemplate: string
+): SyncPlan {
+  const summary: string[] = [];
+  const writes: SyncPlan['writes'] = {};
+  let todo: TodoChange = 'none';
+  let loop: LoopChange = 'none';
+  let loopSectionIds: string[] = [];
+
+  if (isEmptyOrMissing(todoText)) {
+    todo = 'create';
+    writes.todo = todoTemplate;
+    summary.push('TODO.md is missing or empty and will be created from the template.');
+  } else {
+    const { text, changed, legacy } = syncTodoPreamble(todoText as string, todoTemplate);
+    if (changed) {
+      todo = legacy ? 'legacy' : 'intro';
+      writes.todo = text;
+      summary.push(legacy
+        ? 'TODO.md predates the current format and will be fully replaced (no markers yet).'
+        : 'TODO.md: intro out of date.');
+    }
+  }
+
+  if (isEmptyOrMissing(loopText)) {
+    loop = 'create';
+    writes.loop = loopTemplate;
+    summary.push('LOOP.md is missing or empty and will be created from the template.');
+  } else if (!hasMarkers(loopText as string)) {
+    loop = 'legacy';
+    writes.loopBackup = loopText as string;
+    writes.loop = loopTemplate;
+    summary.push('LOOP.md predates the current format and will be fully replaced (a backup will be saved to LOOP.md.bkp).');
+  } else {
+    const { text, changedIds } = syncMarkedSections(loopText as string, loopTemplate);
+    if (changedIds.length) {
+      loop = 'sections';
+      loopSectionIds = changedIds;
+      writes.loop = text;
+      summary.push(`LOOP.md: ${changedIds.length} section(s) out of date (${changedIds.join(', ')}).`);
+    }
+  }
+
+  return { summary, upToDate: summary.length === 0, todo, loop, loopSectionIds, writes };
+}
+
+// Activation auto-sync's decision. Legacy replacements are `apply` like any other drift: the
+// automatic path has no confirm step, the popup and the backup are the safety net.
+export function decideAutoSync(plan: SyncPlan, autoSyncEnabled: boolean): 'none' | 'apply' {
+  return autoSyncEnabled && !plan.upToDate ? 'apply' : 'none';
+}
+
+// The routine (non-legacy) changes a plan makes, one short phrase each.
+function routineParts(plan: SyncPlan): string[] {
+  const parts: string[] = [];
+  if (plan.todo === 'create') parts.push('TODO.md created from the template');
+  if (plan.todo === 'intro') parts.push('TODO.md: intro updated');
+  if (plan.loop === 'create') parts.push('LOOP.md created from the template');
+  if (plan.loop === 'sections') {
+    parts.push(`LOOP.md: ${plan.loopSectionIds.length} section(s) updated (${plan.loopSectionIds.join(', ')})`);
+  }
+  return parts;
+}
+
+// The `template-autosync` debug line's reason for an applied plan: every change, legacy ones
+// spelled out with the backup path.
+export function describeSyncChanges(plan: SyncPlan): string {
+  const parts: string[] = [];
+  if (plan.loop === 'legacy') parts.push(`LEGACY: LOOP.md replaced whole, backup ${LOOP_BACKUP_PATH}`);
+  if (plan.todo === 'legacy') parts.push('LEGACY: TODO.md preamble replaced whole');
+  return [...parts, ...routineParts(plan)].join('; ');
+}
+
+// The popup after an auto-sync that wrote something. A legacy replacement is a warning that says
+// plainly what was replaced (and, for LOOP.md, where the old text went); anything else is info.
+// `undefined` for an up-to-date plan: nothing was written, so nothing is shown.
+export function autoSyncPopup(plan: SyncPlan): { level: 'info' | 'warning'; message: string } | undefined {
+  if (plan.upToDate) return undefined;
+  const routine = routineParts(plan);
+  const legacy: string[] = [];
+  if (plan.loop === 'legacy') {
+    legacy.push(`LOOP.md predated the marker format and was replaced with the current template — your previous LOOP.md is saved as ${LOOP_BACKUP_PATH}.`);
+  }
+  if (plan.todo === 'legacy') {
+    legacy.push("TODO.md's intro predated the marker format and was replaced (task entries untouched).");
+  }
+  if (legacy.length === 0) return { level: 'info', message: `LoopBoard: synced templates — ${routine.join('; ')}.` };
+  const also = routine.length ? ` Also synced: ${routine.join('; ')}.` : '';
+  return { level: 'warning', message: `LoopBoard: ${legacy.join(' ')}${also}` };
+}

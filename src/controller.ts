@@ -24,6 +24,7 @@ import {
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
 import { AgentRow, describeAgent } from './subagents';
+import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
@@ -167,7 +168,7 @@ export class Controller {
       defaultGroomerModel: readDefaultModel(c, 'defaultGroomerModel'),
       afterTask: readAfterTask(c),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
-      pulseTemplateSync: c.get<boolean>('pulseTemplateSync', true),
+      autoSyncTemplates: c.get<boolean>('autoSyncTemplates', true),
       sidebarMarquee: c.get<boolean>('sidebarMarquee', false),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
       // 0 (the default) = the context threshold is off entirely; the indicator still renders.
@@ -177,14 +178,7 @@ export class Controller {
     };
   }
 
-  // `reuseTemplateState` skips the template-sync preview and reuses the last computed answer. The
-  // context poll repaints every 30s for as long as any loop runs, and re-reading + diffing TODO.md,
-  // LOOP.md and both bundled templates that often — plus a `template-preview` log line each time —
-  // is pure churn: nothing the poll changes can affect whether the templates are stale (t-2b89
-  // review). Only a real refresh (which re-reads disk anyway) recomputes it.
-  private lastTemplatesOutOfDate = false;
-
-  private async buildWebBoard(board: Board, reuseTemplateState = false): Promise<WebBoard> {
+  private async buildWebBoard(board: Board): Promise<WebBoard> {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
     const loops = this.terminals.status();
@@ -218,19 +212,6 @@ export class Controller {
     web.helpUrl = HELP_URL;
     web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
     web.sidebarMarquee = cfg.sidebarMarquee;
-    // Recomputed on every refresh (and again right after a sync click via the refresh() it
-    // triggers) so the pulse reflects live disk state rather than a cached snapshot (t-pul1).
-    if (cfg.pulseTemplateSync && !this.store.todoMissing) {
-      if (reuseTemplateState) {
-        web.templatesOutOfDate = this.lastTemplatesOutOfDate;
-      } else {
-        const { todoText, loopText } = await this.readTemplates();
-        const preview = await this.store.previewSync(todoText, loopText);
-        web.templatesOutOfDate = !preview.upToDate;
-        this.lastTemplatesOutOfDate = web.templatesOutOfDate;
-        this.store.debugLog('verbose', 'template-preview', preview.upToDate ? 'upToDate' : 'stale');
-      }
-    }
     return web;
   }
 
@@ -605,7 +586,7 @@ export class Controller {
   // changes only host-side loop state.
   private async postBoard(): Promise<void> {
     if (!this.lastBoard) return;
-    const web = await this.buildWebBoard(this.lastBoard, true);
+    const web = await this.buildWebBoard(this.lastBoard);
     BoardPanel.current?.post({ type: 'board', board: web });
     this.sidebar.post({ type: 'board', board: web });
   }
@@ -1296,6 +1277,38 @@ export class Controller {
     await this.forgetDeadMigrateAck();
   }
 
+  // Run once per activation, right after autoHeal (t-4dce): bring TODO.md/LOOP.md's extension-owned
+  // scaffolding up to the shipped templates with no click, when `loopBoard.autoSyncTemplates` is on.
+  // Activation-only on purpose — nothing on refresh or file-watch re-runs it, so a hand-edit inside
+  // a `loopboard:sync:` block survives until the next window load or extension update. Legacy
+  // replacements run too, with no modal; the popup (and LOOP.md.bkp) is the safety net.
+  async autoSyncTemplates(): Promise<void> {
+    const log = (detail: string) => this.store.debugLog('info', 'template-autosync', detail);
+    try {
+      if (!(await this.store.hasTodoFile())) return log('skipped — no .loopboard/');
+      const { todoText, loopText } = await this.readTemplates();
+      // The plan is computed even with the setting off, so a hold not taken is visible in the log.
+      const plan = await this.store.previewSync(todoText, loopText);
+      if (decideAutoSync(plan, this.config().autoSyncTemplates) === 'none') {
+        return log(plan.upToDate ? 'skipped — up to date' : `skipped — setting off (${plan.summary.length} part(s) out of date)`);
+      }
+      const outcome = await this.store.syncTemplates(todoText, loopText);
+      if (outcome.status !== 'applied' || !outcome.plan) throw new Error(outcome.message ?? outcome.status);
+      const applied = outcome.plan;
+      const popup = autoSyncPopup(applied);
+      if (!popup) return log('skipped — up to date');
+      log(`applied — ${describeSyncChanges(applied)}`);
+      this.store.debugLog('info', 'popup', `${popup.level} — ${popup.message}`);
+      if (popup.level === 'warning') void vscode.window.showWarningMessage(popup.message);
+      else void vscode.window.showInformationMessage(popup.message);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`failed — ${reason}`);
+      this.store.debugLog('info', 'popup', `error — LoopBoard: template auto-sync failed — ${reason}`);
+      void vscode.window.showErrorMessage(`LoopBoard: template auto-sync failed — ${reason}`);
+    }
+  }
+
   // First-run (and every subsequent activation) Getting Started prompt, gated on a globalState
   // flag that only "Show never again" sets — dismissing or opening the docs leaves it unset so
   // the popup reappears next activation (t-de8d).
@@ -1336,7 +1349,7 @@ export class Controller {
   }
 
   // Shared sync/migrate flow: preview what's out of date, confirm, then apply. Used by both the
-  // sidebar's "Synchronise Templates" button and Init when `.loopboard/` already exists.
+  // settings page's "Synchronise Templates" button and Init when `.loopboard/` already exists.
   private async onSyncTemplates(confirmPrompt: string): Promise<void> {
     const { todoText, loopText } = await this.readTemplates();
     const preview = await this.store.previewSync(todoText, loopText);
