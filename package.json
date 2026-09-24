@@ -344,6 +344,14 @@
             "loopBoardApplies": "live",
             "markdownDescription": "Subtly pulse the sidebar's Synchronise Templates row when TODO.md/LOOP.md differ from the shipped templates, so it's easy to notice there's scaffolding to refresh. Off disables the animation entirely (independent of the OS-level reduced-motion setting, which is honoured either way)."
           },
+          "loopBoard.sidebarMarquee": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 30,
+            "default": false,
+            "loopBoardApplies": "live",
+            "markdownDescription": "Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way."
+          },
           "loopBoard.debug": {
             "type": "string",
             "scope": "application",
@@ -357,7 +365,7 @@
               "Key lifecycle events only: activation, promote/accept/demote gates, loop spawn/recycle/stop, same-field disk-wins conflicts.",
               "Everything, including every field patch/save, attachment, template scaffold/heal/sync, config read, and webview message dispatch."
             ],
-            "order": 30,
+            "order": 40,
             "default": "off",
             "loopBoardApplies": "live",
             "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."

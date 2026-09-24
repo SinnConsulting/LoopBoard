@@ -837,8 +837,9 @@ and likewise cannot be verified headless.
     draft is the easy case — grooming never sets `phase: inprogress`, which is the whole point).
     Within one poll (30 s) an **Agents** section appears directly under **Loops**, hidden until
     then: one row per live subagent, `<slot> · <agentType> · <description>` with a ticking duration,
-    the long label marquee-scrolling with the same animation the In-Progress title uses (and
-    stopping under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
+    the long label held still and ending in `…` by default; with `loopBoard.sidebarMarquee` on
+    (t-9a29, item 45) it marquee-scrolls with the same animation the In-Progress title uses (and
+    stops under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
     never grouped. Nothing in a row is clickable. When the agents finish, the rows disappear and the
     whole section goes with them. `debug.log` shows an `agents-read <slot> N live: …` line per poll.
 
@@ -973,9 +974,11 @@ and likewise cannot be verified headless.
     model's name, never a blank. The row lines up with the Agents rows below it (same 22px height,
     same 16px indent) and carries **NO pulsing dot and NO age/duration column**; the Agents rows
     still have both. Click the row → the board opens on that task in the In Progress tab, as the
-    old inline status line did; the tooltip still reads `Open the in-progress task on the board`.
-    Give the task a very long title → it marquee-scrolls and the `(<id>)` stays readable on the
-    return leg; with **reduced motion** enabled in the OS it holds still instead. Move the task out
+    old inline status line did; the tooltip reads `<title> (<id>)` then `Click to open on the board`
+    (t-9a29, item 45). Give the task a very long title → by default it holds still, the title ends
+    in `…` and the `(<id>)` stays fully visible; with `loopBoard.sidebarMarquee` on it
+    marquee-scrolls and the `(<id>)` stays readable on the return leg; with **reduced motion**
+    enabled in the OS it holds still instead. Move the task out
     of In Progress → the whole section including its `IN PROGRESS` header is gone (no "none" row,
     no empty header), exactly as Agents disappears with no live subagent. Put **two** tasks In
     Progress (Rule 2 breach) → **two** rows appear, one per task, each with its own owner model, and
@@ -1003,3 +1006,18 @@ and likewise cannot be verified headless.
     Retract an on-disk answer on a Feedback card (clear it, Save) → the chip goes back from neutral
     to amber with the lower count, in step with the panel head. Fold only the questions section
     (t-aee3) → the panel head and the chip still agree.
+
+45. **Sidebar marquee is opt-in; full text on hover (t-9a29):** the setting's manifest shape is
+    pinned by `test/manifest-settings.test.js`; the truncation, the tooltip and the pause live only
+    in `media/sidebar.{js,css}` (vanilla webview, no pure half), so this checklist is their only
+    acceptance path. Put a task with a very long title In Progress and run a loop with a delegated
+    subagent whose label overflows the sidebar. **Default (`loopBoard.sidebarMarquee` off):**
+    nothing in the sidebar scrolls. The In Progress title ends in `…` while its `(<id>)` stays
+    fully visible at the right; the Agents label ends in `…`. Hover the In Progress row → the
+    native tooltip shows `<title> (<id>)` on line 1 and `Click to open on the board` on line 2 (the
+    same with the setting on, and for a short title that does not overflow); hover the Agents row →
+    `<slot> · <label>` as before. Click the In Progress row → the board still opens on that task.
+    **Toggle on** from LoopBoard's own settings page (gear) → both rows start scrolling with no
+    reload; hover a scrolling row → it pauses mid-scroll, move the pointer away → it resumes from
+    there. Enable **reduced motion** in the OS → the rows hold still even with the setting on.
+    **Toggle off** again → both stop and truncate with `…`, no reload.

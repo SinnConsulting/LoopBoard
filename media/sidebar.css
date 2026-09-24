@@ -55,7 +55,14 @@ body {
 }
 .loop-marquee.scrolling .loop-marquee-inner { animation: loop-marquee var(--marquee-dur, 8s) linear infinite alternate; }
 @keyframes loop-marquee { from { transform: translateX(0); } to { transform: translateX(var(--marquee-shift, 0)); } }
+/* A hovered scrolling row pauses so it can be read, and resumes when the pointer leaves (t-9a29). */
+.sb-row:hover .loop-marquee.scrolling .loop-marquee-inner { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { .loop-marquee.scrolling .loop-marquee-inner { animation: none; } }
+/* `loopBoard.sidebarMarquee` off (the default, t-9a29): the text holds still and truncates. The
+   inner becomes a flex row so the text shrinks with `…` while an In-Progress `(<id>)` stays pinned. */
+.loop-marquee.truncate .loop-marquee-inner { display: flex; }
+.loop-marquee.truncate .marquee-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loop-marquee.truncate .marquee-id { flex-shrink: 0; }
 /* Live subagents (t-sbag). A compact row under its loop slot's name; the label itself reuses the
    .loop-marquee rules above rather than adding a second marquee. */
 .sb-row.agent { height: 22px; gap: 6px; padding: 0 8px 0 16px; }
