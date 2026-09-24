@@ -448,6 +448,14 @@
         title: 'Look for loopBoard.* keys in your user settings that were renamed, deprecated or dropped — shows what it would do before changing anything',
         onclick: () => { migration = null; vscode.postMessage({ type: 'settingsScanStale' }); },
       }, 'Migrate Config'),
+      // The one per-WORKSPACE action on a page of global settings (t-4dce): it runs the manual
+      // preview → modal confirm → sync flow on this window's `.loopboard/`, whether
+      // `loopBoard.autoSyncTemplates` is on or off.
+      h('button', {
+        class: 'btn', type: 'button',
+        title: 'Sync THIS window’s .loopboard/ TODO.md and LOOP.md to the templates this extension ships — previews the changes and asks before writing',
+        onclick: () => vscode.postMessage({ type: 'syncTemplates' }),
+      }, 'Synchronise Templates'),
       h('button', {
         class: 'btn', type: 'button',
         title: 'Open the same settings in VSCode’s own Settings editor',

@@ -11,7 +11,7 @@ import { serializeTodo, serializeDone } from './writer';
 import { parseTaskFile, serializeTaskFile } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
 import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
-import { syncMarkedSections, syncTodoPreamble, hasMarkers, isEmptyOrMissing } from './sync';
+import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
@@ -626,65 +626,35 @@ export class Store {
     });
   }
 
-  // Preview what `syncTemplates` would change, without writing anything: whether TODO.md/LOOP.md
-  // are missing/empty (full template write), TODO.md's intro/heading scaffold vs. the shipped
-  // template, and LOOP.md's marker-fenced sections (or, for a legacy LOOP.md with no markers yet,
-  // the one-time full-file replacement).
-  async previewSync(todoTemplate: string, loopTemplate: string): Promise<{ summary: string[]; upToDate: boolean }> {
-    const todoText = await this.readFile(this.todoUri);
-    const loopText = await this.readFile(this.loopUri);
-    const summary: string[] = [];
+  // Preview what `syncTemplates` would change, without writing anything. The classification is
+  // the pure `planSync` (src/sync.ts) — this only reads the two files it plans against.
+  async previewSync(todoTemplate: string, loopTemplate: string): Promise<SyncPlan> {
+    return planSync(await this.readFile(this.todoUri), await this.readFile(this.loopUri), todoTemplate, loopTemplate);
+  }
 
-    if (isEmptyOrMissing(todoText)) {
-      summary.push('TODO.md is missing or empty and will be created from the template.');
-    } else {
-      const { changed: todoChanged, legacy: todoLegacy } = syncTodoPreamble(todoText as string, todoTemplate);
-      if (todoLegacy) {
-        summary.push('TODO.md predates the current format and will be fully replaced (no markers yet).');
-      } else if (todoChanged) {
-        summary.push('TODO.md: intro out of date.');
-      }
-    }
-
-    if (isEmptyOrMissing(loopText)) {
-      summary.push('LOOP.md is missing or empty and will be created from the template.');
-    } else if (!hasMarkers(loopText as string)) {
-      summary.push('LOOP.md predates the current format and will be fully replaced (a backup will be saved to LOOP.md.bkp).');
-    } else {
-      const { changedIds } = syncMarkedSections(loopText as string, loopTemplate);
-      if (changedIds.length) summary.push(`LOOP.md: ${changedIds.length} section(s) out of date (${changedIds.join(', ')}).`);
-    }
-
-    return { summary, upToDate: summary.length === 0 };
+  // Whether `.loopboard/TODO.md` exists — activation auto-sync skips a workspace without one
+  // (scaffolding it is the init flow's job, not a sync's).
+  async hasTodoFile(): Promise<boolean> {
+    return this.fileExists(this.todoUri);
   }
 
   // Refresh the extension-owned scaffolding of TODO.md and LOOP.md from the shipped templates.
   // A missing/empty file (either) is always fully (re)created from its template. Otherwise never
   // touches task entries (TODO.md) or content outside the markers (LOOP.md), except for a legacy
   // unmarked non-empty LOOP.md, which is backed up to LOOP.md.bkp and fully replaced exactly once.
-  async syncTemplates(todoTemplate: string, loopTemplate: string): Promise<SaveOutcome> {
+  // Re-plans under the write lock and returns the plan it actually applied, so a caller's popup
+  // names what was written rather than what an earlier preview expected.
+  async syncTemplates(todoTemplate: string, loopTemplate: string): Promise<SaveOutcome & { plan?: SyncPlan }> {
     return this.writeLock.run(async () => {
       try {
-        const todoText = await this.readFile(this.todoUri);
-        if (isEmptyOrMissing(todoText)) {
-          await this.atomicWrite(this.todoUri, todoTemplate);
-        } else {
-          const { text: newTodo, changed: todoChanged } = syncTodoPreamble(todoText as string, todoTemplate);
-          if (todoChanged) await this.atomicWrite(this.todoUri, newTodo);
+        const plan = planSync(await this.readFile(this.todoUri), await this.readFile(this.loopUri), todoTemplate, loopTemplate);
+        if (plan.writes.todo !== undefined) await this.atomicWrite(this.todoUri, plan.writes.todo);
+        if (plan.writes.loopBackup !== undefined) {
+          await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), plan.writes.loopBackup);
         }
-
-        const loopText = await this.readFile(this.loopUri);
-        if (isEmptyOrMissing(loopText)) {
-          await this.atomicWrite(this.loopUri, loopTemplate);
-        } else if (!hasMarkers(loopText as string)) {
-          await this.atomicWrite(this.loopUri.with({ path: this.loopUri.path + '.bkp' }), loopText as string);
-          await this.atomicWrite(this.loopUri, loopTemplate);
-        } else {
-          const { text: newLoop, changedIds } = syncMarkedSections(loopText as string, loopTemplate);
-          if (changedIds.length) await this.atomicWrite(this.loopUri, newLoop);
-        }
+        if (plan.writes.loop !== undefined) await this.atomicWrite(this.loopUri, plan.writes.loop);
         this.debugLog('info', 'syncTemplates', 'applied');
-        return { status: 'applied' };
+        return { status: 'applied', plan };
       } catch (err) {
         return { status: 'error', message: err instanceof Error ? err.message : String(err) };
       }

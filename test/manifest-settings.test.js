@@ -284,7 +284,7 @@ test('every key the code reads is still declared in the manifest', () => {
   for (const key of [
     'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel',
-    'loopBoard.maxAttachmentSizeMB', 'loopBoard.pulseTemplateSync', 'loopBoard.sidebarMarquee',
+    'loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee',
     'loopBoard.nudgeLoops',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
     'loopBoard.delegateWork', 'loopBoard.delegateReview',
@@ -307,7 +307,24 @@ test('the sidebar marquee is an opt-in live boolean in Board & Workspace, off by
   assert.equal(prop.default, false, 'the sidebar must hold still unless the human opts in');
   assert.equal(prop.scope, 'application');
   assert.equal(prop.loopBoardApplies, 'live');
-  // Sits right after the pulse toggle, its sibling sidebar-animation switch.
+  // Sits right after the order-20 slot, which the template-sync toggle holds (the pulse toggle it
+  // was placed next to became loopBoard.autoSyncTemplates in t-4dce).
   const keys = Object.entries(board.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
-  assert.equal(keys.indexOf('loopBoard.sidebarMarquee'), keys.indexOf('loopBoard.pulseTemplateSync') + 1);
+  assert.equal(keys.indexOf('loopBoard.sidebarMarquee'), keys.indexOf('loopBoard.autoSyncTemplates') + 1);
+});
+
+test('template auto-sync is a live boolean in Board & Workspace, on by default (t-4dce)', () => {
+  const board = sections.find((s) => s.title === 'LoopBoard: Board & Workspace');
+  const prop = board.properties['loopBoard.autoSyncTemplates'];
+  assert.ok(prop, 'loopBoard.autoSyncTemplates must be declared in Board & Workspace');
+  assert.equal(prop.type, 'boolean');
+  assert.equal(prop.default, true, 'templates sync on activation unless the human opts out');
+  assert.equal(prop.scope, 'application');
+  assert.equal(prop.loopBoardApplies, 'live');
+  assert.match(prop.markdownDescription, /LOOP\.md\.bkp/, 'the description must name the legacy backup');
+  assert.match(prop.markdownDescription, /loopboard:custom/, 'the description must promise the custom section is untouched');
+});
+
+test('the dropped sidebar pulse toggle is no longer declared anywhere (t-4dce)', () => {
+  assert.ok(!entries().some((e) => e.key === 'loopBoard.pulseTemplateSync'), 'loopBoard.pulseTemplateSync must be gone');
 });

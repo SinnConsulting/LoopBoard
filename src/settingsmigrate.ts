@@ -60,6 +60,8 @@ export const CLEAR_SESSION_KEY = `${SETTINGS_PREFIX}clearSessionAfterTask`;
 export const DELEGATE_WORK_KEY = `${SETTINGS_PREFIX}delegateWork`;
 export const DELEGATE_REVIEW_KEY = `${SETTINGS_PREFIX}delegateReview`;
 export const OLD_DELEGATE_REVIEW_KEY = `${SETTINGS_PREFIX}delegateWork.review`;
+export const AUTO_SYNC_TEMPLATES_KEY = `${SETTINGS_PREFIX}autoSyncTemplates`;
+export const PULSE_TEMPLATE_SYNC_KEY = `${SETTINGS_PREFIX}pulseTemplateSync`;
 
 // Keys the manifest does NOT declare and never will, but which the code still reads on purpose:
 // `readDefaultModel` (src/controller.ts) falls back to the pre-split `loopBoard.defaultModel` when
@@ -115,6 +117,15 @@ export const MIGRATIONS: MigrationRule[] = [
       if (mode === 'none') return undefined;
       return { from: mode === 'recycle' ? AUTO_RECYCLE_KEY : CLEAR_SESSION_KEY, value: mode };
     },
+  },
+  {
+    // t-4dce: the sidebar Synchronise Templates row and its drift pulse are gone; activation
+    // auto-sync took over the job of keeping templates current. A pulse preference says nothing
+    // about whether to auto-sync, so a stored value is only removed — never carried over.
+    target: AUTO_SYNC_TEMPLATES_KEY,
+    reason: 'deprecated',
+    sources: [PULSE_TEMPLATE_SYNC_KEY],
+    resolve: () => undefined,
   },
 ];
 
