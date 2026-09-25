@@ -4,17 +4,13 @@
 
 # LoopBoard
 
-[![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml)
-[![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinnConsulting/LoopBoard/blob/main/LICENSE)
-[![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model)
+[![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml) [![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinnConsulting/LoopBoard/blob/main/LICENSE) [![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model)
 
 **The missing UI for Claude Code loops.**<br>
-**Claude Code is the engine.**<br>
-**LoopBoard is the cockpit.**<br>
-**You're still the pilot.**
+Claude Code is the engine. LoopBoard is the cockpit. You're still the pilot.<br>
+*Less prompting. No babysitting. More building.*
 
-**Less prompting. No babysitting. More building.**
+[![Install in VS Code](https://img.shields.io/badge/Install_in-VS_Code-0098FF?style=for-the-badge)](https://vscode.dev/redirect?url=vscode:extension/SinnConsulting.loopboard-todo) [![Browse in the Marketplace](https://img.shields.io/badge/Browse_in_the-Marketplace-24292F?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=SinnConsulting.loopboard-todo)
 
 </div>
 
@@ -37,6 +33,17 @@ groom, build and deliver the tasks. You decide **what starts, what ships and wha
 
 You **promote** a groomed story. The Sonnet loop claims it, builds it on a `task/**` branch and
 delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the loop does the rest.
+
+## Prompting by hand vs. LoopBoard
+
+| | Prompting by hand | With LoopBoard |
+|---|---|---|
+| **Starting work** | Open a session, explain the task | Click **Promote** |
+| **Context** | Re-explained every session | Lives in `tasks/<id>.md` |
+| **When it's unsure** | Guesses, or waits for "continue" | Parks in Feedback with a question |
+| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first (beta) |
+| **Keeping track** | Chat history | A board over plain markdown |
+| **Your job** | Typing prompts | Promote · Approve · Send back |
 
 ---
 
@@ -98,7 +105,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
 <summary><b>1 · Getting started</b></summary>
 
 Click **Initialize LoopBoard workspace** or run **`LoopBoard: Initialize Workspace`**. It refuses
-if `.loopboard/` already exists. What each file holds: [Storage layout](#storage-layout).
+if `.loopboard/` already exists. What each file holds: [File structure](#file-structure).
 
 </details>
 
@@ -199,7 +206,28 @@ settings are grouped below.
 
 ---
 
-## Storage layout
+## Get started
+
+1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.0+**.
+2. Run **LoopBoard: Initialize Workspace**.
+3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
+   `echo '.loopboard/' >> .gitignore`
+4. Write a story, then press **▶** on a loop in the sidebar.
+
+Commands:
+
+- **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
+- **LoopBoard: Open Board** — open the board.
+- **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
+- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+
+Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
+flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
+all state lives in `.loopboard/`.
+
+---
+
+## File structure
 
 ```
 .loopboard/
@@ -208,6 +236,7 @@ settings are grouped below.
   LOOP.md          workflow rules + the loop instructions, re-read every pass
   tasks/<id>.md    per task: meta, problem, description, goals, worklog, delivered
   cache/<id>/      attached images (created on the first attach)
+  debug.log        trace, only while loopBoard.debug is on (capped at 10 MB)
 ```
 
 - **Field-level, atomic saves.** Every save re-reads the file, patches one field and writes the
@@ -215,8 +244,8 @@ settings are grouped below.
   file stays in `tasks/`.
 - **Images.** Drop, paste or **＋ Attach** them on a card, an answer or the New Story composer.
   They're stored under `.loopboard/cache/<id>/`, linked from the task, and deleted on approval.
-- **Commit it or ignore it.** LoopBoard doesn't touch your `.gitignore`: commit `.loopboard/` to
-  share the tracker, or ignore it to keep it local.
+- **Gitignore it (recommended).** LoopBoard never edits your `.gitignore`, so add `.loopboard/`
+  yourself: `debug.log` records values verbatim and attached images land in `cache/`.
 
 ---
 
@@ -292,34 +321,6 @@ in `docs/showcase/studio/scenes/`.
 - **Zero runtime dependencies.** Vanilla HTML/CSS/JS webviews with a CSP nonce on every script.
 - **Native VS Code only.** A webview, an activity-bar view and plain terminals. No hooks, no files
   outside `.loopboard/`. Uninstall it and only `.loopboard/` remains.
-
-```
-     you click Promote                               you click Approve
-             │                                               │
-   New ──────┴──────► Backlog ────► In Progress ────► Review ┴────► Done (DONE.md)
-    ▲                    │               ▲   │
-    └── you click Demote ┘               │   └──► Feedback ─┐
-                                         │                  │
-                                         └──────────────────┘
-                                          (your answers resume it)
-```
-
-## Get started
-
-1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.0+**.
-2. Run **LoopBoard: Initialize Workspace**.
-3. Write a story, then press **▶** on a loop in the sidebar.
-
-Commands:
-
-- **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
-- **LoopBoard: Open Board** — open the board.
-- **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
-- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
-
-Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
-flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
-all state lives in `.loopboard/`.
 
 ## Security model
 
@@ -445,7 +446,7 @@ show them.
 | `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
 | `loopBoard.autoSyncTemplates` | `true` | Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page. |
 | `loopBoard.sidebarMarquee` | `false` | Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way. |
-| `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
+| `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 
 ### LoopBoard: Beta (experimental)
 

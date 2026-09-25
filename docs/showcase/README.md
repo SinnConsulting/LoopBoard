@@ -26,6 +26,17 @@ size.
 You **promote** a groomed story. The Sonnet loop claims it, builds it on a `task/**` branch and
 delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the loop does the rest.
 
+## Prompting by hand vs. LoopBoard
+
+| | Prompting by hand | With LoopBoard |
+|---|---|---|
+| **Starting work** | Open a session, explain the task | Click **Promote** |
+| **Context** | Re-explained every session | Lives in `tasks/<id>.md` |
+| **When it's unsure** | Guesses, or waits for "continue" | Parks in Feedback with a question |
+| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first (beta) |
+| **Keeping track** | Chat history | A board over plain markdown |
+| **Your job** | Typing prompts | Promote · Approve · Send back |
+
 ---
 
 ## Features
@@ -86,7 +97,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
 <summary><b>1 · Getting started</b></summary>
 
 Click **Initialize LoopBoard workspace** or run **`LoopBoard: Initialize Workspace`**. It refuses
-if `.loopboard/` already exists. What each file holds: [Storage layout](#storage-layout).
+if `.loopboard/` already exists. What each file holds: [File structure](#file-structure).
 
 </details>
 
@@ -187,7 +198,28 @@ settings are grouped below.
 
 ---
 
-## Storage layout
+## Get started
+
+1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.0+**.
+2. Run **LoopBoard: Initialize Workspace**.
+3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
+   `echo '.loopboard/' >> .gitignore`
+4. Write a story, then press **▶** on a loop in the sidebar.
+
+Commands:
+
+- **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
+- **LoopBoard: Open Board** — open the board.
+- **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
+- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+
+Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
+flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
+all state lives in `.loopboard/`.
+
+---
+
+## File structure
 
 ```
 .loopboard/
@@ -196,6 +228,7 @@ settings are grouped below.
   LOOP.md          workflow rules + the loop instructions, re-read every pass
   tasks/<id>.md    per task: meta, problem, description, goals, worklog, delivered
   cache/<id>/      attached images (created on the first attach)
+  debug.log        trace, only while loopBoard.debug is on (capped at 10 MB)
 ```
 
 - **Field-level, atomic saves.** Every save re-reads the file, patches one field and writes the
@@ -203,8 +236,8 @@ settings are grouped below.
   file stays in `tasks/`.
 - **Images.** Drop, paste or **＋ Attach** them on a card, an answer or the New Story composer.
   They're stored under `.loopboard/cache/<id>/`, linked from the task, and deleted on approval.
-- **Commit it or ignore it.** LoopBoard doesn't touch your `.gitignore`: commit `.loopboard/` to
-  share the tracker, or ignore it to keep it local.
+- **Gitignore it (recommended).** LoopBoard never edits your `.gitignore`, so add `.loopboard/`
+  yourself: `debug.log` records values verbatim and attached images land in `cache/`.
 
 ---
 
