@@ -43,6 +43,8 @@ export function activate(context: vscode.ExtensionContext): void {
     (level, event, detail) => store.debugLog(level, event, detail)
   );
   controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState, contextReader);
+  // Stamp the webview assets this host was loaded alongside (t-5831); every board `ready` compares.
+  controller.stampBuild();
 
   context.subscriptions.push(
     { dispose: () => store.dispose() },

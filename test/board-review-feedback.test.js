@@ -128,7 +128,8 @@ test('save adds or edits exactly one item through the per-item patches; Escape n
   assert.match(esc, /exitFieldEdit\(\(\) => closeFeedbackComposer\(u\), composer\)/);
   assert.doesNotMatch(esc, /commitFeedbackPatch|sendPatch|commitFeedback\(/, 'Escape never commits');
   // The echo and the post happen together; the add carries no base, the item patch its own base + index.
-  assert.match(commit, /post\(\{ type: 'patch', patch: \{ taskId: t\.id, field, value, base, itemIndex: at >= 0 \? at : itemIndex \} \}\);/);
+  // (t-5831: posted through sendPatch, which stamps the request id — the patch fields are unchanged.)
+  assert.match(commit, /sendPatch\(t\.id, field, value, base, undefined, at >= 0 \? at : itemIndex\);/);
   assert.match(commit, /t\.feedback = list\.concat\(lines\);/, 'an add echoes as an append');
   assert.doesNotMatch(code(source), /'feedback', val|field: 'feedback'|commitPatch\(t\.id, 'feedback'|sendPatch\(t\.id, 'feedback'/, 'no whole-set feedback patch is left');
 });
@@ -137,7 +138,7 @@ test('paste, drop and ＋ Attach stage into the composer without saving', () => 
   const staged = composer.slice(composer.indexOf("wireFieldAttach(ta, t.id, 'feedback'"), composer.indexOf('const attachBtn'));
   assert.ok(staged.length > 0, 'the composer wires field-scoped attach');
   assert.match(staged, /insertLinkAtCursor\(live, /);
-  assert.doesNotMatch(staged, /commitFeedback\(|commitFeedbackPatch|post\(\{ type: 'patch'/, 'staging never commits');
+  assert.doesNotMatch(staged, /commitFeedback\(|commitFeedbackPatch|sendPatch\(|post\(\{ type: 'patch'/, 'staging never commits');
   assert.match(composer, /stage\(input\.files\[0\]\)/, '＋ Attach goes through the same stage');
 });
 

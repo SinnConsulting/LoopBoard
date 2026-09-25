@@ -441,7 +441,8 @@ and likewise cannot be verified headless.
     story's `answer:` lines directly in `TODO.md`, then answer the last question — the
     "changed on disk" toast fires, nothing partial is written, and the held answers stay in the
     card so you can save again. Re-groom path: hold an answer, then change that question's TEXT in
-    `TODO.md` — the next refresh drops the held answer with an info toast naming the story. Repeat
+    `TODO.md` — the next refresh moves the held answer into the card's rescued-answer block with an
+    info toast naming the story (t-5831 — no longer dropped; walkthrough in item 52). Repeat
     the first walkthrough on a **Feedback** card: identical batching, with the worker-resumes
     tooltip wording.
 
@@ -1154,3 +1155,60 @@ and likewise cannot be verified headless.
       ONE `agents-gone` for that agent, and NO `agents-start` for it afterwards. At `verbose`, a
       poll that still resolves the old session shows `agents-read … (ended session <id> — no
       edges)`. Repeat with a Force-on scheduled restart and with a `context-fire` recycle.
+
+51. **Refused feedback and answer text reopens in its editor (t-5831) — UNTESTED in the live
+    webview:** the decision (`rescueTarget`) runs in a vm and the wiring is pinned as source text
+    by `test/refusal-rescue.test.js`; the round trip (`sendPatch` request id → host `patchResult`) by
+    `test/refusal-toast.test.js`. Reopening, focus and persistence are webview-only. Set
+    `loopBoard.debug: verbose`.
+    - **Feedback edit:** on any card with two `feedback:` items, open **edit** on the second, type
+      `my edit`, then change that same line by hand in `TODO.md` and Save → the warning toast reads
+      "Task changed on disk — your feedback edit was not applied. Your text was kept on the card —
+      save it again." (never `feedbackItem`), and the card shows the disk line in its row plus a
+      composer holding `my edit`: in that row while the edited line still exists, UNDER the list
+      (an add composer) when the line is gone. `debug.log` shows `patch-result … -> conflict`.
+    - **Feedback add:** a `feedbackAdd` is a pure append this host never refuses, so its path (text
+      back into the add composer) has no live trigger today and is covered by the vm test only.
+    - **Answer retraction:** clear an answered question to blank and, before saving, change that
+      `answer:` line by hand; Save → the toast names "answer", and the row reopens with a blank
+      editor next to the disk answer, Save enabled.
+    - **Survives:** with the rescued feedback composer showing, let a loop write refresh the board,
+      hide and re-show the panel, and run **Developer: Reload Webviews** → the composer and its text
+      (including anything typed into it since) are still there. The retraction's reopened row
+      survives the forced refresh; like any unsaved answer draft it does not survive a reload.
+    - **Clears:** Save the rescued feedback → it is written and the composer does not come back on
+      the next refresh or reload. Repeat and press Escape instead → closed, nothing written, and a
+      reload does not bring it back.
+    - **Untouched:** another answer row's unsaved draft survives a flush of the set (Save the last
+      blank question while a different, answered row is open with edited text → that row keeps its
+      text and stays open).
+
+52. **Held answers for a changed question are kept on the card (t-5831, amends t-c4d1) — UNTESTED in
+    the live webview:** the keep/landed/rescued split (`splitHeldAnswers`) runs in a vm and
+    `pruneHeldAnswers`' routing is pinned as source text by `test/refusal-rescue.test.js`; the
+    block itself is webview-only. On a New story with three questions, answer the first (held, not
+    on disk), then edit that question's TEXT by hand in `TODO.md`.
+    - The next refresh shows an info toast "Held answers for “<title>” were kept on the card — its
+      questions changed.", the row is no longer held, and at the bottom of the Open questions panel
+      a dashed amber block reads "WRITTEN FOR A QUESTION THAT HAS CHANGED", then the OLD question
+      text (italic), then your answer.
+    - It offers "use on question 1", "use on question 2", "use on question 3". Click "use on
+      question 2" → row 2 opens, holds your text, has focus and Save enabled; the block entry is
+      gone. Nothing was written to `TODO.md` until you Save the row (held as usual).
+    - Repeat and click the block's × → the entry disappears, nothing is written.
+    - With an entry showing, run **Developer: Reload Webviews** → the entry is still there.
+    - Remove the question instead of rewriting it → the same block. Remove ALL questions from a New
+      story → the panel stays on the card for the block (no "use on" links, × only).
+    - Promote the story (or delete it) → the entry is gone.
+
+53. **Build-mismatch warning with Reload Window (t-5831) — UNTESTED (needs a live extension
+    host):** the compare (`stampsDiffer`) and the host wiring are covered by
+    `test/buildstamp.test.js`. Install the `.vsix` (or run from the installed extension directory),
+    set `loopBoard.debug: info`, open a window and close the board panel. Then `touch` the
+    installed `media/board.js` (under `~/.vscode/extensions/<publisher>.loopboard-todo-<version>/`)
+    and reopen the board → exactly ONE warning "LoopBoard was updated while this window was open …"
+    with a **Reload Window** button; `debug.log` has `build-mismatch activation: … | now: …` with
+    both stamps, `popup warning — …`, and after the click `popup-choice build-mismatch -> reload`
+    (or `-> dismissed`). Close and reopen the board again without reloading → no second warning,
+    only an `info` line `… already warned this session, no popup`. Reload Window → the board opens
+    with no warning (a verbose `build-stamp ready — webview assets match activation`).
