@@ -329,6 +329,11 @@
         if (l.restart) {
           wrap.append(h('div', { class: 'restart-indicator' + (l.restart.pending ? ' pending' : '') }, l.restart.label));
         }
+        // Idle-stop clock (t-2dd4): the host sends it only while loopBoard.idleStop.enabled is on,
+        // the loop runs and the slot is idle, so its absence is the whole "off / busy" rendering.
+        if (l.idle) {
+          wrap.append(h('div', { class: 'restart-indicator idle-indicator' + (l.idle.stopping ? ' pending' : '') }, l.idle.label));
+        }
         if (restartDraft && restartDraft.model === l.id) wrap.append(renderRestartPopover(l));
         loops.append(wrap);
       }

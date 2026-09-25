@@ -139,6 +139,24 @@ one that never fires):
   files never logs a false `agents-start` or a second `agents-gone`. The `store.debugLog` wiring is
   item 49 (F5 only).
 
+### Idle stop — `test/idle.test.js` (t-2dd4)
+- **Idle = not in `busyModels`:** `observeIdle` starts the clock when the slot is out of the busy
+  set and none is running, clears it (and any open warning) when the slot is in it, leaves it
+  unchanged on repeated idle observations, and ignores other models in the set.
+- `idleWarnAt` = idle start + minutes − 30 s, `idleStopAt` = warning + 30 s; `keepRunning` restarts
+  the clock from now, `resetIdle` clears everything; `sanitizeIdleMinutes` maps a non-integer, < 1,
+  > `MAX_MINUTES` or non-number to 60; `describeIdle` renders `idle 12m · stop at 60m` and
+  `stopping in 30s`; `describeIdleStop` names the basis and the fail-open of an unreadable session.
+- **Fire-time decisions:** the warning timer warns when due, holds while busy, re-arms after a
+  `minutes` increase and drops the clock for a disabled feature or a closed loop; the stop goes
+  ahead only for the SAME warning on a still-idle, running, enabled slot — busy → `hold`, anything
+  else → `superseded`.
+- Source-text pins on the vscode-touching controller: the ■ handler and the idle stop share
+  `stopLoop` (trip, schedule, clock, terminal, in that order); observation, both fire-time checks
+  and the context poll (after its `busyChanged` flushes) read `busyModels`; `idle-hold` carries
+  `describeBusy`'s reason; `idle-stop` names the fail-open; `dispose()` clears the idle timers.
+  The manifest pair is pinned in `test/manifest-settings.test.js`. The live behaviour is item 51.
+
 ## Manual — Extension Development Host (F5)
 
 **PENDING — not executed in this environment** (headless agent session, no interactive VS Code
@@ -1147,3 +1165,36 @@ and likewise cannot be verified headless.
       ONE `agents-gone` for that agent, and NO `agents-start` for it afterwards. At `verbose`, a
       poll that still resolves the old session shows `agents-read … (ended session <id> — no
       edges)`. Repeat with a Force-on scheduled restart and with a `context-fire` recycle.
+
+51. **Idle stop (t-2dd4):** host + webview only (`src/controller.ts`, `media/sidebar.js`) — the
+    clock, the fire-time decisions and every wording are pure and covered by `test/idle.test.js`;
+    this is the wiring, the popup and the row line. **Untested in headless sessions: needs the F5
+    host.** Set `loopBoard.idleStop.enabled: true`, `loopBoard.idleStop.minutes: 2` and
+    `loopBoard.debug: info`, and start a loop on a slot that claims nothing and runs no subagent
+    (e.g. an empty Backlog for that model).
+    - **Warning, then stop:** the row shows `idle 0m · stop at 2m`, then `idle 1m · …`. After
+      ~90 s a warning notification appears with **Keep running** / **Stop now** (focus stays where
+      it was). With no click, the terminal closes ~30 s later; the row's schedule indicator and
+      context bar are gone. `debug.log` shows `idle-warn`, `popup warning — …`,
+      `popup-choice idle-stop <slot> -> timeout`, `idle-stop <slot> idle 2m — no task in progress,
+      no live subagents seen` and `loop-stop <slot> — idle stop — no live subagents`.
+    - **Keep running:** on the next warning click **Keep running** → the row's line restarts from
+      `idle 0m` at once and `popup-choice … -> keep` is logged; **Stop now** stops immediately
+      (`-> stop-now`); closing the notification with its × logs `-> dismissed` and still stops at
+      30 s.
+    - **Busy slot:** while the slot owns an In Progress task the row shows no idle line. A slot
+      running a grooming subagent (listed in the sidebar's Agents section) shows no idle line
+      either, and its clock starts within ~30 s of the subagent finishing (one poll, no
+      `.loopboard/` write needed).
+    - **Claim during the warning:** when the warning is up, set the slot's task to
+      `phase: inprogress` by hand → no stop; `idle-hold <slot> — task in progress during the idle
+      warning, stop cancelled` and `popup-choice … -> superseded`. A later click on that old
+      notification does nothing.
+    - **Restart after the stop:** ▶ starts a fresh loop and its line starts from `idle 0m`. A ♻ or
+      ■ during a warning supersedes it the same way.
+    - **Disabled:** with `loopBoard.idleStop.enabled` off (the default) no idle line, no warning
+      and no `idle-*` line ever appears. With a clock running, turn the feature off in
+      `settings.json` with the LoopBoard settings page CLOSED → the line is gone within one poll
+      (30 s) and no warning appears when its time would have come.
+    - **Schedule cancelled:** arm a repeating `restart` from the ♻ right-click popover, then let the
+      idle stop fire → `restart-cancel <slot> (idle stop)` and no restart afterwards.
