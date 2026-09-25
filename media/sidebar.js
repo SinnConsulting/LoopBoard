@@ -4,6 +4,20 @@
   const vscode = acquireVsCodeApi();
   let board = null;
 
+  // In-place repaint (t-9a29 feedback). The host posts a fresh board every few seconds while a loop
+  // works (store changes, context polls). Rebuilding #root on each one replaced the hovered row, and
+  // with it the pending/showing native tooltip, the `:hover` pause and the running marquee, so hover
+  // "worked once and then not anymore". paint() now keeps every live node whose markup is unchanged.
+  const wired = new WeakSet();      // elements carrying an event handler (h() `on*` props or on())
+  const keep = new WeakSet();       // wired elements whose handlers read nothing their markup does not show
+  const wiredBelow = new WeakSet(); // elements with a wired element in their subtree (self included)
+  const sigs = new WeakMap();       // element -> its markup as built, before setupMarquees touched it
+
+  function on(el, type, fn) {
+    el.addEventListener(type, fn);
+    wired.add(el);
+  }
+
   function h(tag, props) {
     const e = document.createElement(tag);
     props = props || {};
@@ -11,7 +25,7 @@
       const v = props[k];
       if (v == null || v === false) continue;
       if (k === 'class') e.className = v;
-      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k.slice(0, 2) === 'on') on(e, k.slice(2).toLowerCase(), v);
       else e.setAttribute(k, v === true ? '' : v);
     }
     for (let i = 2; i < arguments.length; i++) {
@@ -44,8 +58,8 @@
   // bundler), so the list is duplicated; the host re-validates every armed value regardless, so a
   // drift here can only affect which one-click choices are offered, never what gets armed.
   const PRESET_MINUTES = [15, 30, 60, 120, 240];
-  // Popover draft state, kept OUTSIDE render() because render() rebuilds #root from scratch on
-  // every board message — without this the popover would vanish mid-edit on any refresh.
+  // Popover draft state, kept OUTSIDE render() because render() rebuilds every wired node (the
+  // popover's included) on every board message — without this the popover would vanish mid-edit on any refresh.
   // null = closed; otherwise { model, action, minutes, custom, repeat, force, error }.
   let restartDraft = null;
 
@@ -76,7 +90,7 @@
   }
   // Right-click on any of the three row buttons: toggle that button's scheduling popover.
   function bindScheduleMenu(btn, loop, action) {
-    btn.addEventListener('contextmenu', (e) => {
+    on(btn, 'contextmenu', (e) => {
       // Suppress the host's own menu so the popover is the only thing that opens.
       e.preventDefault();
       const open = restartDraft && restartDraft.model === loop.id && restartDraft.action === action;
@@ -116,7 +130,7 @@
     });
     custom.value = d.custom;
     // No re-render per keystroke — that would rebuild the popover and drop the caret.
-    custom.addEventListener('input', (e) => { d.custom = e.target.value; d.error = ''; });
+    on(custom, 'input', (e) => { d.custom = e.target.value; d.error = ''; });
     pop.append(custom);
 
     pop.append(checkRow('Repeat', d.repeat, (v) => { d.repeat = v; }));
@@ -152,14 +166,13 @@
   function checkRow(label, checked, onChange) {
     const box = h('input', { type: 'checkbox' });
     box.checked = checked;
-    box.addEventListener('change', (e) => onChange(e.target.checked));
+    on(box, 'change', (e) => onChange(e.target.checked));
     return h('label', { class: 'restart-check' }, box, h('span', {}, label));
   }
 
   function render() {
     const root = document.getElementById('root');
-    root.textContent = '';
-    if (!board) { root.append(h('div', { class: 'sb-section' }, 'Loading…')); return; }
+    if (!board) { paint(root, h('div', { class: 'sb-section' }, 'Loading…')); return; }
     const sb = h('div', { class: 'sb' });
     const b = board.badge;
 
@@ -241,7 +254,7 @@
           h('span', { class: 'label' }, l.name),
           h('span', { class: 'loop-hint' }, l.hint));
         if (l.running) {
-          body.addEventListener('keydown', (e) => {
+          on(body, 'keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', model: l.id }); }
           });
         }
@@ -344,9 +357,13 @@
           // setupMarquees). The native tooltip carries the full text either way (t-9a29) — the
           // aria-label keeps saying what a click does.
           const full = (t.title || t.id) + ' (' + t.id + ')';
-          inProgress.append(h('button', { class: 'sb-row agent click', type: 'button', title: full + '\nClick to open on the board', 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
+          const ipRow = h('button', { class: 'sb-row agent click', type: 'button', title: full + '\nClick to open on the board', 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
             h('span', { class: 'agent-model' }, slot ? slot.name : t.model),
-            marquee(h('span', { class: 'marquee-text' }, t.title || t.id), h('span', { class: 'marquee-id' }, '\u00a0(' + t.id + ')'))));
+            marquee(h('span', { class: 'marquee-text' }, t.title || t.id), h('span', { class: 'marquee-id' }, '\u00a0(' + t.id + ')')));
+          // Its click reads only `t.id`, which its title shows, so an unchanged row survives a
+          // repaint (tooltip, hover pause and marquee intact) instead of being rebuilt (see paint).
+          keep.add(ipRow);
+          inProgress.append(ipRow);
         }
         if (c.message) {
           inProgress.append(h('div', { class: 'sb-row loop-status' }, h('span', { class: 'loop-hint' }, c.message)));
@@ -383,8 +400,47 @@
       h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Open extension settings', title: 'Open LoopBoard settings', onclick: () => vscode.postMessage({ type: 'openSettings' }) },
         icon(SVG.gear), h('span', { class: 'label' }, 'Settings')),
       board.todoMissing ? null : h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
-    root.append(sb);
+    paint(root, sb);
     setupMarquees();
+  }
+
+  // Swap `node` into `root` without replacing any live element whose markup is unchanged. A wired
+  // element is still rebuilt (fresh handlers, never a stale closure) unless it is in `keep`; a
+  // changed handler-free container is patched in place and its children reconciled by position.
+  function paint(root, node) {
+    const next = document.createElement('div');
+    next.append(node);
+    sign(next);
+    morphChildren(root, next);
+  }
+
+  function sign(el) {
+    let w = wired.has(el);
+    for (const c of el.children) w = sign(c) || w;
+    sigs.set(el, el.outerHTML);
+    if (w) wiredBelow.add(el);
+    return w;
+  }
+
+  function morph(cur, next) {
+    if (cur.nodeType === 3 && next.nodeType === 3) {
+      if (cur.data !== next.data) cur.data = next.data;
+      return;
+    }
+    const same = cur.nodeType === 1 && next.nodeType === 1 && cur.tagName === next.tagName;
+    if (same && sigs.get(cur) === sigs.get(next) && (!wiredBelow.has(next) || keep.has(next))) return;
+    if (!same || wired.has(cur) || wired.has(next)) { cur.replaceWith(next); return; }
+    for (const a of Array.from(cur.attributes)) if (!next.hasAttribute(a.name)) cur.removeAttribute(a.name);
+    for (const a of Array.from(next.attributes)) if (cur.getAttribute(a.name) !== a.value) cur.setAttribute(a.name, a.value);
+    sigs.set(cur, sigs.get(next));
+    morphChildren(cur, next);
+  }
+
+  function morphChildren(cur, next) {
+    const a = Array.from(cur.childNodes);
+    const b = Array.from(next.childNodes);
+    b.forEach((n, i) => { if (i < a.length) morph(a[i], n); else cur.append(n); });
+    for (let i = b.length; i < a.length; i++) a[i].remove();
   }
 
   // The one sidebar marquee box (In-Progress title, Agents label). `loopBoard.sidebarMarquee` off
@@ -419,7 +475,7 @@
   });
 
   // Popover dismissal (t-77d1): Escape anywhere, or a pointer press outside it. Bound once on the
-  // document rather than per-render, since render() rebuilds every node it would otherwise hang on.
+  // document rather than per-render, since render() rebuilds every wired node it would otherwise hang on.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && restartDraft) { e.preventDefault(); closeRestartPopover(); }
   });
