@@ -18,8 +18,8 @@
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
-//     - note: <text>                         (repeatable; unprocessed human worker-note, Rule 16)
-//     - feedback: <text>                     (repeatable; Review change request, Rule 13)
+//     - feedback: <text>                     (repeatable; any phase incl. drafts, Rule 13;
+//                                             a legacy `note:` line reads as `feedback:`, t-ae10)
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
 //   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
 //   `rev:` was removed from the grammar (t-f1b0) and is recognized only to be DROPPED, see below.
@@ -53,7 +53,6 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
     checked,
     isDraft: /^DRAFT:/i.test(title),
     questions: [],
-    notes: [],
     feedback: [],
     unknownLines: [],
     raw: lines.join('\n'),
@@ -111,9 +110,9 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
           return true;
         }
         return false;
+      // `note:` was folded into `feedback:` (t-ae10): a legacy line reads as a feedback item in
+      // encounter order, and the writer emits only `feedback:`, so the file canonicalizes on save.
       case 'note':
-        entry.notes.push(v);
-        return true;
       case 'feedback':
         entry.feedback.push(stripLeadingEmoji(v));
         return true;

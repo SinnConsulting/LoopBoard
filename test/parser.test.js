@@ -21,7 +21,7 @@ function entries(text) {
   return parseTodo(text).entries.map(entryShape);
 }
 
-const FIXTURES = ['index-full.md', 'index-unknown.md'];
+const FIXTURES = ['index-full.md', 'index-unknown.md', 'index-legacy-note.md'];
 
 for (const name of FIXTURES) {
   test(`text idempotence after normalization: ${name}`, () => {
@@ -103,11 +103,51 @@ test('orphan suggestion (no preceding question) is dropped, matching the answer 
   assert.deepEqual(e.unknownLines, [], 'matches the pre-existing orphan-answer guard behavior (:96-100)');
 });
 
-test('note: sub-bullets parse (repeatable) and round-trip', () => {
+test('feedback: sub-bullets on a non-Review phase parse (repeatable) and round-trip (t-ae10: were note:)', () => {
   const doc = parseTodo(readFix('index-full.md'));
   const e = doc.entries.find((x) => x.id === 't-bb01');
-  assert.deepEqual(e.notes, ['Rebase on main before opening the PR.', 'Add a metric for retry count.']);
+  assert.deepEqual(e.feedback, ['Rebase on main before opening the PR.', 'Add a metric for retry count.']);
+  assert.equal(e.notes, undefined, 'the notes field is gone');
   assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
+});
+
+test('legacy note: lines read as feedback: items in encounter order; the writer emits only feedback: (t-ae10)', () => {
+  const src = readFix('index-legacy-note.md');
+  const doc = parseTodo(src);
+  const e = doc.entries.find((x) => x.id === 't-ln01');
+  assert.deepEqual(e.feedback, ['Rebase on main before opening the PR.', 'Keep the retry cap at 3.', 'Add a metric for retry count.']);
+  assert.deepEqual(e.unknownLines, [], 'a legacy note: is recognized, never an unparsed line');
+  const draft = doc.entries.find((x) => x.id === 't-ln02');
+  assert.deepEqual(draft.feedback, ['Include the cursor format in the story.']);
+  const once = serializeTodo(doc);
+  assert.doesNotMatch(once, /- note:/, 'no note: line survives the first save');
+  assert.match(once, /  - feedback: Rebase on main before opening the PR\.\n  - feedback: Keep the retry cap at 3\.\n  - feedback: Add a metric for retry count\./);
+  assert.match(once, /  - id: t-ln02\n  - feedback: Include the cursor format in the story\./, 'the draft keeps its item');
+  // The canonicalized output is itself a parse→write fixpoint, as text and as entries.
+  assert.equal(serializeTodo(parseTodo(once)), once, 'idempotent as text');
+  assert.deepEqual(entries(serializeTodo(parseTodo(once))), entries(once));
+});
+
+test('a DRAFT carrying feedback: survives parse→write (t-ae10: the draft branch emits it)', () => {
+  const src = [
+    '## Tasks',
+    '',
+    '- [ ] DRAFT: raw draft text',
+    '  - id: t-df01',
+    '  - groomer: sonnet',
+    '  - feedback: first item',
+    '  - feedback: second item',
+    '',
+  ].join('\n');
+  const doc = parseTodo(src);
+  const d = doc.entries.find((x) => x.id === 't-df01');
+  assert.equal(d.isDraft, true);
+  assert.deepEqual(d.feedback, ['first item', 'second item']);
+  const out = serializeTodo(doc);
+  assert.match(out, /  - groomer: sonnet\n  - feedback: first item\n  - feedback: second item/);
+  assert.doesNotMatch(out, /- phase:/, 'still no phase line on a draft');
+  assert.deepEqual(parseTodo(out).entries.find((x) => x.id === 't-df01').feedback, ['first item', 'second item']);
+  assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint');
 });
 
 test('feedback: sub-bullets parse (repeatable), strip leading ⚠️, and round-trip', () => {

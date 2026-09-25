@@ -12,7 +12,7 @@ function task(over) {
     {
       id: 't-x', title: 'T', phase: 'backlog', checked: false, isDraft: false,
       questions: [], hasDetailFile: true,
-      worklog: [], links: [], dependsOn: [], notes: [], feedback: [], unknownLines: [],
+      worklog: [], links: [], dependsOn: [], feedback: [], unknownLines: [],
       raw: '',
     },
     over
@@ -99,22 +99,20 @@ test('groomer: none reaches the webview payload uncoerced', () => {
   assert.equal(web.phases.new[0].groomer, 'none');
 });
 
-test('note maps from notes[] joined with newlines', () => {
+test('feedback maps to the feedback[] item list on every phase (t-ae10); the note field is gone', () => {
   const board = {
     preamble: '', done: [],
-    tasks: [task({ id: 't-1', phase: 'inprogress', notes: ['a', 'b'] })],
+    tasks: [
+      task({ id: 't-1', phase: 'inprogress', feedback: ['a', 'b'] }),
+      task({ id: 't-2', phase: 'review', feedback: ['c'] }),
+      task({ id: 't-3', phase: 'backlog' }),
+    ],
   };
   const web = toWebviewBoard(board, 'ws', 'opus', []);
-  assert.equal(web.phases.inprogress[0].note, 'a\nb');
-});
-
-test('feedback maps from feedback[] joined with newlines', () => {
-  const board = {
-    preamble: '', done: [],
-    tasks: [task({ id: 't-1', phase: 'review', feedback: ['a', 'b'] })],
-  };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
-  assert.equal(web.phases.review[0].feedback, 'a\nb');
+  assert.deepEqual(web.phases.inprogress[0].feedback, ['a', 'b']);
+  assert.deepEqual(web.phases.review[0].feedback, ['c']);
+  assert.deepEqual(web.phases.backlog[0].feedback, [], 'no feedback = empty list, not null');
+  assert.equal('note' in web.phases.inprogress[0], false);
 });
 
 test('computeConcurrency: nothing In Progress → empty status, no message, not breached', () => {

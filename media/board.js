@@ -581,7 +581,7 @@
   }
 
   // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
-  // textarea/input (description, title, draft, note, feedback). Blurring BEFORE render() matters: render()'s
+  // textarea/input (description, title, draft, feedback). Blurring BEFORE render() matters: render()'s
   // captureActiveField() reads document.activeElement at the very start, still pointing at the
   // about-to-be-removed field if we haven't blurred yet — so it recaptures a field that edit mode
   // just closed, and restoreActiveField() then either re-opens it or (since the post-close view has
@@ -596,7 +596,7 @@
   }
 
   // ---- shared editable-field exit (t-471a): click-outside COMMITS, ESC CANCELS ----
-  // Every editable field (description/title/draft-text/note/feedback toggle between a view and
+  // Every editable field (description/title/draft-text/feedback toggle between a view and
   // an editor; answer is always a textarea) registers itself here while its editor is
   // open. A single document-level `pointerdown` listener — capture phase, so it resolves before
   // any button's own pointerdown-commit handler (makeGateButton et al.) runs — detects a click
@@ -853,7 +853,7 @@
         saveState();
         render();
       }, false)));
-    // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+    // Behavioural parity with the feedback composer (t-f51c): a discoverable ＋ Attach button
     // alongside the existing silent drag-drop/paste support.
     const attachBtn = h('button', {
       class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
@@ -1063,6 +1063,7 @@
             workSel),
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : attachEl,
+          isCollapsedCard ? null : renderFeedback(t),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
@@ -1074,7 +1075,7 @@
   // postMessage (the only path bytes can cross that boundary). Any file type is accepted here;
   // the host (store.stageAttachment) is the size-cap gate, the only remaining one. A whole-card
   // drop/paste (no field open) appends straight to Description (attachFile/wireAttachDropAndPaste
-  // below); a drop/paste inside an already-open Description, answer, feedback, note, or
+  // below); a drop/paste inside an already-open Description, answer, feedback, or
   // draft-text field instead folds the link into that field's own value (wireFieldAttach, below)
   // so it saves through the normal field-patch path.
   const ATTACH_MIME_EXT = {
@@ -1115,9 +1116,11 @@
   function applyAttachedMirror(taskId, msg) {
     const t = findBoardTask(taskId);
     if (!t) return;
-    if (typeof msg.description !== 'string' && typeof msg.title !== 'string') { scheduleRender(); return; }
+    if (typeof msg.description !== 'string' && typeof msg.title !== 'string' && !Array.isArray(msg.feedback)) { scheduleRender(); return; }
     if (typeof msg.description === 'string') t.description = msg.description;
     if (typeof msg.title === 'string') t.title = msg.title;
+    // A detach (t-ae10) also returns the post-strip feedback items: a feedback chip's link lives there.
+    if (Array.isArray(msg.feedback)) t.feedback = msg.feedback;
     repaintCard(t);
   }
   function repaintCard(t) {
@@ -1263,8 +1266,8 @@
     post({ type: 'detach', reqId, taskId, path });
   }
   // Shared attachment chip (t-f51c): ext badge + name + remove, in the qa-* visual idiom
-  // notes-to-worker introduced (t-b149) — every attachment-list surface (description/draft area,
-  // answer, feedback, note, new-story composer) renders through this one helper so the look and
+  // the old notes-to-worker introduced (t-b149) — every attachment-list surface (description/draft area,
+  // answer, feedback, new-story composer) renders through this one helper so the look and
   // CSS block (`.qa-attachment*`) stay single-sourced. `clickable === false` renders a static
   // (non-opening) name — used for the new-story composer's pending list, whose bytes aren't
   // staged to a real cache path until Save Draft, so there is nothing yet to open.
@@ -1293,10 +1296,11 @@
       h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
       h('div', { class: 'qa-attachments' }, items.map((it) => attachmentChip(it, () => detachAttachment(t.id, it.path)))));
   }
-  // Attachment list for a field whose links live inline in its own free text (answer/feedback,
+  // Attachment list for a field whose links live inline in its own free text (answers,
   // t-f51c) — extracts the same `[name](.loopboard/cache/...)` links renderAttachmentsArea does,
   // but removal strips the link out of THAT field's text and repatches it via `commit`, since
-  // there is no separate attachment store for these fields.
+  // there is no separate attachment store for these fields. Feedback no longer uses it (t-ae10):
+  // its chip × goes through `detach`, which also deletes the cached file.
   function renderFieldAttachmentsArea(text, commit, ownerId) {
     const items = extractAttachments(text, ownerId);
     if (!items.length) return null;
@@ -1514,11 +1518,12 @@
       // questions: Feedback always; New too, when the groomer left open decisions
       if (variant === 'feedback' || (variant === 'new' && t.questions && t.questions.length)) card.append(renderQuestions(t));
 
-      // review blocks
-      if (variant === 'review') card.append(renderReview(t));
+      // review: the Delivered block
+      const reviewEl = variant === 'review' ? renderReview(t) : null;
+      if (reviewEl) card.append(reviewEl);
 
-      // note
-      card.append(renderNote(t));
+      // feedback: one block on every phase (t-ae10)
+      card.append(renderFeedback(t));
     }
 
     return card;
@@ -1726,7 +1731,7 @@
           insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
           commitSection();
         });
-        // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+        // Behavioural parity with the feedback composer (t-f51c): a discoverable ＋ Attach button
         // alongside the existing silent drag-drop/paste support.
         controls.push(h('button', {
           class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
@@ -1997,13 +2002,13 @@
         if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
       });
       // Always-textarea field, no view↔edit toggle to key registration off — register when it
-      // gains focus (t-471a), same idiom the note composer uses.
+      // gains focus (t-471a), same idiom the feedback composer uses.
       ta.addEventListener('focus', () => setActiveEditor(editor, commitAnswer));
       const stageAnswer = wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
       });
-      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+      // Behavioural parity with the feedback composer (t-f51c): a discoverable ＋ Attach button
       // alongside the existing silent drag-drop/paste support.
       const answerAttachBtn = h('button', {
         class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
@@ -2052,171 +2057,175 @@
   }
 
   function renderReview(t) {
-    const u = getUi(t.id);
+    if (!t.delivered) return null;
     const wrap = h('div', { class: 'review-block' });
-    if (t.delivered) {
-      const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
-      delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
-        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-      });
-      wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
-    }
-    // Feedback is ONE collapsible block with three exclusive states on `u.feedbackOpen` (t-2622,
-    // the note's collapse idiom, not its look — amber marks a Rule 13 change request): editing
-    // composer / saved amber block with edit+delete / empty-state button. The composer only exists
-    // while open, and `edit` seeds it with the FULL saved text, so the whole-value replace of the
-    // 'feedback' patch never drops lines the reviewer did not see.
-    if (u.feedbackOpen) {
-      const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
-      ta.value = u.feedbackDraft || '';
-      autoGrow(ta);
-      if (u.feedbackNeedsFocus) { u.feedbackNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
-      const commitFeedback = () => {
-        clearActiveEditor(feedbackFieldWrap);
-        const val = ta.value.trim();
-        if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
-        commitPatch(t.id, 'feedback', val, t.feedback || '', t, 'feedback');
-        u.feedbackDraft = '';
-        u.feedbackOpen = false;
-        render(); // paint the echoed feedback into the amber block now, not on the confirming refresh
-      };
-      const saveBtn = h('button', {
-        class: 'btn-sm primary field-save-btn', type: 'button',
-        disabled: (u.feedbackDraft || '').trim().length === 0,
-        title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
-      }, 'Save');
-      ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => {
-        // Escape closes the composer without committing: the draft is dropped and any saved
-        // feedback stays as it was (collapsed amber block, or the empty-state button).
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.feedbackOpen = false; u.feedbackDraft = ''; }, feedbackFieldWrap); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
-      });
-      // Register when it gains focus (t-471a), same idiom the note composer uses: its empty-draft
-      // no-op commit leaves the composer open, and the next focus re-registers it.
-      ta.addEventListener('focus', () => setActiveEditor(feedbackFieldWrap, commitFeedback));
-      const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        commitFeedback();
-      });
-      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
-      // alongside the existing silent drag-drop/paste support.
-      const feedbackAttachBtn = h('button', {
-        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
-        onclick: () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.addEventListener('change', () => { if (input.files && input.files[0]) stageFeedback(input.files[0]); });
-          input.click();
-        },
-      }, '＋ Attach');
-      const feedbackFieldWrap = h('div', {}, ta,
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-          saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
-      wrap.append(feedbackFieldWrap);
-    } else if (t.feedback) {
-      const feedbackText = h('span', { html: mdToHtml(t.feedback) });
-      feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
-        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-      });
-      const feedbackAttachArea = renderFieldAttachmentsArea(t.feedback, (newVal) => sendPatch(t.id, 'feedback', newVal, t.feedback), t.id);
-      wrap.append(h('div', { class: 'amber-block' },
-        h('div', { class: 'qa-note-head' },
-          h('div', { class: 'amber-label' }, 'Your pending feedback'),
-          h('div', { class: 'qa-note-tools' },
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.feedbackDraft = t.feedback; u.feedbackOpen = true; u.feedbackNeedsFocus = true; render(); } }, 'edit'),
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { commitPatch(t.id, 'feedback', '', t.feedback, t, 'feedback'); render(); } }, 'delete'))),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText),
-        feedbackAttachArea));
-    } else {
-      wrap.append(h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.feedbackOpen = true; u.feedbackNeedsFocus = true; render(); } },
-        '＋ Review feedback'));
-    }
+    const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
+    delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+    });
+    wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
     return wrap;
   }
 
-  function renderNote(t) {
-    const u = getUi(t.id);
-    const wrap = h('div', { class: 'note-wrap' });
-    if (u.noteOpen) {
-      const ta = h('textarea', {
-        class: 'field qa-note-field', 'data-field': 'note', rows: '2',
-        placeholder: 'Note to worker — context, constraints, links. Paste an image to attach it.',
-      });
-      ta.value = u.noteDraft || '';
-      if (u.noteNeedsFocus) { u.noteNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
-      const commitNote = () => {
-        clearActiveEditor(composer);
-        const d = (u.noteDraft || '').trim();
-        if (!d) return; // nothing to commit — composer stays open, same as today's Save-disabled state
-        u.noteOpen = false;
-        u.noteDraft = '';
-        commitPatch(t.id, 'note', d, t.note || '', t, 'note');
-        render();
-      };
-      ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }, composer); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
-      });
-      // The note composer has no auto-focus-on-open (unlike description/draft/composer), so
-      // registering on focus (rather than right after building `composer`, as the other toggle
-      // fields do) is both correct and sufficient — the user must focus `ta` to type anyway, and
-      // commitNote's empty-draft no-op (no render()) means a fresh registration on the next
-      // focus is exactly what's needed to keep click-outside working after that no-op.
-      ta.addEventListener('focus', () => setActiveEditor(composer, commitNote));
-      // Stage into the draft text without committing (t-b149): unlike the description/answer
-      // fields, the note composer stays open after a paste/drop so more text or attachments can
-      // follow — only Send/⌘↵ actually saves.
-      const stage = wireFieldAttach(ta, t.id, 'note', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        u.noteDraft = ta.value;
-        sendBtn.disabled = u.noteDraft.trim().length === 0;
-      });
-      const attachBtn = h('button', {
-        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
-        onclick: () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.addEventListener('change', () => { if (input.files && input.files[0]) stage(input.files[0]); });
-          input.click();
-        },
-      }, '＋ Attach');
-      const sendBtn = h('button', {
-        class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
-        title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
-      }, t.note ? 'Save note' : 'Add note');
-      const composer = h('div', { class: 'qa-note-composer' },
-        ta,
-        h('div', { class: 'qa-note-composer-foot' },
-          h('div', { class: 'qa-note-composer-hint' },
-            attachBtn,
-            h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘↵ saves')),
-          sendBtn));
-      wrap.append(composer);
-    } else if (t.note) {
-      const attachments = extractAttachments(t.note, t.id);
-      const bodyText = attachments.reduce((s, a) => s.split('[' + a.label + '](' + a.path + ')').join('').trim(), t.note);
-      let bodyEl = null;
-      if (bodyText) {
-        bodyEl = h('div', { class: 'qa-note-body', html: mdToHtml(bodyText) });
-        bodyEl.querySelectorAll('a[data-mdlink]').forEach((a) => {
-          a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-        });
-      }
-      wrap.append(h('div', { class: 'qa-note' },
-        h('div', { class: 'qa-note-head' },
-          h('div', { class: 'qa-note-meta' }, h('span', { class: 'qa-note-kind' }, 'Note')),
-          h('div', { class: 'qa-note-tools' },
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; u.noteNeedsFocus = true; render(); } }, 'edit'),
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { commitPatch(t.id, 'note', '', t.note, t, 'note'); render(); } }, 'delete'))),
-        bodyEl,
-        attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null));
-    } else {
-      const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; u.noteNeedsFocus = true; render(); } },
-        '＋ Note to worker');
-      wrap.append(emptyBtn);
+  // ---- feedback (t-ae10) ----
+  // ONE human-input concept on every card, drafts included: each `feedback:` line is its own amber
+  // row with its own chips, edit and delete, and the "＋ Feedback" add button stays under the list
+  // at all times. Review reopens the task on it (Rule 13); every other phase applies it in place;
+  // New/DRAFT folds it into the story (Rule 14). Replaces t-2622's single tri-state Review block and
+  // the separate note block; the composer still exists only while open, and edit seeds it with
+  // that ITEM's full saved text (links included).
+  //
+  // Per-card state: u.feedbackOpen (a composer is open — at most one per card), u.feedbackEdit
+  // (-1 = add composer, else the edited item's index), u.feedbackBase (the edited item's text when
+  // opened — the host resolves the item by it), u.feedbackDraft, u.feedbackNeedsFocus.
+
+  // Path-keyed, label-agnostic link strip (t-ae10): removes `[any label](path)` for each path, so a
+  // dedupe-renamed screenshot (`[image.png](…/image-2.png)`) still shows only as its chip. Pure —
+  // test/board-feedback.test.js runs it via vm extraction.
+  function stripAttachmentLinks(text, paths) {
+    let out = String(text || '');
+    for (const p of paths) {
+      const esc = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp('[ \\t]*\\[[^\\]]*\\]\\(' + esc + '\\)', 'g'), '');
     }
+    return out.replace(/[ \t]{2,}/g, ' ').trim();
+  }
+
+  // Echo + post one feedback patch. `feedbackAdd` appends (no base); `feedbackItem` edits or, with
+  // an empty value, deletes ONE item, addressed by index plus that item's own text — the same
+  // resolution src/merge.ts applies to the re-read disk list, so the local echo matches the write.
+  function commitFeedbackPatch(t, field, value, base, itemIndex) {
+    const list = (t.feedback || []).slice();
+    const lines = String(value || '').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    let at = -1;
+    if (field === 'feedbackAdd') {
+      if (!lines.length) return;
+      t.feedback = list.concat(lines);
+    } else {
+      if (value === base) return; // unchanged edit — nothing to send
+      at = list[itemIndex] === base ? itemIndex : list.indexOf(base);
+      if (at >= 0) list.splice.apply(list, [at, 1].concat(lines));
+      t.feedback = list;
+    }
+    post({ type: 'patch', patch: { taskId: t.id, field, value, base, itemIndex: at >= 0 ? at : itemIndex } });
+  }
+
+  // Open the card's one composer (edit = item index, or -1 to add). A composer already open with
+  // unsaved text is KEPT and refocused, never silently discarded; click-outside (setActiveEditor)
+  // has normally committed it already by the time this runs.
+  function openFeedbackComposer(u, edit, text) {
+    const pending = (u.feedbackDraft || '').trim();
+    if (u.feedbackOpen && pending && pending !== (u.feedbackEdit >= 0 ? u.feedbackBase : '')) {
+      u.feedbackNeedsFocus = true;
+      render();
+      return;
+    }
+    u.feedbackOpen = true;
+    u.feedbackEdit = edit;
+    u.feedbackBase = text;
+    u.feedbackDraft = text;
+    u.feedbackNeedsFocus = true;
+    render();
+  }
+
+  function closeFeedbackComposer(u) {
+    u.feedbackOpen = false;
+    u.feedbackEdit = -1;
+    u.feedbackBase = '';
+    u.feedbackDraft = '';
+  }
+
+  function renderFeedbackComposer(t, u) {
+    const isEdit = u.feedbackEdit >= 0;
+    const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write feedback…' });
+    ta.value = u.feedbackDraft || '';
+    autoGrow(ta);
+    if (u.feedbackNeedsFocus) { u.feedbackNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
+    const commitFeedback = () => {
+      clearActiveEditor(composer);
+      const val = ta.value.trim();
+      if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
+      if (isEdit) commitFeedbackPatch(t, 'feedbackItem', val, u.feedbackBase, u.feedbackEdit);
+      else commitFeedbackPatch(t, 'feedbackAdd', val, '');
+      closeFeedbackComposer(u);
+      render(); // paint the echoed item into its amber row now, not on the confirming refresh
+    };
+    const saveBtn = h('button', {
+      class: 'btn-sm primary field-save-btn', type: 'button',
+      disabled: (u.feedbackDraft || '').trim().length === 0,
+      title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
+    }, 'Save');
+    ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
+    ta.addEventListener('keydown', (e) => {
+      // Escape closes the composer without committing: the draft is dropped, saved items stay.
+      if (e.key === 'Escape') { exitFieldEdit(() => closeFeedbackComposer(u), composer); return; }
+      if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
+    });
+    // Register when it gains focus (t-471a): the empty-draft no-op commit leaves the composer open,
+    // and the next focus re-registers it.
+    ta.addEventListener('focus', () => setActiveEditor(composer, commitFeedback));
+    // Paste, drop and ＋ Attach STAGE the link into the draft without committing — only Save/⌘S
+    // saves. The reply may land after a repaint, so the link goes into the live textarea.
+    const stage = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
+      const live = document.querySelector('[data-task="' + t.id + '"] textarea[data-field="feedback"]') || ta;
+      insertLinkAtCursor(live, '[' + filename + '](' + path + ')');
+      u.feedbackDraft = live.value;
+      autoGrow(live);
+      const liveSave = live.parentNode && live.parentNode.querySelector('.field-save-btn');
+      if (liveSave) liveSave.disabled = live.value.trim().length === 0;
+    });
+    const attachBtn = h('button', {
+      class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+      onclick: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.addEventListener('change', () => { if (input.files && input.files[0]) stage(input.files[0]); });
+        input.click();
+      },
+    }, '＋ Attach');
+    const composer = h('div', { class: 'feedback-composer' }, ta,
+      h('div', { class: 'feedback-foot' }, saveBtn, attachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+    return composer;
+  }
+
+  function renderFeedbackRow(t, u, text, i) {
+    const attachments = extractAttachments(text, t.id);
+    const body = stripAttachmentLinks(text, attachments.map((a) => a.path));
+    let bodyEl = null;
+    if (body) {
+      const bodyText = h('span', { html: mdToHtml(body) });
+      bodyText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      bodyEl = h('div', { class: 'feedback-body' }, h('span', { class: 'codicon codicon-warning' }), ' ', bodyText);
+    }
+    // edit/delete commit on pointerdown (makeGateButton): a click-outside commit of another open
+    // composer repaints first, and a plain click on the torn-down button would be lost.
+    return h('div', { class: 'amber-block feedback-row' },
+      h('div', { class: 'feedback-head' },
+        h('div', { class: 'amber-label' }, 'Your pending feedback'),
+        h('div', { class: 'feedback-tools' },
+          makeGateButton({ class: 'qa-link-btn', type: 'button' }, () => openFeedbackComposer(u, i, text), 'edit'),
+          makeGateButton({ class: 'qa-link-btn', type: 'button' }, () => { commitFeedbackPatch(t, 'feedbackItem', '', text, i); render(); }, 'delete'))),
+      bodyEl,
+      attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null);
+  }
+
+  function renderFeedback(t) {
+    const u = getUi(t.id);
+    const items = t.feedback || [];
+    const wrap = h('div', { class: 'feedback-wrap' });
+    // An open EDIT composer sits in its item's row: that index while the line there still reads as
+    // the item's text, else the first line equal to it (the loop removed an earlier item).
+    let editAt = -1;
+    if (u.feedbackOpen && u.feedbackEdit >= 0) {
+      editAt = items[u.feedbackEdit] === u.feedbackBase ? u.feedbackEdit : items.indexOf(u.feedbackBase);
+    }
+    items.forEach((text, i) => wrap.append(i === editAt ? renderFeedbackComposer(t, u) : renderFeedbackRow(t, u, text, i)));
+    // The add composer — or an edit whose item the loop already addressed, kept so the typed text is
+    // not lost (its save is a disk-wins conflict) — sits under the list.
+    if (u.feedbackOpen && editAt < 0) wrap.append(renderFeedbackComposer(t, u));
+    wrap.append(makeGateButton({ class: 'feedback-add', type: 'button' }, () => openFeedbackComposer(u, -1, ''), '＋ Feedback'));
     return wrap;
   }
 

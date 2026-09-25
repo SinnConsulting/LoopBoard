@@ -1,7 +1,7 @@
 // `.loopboard/tasks/<id>.md` parser/writer (tolerant, §2.2). Pure — no vscode imports so it runs
 // under `node --test`.
 //
-// Pure content, no frontmatter: the index owns title/phase/model/groomer/questions/notes/feedback.
+// Pure content, no frontmatter: the index owns title/phase/model/groomer/questions/feedback.
 // Fixed headings (Meta, Problem, Description, Goals, Worklog, Delivered), all optional; the writer
 // emits canonical order, omits empty sections, and rewrites the H1 from the index title. Problem
 // and Goals (t-2191) are groomer-owned free markdown — the parser validates NEITHER their length
