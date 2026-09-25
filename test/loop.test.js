@@ -288,3 +288,10 @@ test('template Automation block spells out the delegated-work mode the activatio
   assert.match(fence, /never self-accept/, 'Rule 1 gate survives');
   assert.ok(fence.indexOf('DELEGATED-WORK MODE') > fence.indexOf('reply "no changes"'), 'the clause trails the ordinary pass so the base instructions are untouched');
 });
+
+test('revealStep: the row that last revealed toggles the panel; any other row shows (t-9c3f)', () => {
+  const { revealStep } = require('../out-test/loop.js');
+  assert.equal(revealStep('opus', 'opus'), 'togglePanel', 'same model -> toggle panel');
+  assert.equal(revealStep('sonnet', 'opus'), 'show', 'different model -> show');
+  assert.equal(revealStep(undefined, 'opus'), 'show', 'nothing revealed -> show');
+});
