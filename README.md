@@ -4,17 +4,13 @@
 
 # LoopBoard
 
-[![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml)
-[![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinnConsulting/LoopBoard/blob/main/LICENSE)
-[![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model)
+[![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml) [![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinnConsulting/LoopBoard/blob/main/LICENSE) [![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model)
 
 **The missing UI for Claude Code loops.**<br>
-**Claude Code is the engine.**<br>
-**LoopBoard is the cockpit.**<br>
-**You're still the pilot.**
+Claude Code is the engine. LoopBoard is the cockpit. You're still the pilot.<br>
+*Less prompting. No babysitting. More building.*
 
-**Less prompting. No babysitting. More building.**
+[![Install in VS Code](https://img.shields.io/badge/Install_in-VS_Code-0098FF?style=for-the-badge)](https://vscode.dev/redirect?url=vscode:extension/SinnConsulting.loopboard-todo) [![Browse in the Marketplace](https://img.shields.io/badge/Browse_in_the-Marketplace-24292F?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=SinnConsulting.loopboard-todo)
 
 </div>
 
@@ -38,36 +34,83 @@ groom, build and deliver the tasks. You decide **what starts, what ships and wha
 You **promote** a groomed story. The Sonnet loop claims it, builds it on a `task/**` branch and
 delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the loop does the rest.
 
+## Prompting by hand vs. LoopBoard
+
+| | Prompting by hand | With LoopBoard |
+|---|---|---|
+| **Starting work** | Open a session, explain the task | Click **Promote** |
+| **Context** | Re-explained every session | Lives in `tasks/<id>.md` |
+| **When it's unsure** | Guesses, or waits for "continue" | Parks in Feedback with a question |
+| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first (beta) |
+| **Keeping track** | Chat history | A board over plain markdown |
+| **Your job** | Typing prompts | Promote · Approve · Send back |
+
 ---
 
 ## Features
 
-### 1 · Getting started
-
-One click creates `.loopboard/` with `TODO.md`, `LOOP.md` and `tasks/`.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/09-getting-started.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/09-getting-started.gif" width="860" alt="Initialize scaffolds .loopboard/ and the first story is written" /></a>
-</p>
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <b>1 · Getting started</b><br>
+      <sub>One click creates <code>.loopboard/</code>.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/09-getting-started.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/09-getting-started.gif" width="100%" alt="Initialize scaffolds .loopboard/ and the first story is written" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <b>2 · Write a story</b><br>
+      <sub>A loop grooms it into problem, goals, questions.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/02-new-story.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/02-new-story.gif" width="100%" alt="A plain-text story becomes a DRAFT and the Opus loop grooms it into problem, description, goals and a question" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <b>3 · Promote &amp; demote</b><br>
+      <sub>Loops only take work from the Backlog.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/03-gates.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/03-gates.gif" width="100%" alt="Promote moves a story to Backlog, Demote sends it back to New" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>4 · Answer questions</b><br>
+      <sub>A stuck loop asks instead of guessing.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/04-feedback.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/04-feedback.gif" width="100%" alt="A task parked in Feedback; accepting a suggested answer lets the loop resume" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <b>5 · Review or approve</b><br>
+      <sub>Send it back, or approve into <code>DONE.md</code>.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/05-review.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/05-review.gif" width="100%" alt="Review feedback sends a task back; the loop reworks it; Approve archives it to DONE.md" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <b>6 · Loop terminals</b><br>
+      <sub>One Claude Code terminal per model.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif" width="100%" alt="Starting loops, watching context usage and scheduling a restart" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>7 · Markdown is the truth</b><br>
+      <sub>Click → file changes. Edit → board follows.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/07-markdown.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/07-markdown.gif" width="100%" alt="Promoting rewrites TODO.md; editing TODO.md repaints the board" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <b>8 · Settings</b><br>
+      <sub>Every model in one grid.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif" width="100%" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
+    </td>
+    <td width="33%" valign="middle" align="center">
+      <sub>Click any GIF for full size.<br>Details for each feature below.</sub>
+    </td>
+  </tr>
+</table>
 
 <details>
-<summary>Details</summary>
+<summary><b>1 · Getting started</b></summary>
 
 Click **Initialize LoopBoard workspace** or run **`LoopBoard: Initialize Workspace`**. It refuses
-if `.loopboard/` already exists. What each file holds: [Storage layout](#storage-layout).
+if `.loopboard/` already exists. What each file holds: [File structure](#file-structure).
 
 </details>
 
-### 2 · Write a story in plain words
-
-A groomer loop turns it into problem, description, goals and questions for you.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/02-new-story.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/02-new-story.gif" width="860" alt="A plain-text story becomes a DRAFT and the Opus loop grooms it into problem, description, goals and a question" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>2 · Write a story in plain words</b></summary>
 
 Click **New Story**, write it like you'd brief a colleague, and pick who **grooms** and who
 **builds** it. The groomer loop expands it in a subagent (visible under **Agents** in the sidebar):
@@ -82,16 +125,8 @@ the story.
 
 </details>
 
-### 3 · Promote & demote
-
-Promote puts a story in the Backlog, the only place loops take work from. Demote takes it back.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/03-gates.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/03-gates.gif" width="860" alt="Promote moves a story to Backlog, Demote sends it back to New" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>3 · Promote &amp; demote</b></summary>
 
 - **Promote** moves a story from New to **Backlog**, the only place a loop claims work from.
 - **Demote** moves it back to New, nothing lost — refused once a loop has claimed it.
@@ -101,16 +136,8 @@ At most one task is **In Progress** across the board; the sidebar shows which.
 
 </details>
 
-### 4 · Answer questions
-
-A stuck loop parks the task in Feedback instead of guessing. Answer, and it resumes.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/04-feedback.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/04-feedback.gif" width="860" alt="A task parked in Feedback; accepting a suggested answer lets the loop resume" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>4 · Answer questions</b></summary>
 
 A loop that needs your decision parks the task in **Feedback** and stops. Once every question is
 answered, the loop resumes it. LoopBoard also **nudges** that loop's terminal, so it acts now
@@ -118,16 +145,8 @@ instead of on its next pass — without interrupting work in flight.
 
 </details>
 
-### 5 · Review, send back or approve
-
-Review feedback sends the task back for rework. Approve archives it to `DONE.md`.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/05-review.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/05-review.gif" width="860" alt="Review feedback sends a task back; the loop reworks it; Approve archives it to DONE.md" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>5 · Review, send back or approve</b></summary>
 
 Delivered work lands in **Review** with its `## Delivered` summary and a link to its PR or branch.
 
@@ -138,16 +157,8 @@ Loops never commit to `main` and never merge. Merging is your call.
 
 </details>
 
-### 6 · Loop terminals
-
-▶ starts one Claude Code terminal per model, with live context usage. Right-click to schedule.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif" width="860" alt="Starting loops, watching context usage and scheduling a restart" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>6 · Loop terminals</b></summary>
 
 Each **▶** opens a VS Code terminal named `Claude <Model>` running one command:
 
@@ -168,16 +179,8 @@ line is the real one.
 
 </details>
 
-### 7 · Markdown is the source of truth
-
-A click rewrites `TODO.md`; an edit to `TODO.md` repaints the board. No database.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/07-markdown.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/07-markdown.gif" width="860" alt="Promoting rewrites TODO.md; editing TODO.md repaints the board" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>7 · Markdown is the source of truth</b></summary>
 
 - **Board → file.** Each save re-reads the file, changes one field and writes it back atomically
   (temp file + rename), so you, the board and several loops can share it safely.
@@ -188,16 +191,8 @@ A click rewrites `TODO.md`; an edit to `TODO.md` repaints the board. No database
 
 </details>
 
-### 8 · Settings
-
-Every model in one grid: `--model`, effort, groomers. Plain VS Code user settings.
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif" width="860" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
-</p>
-
 <details>
-<summary>Details</summary>
+<summary><b>8 · Settings</b></summary>
 
 The sidebar's **Settings** row opens LoopBoard's settings page. One grid covers every model:
 **on**, **default worker**, **default groomer**, **`--model`**, **effort**, **groomers**. Other
@@ -211,7 +206,28 @@ settings are grouped below.
 
 ---
 
-## Storage layout
+## Get started
+
+1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.0+**.
+2. Run **LoopBoard: Initialize Workspace**.
+3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
+   `echo '.loopboard/' >> .gitignore`
+4. Write a story, then press **▶** on a loop in the sidebar.
+
+Commands:
+
+- **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
+- **LoopBoard: Open Board** — open the board.
+- **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
+- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+
+Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
+flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
+all state lives in `.loopboard/`.
+
+---
+
+## File structure
 
 ```
 .loopboard/
@@ -220,6 +236,7 @@ settings are grouped below.
   LOOP.md          workflow rules + the loop instructions, re-read every pass
   tasks/<id>.md    per task: meta, problem, description, goals, worklog, delivered
   cache/<id>/      attached images (created on the first attach)
+  debug.log        trace, only while loopBoard.debug is on (capped at 10 MB)
 ```
 
 - **Field-level, atomic saves.** Every save re-reads the file, patches one field and writes the
@@ -227,8 +244,8 @@ settings are grouped below.
   file stays in `tasks/`.
 - **Images.** Drop, paste or **＋ Attach** them on a card, an answer or the New Story composer.
   They're stored under `.loopboard/cache/<id>/`, linked from the task, and deleted on approval.
-- **Commit it or ignore it.** LoopBoard doesn't touch your `.gitignore`: commit `.loopboard/` to
-  share the tracker, or ignore it to keep it local.
+- **Gitignore it (recommended).** LoopBoard never edits your `.gitignore`, so add `.loopboard/`
+  yourself: `debug.log` records values verbatim and attached images land in `cache/`.
 
 ---
 
@@ -304,34 +321,6 @@ in `docs/showcase/studio/scenes/`.
 - **Zero runtime dependencies.** Vanilla HTML/CSS/JS webviews with a CSP nonce on every script.
 - **Native VS Code only.** A webview, an activity-bar view and plain terminals. No hooks, no files
   outside `.loopboard/`. Uninstall it and only `.loopboard/` remains.
-
-```
-     you click Promote                               you click Approve
-             │                                               │
-   New ──────┴──────► Backlog ────► In Progress ────► Review ┴────► Done (DONE.md)
-    ▲                    │               ▲   │
-    └── you click Demote ┘               │   └──► Feedback ─┐
-                                         │                  │
-                                         └──────────────────┘
-                                          (your answers resume it)
-```
-
-## Get started
-
-1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.0+**.
-2. Run **LoopBoard: Initialize Workspace**.
-3. Write a story, then press **▶** on a loop in the sidebar.
-
-Commands:
-
-- **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
-- **LoopBoard: Open Board** — open the board.
-- **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
-- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
-
-Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
-flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
-all state lives in `.loopboard/`.
 
 ## Security model
 
@@ -457,7 +446,7 @@ show them.
 | `loopBoard.maxAttachmentSizeMB` | `10` | Maximum size (MB) for an image attached to a task (drag-drop, paste, or the picker). Attachments are staged under `.loopboard/cache/` and cleaned up on acceptance. |
 | `loopBoard.autoSyncTemplates` | `true` | Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page. |
 | `loopBoard.sidebarMarquee` | `false` | Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way. |
-| `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding) — this is safe because the log stays local under the gitignored `.loopboard/` and is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
+| `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 
 ### LoopBoard: Beta (experimental)
 

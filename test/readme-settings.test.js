@@ -38,6 +38,23 @@ test('the showcase region is exactly what the generator would copy from docs/sho
   assert.deepEqual(problems, [], 'run `make readme`');
 });
 
+test('regenerating from empty regions reproduces README.md byte for byte (no GIF recording involved)', () => {
+  const os = require('node:os');
+  const text = readme();
+  const empty = (t, begin, end) => t.slice(0, t.indexOf(begin) + begin.length) + t.slice(t.indexOf(end));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'readme-'));
+  try {
+    fs.mkdirSync(path.join(tmp, 'docs', 'showcase'), { recursive: true });
+    fs.copyFileSync(path.join(root, 'package.json'), path.join(tmp, 'package.json'));
+    fs.copyFileSync(path.join(root, 'docs', 'showcase', 'README.md'), path.join(tmp, 'docs', 'showcase', 'README.md'));
+    fs.writeFileSync(path.join(tmp, 'README.md'), empty(empty(text, tool.BEGIN, tool.END), tool.SHOWCASE_BEGIN, tool.SHOWCASE_END));
+    tool.generate(tmp);
+    assert.equal(fs.readFileSync(path.join(tmp, 'README.md'), 'utf8'), text, 'README.md holds generated content outside its sentinels, or a region is hand-edited');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('the showcase copy makes relative links absolute and leaves the rest alone', () => {
   const out = tool.absolutizeLinks(
     '<a href="gifs/a.gif"><img src="gifs/a.gif" /></a> ![l](../../media/x.png) [s](#top) [w](https://example.com/y.png)',

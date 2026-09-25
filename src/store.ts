@@ -100,7 +100,8 @@ export class Store {
   // is `info`/`verbose` and the call's level is not below the setting; `off` returns immediately
   // (nothing constructed, no read, no write). The line is pushed onto an in-memory buffer and a
   // debounced flush is scheduled — best-effort, never blocks a real save. Values are logged
-  // VERBATIM: debug.log lives under the gitignored `.loopboard/`, so nothing leaves the machine.
+  // VERBATIM: debug.log lives under `.loopboard/`, which users are told to gitignore (LoopBoard
+  // never adds it), so it stays on the machine unless someone commits it.
   debugLog(level: 'info' | 'verbose', event: string, detail?: string): void {
     const current = this.getDebugLevel();
     if (current === 'off') return;
