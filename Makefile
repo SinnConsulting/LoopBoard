@@ -10,7 +10,7 @@ DOCKER = docker run --rm -v "$(CURDIR)":/app -v loopboard-npm-cache:/root/.npm -
 # recording container runs with no network, the repo as its only mount and no extra capabilities.
 SHOWCASE_IMAGE = loopboard-showcase
 
-.PHONY: install build test package check clean showcase
+.PHONY: install build test package check clean showcase readme
 
 install:
 	$(DOCKER) npm install
@@ -41,6 +41,13 @@ showcase: | node_modules
 	$(DOCKER) npx --no-install tsc -p ./tsconfig.test.json
 	docker build -q -t $(SHOWCASE_IMAGE) docs/showcase/studio
 	docker run --rm --network none --shm-size=1g -v "$(CURDIR)":/app $(SHOWCASE_IMAGE) node record.js $(SCENES)
+	$(MAKE) readme
+
+# Rebuild README.md's machine-owned regions — the showcase from docs/showcase/README.md, the settings
+# tables from package.json — then check coverage (the readme-regen skill's tool).
+readme:
+	$(DOCKER) node .claude/skills/readme-regen/readme-tool.js generate
+	$(DOCKER) node .claude/skills/readme-regen/readme-tool.js check
 
 clean:
 	rm -rf out out-test node_modules *.vsix docs/showcase/studio/.frames

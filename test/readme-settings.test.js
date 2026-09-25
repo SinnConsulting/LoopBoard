@@ -27,8 +27,34 @@ test('the settings region is exactly what the generator would write', () => {
   assert.deepEqual(problems, [], 'run the readme-regen skill: docker run --rm -v "$(pwd)":/app -w /app node:22 node .claude/skills/readme-regen/readme-tool.js generate');
 });
 
+test('README.md carries the showcase sentinels, and so does its source page', () => {
+  for (const [file, text] of [['README.md', readme()], ['docs/showcase/README.md', fs.readFileSync(path.join(root, 'docs/showcase/README.md'), 'utf8')]]) {
+    assert.ok(text.indexOf(tool.SHOWCASE_BEGIN) !== -1 && text.indexOf(tool.SHOWCASE_BEGIN) < text.indexOf(tool.SHOWCASE_END), `${file}: showcase sentinels missing or out of order`);
+  }
+});
+
+test('the showcase region is exactly what the generator would copy from docs/showcase/README.md', () => {
+  const problems = tool.check(root).filter((p) => p.startsWith('showcase region'));
+  assert.deepEqual(problems, [], 'run `make readme`');
+});
+
+test('the showcase copy makes relative links absolute and leaves the rest alone', () => {
+  const out = tool.absolutizeLinks(
+    '<a href="gifs/a.gif"><img src="gifs/a.gif" /></a> ![l](../../media/x.png) [s](#top) [w](https://example.com/y.png)',
+    'docs/showcase',
+  );
+  assert.equal(out,
+    `<a href="${tool.RAW_BASE}docs/showcase/gifs/a.gif"><img src="${tool.RAW_BASE}docs/showcase/gifs/a.gif" /></a> ` +
+    `![l](${tool.RAW_BASE}media/x.png) [s](#top) [w](https://example.com/y.png)`);
+});
+
+test('the settings tables are the last section of README.md', () => {
+  const text = readme();
+  assert.ok(!/^## /m.test(text.slice(text.indexOf(tool.END))), 'a ## section follows the generated settings');
+});
+
 test('every command, view and documented behaviour still has README prose', () => {
-  const problems = tool.check(root).filter((p) => !p.startsWith('settings region'));
+  const problems = tool.check(root).filter((p) => !/^(settings|showcase) region/.test(p));
   assert.deepEqual(problems, [], 'README.md lost coverage of a real contribution point');
 });
 

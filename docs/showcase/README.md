@@ -13,6 +13,10 @@ size.
 
 ---
 
+<!-- Everything between the showcase sentinels is copied into the root README.md by `make readme`
+     (relative links made absolute). Edit it HERE, never in README.md. -->
+<!-- loopboard:showcase:begin -->
+
 ## The whole loop in 17 seconds
 
 <p align="center">
@@ -234,8 +238,9 @@ click in a GIF rewrites the markdown exactly as the extension would. Time is ful
 recordings are reproducible:
 
 ```sh
-make showcase                 # every scene → docs/showcase/gifs/*.gif
+make showcase                 # every scene → docs/showcase/gifs/*.gif, then refresh README.md
 make showcase SCENES="01 07"  # only the scenes named
+make readme                   # README.md only: copy this page's showcase in, regenerate settings
 ```
 
 Everything runs in Docker (`docs/showcase/studio/Dockerfile`: Playwright's Chromium, ffmpeg,
@@ -243,6 +248,8 @@ gifsicle), with no network access and the repository as the only mount. The scen
 `docs/showcase/studio/scenes/`.
 
 </details>
+
+<!-- loopboard:showcase:end -->
 
 <div align="center">
 

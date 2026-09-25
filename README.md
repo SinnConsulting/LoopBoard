@@ -29,6 +29,246 @@ board your Claude Code agent loops groom, build, and deliver from — while you 
 keys that matter: **what gets started, what gets accepted, and what gets sent back.** Markdown stays
 the source of truth.
 
+<!-- The feature showcase below is generated from docs/showcase/README.md by `make readme`.
+     Edit it there, never here. -->
+<!-- loopboard:showcase:begin -->
+
+## The whole loop in 17 seconds
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/01-the-loop.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/01-the-loop.gif" width="860" alt="One story travels the whole loop: promoted, claimed and built by the Sonnet loop, delivered with a PR, approved into DONE.md" /></a>
+</p>
+
+A groomed story waits in **New**. You **promote** it, and the Sonnet loop's next pass claims it,
+builds it on a `task/**` branch, opens a PR and moves it to **Review**. You **approve** it, and
+it's archived to `DONE.md`. You made two clicks. The loop did everything in between.
+
+---
+
+## Features at a glance
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>1 · Getting started</h3>
+      <p>One click scaffolds <code>.loopboard/</code> (<code>TODO.md</code>, <code>LOOP.md</code>, <code>tasks/</code>) and you write your first story.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/09-getting-started.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/09-getting-started.gif" width="100%" alt="Initialize scaffolds .loopboard/ and the first story is written" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>2 · Write a story in plain words</h3>
+      <p>It lands in New as a <code>DRAFT:</code>. The groomer loop turns it into a problem, a description, goals and questions for you.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/02-new-story.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/02-new-story.gif" width="100%" alt="A plain-text story becomes a DRAFT and the Opus loop grooms it into problem, description, goals and a question" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>3 · Promote &amp; demote</h3>
+      <p>Promote sends a story to the Backlog, the only place a loop claims work from. Demote undoes it, and nothing is lost.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/03-gates.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/03-gates.gif" width="100%" alt="Promote moves a story to Backlog, Demote sends it back to New" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>4 · Answer questions</h3>
+      <p>A blocked loop parks the task in Feedback instead of guessing. Answer it, or accept a suggestion, and the loop resumes.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/04-feedback.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/04-feedback.gif" width="100%" alt="A task parked in Feedback; accepting a suggested answer lets the loop resume" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>5 · Review, send back or accept</h3>
+      <p>Read what was delivered. Review feedback sends the task back for rework, and Approve archives it to <code>DONE.md</code>.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/05-review.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/05-review.gif" width="100%" alt="Review feedback sends a task back; the loop reworks it; Approve archives it to DONE.md" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>6 · Loop terminals</h3>
+      <p>▶ starts one Claude Code terminal per model slot. Each row shows live context usage, and a right-click schedules a restart.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif" width="100%" alt="Starting loops, watching context usage and scheduling a restart" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>7 · Markdown is the source of truth</h3>
+      <p>A click on the board rewrites <code>TODO.md</code>, and an edit to <code>TODO.md</code> repaints the board. There's no database.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/07-markdown.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/07-markdown.gif" width="100%" alt="Promoting rewrites TODO.md; editing TODO.md repaints the board" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>8 · Settings</h3>
+      <p>All three model slots in one grid: <code>--model</code>, effort and groomers. They're plain VS Code user settings.</p>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif" width="100%" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
+    </td>
+  </tr>
+</table>
+
+---
+
+## Details
+
+<details>
+<summary><b>1 · Getting started</b></summary>
+
+Open any repository and click **Initialize LoopBoard workspace**, or run
+**`LoopBoard: Initialize Workspace`** from the Command Palette. It refuses if `.loopboard/` already
+exists.
+
+| File | What it holds |
+|---|---|
+| `TODO.md` | The slim task index: one entry per active task (id, phase, model, groomer, Q&A) |
+| `LOOP.md` | The workflow rules and the standing instructions every loop re-reads on each pass |
+| `tasks/<id>.md` | Per-task detail: problem, description, goals, worklog, delivered |
+| `DONE.md` | Accepted work, newest first. It's created on your first acceptance |
+
+**Requires Claude Code 2.1.0 or newer.** Loops are spawned with `--name`, which older CLIs reject.
+
+</details>
+
+<details>
+<summary><b>2 · Write a story in plain words</b></summary>
+
+Click **New Story**, write the way you'd brief a colleague, and pick which model **grooms** the
+story and which one **builds** it. On its next pass the groomer loop expands the draft through a
+subagent (the sidebar's **Agents** section shows it while it runs):
+
+- **Problem**: why the task exists, in a few factual sentences.
+- **Description**: the groomed story itself.
+- **Goals**: one verifiable outcome per bullet. Review later judges the delivery against these.
+- **Questions**, if something is genuinely yours to decide, often with one-click suggested answers.
+
+You can paste or drop screenshots into the composer. When you save, they're staged under
+`.loopboard/cache/` and linked from the story.
+
+</details>
+
+<details>
+<summary><b>3 · Promote &amp; demote</b></summary>
+
+- **Promote** (on New) moves the story to **Backlog**, the only place a loop ever claims work from.
+- **Demote** (on Backlog) sends it back to New with nothing lost. The store refuses the demote if
+  a loop has already claimed the task.
+- Loops never tick a box, and the board never moves a card optimistically: every move is a real
+  write to `TODO.md` that the next refresh confirms.
+
+At most one task is **In Progress** across the whole board. The sidebar shows which one, and which
+Backlog work is queued behind it.
+
+</details>
+
+<details>
+<summary><b>4 · Answer questions</b></summary>
+
+When a loop hits a decision that's yours to make, it parks the task in **Feedback** with a question
+and stops. When every question has an answer, the owning loop resumes the task on its own. By
+default LoopBoard also **nudges** that loop: it pastes a one-line pointer into the loop's terminal,
+so the loop acts now instead of waiting for its next scheduled pass. The nudge never interrupts
+work that's already in flight.
+
+</details>
+
+<details>
+<summary><b>5 · Review, send back or accept</b></summary>
+
+Finished work lands in **Review** with its `## Delivered` summary and a link to the PR.
+
+- **Not quite right?** Write review feedback. The loop picks the task back up, addresses the
+  feedback, removes it and delivers again.
+- **Happy with it?** Click **Approve**. The task is archived to `DONE.md` and its task file stays
+  in `tasks/` as history.
+
+Loops never merge a PR. Merging is always your call.
+
+</details>
+
+<details>
+<summary><b>6 · Loop terminals</b></summary>
+
+Each **▶** opens a plain VS Code terminal named `Claude <Model>` and starts one command:
+
+```sh
+claude --permission-mode auto --model 'opus' --effort medium --name loopboard-opus-<id> \
+  '/loop 5m You are running as model opus with a grooming concurrency cap of 3. Open .loopboard/LOOP.md, …'
+```
+
+The prompt only points the loop at the **Automation** section of `.loopboard/LOOP.md`, which the
+loop re-reads on every pass, so if you edit your rules there the running loops follow the edit.
+
+- **Context bar.** Set `loopBoard.contextLimit.percent` and LoopBoard restarts (or `/clear`s) a
+  session at that mark. A loop that owns the In Progress task is never interrupted: the restart
+  waits until it's idle.
+- **♻ / ■** restart a loop with a fresh context, or stop it. **Right-click** any of the three
+  buttons to schedule that action.
+
+The Claude sessions shown in these recordings are simulated, because VS Code gives extensions no
+way to read a terminal. The spawn line is the one LoopBoard actually sends.
+
+</details>
+
+<details>
+<summary><b>7 · Markdown is the source of truth</b></summary>
+
+- **Click on the board → the markdown changes.** Every edit re-reads the file, applies exactly one
+  field and writes it back canonically (atomic temp file + rename). That's how you, the board and
+  several agent loops can share one file safely.
+- **Edit the file → the board follows.** A hand edit, a `git pull` or a loop's write all repaint the
+  board. If one of your saves collides with an on-disk change to the same field, the disk wins and
+  a toast tells you.
+
+`.loopboard/` is plain files that belong to you, and they survive uninstalling the extension.
+
+</details>
+
+<details>
+<summary><b>8 · Settings</b></summary>
+
+The sidebar's **Settings** row opens LoopBoard's own settings page. The model slots are one grid,
+with a column each for **on**, **default worker**, **default groomer**, **`--model`**, **effort**
+and **groomers**. Every other `loopBoard.*` setting is grouped into sections below it.
+
+- These are ordinary **VS Code user settings**. Every key is application-scoped on purpose: a cloned
+  repo can never decide how much authority your agent runs with.
+- Spawn-time settings (`--model`, effort, the loop interval, the permission mode and so on) apply on
+  the next ▶ start or ♻ restart.
+
+</details>
+
+---
+
+## Cheat sheet
+
+| You | The loops |
+|---|---|
+| Write a story in plain words | Groom it into problem, description, goals and questions |
+| **Promote** New → Backlog | Claim the top Backlog task (one In Progress, board-wide) |
+| Answer questions | Resume the parked task |
+| Write review feedback | Rework the task and deliver again |
+| **Approve** Review → `DONE.md` | Nothing more to do. The work is done |
+| **Demote** Backlog → New | Leave it alone until you promote it again |
+
+---
+
+<details>
+<summary><b>About these recordings</b></summary>
+
+These GIFs aren't mock-ups. Each one renders the extension's **real webview code**
+(`media/board.js`, `media/sidebar.js`, `media/settings.js`) in headless Chromium, inside a VS
+Code–styled window. A small stand-in host answers the webviews' messages with the **same pure
+modules the extension ships** (parser, writer, merge, gates, view, nudge, settings form), so every
+click in a GIF rewrites the markdown exactly as the extension would. Time is fully scripted, so the
+recordings are reproducible:
+
+```sh
+make showcase                 # every scene → docs/showcase/gifs/*.gif, then refresh README.md
+make showcase SCENES="01 07"  # only the scenes named
+make readme                   # README.md only: copy this page's showcase in, regenerate settings
+```
+
+Everything runs in Docker (`docs/showcase/studio/Dockerfile`: Playwright's Chromium, ffmpeg,
+gifsicle), with no network access and the repository as the only mount. The scene scripts live in
+`docs/showcase/studio/scenes/`.
+
+</details>
+
+<!-- loopboard:showcase:end -->
+
+---
+
 ## Small on purpose
 
 Agentic development breaks down when the task tooling becomes bloated and detached from the code it
@@ -48,53 +288,32 @@ is supposed to be about. LoopBoard is deliberately small:
   yours and gitignored.
 
 ```
-        you tick [x]                                    you tick [x]
+      you click Promote                              you click Approve
              │                                               │
    New ──────┴──────► Backlog ────► In Progress ────► Review ┴────► Done (DONE.md)
-    ▲                                    ▲   │                          
-    └──── you click Demote ──────────────┘   └──► Feedback ─┐           
-                                                  ▲          │           
-                                                  └──────────┘           
-                                              (your answers resume it)
+    ▲                    │               ▲   │
+    └── you click Demote ┘               │   └──► Feedback ─┐
+                                         │                  │
+                                         └──────────────────┘
+                                          (your answers resume it)
 ```
 
-Promote (New → Backlog) and Accept (Review → `DONE.md`) are ticks only you can make. Demote
-(Backlog → New) is an immediate, non-destructive button click. A loop claims the top Backlog task
-itself — at most one task board-wide is ever In Progress — and parks in Feedback rather than
-guessing.
+Promote (New → Backlog) and Approve (Review → `DONE.md`) are clicks only you can make. Demote
+(Backlog → New) is immediate and non-destructive. A loop claims the top Backlog task itself — at
+most one task board-wide is ever In Progress — and parks in Feedback rather than guessing.
 
-## Why LoopBoard?
+## Requirements & commands
 
-What you get, at a glance:
+- **VSCode `^1.90.0`** and an authenticated **Claude Code CLI, 2.1.0 or newer**. Loop terminals are
+  spawned with `--name`, which is what lets the context-usage bar tell one slot's session from
+  another's. An older CLI rejects the unknown option and the terminal exits immediately — and
+  because a terminal's output can never be read back, the extension cannot tell you why. If your
+  loops die the instant they start, check `claude --version` first.
+- Loop terminals die with the VSCode window; restarting is one click, since all state lives in
+  `.loopboard/`.
 
-- 🗂️ **Your `TODO.md` is the board** — markdown stays the source of truth; the UI is a live view, never a second database.
-- 🤖 **Agents groom, build, and deliver** — Groomer and Worker loops collaborate on each task while you hold the only three gates: promote, accept, demote.
-- ⏯️ **Press Start, not prompts** — spawn model-specific Claude Code loop terminals in one click instead of writing a fresh prompt per task.
-- 🧩 **Multi-model slots** — assign Opus / Sonnet / Fable per task (groom vs. work), each a configurable slot.
-- 🔒 **Zero runtime dependencies** — the extension ships no runtime deps; the webview is vanilla HTML/CSS/JS with a CSP nonce on every script.
-- 🧵 **Context stays on the task** — worklog, feedback, and delivery notes live in `tasks/<id>.md`, not scattered across chats.
-
-## How LoopBoard works
-
-1. Create a task.
-2. Start the Groomer and Worker loops.
-3. Review the Groomed story.
-4. Approve it.
-5. Let the Worker build.
-6. Answer questions—or chat with Claude when deeper discussion is needed.
-
-> **That's it.**
-
-![LoopBoard board in motion](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-board.gif)
-
-## Get started
-
-Run **`LoopBoard: Initialize Workspace`** from the Command Palette (or the board's empty-state
-button) to scaffold `.loopboard/` in your workspace. Click the LoopBoard icon in the activity bar
-for the sidebar summary, then **Open Board** (or run `LoopBoard: Open Board`). Accepted work is
-archived to `.loopboard/DONE.md`.
-
-Every command LoopBoard adds to the palette:
+Click the **LoopBoard** icon in the activity bar for the sidebar summary. Every command LoopBoard
+adds to the palette:
 
 - **LoopBoard: Initialize Workspace** — scaffold `.loopboard/` here (refuses if it already exists).
 - **LoopBoard: Open Board** — open the board panel.
@@ -108,7 +327,7 @@ Every command LoopBoard adds to the palette:
   TODO.md          slim task index — one entry per active task (id, phase, model, groomer, Q&A)
   DONE.md          accepted tasks, newest first (created lazily on the first acceptance)
   LOOP.md          workflow rules + the loop worker instructions the loops read every pass
-  tasks/<id>.md    per-task detail: meta, description, notes, worklog, feedback, delivered
+  tasks/<id>.md    per-task detail: meta, problem, description, goals, worklog, delivered
   cache/<id>/      staged image attachments (created on the first attach), see below
 ```
 
@@ -128,39 +347,119 @@ rewrites the link to the real cache path. Each card lists its staged images in a
 area with a × that deletes the file and its link; all remaining staged files are deleted once
 the task is accepted to `DONE.md`.
 
-## Using the board
+## The sidebar
 
-The activity-bar **sidebar** (left) is a read-only, at-a-glance summary — click any row to jump into the board. From top to bottom, it shows:
+The activity-bar **sidebar** is a read-only, at-a-glance summary — click any row to jump into the
+board. From top to bottom:
 
 | | |
 |---|---|
-| ![LoopBoard sidebar](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, and ▶ spawn / ↻ recycle / ⏹ stop controls.</li><li><b>Settings</b> — opens the extension's configuration.</li></ul> |
+| ![LoopBoard sidebar](https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/media/screenshot-sidebar.png) | <ul><li><b>Attention banner</b> — everything currently waiting on you: tasks in <b>Review</b> plus groomed proposals in <b>New</b> that are ready to promote.</li><li><b>Phases</b> — every column (New, Backlog, In Progress, Feedback, Review, Done) with a live task count.</li><li><b>Loops</b> — one row per model (Opus, Sonnet, Fable), each with its assigned role, a running-status dot, a context-usage bar, and ▶ start / ♻ restart / ■ stop controls (right-click any of them to schedule it).</li><li><b>In Progress</b> and <b>Agents</b> — the task being built and any live subagents, shown only while there are some.</li><li><b>Settings</b> — opens LoopBoard's settings page.</li></ul> |
 
-On the board itself:
+## Workspace custom rules (edit `.loopboard/LOOP.md` directly)
 
-- **New** — tick a task's checkbox to promote it to Backlog.
-- **Backlog** — click Demote to send a task back to New; it's immediate and non-destructive.
-- **Feedback** — type an answer under each question; the loop resumes once all are answered.
-- **Review** — read DELIVERED, optionally write review feedback (sends it back), or tick to accept → archived to `DONE.md`.
-- **New story** composer — write free text and choose the groom/worker models inline; it lands as a `DRAFT:` the loop grooms into a story.
+Extra standing instructions for the loop workers in **this** workspace live as a hand-written
+section in `.loopboard/LOOP.md` itself — free-form markdown, no setting involved. Freshly
+initialized workspaces already carry the empty section (it ships in the template); in an older
+workspace, add it yourself:
 
-Edits save on blur/Enter as field patches; if the file changed on disk under your edit, the disk
-value wins and a toast tells you. The board performs only the three human actions — promote, accept
-and demote — everything else is a field patch the loops react to on their next pass.
+```markdown
+<!-- loopboard:custom:begin -->
+## Custom rules (workspace)
 
-## Loop terminals
+Standing instructions for THIS workspace — free text, edited here; where they contradict a
+Rule above, they win in this workspace.
 
-The ▶ buttons open a plain VSCode terminal named `Claude <Model>` in the workspace root and run
-`claude --model <m> --effort <level> --permission-mode <cfg>` with a tiny bootstrap prompt that points the loop at
-`.loopboard/LOOP.md`'s Automation section — the standing instructions each loop re-reads every pass.
-↻ disposes and respawns for a fresh context. Loops die with the VSCode window; restart is one click,
-since all state lives in `.loopboard/`.
+1. PRs must be created before moving to in review. Otherwise task not done.
+<!-- loopboard:custom:end -->
+```
 
-**Requires Claude Code 2.1.0 or newer.** Loop terminals are spawned with `--name`, which is what
-lets the context-usage bar tell one slot's session from another's. An older CLI rejects the unknown
-option and the terminal exits immediately — and because a terminal's output can never be read back,
-the extension cannot tell you why. If your loops die the instant they start, check `claude --version`
-first.
+- **The file is the feature.** Workers re-read `LOOP.md` on every pass, so an edit reaches running
+  loops immediately — no terminal recycle, no extension involvement. The extension never parses,
+  rewrites or validates the section; what you save is exactly what stays.
+- **Workspace-isolated by construction.** The text lives in this workspace's `.loopboard/LOOP.md`
+  and can apply nowhere else.
+- **Template sync never touches it.** Sync runs automatically once per activation (window load or
+  extension update) while `loopBoard.autoSyncTemplates` is on (the default), and on demand from the
+  **Synchronise Templates** button on the settings page. It rewrites only `loopboard:sync:`-marked
+  template blocks; the `loopboard:custom` markers (and any other text outside sync markers) survive
+  verbatim. The one caveat: a `LOOP.md` with **no** `loopboard:sync:` markers at all is treated as
+  legacy and replaced wholesale — on activation too, without asking — after its previous text is
+  backed up to `.loopboard/LOOP.md.bkp`, and a warning popup says so. Any modern `LOOP.md` has
+  those markers.
+- **Precedence is prose.** A custom rule that contradicts a predefined Rule wins in this workspace
+  because the lead-in says so and workers read it — nothing is enforced by the extension.
+
+## Security model
+
+**Treat `.loopboard/` as trusted input.** LoopBoard points an autonomous `claude` session at
+`.loopboard/LOOP.md`'s Automation block, running with the configured `loopBoard.permissionMode` —
+which may be `bypassPermissions`. Anything written into `LOOP.md`, or into the task files it opens,
+steers an agent that can run commands on your machine. This is inherent to what LoopBoard does, not
+a bug.
+
+- A `.loopboard/` from a source you don't control (a cloned repo, a shared workspace) is a
+  prompt-injection vector with arbitrary-command-execution reach. It stays in the repo by design —
+  the tracker *is* the repo's — so it remains the one channel worth reading before you press ▶.
+- **Review `.loopboard/LOOP.md` before starting a loop in a repo you didn't author**, and set
+  `loopBoard.permissionMode` no higher than you're comfortable running unattended.
+
+**The settings channel is enforced shut.** Every `loopBoard.*` key is declared
+`"scope": "application"`, which means user settings only. A repository cannot set one — not through
+its `.vscode/settings.json`, and not through a `.devcontainer/devcontainer.json` it ships (which is
+why the scope is `application` and not `machine`: `machine` still permits remote settings, and a
+dev container's settings come from inside the repo). `loopBoard.permissionMode` is the key this is
+really about: a cloned repo must never get to decide how much authority your agent runs with.
+
+VSCode Workspace Trust gates activation, but trusting a repo to open it is not the same as vetting
+what its `.loopboard/` will tell an agent to do.
+
+### Migrating from a workspace setting
+
+If you previously set a `loopBoard.*` key in a workspace's `.vscode/settings.json` (or in a
+`.code-workspace` file), **that value no longer has any effect** — VSCode does not migrate a
+workspace value when a key stops being workspace-settable, it silently ignores it. Move any setting
+you still want into your user settings (the sidebar's Settings row, or
+`@ext:SinnConsulting.loopboard-todo` in VSCode's own Settings editor, both of which now write there
+exclusively), and delete the stale workspace entries. No key was renamed, so the names are
+unchanged.
+
+The trade-off is accepted deliberately: a repository can no longer ship its own default models,
+effort or delegation mode for a team to share. LoopBoard configuration belongs to the
+person, not to the checked-out repo.
+
+## Usage volume
+
+Advertised usage limits for Pro and Max plans assume *"ordinary, individual usage of Claude Code and
+the Agent SDK."* A tight loop (the default interval is `5m`; `1m` is tighter still) spinning
+multiple model terminals unattended around the clock can push past that, and Anthropic may
+rate-limit or enforce against the account. LoopBoard drives your own locally-authenticated Claude
+Code CLI — nothing here is against the ToS, but its design encourages high-frequency multi-model
+looping, so it's worth being aware of.
+
+## Build & contribute (Docker only)
+
+Node and every other tool run **inside Docker** — nothing is installed on the host, which needs
+only Docker, `make`, git, and VSCode (`engines.vscode` is `^1.90.0`), plus an authenticated Claude
+Code CLI to run the loops. `make check` is the verification gate and must be green before any
+commit; pressing **F5** to launch an Extension Development Host against this repo's own
+`.loopboard/` tracker is an optional extra smoke test. All toolchain commands are wrapped in the
+`Makefile`:
+
+```
+make install    # npm install (typescript + @types/vscode only) in node:22
+make build      # tsc -> out/
+make test       # compile pure modules + run node --test round-trip / merge suites
+make check      # build + test — the gate that must pass before committing
+make package    # build a .vsix via @vscode/vsce
+make readme     # rebuild this README's generated parts (showcase + settings tables)
+make showcase   # re-record the showcase GIFs, then make readme
+```
+
+This README is partly generated. The feature showcase is copied from
+[`docs/showcase/README.md`](https://github.com/SinnConsulting/LoopBoard/blob/main/docs/showcase/README.md)
+and the settings tables are rendered from `contributes.configuration` in `package.json`; edit
+those sources, then run `make readme`. `make check` fails while either part is stale.
 
 ## Settings
 
@@ -176,8 +475,44 @@ These stay ordinary VSCode settings — `settings.json` and Settings Sync are un
 deliberate restriction: **every `loopBoard.*` key is `"scope": "application"`, so it can only be set
 in your USER settings.** See [Security model](#security-model).
 
-The table below is generated from `contributes.configuration` in `package.json`, grouped and
-ordered exactly as both settings pages render them.
+See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
+
+### Configuring models (`loopBoard.models.<slot>`)
+
+The built-in model slots — `opus`, `sonnet`, `fable` — are what you assign to tasks
+(`model:` / `groomer:`) and what the sidebar **Loops** rows spawn. Each slot is configured through
+four keys:
+
+- `loopBoard.models.<slot>.enabled` — show/hide the slot in the Loops overview and the board's model selects.
+- `loopBoard.models.<slot>.model` — the actual string passed as `claude --model <string>` (e.g. `opus[1m]` or a dated snapshot). Empty falls back to the slot's built-in default; anything outside `[A-Za-z0-9._\[\]-]` is rejected before it reaches the terminal.
+- `loopBoard.models.<slot>.effort` — the reasoning effort (`low`…`max`, default `medium`) that slot's loop session is started with, passed as `claude --effort <level>`. Every subagent the loop spawns — grooming, and the implementer/review subagents when `loopBoard.delegateWork` is on — runs at that same session effort.
+- `loopBoard.models.<slot>.groomConcurrency` — how many grooming subagents that slot's loop may run in parallel in one pass (default `3`, minimum `1`; there is no unlimited setting). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass.
+
+The `.effort` flag and the `.groomConcurrency` cap are fixed when the loop is spawned — the cap rides the loop's bootstrap prompt, as do `loopBoard.delegateWork` and `loopBoard.delegateReview` — so a change to any of them takes effect the **next time that slot's loop is started or restarted (♻)**; a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
+
+```jsonc
+// Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.
+"loopBoard.models.opus.model": "claude-opus-4-8",
+"loopBoard.models.sonnet.model": "sonnet[1m]",
+"loopBoard.models.fable.enabled": false
+```
+
+> **Renamed:** `loopBoard.delegateWork.review` is now **`loopBoard.delegateReview`**. The old id
+> could never take effect: VSCode resolves settings as a tree, so a key holding a scalar cannot
+> also have a child key — with `loopBoard.delegateWork` set, VSCode logged
+> `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is true` and discarded the
+> value, leaving the default (`true`) in force. Nothing that was actually being honoured is lost by
+> the rename; if you had set the old key, set the new one to the value you meant and delete the old
+> line from your user `settings.json`.
+
+> Migrating from "Claude TODO Board" (≤ 0.1.1): the extension, command, and settings ids were
+> renamed from `claudeTodo.*` to `loopBoard.*` with no fallback — re-enter any custom settings.json
+> values under the new keys.
+
+### All settings
+
+Generated from `contributes.configuration` in `package.json`, grouped and ordered exactly as both
+settings pages render them.
 
 <!-- loopboard:settings:begin -->
 
@@ -230,139 +565,6 @@ ordered exactly as both settings pages render them.
 | `loopBoard.delegateReview` | `true` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same session effort) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 
 <!-- loopboard:settings:end -->
-
-> **Renamed:** `loopBoard.delegateWork.review` is now **`loopBoard.delegateReview`**. The old id
-> could never take effect: VSCode resolves settings as a tree, so a key holding a scalar cannot
-> also have a child key — with `loopBoard.delegateWork` set, VSCode logged
-> `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is true` and discarded the
-> value, leaving the default (`true`) in force. Nothing that was actually being honoured is lost by
-> the rename; if you had set the old key, set the new one to the value you meant and delete the old
-> line from your user `settings.json`.
-
-See [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md) for common questions (e.g. why there's no Haiku slot).
-
-### Workspace custom rules (edit `.loopboard/LOOP.md` directly)
-
-Extra standing instructions for the loop workers in **this** workspace live as a hand-written
-section in `.loopboard/LOOP.md` itself — free-form markdown, no setting involved. Freshly
-initialized workspaces already carry the empty section (it ships in the template); in an older
-workspace, add it yourself:
-
-```markdown
-<!-- loopboard:custom:begin -->
-## Custom rules (workspace)
-
-Standing instructions for THIS workspace — free text, edited here; where they contradict a
-Rule above, they win in this workspace.
-
-1. PRs must be created before moving to in review. Otherwise task not done.
-<!-- loopboard:custom:end -->
-```
-
-- **The file is the feature.** Workers re-read `LOOP.md` on every pass, so an edit reaches running
-  loops immediately — no terminal recycle, no extension involvement. The extension never parses,
-  rewrites or validates the section; what you save is exactly what stays.
-- **Workspace-isolated by construction.** The text lives in this workspace's `.loopboard/LOOP.md`
-  and can apply nowhere else.
-- **Template sync never touches it.** Sync runs automatically once per activation (window load or
-  extension update) while `loopBoard.autoSyncTemplates` is on (the default), and on demand from the
-  **Synchronise Templates** button on the settings page. It rewrites only `loopboard:sync:`-marked
-  template blocks; the `loopboard:custom` markers (and any other text outside sync markers) survive
-  verbatim. The one caveat: a `LOOP.md` with **no** `loopboard:sync:` markers at all is treated as
-  legacy and replaced wholesale — on activation too, without asking — after its previous text is
-  backed up to `.loopboard/LOOP.md.bkp`, and a warning popup says so. Any modern `LOOP.md` has
-  those markers.
-- **Precedence is prose.** A custom rule that contradicts a predefined Rule wins in this workspace
-  because the lead-in says so and workers read it — nothing is enforced by the extension.
-
-### Configuring models (`loopBoard.models.<slot>`)
-
-The built-in model slots — `opus`, `sonnet`, `fable` — are what you assign to tasks
-(`model:` / `groomer:`) and what the sidebar **Loops** rows spawn. Each slot is configured through
-three keys:
-
-- `loopBoard.models.<slot>.enabled` — show/hide the slot in the Loops overview and the board's model selects.
-- `loopBoard.models.<slot>.model` — the actual string passed as `claude --model <string>` (e.g. `opus[1m]` or a dated snapshot). Empty falls back to the slot's built-in default; anything outside `[A-Za-z0-9._\[\]-]` is rejected before it reaches the terminal.
-- `loopBoard.models.<slot>.effort` — the reasoning effort (`low`…`max`, default `medium`) that slot's loop session is started with, passed as `claude --effort <level>`. Every subagent the loop spawns — grooming, and the implementer/review subagents when `loopBoard.delegateWork` is on — runs at that same session effort.
-- `loopBoard.models.<slot>.groomConcurrency` — how many grooming subagents that slot's loop may run in parallel in one pass (default `3`, minimum `1`; there is no unlimited setting). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass.
-
-The `.effort` flag and the `.groomConcurrency` cap are fixed when the loop is spawned — the cap rides the loop's bootstrap prompt, as do `loopBoard.delegateWork` and `loopBoard.delegateReview` — so a change to any of them takes effect the **next time that slot's loop is started or restarted (♻)**; a running loop keeps the values it was spawned with, exactly like `loopBoard.loopInterval`.
-
-```jsonc
-// Pin Opus to a dated snapshot; run Sonnet with the 1M-context window; hide Fable.
-"loopBoard.models.opus.model": "claude-opus-4-8",
-"loopBoard.models.sonnet.model": "sonnet[1m]",
-"loopBoard.models.fable.enabled": false
-```
-
-> Migrating from "Claude TODO Board" (≤ 0.1.1): the extension, command, and settings ids were
-> renamed from `claudeTodo.*` to `loopBoard.*` with no fallback — re-enter any custom settings.json
-> values under the new keys.
-
-## Build & contribute (Docker only)
-
-Node and every other tool run **inside Docker** — nothing is installed on the host, which needs
-only Docker, `make`, git, and VSCode (`engines.vscode` is `^1.90.0`), plus an authenticated Claude
-Code CLI to run the loops. `make check` is the verification gate and must be green before any
-commit; pressing **F5** to launch an Extension Development Host against this repo's own
-`.loopboard/` tracker is an optional extra smoke test. All toolchain commands are wrapped in the
-`Makefile`:
-
-```
-make install    # npm install (typescript + @types/vscode only) in node:22
-make build      # tsc -> out/
-make test       # compile pure modules + run node --test round-trip / merge suites
-make check      # build + test — the gate that must pass before committing
-make package    # build a .vsix via @vscode/vsce
-```
-
-Zero runtime dependencies; the webview is vanilla HTML/CSS/JS with a CSP nonce on every script.
-
-## Security model
-
-**Treat `.loopboard/` as trusted input.** LoopBoard points an autonomous `claude` session at
-`.loopboard/LOOP.md`'s Automation block, running with the configured `loopBoard.permissionMode` —
-which may be `bypassPermissions`. Anything written into `LOOP.md`, or into the task files it opens,
-steers an agent that can run commands on your machine. This is inherent to what LoopBoard does, not
-a bug.
-
-- A `.loopboard/` from a source you don't control (a cloned repo, a shared workspace) is a
-  prompt-injection vector with arbitrary-command-execution reach. It stays in the repo by design —
-  the tracker *is* the repo's — so it remains the one channel worth reading before you press ▶.
-- **Review `.loopboard/LOOP.md` before starting a loop in a repo you didn't author**, and set
-  `loopBoard.permissionMode` no higher than you're comfortable running unattended.
-
-**The settings channel is enforced shut.** Every `loopBoard.*` key is declared
-`"scope": "application"`, which means user settings only. A repository cannot set one — not through
-its `.vscode/settings.json`, and not through a `.devcontainer/devcontainer.json` it ships (which is
-why the scope is `application` and not `machine`: `machine` still permits remote settings, and a
-dev container's settings come from inside the repo). `loopBoard.permissionMode` is the key this is
-really about: a cloned repo must never get to decide how much authority your agent runs with.
-
-VSCode Workspace Trust gates activation, but trusting a repo to open it is not the same as vetting
-what its `.loopboard/` will tell an agent to do.
-
-### Migrating from a workspace setting
-
-If you previously set a `loopBoard.*` key in a workspace's `.vscode/settings.json` (or in a
-`.code-workspace` file), **that value no longer has any effect** — VSCode does not migrate a
-workspace value when a key stops being workspace-settable, it silently ignores it. Move any setting
-you still want into your user settings (the sidebar's Settings row, or
-`@ext:SinnConsulting.loopboard-todo` in VSCode's own Settings editor, both of which now write there
-exclusively), and delete the stale workspace entries. No key was renamed, so the names are
-unchanged.
-
-The trade-off is accepted deliberately: a repository can no longer ship its own default models,
-effort or delegation mode for a team to share. LoopBoard configuration belongs to the
-person, not to the checked-out repo.
-
-## Usage volume
-
-Advertised usage limits for Pro and Max plans assume *"ordinary, individual usage of Claude Code and
-the Agent SDK."* A tight loop (the default is `1m`) spinning multiple model terminals unattended
-around the clock can push past that, and Anthropic may rate-limit or enforce against the account.
-LoopBoard drives your own locally-authenticated Claude Code CLI — nothing here is against the ToS,
-but its design encourages high-frequency multi-model looping, so it's worth being aware of.
 
 ---
 
