@@ -1102,7 +1102,23 @@ and likewise cannot be verified headless.
     while editing:** with the composer focused, let a loop write `TODO.md` → the textarea keeps
     focus and text until you click out or Escape.
 
-49. **Subagent start/finish and the agent side of every restart, at `info` (t-aglg):** host only
+49. **Sidebar hover survives repaints (t-9a29 feedback) — UNTESTED in the live webview:** the
+    in-place reconciler (`paint`/`morph` in `media/sidebar.js`) is run against a fake DOM by
+    `test/sidebar-repaint.test.js`; the real tooltip, `:hover` and animation behaviour is F5 only.
+    Set `loopBoard.debug` to `verbose` and let a loop work on a task with a long title while it
+    has a delegated subagent, so `refresh store-change` / `context-read` lines keep landing in
+    `debug.log` (every few seconds). **Tooltip:** rest the pointer on the In Progress row and keep
+    it still across at least two of those repaints → its native tooltip appears and stays up (or
+    re-appears after its usual delay) without leaving the row; move off and back on, several
+    times → the tooltip shows every time, not just the first. Same on the Agents row, including
+    across a minute tick of its duration. **Pause (setting on):** turn `loopBoard.sidebarMarquee`
+    on, hover a scrolling In Progress row and keep still across several repaints → it stays
+    paused at the same offset; leave → it resumes from there. A non-hovered scrolling row keeps
+    scrolling smoothly across repaints (no jump back to the start). **Unchanged behaviour:** the
+    context bar and the Agents duration still update live, the In Progress row still opens its
+    task on click, and a right-click schedule popover still opens, arms and closes as before.
+
+50. **Subagent start/finish and the agent side of every restart, at `info` (t-aglg):** host only
     (`src/controller.ts`, `src/terminals.ts`) — the edge diff and every wording are pure and covered
     by `test/subagents.test.js`; this is the wiring. Companion to item 39. Set `loopBoard.debug:
     info` (NOT verbose — the point is that this trail exists without it) and read
