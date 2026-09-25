@@ -512,9 +512,9 @@ and likewise cannot be verified headless.
     Docker suite does not cover any of it — this checklist is the acceptance path, exactly as for
     t-col1 / t-7411 / t-7679. On a **New** card that has open questions:
 
-    **Default:** with no saved section state (fresh board, or after Expand all), both the
-    **Description** and **Open questions** sections show expanded, each with a chevron in its
-    header.
+    **Default:** with no saved section state, the **Description** section shows FOLDED to its
+    one-line preview and the **Open questions** panel shows FOLDED to its header (t-d5f2 — every
+    section always starts folded), each with a chevron in its header.
 
     **Independent fold:** click the Description chevron → only that section folds; the questions
     panel and the card itself are untouched. Same in reverse for the Open questions chevron: its
@@ -528,13 +528,15 @@ and likewise cannot be verified headless.
     `Add a description…`. Expanding removes the preview.
 
     **Collapse all / Expand all:** click **Collapse all** → every card in the tab folds. Expand one
-    card by its own chevron → BOTH its sections come back folded. **Expand all** → every card and
-    every section open. Switch tabs: the other tab is unaffected.
+    card by its own chevron → its Open questions panel and Description each show whatever their
+    own chevron last set (folded unless opened by hand). **Expand all** → every card opens; neither
+    Description nor the Open questions panel is opened by it (t-d5f2). Switch tabs: the other tab
+    is unaffected.
 
-    **Persistence:** hand-fold one section, then (a) let a loop write to the tracker so the board
-    refreshes, (b) switch to another view in the activity bar and back, and (c) reload the window —
-    the fold survives all three. Then press Collapse all / Expand all in that tab: the hand-set
-    override is wiped by it.
+    **Persistence:** hand-fold/unfold one section, then (a) let a loop write to the tracker so the
+    board refreshes, (b) switch to another view in the activity bar and back, and (c) reload the
+    window — the fold survives all three. Then press Collapse all / Expand all in that tab: every
+    hand-set section override (Description and Open questions alike) survives (t-d5f2).
 
     **Commit on collapse:** click the description to open its editor, type without saving, then
     click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
@@ -970,8 +972,10 @@ and likewise cannot be verified headless.
       `.loopboard/tasks/<id>.md` — `debug.log` shows one `patch` line naming the field and
       `.loopboard/TODO.md` is byte-for-byte unchanged on disk. The file on disk shows the section
       in canonical order (Problem above Description, Goals below it).
-    - **Collapse all** / **Expand all** folds and unfolds all three sections on every card in the
-      tab; per-section folds survive a tab hop and a panel hide/reveal (they ride `vscode.setState`).
+    - The three sections start **folded** on every expanded card, and **Collapse all** /
+      **Expand all** neither fold nor open them — only each section's own chevron does (t-d5f2,
+      item 51); per-section folds survive a tab hop and a panel hide/reveal (they ride
+      `vscode.setState`).
     - The tab **filter** matches text that appears only in Problem or only in Goals (the box's
       placeholder now reads "id, title or story text").
     - **Done tab:** expanding an accepted row shows Delivered, then Problem, Description and Goals
@@ -1154,3 +1158,25 @@ and likewise cannot be verified headless.
       ONE `agents-gone` for that agent, and NO `agents-start` for it afterwards. At `verbose`, a
       poll that still resolves the old session shows `agents-read … (ended session <id> — no
       edges)`. Repeat with a Force-on scheduled restart and with a `context-fire` recycle.
+
+51. **Story sections start folded; Expand all / Collapse all act on cards only (t-d5f2) —
+    UNTESTED in the live webview:** `media/board.js` `isSectionCollapsed` / `setPhaseCollapsed`;
+    the fallback and the narrowed wipe are pinned over the source text by
+    `test/board-section-folds.test.js`, the rendered result is this checklist. Start from a card
+    with no saved section state (e.g. a newly promoted task).
+    - **Default fold:** expand a non-draft card in each tab (New, Backlog, In Progress, Feedback,
+      Review) → the card is open (chips, selects, attachments, status) and **Problem**,
+      **Description** and **Goals** each show only their header, chevron and one-line preview.
+      Press **Collapse all** then **Expand all** → still folded; press only **Collapse all** and
+      expand one card by its chevron → still folded.
+    - **Chevron wins:** open Goals by its own chevron, then press Collapse all → the card folds;
+      Expand all → the card opens with Goals still open and Problem/Description still folded. The
+      opened Goals also survives (a) a loop write that refreshes the board, (b) a switch to another
+      activity-bar view and back, and (c) a window reload.
+    - **Open questions folded too (review feedback, supersedes the story's "unchanged" goal):** on a
+      New and a Feedback card with unanswered questions, the expanded card shows the panel FOLDED:
+      header only (chevron, `Open questions`, `N / M answered` with the wait tooltip, the
+      progress meter, and `re-groom pending` when every answer is in on a New card), no rows, no
+      **Save All**; the chips-row question chip shows the same status. **Expand all** does not
+      open it and **Collapse all** does not reset it; a panel opened by its own chevron stays open
+      across both buttons, a refresh, a view switch and a reload.
