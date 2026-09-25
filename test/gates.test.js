@@ -69,3 +69,32 @@ test('acceptDoneEntry: slim DONE entry with id/model/groomer/completed, no quest
   assert.equal(done.completed, '2026-07-11');
   assert.deepEqual(done.questions, []);
 });
+
+// t-39e2: the armed auto-promote's fire path re-checks the FRESH entry under the store's write lock.
+test('promoteIndexIfReady: refuses (entry unchanged, conflict) unless still ready; otherwise promotes like promoteIndex', () => {
+  const { promoteIndexIfReady } = require('../out-test/gates.js');
+  const base = () => ({
+    id: 't-1', title: 'T', phase: 'new', checked: false, isDraft: false,
+    questions: [], feedback: [], unknownLines: [], raw: '- [ ] T\n  - id: t-1\n  - phase: new',
+  });
+  const refusals = {
+    'out of New': { phase: 'backlog' },
+    'a DRAFT': { isDraft: true },
+    'a blank question': { questions: [{ text: 'q', answer: '', suggestions: [] }] },
+    'an answered, unfolded question': { questions: [{ text: 'q', answer: 'yes', suggestions: [] }] },
+    'feedback': { feedback: ['fold this in'] },
+  };
+  for (const [name, over] of Object.entries(refusals)) {
+    const entry = Object.assign(base(), over);
+    const before = structuredClone(entry);
+    assert.equal(promoteIndexIfReady(entry), 'conflict', name);
+    assert.deepEqual(entry, before, name + ': entry untouched');
+  }
+  const ready = base();
+  ready.checked = true;
+  const expected = structuredClone(ready);
+  promoteIndex(expected);
+  assert.equal(promoteIndexIfReady(ready), 'applied');
+  assert.deepEqual(ready, expected, 'same result as promoteIndex');
+  assert.equal(ready.phase, 'backlog');
+});

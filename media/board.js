@@ -38,11 +38,14 @@
   // before a trailing `click` lands — t-3042/t-d3dd) while still supporting keyboard (Enter/
   // Space) activation, which dispatches a synthetic `click` with no preceding `pointerdown`. A
   // real mouse click fires both events; without the flag, both would reach `commit`.
+  // Primary button only (t-39e2): a right-click (or middle-click) never commits — it is left to the
+  // `contextmenu` event, which Promote uses to arm an automatic promote. No preventDefault either,
+  // so that event still fires.
   function makeGateButton(props, commit) {
     let firedByPointer = false;
     const children = Array.prototype.slice.call(arguments, 2);
     return h.apply(null, ['button', Object.assign({}, props, {
-      onpointerdown: (e) => { e.preventDefault(); firedByPointer = true; commit(); },
+      onpointerdown: (e) => { if (e.button !== 0) return; e.preventDefault(); firedByPointer = true; commit(); },
       onclick: () => { if (firedByPointer) { firedByPointer = false; return; } commit(); },
     })].concat(children));
   }
@@ -53,7 +56,32 @@
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     undo: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    spinner: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" stroke-linecap="round"/></svg>',
   };
+
+  // Promote button shared by ordinary New cards and draft cards (t-39e2), so an armed spinner stays
+  // put when the groom switches a card from renderDraft to renderCard. Right-click (or Menu /
+  // Shift+F10) toggles a session-only auto-promote arm the host owns — `t.autoPromote` is the host's
+  // word, never a guess. `commitPromote` null = a draft: left-click is inert, so `aria-disabled` +
+  // `.off`, never the real `disabled`, which would swallow the right-click too (sidebar precedent).
+  function promoteButton(t, commitPromote) {
+    const armed = !!t.autoPromote;
+    const draft = !commitPromote;
+    const title = armed
+      ? (draft
+        ? 'Promotes automatically once groomed and every question is answered and folded in — right-click to cancel'
+        : 'Promotes automatically once every question is answered and folded in — click to promote now, right-click to cancel')
+      : (draft
+        ? 'Right-click to promote automatically once this draft is groomed and nothing is left open'
+        : 'Promote to backlog — right-click to promote automatically once every question is answered and folded in');
+    const props = {
+      class: 'btn-sm primary approve-btn' + (draft ? ' off' : ''), type: 'button',
+      'aria-label': armed ? 'Automatic promote armed' : 'Promote to backlog', 'aria-disabled': draft ? 'true' : null, title,
+      oncontextmenu: (e) => { e.preventDefault(); post({ type: armed ? 'disarmPromote' : 'armPromote', taskId: t.id }); },
+    };
+    const glyph = armed ? icon(SVG.spinner, 'spin') : icon(SVG.check);
+    return draft ? h('button', props, glyph, 'Promote') : makeGateButton(props, commitPromote, glyph, 'Promote');
+  }
 
   const PHASE_META = [
     { key: 'new', label: 'New', explainer: 'Proposed tasks — approve to move into the Backlog' },
@@ -1065,6 +1093,7 @@
           isCollapsedCard ? null : attachEl,
           isCollapsedCard ? null : renderFeedback(t),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+        promoteButton(t, null),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
     return card;
@@ -1424,10 +1453,7 @@
       };
       // Double-fire guard (t-02a2, now the shared makeGateButton helper — t-2238): without it, a
       // single mouse activation's pointerdown AND click would both reach commitPromote.
-      head.append(makeGateButton({
-        class: 'btn-sm primary approve-btn', type: 'button',
-        'aria-label': 'Promote to backlog', title: 'Promote to backlog',
-      }, commitPromote, icon(SVG.check), 'Promote'));
+      head.append(promoteButton(t, commitPromote));
     }
     // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
     // Non-negotiable #5): Backlog cards only, an active/owned task must never be yankable out

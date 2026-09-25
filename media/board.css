@@ -16,8 +16,11 @@ textarea { resize: vertical; }
 
 @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes refresh-flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+/* Armed auto-promote (t-39e2): the Promote button's spinner, held still under reduced motion. */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .pulse, .flash { animation: none !important; }
+  .pulse, .flash, .spin { animation: none !important; }
 }
 
 #root { display: flex; flex-direction: column; height: 100vh; width: 100%; overflow: hidden; }
@@ -92,6 +95,8 @@ textarea { resize: vertical; }
 .btn-sm.secondary { background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #cccccc); }
 .btn-sm:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
 .btn-sm[disabled] { opacity: 0.4; cursor: not-allowed; }
+/* `.off` = left-click inert but still right-clickable (a draft's arm-only Promote, t-39e2). */
+.btn-sm.off { opacity: 0.4; cursor: not-allowed; }
 
 /* Explicit-save fields: a Save/Send button sits beside or below the field; it stays disabled
    until the draft differs from the last-committed value (Cmd/Ctrl+S triggers the same commit). */
