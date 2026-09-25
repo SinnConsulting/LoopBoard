@@ -48,7 +48,12 @@ paths:
   `no live subagents`. "The log says nothing" must never be indistinguishable from "the check never
   ran".
 * **An automatic action that went ahead says why it was allowed to**, not only one that was held.
-  `restart-fire`, `context-fire`, `auto-recycle` and `clear-session` carry their agent side, just
-  as the `*-defer` lines carry `describeBusy`.
+  `restart-fire`, `restart-skip`, `context-fire` and the NON-held `auto-recycle` / `clear-session`
+  carry their agent side (`describeAgentSide`), just as the `*-defer` lines carry `describeBusy`;
+  the held ones already say `(held for a live subagent)`. That clause reflects the last poll (up to
+  one poll, 30 s, old), not a fresh read at fire time.
+* **Don't log an echo as an edge.** A read of a session that was just ended (the new process has
+  not written its pointer yet) is the old files again; it yields no `agents-*` edge, like a failed
+  read.
 * Use an existing event namespace (`agents-*`, `restart-*`, `context-*`, `loop-*`) before inventing
   a new one, and keep the detail's first token the slot/model or task id it concerns.

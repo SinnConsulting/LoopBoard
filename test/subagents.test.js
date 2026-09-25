@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   AGENT_STALE_MS, ASYNC_ACK, parseAgentMeta, agentIdFromMetaName, agentTranscriptName,
-  parseAgentStart, scanMarkers, foldAgents, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide,
+  parseAgentStart, scanMarkers, foldAgents, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide, rowsForEdges,
 } = require('../out-test/subagents');
 
 const NOW = Date.parse('2026-09-18T12:00:00.000Z');
@@ -421,4 +421,22 @@ test('describeAgentSide names no agents, the fail-open, a kill, and a swallowed 
     'killed 2 live subagents: story-groom · Groom a1, story-groom · Groom b2');
   // A swallowed action (restart-skip) must not claim to have killed anything.
   assert.strictEqual(describeAgentSide([row('a1')], false, false, NOW), '1 live subagent left running: story-groom · Groom a1');
+});
+
+test('rowsForEdges: a read of the session a restart just ENDED counts as failed for the edges', () => {
+  const a = row('a1');
+  // No read at all → failed.
+  assert.strictEqual(rowsForEdges(undefined, undefined), undefined);
+  assert.strictEqual(rowsForEdges(undefined, 's-old'), undefined);
+  // The echo: the new `claude` has not written its pointer yet, so the old session resolves again
+  // and its killed agent looks live. No edges, so no false `agents-start`…
+  assert.strictEqual(rowsForEdges({ sessionId: 's-old', rows: [a] }, 's-old'), undefined);
+  // …and the baseline the caller keeps is untouched, so when the NEW session resolves the killed
+  // agent is not reported gone a second time.
+  const baseline = [];
+  assert.deepStrictEqual(foldAgentEdges(baseline, rowsForEdges({ sessionId: 's-old', rows: [a] }, 's-old')), { started: [], gone: [] });
+  assert.deepStrictEqual(foldAgentEdges(baseline, rowsForEdges({ sessionId: 's-new', rows: [] }, 's-old')), { started: [], gone: [] });
+  // A different session, or no ended session on record, passes the rows through.
+  assert.deepStrictEqual(rowsForEdges({ sessionId: 's-new', rows: [a] }, 's-old'), [a]);
+  assert.deepStrictEqual(rowsForEdges({ sessionId: 's-new', rows: [] }, undefined), []);
 });

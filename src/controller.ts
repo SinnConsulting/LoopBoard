@@ -23,7 +23,7 @@ import {
 } from './schedule';
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
-import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide } from './subagents';
+import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide, rowsForEdges } from './subagents';
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
@@ -504,12 +504,16 @@ export class Controller {
   private async pollSubagents(model: Model): Promise<boolean> {
     if (!this.contextReader) return false;
     const now = Date.now();
-    const rows = await this.contextReader.readSubagents(model, now);
+    const read = await this.contextReader.readSubagents(model, now);
+    const rows = read?.rows;
+    // The session this slot's last restart ended (t-c7a2's echo guard, reused for the edges).
+    const ended = this.contextEnded.get(model);
+    const edgeRows = rowsForEdges(read, ended);
     // Logged on EVERY poll: this is the trail that explains a restart that did not happen. A read
     // failure is named as such — it must never look like a confident "nothing is running".
     this.store.debugLog('verbose', 'agents-read', rows === undefined
       ? `${model} — could not read this session's subagents`
-      : `${model} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}`);
+      : `${model} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}${edgeRows === undefined ? ` (ended session ${ended} — no edges)` : ''}`);
     // A failed read is treated as "nothing live": an unreadable path must not hold every automatic
     // restart of this slot forever. Only a subagent we can actually SEE blocks one.
     const live = rows ?? [];
@@ -519,13 +523,16 @@ export class Controller {
     if (live.length) this.agentBusy.add(model);
     else this.agentBusy.delete(model);
     // Lifecycle edges at info (t-aglg), from successful reads only: a failed read emits nothing and
-    // leaves the baseline alone, so the next good read diffs against the last good one.
-    if (rows === undefined) {
-      this.agentsUnreadable.add(model);
-    } else {
-      this.agentsUnreadable.delete(model);
-      this.logAgentEdges(model, foldAgentEdges(this.agentBaseline.get(model) ?? [], rows), now);
-      this.agentBaseline.set(model, rows);
+    // leaves the baseline alone, so the next good read diffs against the last good one. A read of
+    // the session a restart just ENDED counts as failed for the edges only (`rowsForEdges`) — its
+    // killed agents would otherwise log a false `agents-start` now and a second `agents-gone` once
+    // the new session resolves. The busy signal above is deliberately left as t-sbag defined it: a
+    // `/clear` context action keeps the process, and whether that ends its agents is unverified.
+    if (rows === undefined) this.agentsUnreadable.add(model);
+    else this.agentsUnreadable.delete(model);
+    if (edgeRows !== undefined) {
+      this.logAgentEdges(model, foldAgentEdges(this.agentBaseline.get(model) ?? [], edgeRows), now);
+      this.agentBaseline.set(model, edgeRows);
     }
     return !same;
   }
@@ -652,7 +659,9 @@ export class Controller {
   }
 
   // The agent side of an action that went AHEAD (t-aglg) — the counterpart of `describeBusy`, which
-  // only the defer paths reach. `acting` is false for a swallowed action, which kills nothing.
+  // only the defer paths reach. `acting` is false for a swallowed action, which kills nothing. It
+  // reflects the LAST poll, so it can be up to one poll (30 s) old: an agent spawned since then is
+  // not named.
   private describeAgents(model: Model, acting: boolean): string {
     return describeAgentSide(this.agentRows.get(model) ?? [], this.agentsUnreadable.has(model), acting, Date.now());
   }

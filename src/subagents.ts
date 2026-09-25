@@ -356,6 +356,26 @@ export function foldAgentEdges(before: readonly AgentRow[], rows: readonly Agent
   };
 }
 
+// One successful subagent read, with the session it resolved. The host reports the session id so
+// the caller can tell a read of the CURRENT session from a read of one it has just ended.
+export interface SubagentRead {
+  sessionId: string;
+  rows: AgentRow[];
+}
+
+// The rows the edge diff may use, or `undefined` for "treat like a failed read". A read that
+// resolved the session this slot's last restart ENDED is the old files being read again (the new
+// `claude` has not written its session pointer yet, the same echo `isStaleSession` drops for the
+// context bar): an agent the restart killed would reappear as `agents-start` and then leave a
+// second time as `agents-gone` once the new session resolves. Such a read yields no edges and
+// keeps the baseline, exactly like a failed one. A session id never comes back, so the test is
+// exact equality.
+export function rowsForEdges(read: SubagentRead | undefined, endedSession: string | undefined): AgentRow[] | undefined {
+  if (!read) return undefined;
+  if (endedSession !== undefined && read.sessionId === endedSession) return undefined;
+  return read.rows;
+}
+
 // Detail of an `agents-start` / `agents-gone` line, minus the slot the caller prefixes. A departure
 // says `no longer live`, never `finished`: finishing, a user stop, a drop for silence and the
 // session going away all look the same from a snapshot. An unknown start drops the `after …` tail

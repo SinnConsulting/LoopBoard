@@ -134,7 +134,10 @@ one that never fires):
   non-empty baseline. `describeAgentEdge` says `no longer live after <duration>`, never `finished`,
   and drops the `after` tail when the start is unknown; `describeAgentSide` renders
   `no live subagents`, the fail-open `(session unreadable)`, `killed N live subagents: …`, and
-  `… left running` for a swallowed action. The `store.debugLog` wiring is item 49 (F5 only).
+  `… left running` for a swallowed action. `rowsForEdges` treats a read of the session a restart
+  just ENDED like a failed read (no edges, baseline kept), so a killed agent re-read from the old
+  files never logs a false `agents-start` or a second `agents-gone`. The `store.debugLog` wiring is
+  item 49 (F5 only).
 
 ## Manual — Extension Development Host (F5)
 
@@ -1123,3 +1126,8 @@ and likewise cannot be verified headless.
       subagent: <label>`; with none, `loop-recycle <slot> — no live subagents`. Same for ■ and
       `loop-stop`. An automatic restart's own `loop-recycle`/`loop-stop` line stays bare
       (`loop-recycle <slot>`).
+    - **No echo after a restart over a live agent (PR #173 review):** with a subagent live and the
+      context bar showing a reading, left-click ♻ and watch the next two or three polls → EXACTLY
+      ONE `agents-gone` for that agent, and NO `agents-start` for it afterwards. At `verbose`, a
+      poll that still resolves the old session shows `agents-read … (ended session <id> — no
+      edges)`. Repeat with a Force-on scheduled restart and with a `context-fire` recycle.
