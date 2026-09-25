@@ -513,9 +513,8 @@ and likewise cannot be verified headless.
     t-col1 / t-7411 / t-7679. On a **New** card that has open questions:
 
     **Default:** with no saved section state, the **Description** section shows FOLDED to its
-    one-line preview (t-d5f2 — story sections always start folded) and the **Open questions**
-    panel shows expanded (it follows the tab default, which is open until Collapse all), each with
-    a chevron in its header.
+    one-line preview and the **Open questions** panel shows FOLDED to its header (t-d5f2 — every
+    section always starts folded), each with a chevron in its header.
 
     **Independent fold:** click the Description chevron → only that section folds; the questions
     panel and the card itself are untouched. Same in reverse for the Open questions chevron: its
@@ -529,16 +528,15 @@ and likewise cannot be verified headless.
     `Add a description…`. Expanding removes the preview.
 
     **Collapse all / Expand all:** click **Collapse all** → every card in the tab folds. Expand one
-    card by its own chevron → its Open questions panel comes back folded, and Description shows
-    whatever its own chevron last set (folded unless opened by hand). **Expand all** → every card
-    and every Open questions panel open; Description is NOT opened by it (t-d5f2). Switch tabs: the
-    other tab is unaffected.
+    card by its own chevron → its Open questions panel and Description each show whatever their
+    own chevron last set (folded unless opened by hand). **Expand all** → every card opens; neither
+    Description nor the Open questions panel is opened by it (t-d5f2). Switch tabs: the other tab
+    is unaffected.
 
     **Persistence:** hand-fold/unfold one section, then (a) let a loop write to the tracker so the
     board refreshes, (b) switch to another view in the activity bar and back, and (c) reload the
-    window — the fold survives all three. Then press Collapse all / Expand all in that tab: a
-    hand-set Open questions override is wiped by it; a hand-set Description override survives
-    (t-d5f2).
+    window — the fold survives all three. Then press Collapse all / Expand all in that tab: every
+    hand-set section override (Description and Open questions alike) survives (t-d5f2).
 
     **Commit on collapse:** click the description to open its editor, type without saving, then
     click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
@@ -1175,6 +1173,10 @@ and likewise cannot be verified headless.
       Expand all → the card opens with Goals still open and Problem/Description still folded. The
       opened Goals also survives (a) a loop write that refreshes the board, (b) a switch to another
       activity-bar view and back, and (c) a window reload.
-    - **Open questions unchanged:** on a New card with questions, the panel is open by default,
-      Collapse all folds it (seen when the card is re-expanded by chevron), Expand all opens it, and
-      a panel hand-folded by its chevron is reset by either button.
+    - **Open questions folded too (review feedback, supersedes the story's "unchanged" goal):** on a
+      New and a Feedback card with unanswered questions, the expanded card shows the panel FOLDED:
+      header only (chevron, `Open questions`, `N / M answered` with the wait tooltip, the
+      progress meter, and `re-groom pending` when every answer is in on a New card), no rows, no
+      **Save All**; the chips-row question chip shows the same status. **Expand all** does not
+      open it and **Collapse all** does not reset it; a panel opened by its own chevron stays open
+      across both buttons, a refresh, a view switch and a reload.
