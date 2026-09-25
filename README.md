@@ -41,7 +41,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
 | **Starting work** | Open a session, explain the task | Click **Promote** |
 | **Context** | Re-explained every session | Lives in `tasks/<id>.md` |
 | **When it's unsure** | Guesses, or waits for "continue" | Parks in Feedback with a question |
-| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first (beta) |
+| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first |
 | **Keeping track** | Chat history | A board over plain markdown |
 | **Your job** | Typing prompts | Promote · Approve · Send back |
 
@@ -170,8 +170,9 @@ claude --permission-mode auto --model 'opus' --effort medium --name loopboard-op
 The prompt only points at the **Automation** section of `.loopboard/LOOP.md`, which the loop
 re-reads every pass — edit your rules there and running loops follow.
 
-- **Context bar** — set `loopBoard.contextLimit.percent` to restart (or `/clear`) a session at that
-  mark. A loop holding the In Progress task is never interrupted; the restart waits.
+- **Context bar** — a session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
+  (default 35%, `0` = off). A loop holding the In Progress task is never interrupted; the restart
+  waits.
 - **♻ / ■** — restart with a fresh context, or stop. **Right-click** ▶ ♻ ■ to schedule it.
 
 The Claude sessions in these recordings are simulated (VS Code can't read a terminal); the spawn
@@ -393,6 +394,13 @@ on the slot's next **▶** or **♻**; a running loop keeps what it started with
 - **Workspace settings are ignored.** A `loopBoard.*` value in `.vscode/settings.json` or a
   `.code-workspace` file no longer applies; move it to your user settings. Repos can no longer
   ship team defaults — deliberately.
+- **New defaults: delegation on, review off, context limit 35%.** `loopBoard.delegateWork` is now
+  `true`, `loopBoard.delegateReview` `false` and `loopBoard.contextLimit.percent` `35`, and both
+  delegation keys moved from *Beta* to *Agent Setup* under the same ids. Only unset keys change —
+  an explicit value (even `false` or `0`) is kept. On the defaults, a loop started or restarted
+  after the update hands implementation to an implementer subagent with no review subagent, and
+  loops recycle at 35% context — never while they own the In Progress task. Set the old values
+  (`false`, `true`, `0`) to keep the old behaviour.
 - **`loopBoard.delegateWork.review` → `loopBoard.delegateReview`.** The old key never took effect
   (VS Code can't give a boolean setting a child key); set the new one and delete the old line.
 - **`claudeTodo.*` → `loopBoard.*`** (from "Claude TODO Board" ≤ 0.1.1), no fallback: re-enter
@@ -433,9 +441,11 @@ show them.
 | `loopBoard.permissionMode` | `auto` | `--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** — a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.loopInterval` | `5m` | Interval passed to `/loop` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.afterTask` | `none` | What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). Whatever this is set to, the ♻ button still recycles a loop by hand at any time. |
-| `loopBoard.contextLimit.percent` | `0` | Automatically restart a loop once its Claude session fills this percentage of its context window. `0` (default) never restarts a loop for its context size — the usage bar under each running loop row still shows. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `50` on a 1M slot is the 500k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
+| `loopBoard.contextLimit.percent` | `35` | Automatically restart a loop once its Claude session fills this percentage of its context window. `35` (default) restarts it at 35%; `0` turns the feature off, so no loop is ever restarted for its context size — the usage bar under each running loop row still shows either way. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `35` on a 1M slot is the 350k mark and on a 200k fallback window the 70k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
 | `loopBoard.contextLimit.action` | `recycle` | What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size. |
 | `loopBoard.nudgeLoops` | `true` | When a board change gives one loop something to do — a note, a story whose questions are now FULLY answered, review feedback, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before. |
+| `loopBoard.delegateWork` | `true` | On (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) and also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model, running at the loop session's effort (that slot's `.effort`); the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (off by default) a second, sequential review subagent gates that PR before the loop sets Review. Off: the loop still grooms through a subagent but implements tasks inline in its own session. Either way the loop never merges: a delivered task sits in Review with its PR still open, waiting for you to tick it and merge. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.delegateReview` | `false` | Only applies while `loopBoard.delegateWork` is on. Off (default): no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. On: after the implementer subagent returns its PR, a review subagent (same slot model, same session effort) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.autoRecycle` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this. |
 | `loopBoard.clearSessionAfterTask` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this. |
 
@@ -447,13 +457,6 @@ show them.
 | `loopBoard.autoSyncTemplates` | `true` | Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page. |
 | `loopBoard.sidebarMarquee` | `false` | Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way. |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
-
-### LoopBoard: Beta (experimental)
-
-| Setting | Default | Description |
-|---|---|---|
-| `loopBoard.delegateWork` | `false` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Off (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) but implements tasks inline in its own session. On: the loop also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching notes — to an implementer subagent on the loop's own slot model, running at the loop session's effort (that slot's `.effort`); the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (default) a second, sequential review subagent gates that PR before the loop sets Review. Either way the loop never merges: a delivered task sits in Review with its PR still open, waiting for you to tick it and merge. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.delegateReview` | `true` | **Beta —** experimental; this setting may change or be withdrawn in a future release. Only applies while `loopBoard.delegateWork` is on. On (default): after the implementer subagent returns its PR, a review subagent (same slot model, same session effort) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Off: no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 
 <!-- loopboard:settings:end -->
 

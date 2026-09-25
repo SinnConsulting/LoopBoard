@@ -33,7 +33,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
 | **Starting work** | Open a session, explain the task | Click **Promote** |
 | **Context** | Re-explained every session | Lives in `tasks/<id>.md` |
 | **When it's unsure** | Guesses, or waits for "continue" | Parks in Feedback with a question |
-| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first (beta) |
+| **Quality check** | You review everything | Delivery reports on every Goal; a review agent can check them first |
 | **Keeping track** | Chat history | A board over plain markdown |
 | **Your job** | Typing prompts | Promote · Approve · Send back |
 
@@ -162,8 +162,9 @@ claude --permission-mode auto --model 'opus' --effort medium --name loopboard-op
 The prompt only points at the **Automation** section of `.loopboard/LOOP.md`, which the loop
 re-reads every pass — edit your rules there and running loops follow.
 
-- **Context bar** — set `loopBoard.contextLimit.percent` to restart (or `/clear`) a session at that
-  mark. A loop holding the In Progress task is never interrupted; the restart waits.
+- **Context bar** — a session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
+  (default 35%, `0` = off). A loop holding the In Progress task is never interrupted; the restart
+  waits.
 - **♻ / ■** — restart with a fresh context, or stop. **Right-click** ▶ ♻ ■ to schedule it.
 
 The Claude sessions in these recordings are simulated (VS Code can't read a terminal); the spawn

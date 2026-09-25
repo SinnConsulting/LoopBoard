@@ -1,7 +1,7 @@
 'use strict';
 // Manifest invariants for `contributes.configuration` (t-sgrp).
 //
-// These are the goals 1–3 backstop: the four-section layout, the Beta area and — the one that
+// These are the goals 1–3 backstop: the section layout, the (now empty) Beta area and — the one that
 // matters for security — `"scope": "application"` on EVERY key. Without the scope assertion a
 // future setting added without a scope would quietly fall back to `window` and become settable from
 // a cloned repo's `.vscode/settings.json`, which is exactly the door this story closed. The check
@@ -23,7 +23,9 @@ const entries = () => {
   return out;
 };
 
-const BETA_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateReview'];
+// t-2047: the delegation pair graduated out of Beta into Agent Setup — same ids, so existing user
+// values carry over (decisions/tooling.md graduation rule).
+const GRADUATED_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateReview'];
 
 // WHEN a changed setting takes effect. `restart` = frozen into the spawn command, so a running loop
 // keeps what it was spawned with; `live` = read on demand. There is no third class: every
@@ -49,17 +51,16 @@ const RESTART_KEYS = [
 // it is the same constant the page and the grid note are built from.
 const { APPLIES_RESTART_SENTENCE } = require('../out-test/settingsform.js');
 
-test('the four sections are declared in the agreed order', () => {
+test('the three sections are declared in the agreed order', () => {
   assert.deepEqual(
     sections.map((s) => s.title),
     [
       'LoopBoard: Models & Slots',
       'LoopBoard: Agent Setup',
       'LoopBoard: Board & Workspace',
-      'LoopBoard: Beta (experimental)',
     ]
   );
-  assert.deepEqual(sections.map((s) => s.order), [1, 2, 3, 4]);
+  assert.deepEqual(sections.map((s) => s.order), [1, 2, 3]);
 });
 
 test('section orders are unique', () => {
@@ -100,32 +101,83 @@ test('orders are renumbered in tens and unique within their section', () => {
   }
 });
 
-test('the Beta section contains exactly the keys intended to be beta', () => {
-  const beta = sections.find((s) => s.title === 'LoopBoard: Beta (experimental)');
-  assert.deepEqual(Object.keys(beta.properties), BETA_KEYS);
-  // And nothing OUTSIDE it claims to be experimental.
-  for (const { section, key, prop } of entries()) {
+test('no Beta section exists and no shipped key carries a Beta marker (t-2047)', () => {
+  // The last two Beta keys graduated; the empty section was deleted rather than left drawn as an
+  // empty heading. The tag-driven rendering stays for future betas and is covered by a synthetic
+  // manifest in test/settingsform.test.js. A new beta must re-add all three markers together.
+  assert.ok(
+    !sections.some((s) => /beta|experimental/i.test(s.title)),
+    'a Beta section is declared again — add its keys, markers and tests together'
+  );
+  for (const { key, prop } of entries()) {
     const tagged = Array.isArray(prop.tags) && prop.tags.includes('experimental');
-    assert.equal(
-      tagged, section === beta,
-      `${key}: tags and section disagree about whether it is Beta`
-    );
+    assert.equal(tagged, false, `${key} carries the experimental tag but no Beta section exists`);
+    assert.ok(!prop.markdownDescription.startsWith('**Beta —**'), `${key} still opens with the **Beta —** sentence`);
   }
 });
 
-test('every Beta key is marked all three ways: section, sentence and tag', () => {
-  const beta = sections.find((s) => s.title === 'LoopBoard: Beta (experimental)');
-  for (const [key, prop] of Object.entries(beta.properties)) {
-    assert.deepEqual(prop.tags, ['experimental'], `${key} must carry tags: ["experimental"]`);
-    assert.ok(
-      prop.markdownDescription.startsWith('**Beta —**'),
-      `${key}'s markdownDescription must open with the **Beta —** sentence, so the native editor ` +
-      'says the same thing LoopBoard\'s own Beta heading does'
-    );
-    assert.match(
-      prop.markdownDescription,
-      /may change or be withdrawn/,
-      `${key}'s Beta sentence must say the feature may change or be withdrawn`
+test('the graduated delegation keys sit in Agent Setup right after nudgeLoops (t-2047)', () => {
+  const agent = sections.find((s) => s.title === 'LoopBoard: Agent Setup');
+  const keys = Object.entries(agent.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
+  const at = keys.indexOf('loopBoard.nudgeLoops');
+  assert.deepEqual(keys.slice(at, at + 3), ['loopBoard.nudgeLoops', ...GRADUATED_KEYS]);
+  for (const key of GRADUATED_KEYS) {
+    assert.equal(agent.properties[key].loopBoardApplies, 'restart', `${key} must stay a restart setting`);
+    assert.ok(agent.properties[key].order < 900, `${key} must sort before the deprecated pair`);
+  }
+});
+
+test('new defaults: context limit 35, delegate work on, delegate review off (t-2047)', () => {
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  assert.equal(all['loopBoard.contextLimit.percent'].default, 35);
+  assert.equal(all['loopBoard.contextLimit.action'].default, 'recycle');
+  assert.equal(all['loopBoard.delegateWork'].default, true);
+  assert.equal(all['loopBoard.delegateReview'].default, false);
+  // Each description says which state is the default.
+  assert.match(all['loopBoard.contextLimit.percent'].markdownDescription, /`35` \(default\)/);
+  assert.match(all['loopBoard.delegateWork'].markdownDescription, /^On \(default\):/);
+  assert.match(all['loopBoard.delegateReview'].markdownDescription, /Off \(default\):/);
+  assert.ok(!/On \(default\)/.test(all['loopBoard.delegateReview'].markdownDescription), 'delegateReview still claims On is the default');
+  assert.ok(!/Off \(default\)/.test(all['loopBoard.delegateWork'].markdownDescription), 'delegateWork still claims Off is the default');
+});
+
+test('with every setting unset, a spawn ends "without review" and a loop trips at 35% (t-2047)', () => {
+  // What the host hands the pure modules when nothing is set: VSCode's c.get returns the manifest
+  // default, so feed exactly those through the real prompt builder and the real trip rule.
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  const { buildLoopCommand } = require('../out-test/loop.js');
+  const { sanitizeContextPercent, shouldTrip } = require('../out-test/context.js');
+  const tpl = fs.readFileSync(path.join(root, 'media', 'template-loop.md'), 'utf8');
+  const cmd = buildLoopCommand(
+    tpl, 'opus', all['loopBoard.loopInterval'].default, 3,
+    all['loopBoard.delegateWork'].default, all['loopBoard.delegateReview'].default
+  );
+  assert.ok(cmd.endsWith(' Delegate work to subagents without review.'), cmd);
+  const threshold = sanitizeContextPercent(all['loopBoard.contextLimit.percent'].default);
+  assert.equal(threshold, 35);
+  assert.equal(shouldTrip(35, threshold, 's1', undefined), true, 'trips at 35%');
+  assert.equal(shouldTrip(34, threshold, 's1', undefined), false, 'not below 35%');
+});
+
+// t-2047 decision 2: the host `c.get('<key>', <fallback>)` calls live in vscode-touching modules the
+// Docker suite cannot import, so they are read as source text and pinned to the manifest default.
+// VSCode returns the manifest default for an unset key; the fallback only matters if the
+// declaration goes missing — and must then say the same thing.
+test('every host c.get fallback for the t-2047 keys equals its manifest default', () => {
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  const src = (f) => fs.readFileSync(path.join(root, 'src', f), 'utf8');
+  const cases = [
+    ['extension.ts', 'delegateWork'],
+    ['extension.ts', 'delegateReview'],
+    ['controller.ts', 'contextLimit.percent'],
+  ];
+  for (const [file, key] of cases) {
+    const escaped = key.replace(/\./g, '\\.');
+    const hits = [...src(file).matchAll(new RegExp(`c\\.get(?:<[^>]+>)?\\('${escaped}',\\s*([^)]+)\\)`, 'g'))];
+    assert.equal(hits.length, 1, `expected exactly one c.get('${key}', …) in src/${file}, found ${hits.length}`);
+    assert.deepEqual(
+      JSON.parse(hits[0][1].trim()), all[`loopBoard.${key}`].default,
+      `src/${file}: c.get('${key}', ${hits[0][1].trim()}) disagrees with the manifest default`
     );
   }
 });
@@ -178,12 +230,16 @@ test('a declared dependency names a real boolean setting', () => {
   assert.equal(all['loopBoard.delegateReview'].loopBoardDependsOn, 'loopBoard.delegateWork');
 });
 
-test('the Beta keys keep their original ids — graduating must never rename a key', () => {
+test('the graduated keys keep their original ids — graduating must never rename a key', () => {
   // Recorded in decisions/tooling.md: the SECTION carries the status, not the id. A move to
   // `loopBoard.beta.*` would drop existing values silently now and force a second rename later.
   // (`loopBoard.delegateWork.review` -> `loopBoard.delegateReview` is not a counter-example: that id
   // was unusable, so there was no honoured value to drop — see the prefix test above.)
-  for (const key of BETA_KEYS) assert.ok(!key.includes('.beta.'), `${key} must not live in a beta namespace`);
+  const declared = new Set(entries().map((e) => e.key));
+  for (const key of GRADUATED_KEYS) {
+    assert.ok(!key.includes('.beta.'), `${key} must not live in a beta namespace`);
+    assert.ok(declared.has(key), `${key} must stay declared under its original id`);
+  }
 });
 
 test('the deprecated pair is still declared, still deprecated, and still out of the tens run', () => {
