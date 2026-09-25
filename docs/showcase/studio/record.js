@@ -45,14 +45,16 @@ async function mount(browser, base, scene) {
   return { context, page, host };
 }
 
-function encode(frames, out) {
+// `crop` = { x, y, width, height }: a scene that only needs part of the window is cut down to it
+// here, after the full-window frames (and the loopBack cross-fade) were captured.
+function encode(frames, out, crop) {
   const dir = path.dirname(frames[0].file);
   const list = frames.map((f) => `file '${path.basename(f.file)}'\nduration ${(f.ms / 1000).toFixed(3)}`).join('\n')
     + `\nfile '${path.basename(frames[frames.length - 1].file)}'\n`;
   fs.writeFileSync(path.join(dir, 'list.txt'), list);
   const raw = path.join(dir, 'raw.gif');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'list.txt'),
-    '-vf', 'split[a][b];[a]palettegen=max_colors=256:stats_mode=full:reserve_transparent=0[p];[b][p]paletteuse=dither=none:diff_mode=rectangle',
+    '-vf', (crop ? `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y},` : '') + 'split[a][b];[a]palettegen=max_colors=256:stats_mode=full:reserve_transparent=0[p];[b][p]paletteuse=dither=none:diff_mode=rectangle',
     '-fps_mode', 'vfr', '-loop', '0', raw]);
   execFileSync('gifsicle', ['-O3', '--no-comments', '--no-names', '--no-extensions', '-o', out, raw]);
   return fs.statSync(out).size;
@@ -79,7 +81,7 @@ async function main() {
       } else {
         await scene.run(rec, { page, host, board: page.frameLocator('#frame-board'), sidebar: page.frameLocator('#frame-sidebar'), settings: page.frameLocator('#frame-settings') });
         const total = rec.frames.reduce((s, f) => s + f.ms, 0);
-        const size = encode(rec.frames, path.join(GIFS, `${name}.gif`));
+        const size = encode(rec.frames, path.join(GIFS, `${name}.gif`), scene.crop);
         console.log(`${name}: ${rec.frames.length} frames, ${(total / 1000).toFixed(1)}s, ${(size / 1024).toFixed(0)} KB (${((Date.now() - t0) / 1000).toFixed(0)}s wall)`);
       }
       await context.close();

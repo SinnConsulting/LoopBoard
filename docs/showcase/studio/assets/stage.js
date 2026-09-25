@@ -23,6 +23,8 @@
     if (o.splitHeight) $('group-right').style.flex = '0 0 ' + o.splitHeight + 'px';
     if (o.title) $('window-title').textContent = o.title;
     if (o.feature != null) $('band-feature').textContent = o.feature;
+    // A cropped scene narrows the caption band to its crop, so the caption stays centred in it.
+    if (o.band) { $('band').style.left = o.band.left + 'px'; $('band').style.right = 'auto'; $('band').style.width = o.band.width + 'px'; }
     for (const v of document.querySelectorAll('#group-left .view')) v.classList.toggle('shown', v.dataset.view === (o.view || 'board'));
     $('md-editor').classList.toggle('shown', !!o.split);
     tabs($('tabs'), o.tabs || [{ label: 'LoopBoard', icon: 'loopboard', active: true }]);
@@ -147,6 +149,19 @@
     n.style.opacity = String(alpha || 0);
     n.style.transform = 'translateY(' + ((1 - (alpha || 0)) * 10).toFixed(1) + 'px)';
   }
+  // `o` = { message, detail (html), buttons: [label, …] — the first is primary, optional
+  // left/top (px) of the dialog's top centre } or null to hide.
+  function modal(o, alpha) {
+    const m = $('modal');
+    if (!o) { m.style.opacity = '0'; return; }
+    const box = m.querySelector('.md-box');
+    box.style.left = o.left != null ? o.left + 'px' : '';
+    box.style.top = o.top != null ? o.top + 'px' : '';
+    $('modal-msg').textContent = o.message;
+    $('modal-detail').innerHTML = o.detail || '';
+    $('modal-buttons').innerHTML = o.buttons.map((b, i) => '<span class="md-btn' + (i === 0 ? ' primary' : '') + '">' + esc(b) + '</span>').join('');
+    m.style.opacity = String(alpha == null ? 1 : alpha);
+  }
   function statusLoops(html) { $('sb-loops').innerHTML = html || ''; }
 
   // Pause every running animation (CSS animations + transitions) in this document and each frame,
@@ -165,5 +180,5 @@
     }
   }
 
-  window.stage = { layout, sidebar, badge, md, term, cursor, ripple, spotlight, caption, keycap, titleCard, xfade, statusLoops, notify, advance };
+  window.stage = { layout, sidebar, badge, md, term, cursor, ripple, spotlight, caption, keycap, titleCard, xfade, statusLoops, notify, modal, advance };
 })();
