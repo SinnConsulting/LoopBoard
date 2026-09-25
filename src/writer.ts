@@ -29,9 +29,11 @@ export function serializeEntry(entry: IndexEntry): string[] {
   if (entry.id) out.push(`  - id: ${entry.id}`);
 
   if (entry.isDraft) {
-    // Drafts carry no phase line (implicitly new); only optional model/groomer.
+    // Drafts carry no phase line (implicitly new); only optional model/groomer, plus any pending
+    // feedback (t-ae10) the groomer folds in while grooming (Rule 14).
     if (entry.model) out.push(`  - model: ${entry.model}`);
     if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+    for (const f of entry.feedback) out.push(`  - feedback: ${f}`);
     for (const u of entry.unknownLines) out.push(u);
     return out;
   }
@@ -44,7 +46,6 @@ export function serializeEntry(entry: IndexEntry): string[] {
     out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));
     for (const s of q.suggestions) out.push(`    - suggestion: ${s}`);
   }
-  for (const n of entry.notes) out.push(`  - note: ${n}`);
   for (const f of entry.feedback) out.push(`  - feedback: ${f}`);
   for (const u of entry.unknownLines) out.push(u);
   return out;

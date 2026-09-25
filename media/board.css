@@ -372,24 +372,14 @@ textarea { resize: vertical; }
 }
 .amber-label { font-size: 11px; font-weight: 600; color: var(--vscode-inputValidation-warningBorder, #cca700); margin-bottom: 2px; }
 
-.note-wrap { margin-top: 12px; }
+.feedback-wrap { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 
-/* Notes-to-worker (t-b149): reuses the qa-* visual idiom t-2394 introduced for the Q&A panel —
-   bordered surfaces, mono uppercase labels, link-colored actions — so the note area reads as
-   one system with it. Reskin of the existing single ephemeral note; no multi-note model. */
-.qa-note {
-  border-left: 3px solid var(--vscode-charts-yellow, #cca700);
-  background: var(--vscode-textBlockQuote-background, #2c2c2c);
-  border-radius: 4px; padding: 8px 10px;
-}
-.qa-note-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.qa-note-meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.qa-note-kind {
-  font-family: var(--vscode-editor-font-family, monospace); font-size: 10px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-charts-yellow, #cca700);
-}
-.qa-note-tools { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.qa-note-body { font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; margin-top: 4px; }
+/* Feedback (t-ae10): one amber row per `feedback:` item on every card, drafts included — the
+   amber look already marks a pending change request; ＋ Feedback (`.feedback-add`) sits under the list. */
+.feedback-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.feedback-tools { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.feedback-body { font-size: 13px; line-height: 1.5; word-break: break-word; }
+.feedback-foot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 
 .qa-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .qa-attachment {
@@ -407,22 +397,12 @@ textarea { resize: vertical; }
 .qa-attachment-name.is-pending:hover { text-decoration: none; }
 .qa-attachment-remove { flex-shrink: 0; width: 16px; height: 16px; }
 
-.qa-note-composer {
-  border: 1px solid var(--vscode-panel-border, #454545); border-radius: 4px; padding: 8px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.qa-note-composer:focus-within { border-color: var(--vscode-focusBorder, #007fd4); }
-.qa-note-field { border: none; padding: 0; background: none; }
-.qa-note-field:focus { outline: none; }
-.qa-note-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.qa-note-composer-hint { display: flex; align-items: center; gap: 8px; }
-
-.qa-note-empty {
+.feedback-add {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--vscode-panel-border, #454545); border-radius: 4px; padding: 10px;
   background: none; color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 12px; cursor: pointer;
 }
-.qa-note-empty:hover { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground, #cccccc); }
+.feedback-add:hover { border-color: var(--vscode-focusBorder, #007fd4); color: var(--vscode-foreground, #cccccc); }
 
 .link-btn { font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); background: none; border: none; padding: 0; cursor: pointer; }
 .link-btn:hover { color: var(--vscode-textLink-foreground, #3794ff); }

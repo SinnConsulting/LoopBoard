@@ -44,7 +44,6 @@ test('sendPatch is only called from allowlisted, deliberately un-echoed sites', 
   const allowed = [
     'function sendPatch(', // the definition
     'sendPatch(taskId, field, value, base, questionIndex);', // the single call inside commitPatch
-    'renderFieldAttachmentsArea(t.feedback,', // Review-feedback attachment × callback (out of t-bbad scope)
   ];
   const offenders = board.filter((l) => l.includes('sendPatch(') && !allowed.some((a) => l.includes(a)));
   assert.deepEqual(offenders, []);

@@ -20,7 +20,7 @@ this session (the list the user already read — never a re-derived one; see `/r
 1. **Resolve the task.** From a PR number: `gh pr view <n> --json headRefName` → branch
    `task/<id>-…` gives the id; cross-check `link:` in `.loopboard/tasks/<id>.md`. From a task id:
    use it directly. Abort with a message if the index entry is not `phase: review` — `feedback:`
-   is Review-only (Rule 13); on a New/Backlog task use a `note:` instead and say so.
+   reopens only a Review task (Rule 13); on any other phase a `feedback:` is applied in place — say so.
 
 2. **Write the sub-bullets.** Edit ONLY that entry in `.loopboard/TODO.md`, in place. Append one
    `  - feedback: <single line>` per finding AFTER the existing `id`/`phase`/`model`/`groomer`/

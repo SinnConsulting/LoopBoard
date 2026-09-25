@@ -22,9 +22,8 @@ export interface WebTask {
   problem: string;
   description: string;
   goals: string;
-  note: string | null;
   questions: { text: string; answer: string; answered: boolean; suggestions: string[] }[];
-  feedback: string | null;
+  feedback: string[]; // one item per `feedback:` line (t-ae10), any phase; [] when none
   delivered: string | null;
   unparsedLines: string[] | null;
 }
@@ -132,9 +131,8 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     problem: t.problem ?? '',
     description: t.description ?? '',
     goals: t.goals ?? '',
-    note: t.notes.length ? t.notes.join('\n') : null,
     questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0, suggestions: q.suggestions || [] })),
-    feedback: t.feedback.length ? t.feedback.join('\n') : null,
+    feedback: t.feedback,
     delivered: t.delivered ?? null,
     unparsedLines: t.unknownLines.length ? t.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
   };
@@ -159,9 +157,8 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     problem: e.problem ?? '',
     description: e.description ?? '',
     goals: e.goals ?? '',
-    note: null,
     questions: [],
-    feedback: null,
+    feedback: [],
     delivered: e.delivered ?? null,
     unparsedLines: e.unknownLines.length ? e.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
   };
