@@ -128,6 +128,13 @@ one that never fires):
   unparseable/irrelevant transcript lines and an empty `subagents/` directory all degrade to no rows.
 - `describeAgent` renders `agentType · description` + a duration (`20s`/`1m`/`2h 5m`), drops the
   `· description` half when the meta has none, and renders no duration when the start is unknown.
+- **Lifecycle edges (t-aglg):** `foldAgentEdges` reports a start, a departure (carrying the row as
+  it was before it left, so its duration survives), nothing for an unchanged set, empty→empty or a
+  reorder, gone-then-start for a resumed agent, and NOTHING for a failed read (`undefined`) over a
+  non-empty baseline. `describeAgentEdge` says `no longer live after <duration>`, never `finished`,
+  and drops the `after` tail when the start is unknown; `describeAgentSide` renders
+  `no live subagents`, the fail-open `(session unreadable)`, `killed N live subagents: …`, and
+  `… left running` for a swallowed action. The `store.debugLog` wiring is item 49 (F5 only).
 
 ## Manual — Extension Development Host (F5)
 
@@ -1091,3 +1098,28 @@ and likewise cannot be verified headless.
     text without it. **Loop write
     while editing:** with the composer focused, let a loop write `TODO.md` → the textarea keeps
     focus and text until you click out or Escape.
+
+49. **Subagent start/finish and the agent side of every restart, at `info` (t-aglg):** host only
+    (`src/controller.ts`, `src/terminals.ts`) — the edge diff and every wording are pure and covered
+    by `test/subagents.test.js`; this is the wiring. Companion to item 39. Set `loopBoard.debug:
+    info` (NOT verbose — the point is that this trail exists without it) and read
+    `.loopboard/debug.log`. **Untested in headless sessions: needs the F5 host.**
+    - **Edges:** let a loop groom a draft (delegation on) → within one poll (30 s) of the subagent
+      spawning, `agents-start <slot> <agentType> · <description> (agent <id>)`; once it ends,
+      `agents-gone <slot> <agentType> · <description> (agent <id>) — no longer live after <dur>`,
+      duration roughly matching the agent's own run. Send that agent a follow-up so it resumes →
+      a new `agents-start` for the same id, then a second `agents-gone`. ■ a loop with a live agent
+      → its `agents-gone` is logged by the first poll that sees the loop stopped, exactly once.
+    - **Fail-open named:** with a loop running and nothing live, arm a 1-minute `restart` (Force
+      off) → `restart-fire <slot> restart — no live subagents`. Then make the session unreadable
+      (e.g. temporarily rename `~/.claude/projects/<encoded cwd>/<sessionId>.jsonl`) and arm it
+      again → `restart-fire <slot> restart — no live subagents (session unreadable)`, and no
+      `agents-gone` line was emitted for the failed reads. Restore the file.
+    - **Forced over an agent:** with a subagent live, arm a 1-minute Force-on restart →
+      `restart-fire <slot> restart (forced — a task may be mid-flight) — killed 1 live subagent:
+      <label>`. `context-fire`, and a non-held `auto-recycle`/`clear-session` (afterTask), each end
+      in `— no live subagents`; the held ones keep `(held for a live subagent)`.
+    - **Manual ♻/■:** with a subagent live, left-click ♻ → `loop-recycle <slot> — killed 1 live
+      subagent: <label>`; with none, `loop-recycle <slot> — no live subagents`. Same for ■ and
+      `loop-stop`. An automatic restart's own `loop-recycle`/`loop-stop` line stays bare
+      (`loop-recycle <slot>`).

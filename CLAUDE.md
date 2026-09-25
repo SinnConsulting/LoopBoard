@@ -125,8 +125,9 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   otherwise, and configuration is still read on demand.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
-- Debug trace (`loopBoard.debug` = `off | info | verbose`): any new code that writes a
-  `.loopboard/` file, reads/acts on VSCode configuration, or shows a popup MUST emit a
+- Debug trace (`loopBoard.debug` = `off | info | verbose`; detail in `.claude/rules/debug.md`):
+  every new feature MUST declare its debug events and their level, whatever it reads or acts on
+  (`.loopboard/`, VSCode config, popups, `~/.claude/**`, …), each a
   `store.debugLog(level, event, detail)` line — `info` for lifecycle (gates and their
   request/cancel, loop spawn/recycle/stop, disk-wins conflicts, activation, toast `warning`s, native
   popups + user's choice on interactive modals), `verbose` for per-patch/attachment/config-read/

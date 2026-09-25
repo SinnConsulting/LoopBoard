@@ -204,15 +204,18 @@ export class TerminalManager {
     this.changeEmitter.fire();
   }
 
-  stop(model: Model): void {
+  // `note` is appended to the log detail. Only the manual ■/♻ handlers pass one — what the stop
+  // killed, since this manager has no agent state of its own (t-aglg); automatic callers log the
+  // agent side on their own line and leave the detail bare.
+  stop(model: Model, note?: string): void {
     if (this.revealedModel === model) this.revealedModel = undefined;
-    this.log('info', 'loop-stop', model);
+    this.log('info', 'loop-stop', note ? `${model} — ${note}` : model);
     this.find(model)?.dispose();
   }
 
-  recycle(model: Model, preserveFocus = false): void {
+  recycle(model: Model, preserveFocus = false, note?: string): void {
     if (this.revealedModel === model) this.revealedModel = undefined;
-    this.log('info', 'loop-recycle', model);
+    this.log('info', 'loop-recycle', note ? `${model} — ${note}` : model);
     const existing = this.find(model);
     if (existing) existing.dispose();
     // Respawn shortly after disposal so the name is free.

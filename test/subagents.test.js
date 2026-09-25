@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   AGENT_STALE_MS, ASYNC_ACK, parseAgentMeta, agentIdFromMetaName, agentTranscriptName,
-  parseAgentStart, scanMarkers, foldAgents, describeAgent,
+  parseAgentStart, scanMarkers, foldAgents, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide,
 } = require('../out-test/subagents');
 
 const NOW = Date.parse('2026-09-18T12:00:00.000Z');
@@ -344,4 +344,81 @@ test('describeAgent renders `agentType · description` plus a duration', () => {
   // An unknown start (first transcript line unreadable) still renders a row — it is live, which is
   // the whole point — just without a duration.
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y' }, NOW).duration, '');
+});
+
+// ---- lifecycle edges + the agent side of a restart (t-aglg) ----
+
+function row(id, over) {
+  return Object.assign({ id, agentType: 'story-groom', description: `Groom ${id}`, startedAt: NOW - 3 * MINUTE }, over);
+}
+
+test('foldAgentEdges: a new id is a start', () => {
+  const a = row('a1');
+  const b = row('b2');
+  assert.deepStrictEqual(foldAgentEdges([a], [a, b]), { started: [b], gone: [] });
+});
+
+test('foldAgentEdges: a missing id is a departure, carrying the row as it was BEFORE it left', () => {
+  const a = row('a1', { startedAt: NOW - 7 * MINUTE });
+  const b = row('b2');
+  const edges = foldAgentEdges([a, b], [b]);
+  assert.deepStrictEqual(edges, { started: [], gone: [a] });
+  // The departing row still holds its start, so the line can say how long it ran.
+  assert.strictEqual(edges.gone[0].startedAt, NOW - 7 * MINUTE);
+});
+
+test('foldAgentEdges: an unchanged set and empty→empty produce no edges', () => {
+  const a = row('a1');
+  assert.deepStrictEqual(foldAgentEdges([a], [row('a1')]), { started: [], gone: [] });
+  assert.deepStrictEqual(foldAgentEdges([], []), { started: [], gone: [] });
+});
+
+test('foldAgentEdges: a reorder without a membership change produces no edges', () => {
+  const a = row('a1');
+  const b = row('b2');
+  assert.deepStrictEqual(foldAgentEdges([a, b], [b, a]), { started: [], gone: [] });
+});
+
+test('foldAgentEdges: a resumed agent re-enters — gone, then started again, same id', () => {
+  const a = row('a1');
+  const finished = foldAgentEdges([a], []);
+  assert.deepStrictEqual(finished, { started: [], gone: [a] });
+  // A SendMessage re-opens it with `startedAt` at the resume instant.
+  const resumed = row('a1', { startedAt: NOW - 10000 });
+  assert.deepStrictEqual(foldAgentEdges([], [resumed]), { started: [resumed], gone: [] });
+});
+
+test('foldAgentEdges: a FAILED read over a non-empty baseline produces no edges at all', () => {
+  const a = row('a1');
+  const b = row('b2');
+  // The fail-open guard: `undefined` is not "nothing live", so nothing is reported gone…
+  assert.deepStrictEqual(foldAgentEdges([a, b], undefined), { started: [], gone: [] });
+  assert.deepStrictEqual(foldAgentEdges([], undefined), { started: [], gone: [] });
+  // …and since the caller keeps its baseline, the next good read diffs against the last good one:
+  // the same set again is silent, not a burst of starts.
+  assert.deepStrictEqual(foldAgentEdges([a, b], [a, b]), { started: [], gone: [] });
+});
+
+test('describeAgentEdge renders a start and a departure with label, id and duration', () => {
+  const a = row('a1', { description: 'Fold monster speed answers', startedAt: NOW - 4 * MINUTE });
+  assert.strictEqual(describeAgentEdge('start', a, NOW), 'story-groom · Fold monster speed answers (agent a1)');
+  assert.strictEqual(describeAgentEdge('gone', a, NOW),
+    'story-groom · Fold monster speed answers (agent a1) — no longer live after 4m');
+  // Never claims a finish: the snapshot cannot tell a finish from a stop, a drop or a lost session.
+  assert.ok(!/finished/.test(describeAgentEdge('gone', a, NOW)));
+});
+
+test('describeAgentEdge: a departing row with no startedAt still reads cleanly', () => {
+  const a = row('a1', { startedAt: undefined });
+  assert.strictEqual(describeAgentEdge('gone', a, NOW), 'story-groom · Groom a1 (agent a1) — no longer live');
+});
+
+test('describeAgentSide names no agents, the fail-open, a kill, and a swallowed action', () => {
+  assert.strictEqual(describeAgentSide([], false, true, NOW), 'no live subagents');
+  assert.strictEqual(describeAgentSide([], true, true, NOW), 'no live subagents (session unreadable)');
+  assert.strictEqual(describeAgentSide([row('a1')], false, true, NOW), 'killed 1 live subagent: story-groom · Groom a1');
+  assert.strictEqual(describeAgentSide([row('a1'), row('b2')], false, true, NOW),
+    'killed 2 live subagents: story-groom · Groom a1, story-groom · Groom b2');
+  // A swallowed action (restart-skip) must not claim to have killed anything.
+  assert.strictEqual(describeAgentSide([row('a1')], false, false, NOW), '1 live subagent left running: story-groom · Groom a1');
 });
