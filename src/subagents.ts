@@ -329,3 +329,72 @@ function formatDuration(startedAt: number | undefined, now: number): string {
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
+
+// ---- lifecycle edges + the agent side of a restart (t-aglg) ----
+
+export interface AgentEdges {
+  started: AgentRow[];
+  gone: AgentRow[];
+}
+
+// The change between two consecutive SUCCESSFUL reads of a slot's live set, by id. These are edges
+// inferred from polling, not events: one can be up to a poll late, and an agent that starts and
+// ends inside one window never shows up at all. `gone` carries the row as it was BEFORE it left,
+// so its `startedAt` (and so its duration) is still there to report.
+//
+// `rows === undefined` is a FAILED read and yields no edges at all. The caller maps a failed read
+// to "nothing live" for the busy signal (fail-open), so diffing that `[]` would report every live
+// agent as gone on a transient miss and as started again on the next good poll. The caller keeps
+// its baseline untouched in that case, so the next successful read diffs against the last one.
+export function foldAgentEdges(before: readonly AgentRow[], rows: readonly AgentRow[] | undefined): AgentEdges {
+  if (rows === undefined) return { started: [], gone: [] };
+  const was = new Set(before.map((r) => r.id));
+  const now = new Set(rows.map((r) => r.id));
+  return {
+    started: rows.filter((r) => !was.has(r.id)),
+    gone: before.filter((r) => !now.has(r.id)),
+  };
+}
+
+// One successful subagent read, with the session it resolved. The host reports the session id so
+// the caller can tell a read of the CURRENT session from a read of one it has just ended.
+export interface SubagentRead {
+  sessionId: string;
+  rows: AgentRow[];
+}
+
+// The rows the edge diff may use, or `undefined` for "treat like a failed read". A read that
+// resolved the session this slot's last restart ENDED is the old files being read again (the new
+// `claude` has not written its session pointer yet, the same echo `isStaleSession` drops for the
+// context bar): an agent the restart killed would reappear as `agents-start` and then leave a
+// second time as `agents-gone` once the new session resolves. Such a read yields no edges and
+// keeps the baseline, exactly like a failed one. A session id never comes back, so the test is
+// exact equality.
+export function rowsForEdges(read: SubagentRead | undefined, endedSession: string | undefined): AgentRow[] | undefined {
+  if (!read) return undefined;
+  if (endedSession !== undefined && read.sessionId === endedSession) return undefined;
+  return read.rows;
+}
+
+// Detail of an `agents-start` / `agents-gone` line, minus the slot the caller prefixes. A departure
+// says `no longer live`, never `finished`: finishing, a user stop, a drop for silence and the
+// session going away all look the same from a snapshot. An unknown start drops the `after …` tail
+// rather than leaving it dangling.
+export function describeAgentEdge(kind: 'start' | 'gone', row: AgentRow, now: number): string {
+  const { id, label, duration } = describeAgent(row, now);
+  const head = `${label} (agent ${id})`;
+  if (kind === 'start') return head;
+  return `${head} — no longer live${duration ? ` after ${duration}` : ''}`;
+}
+
+// The agent side of a restart/stop/clear that went ahead, for the log line recording it. `rows` is
+// the slot's live set as last read, `unreadable` whether that last read FAILED (then `rows` is
+// empty only because a failed read holds nothing — the fail-open, named as such). `acting` says
+// whether this action really ends the session: a swallowed action (`restart-skip`) leaves any live
+// agent running and must not claim to have killed it.
+export function describeAgentSide(rows: readonly AgentRow[], unreadable: boolean, acting: boolean, now: number): string {
+  if (!rows.length) return unreadable ? 'no live subagents (session unreadable)' : 'no live subagents';
+  const count = `${rows.length} live subagent${rows.length === 1 ? '' : 's'}`;
+  const labels = rows.map((r) => describeAgent(r, now).label).join(', ');
+  return acting ? `killed ${count}: ${labels}` : `${count} left running: ${labels}`;
+}

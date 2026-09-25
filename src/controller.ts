@@ -23,7 +23,7 @@ import {
 } from './schedule';
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
-import { AgentRow, describeAgent } from './subagents';
+import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide, rowsForEdges } from './subagents';
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 
@@ -128,6 +128,12 @@ export class Controller {
   // the idle edge because a subagent was still running — the same shape as `contextPending`.
   private agentBusy = new Set<Model>();
   private agentRows = new Map<Model, AgentRow[]>();
+  // t-aglg: `agentRows` holds `[]` both for "read fine, nothing live" and for "could not read", so
+  // the fail-open is recorded apart (`agentsUnreadable`) for the log lines that must name it. The
+  // `agents-start`/`agents-gone` edges diff against `agentBaseline` — the last SUCCESSFUL read —
+  // never against `agentRows`, which a failed read clears to keep the sidebar honest.
+  private agentsUnreadable = new Set<Model>();
+  private agentBaseline = new Map<Model, AgentRow[]>();
   private afterTaskPending = new Set<Model>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
@@ -304,7 +310,7 @@ export class Controller {
         }
         // Automatic lifecycle recycle — never steal focus from whatever the user is doing on the
         // board (e.g. typing in an answer field).
-        this.store.debugLog('info', 'auto-recycle', model);
+        this.store.debugLog('info', 'auto-recycle', `${model} — ${this.describeAgents(model, true)}`);
         this.clearContextTrip(model, 'auto-recycle');
         this.terminals.recycle(model, true);
       }
@@ -332,7 +338,7 @@ export class Controller {
           this.holdAfterTask(model, next);
           continue;
         }
-        this.store.debugLog('info', 'clear-session', model);
+        this.store.debugLog('info', 'clear-session', `${model} — ${this.describeAgents(model, true)}`);
         this.clearContextTrip(model, 'clear-session');
         this.terminals.clearSession(model);
       }
@@ -498,12 +504,16 @@ export class Controller {
   private async pollSubagents(model: Model): Promise<boolean> {
     if (!this.contextReader) return false;
     const now = Date.now();
-    const rows = await this.contextReader.readSubagents(model, now);
+    const read = await this.contextReader.readSubagents(model, now);
+    const rows = read?.rows;
+    // The session this slot's last restart ended (t-c7a2's echo guard, reused for the edges).
+    const ended = this.contextEnded.get(model);
+    const edgeRows = rowsForEdges(read, ended);
     // Logged on EVERY poll: this is the trail that explains a restart that did not happen. A read
     // failure is named as such — it must never look like a confident "nothing is running".
     this.store.debugLog('verbose', 'agents-read', rows === undefined
       ? `${model} — could not read this session's subagents`
-      : `${model} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}`);
+      : `${model} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}${edgeRows === undefined ? ` (ended session ${ended} — no edges)` : ''}`);
     // A failed read is treated as "nothing live": an unreadable path must not hold every automatic
     // restart of this slot forever. Only a subagent we can actually SEE blocks one.
     const live = rows ?? [];
@@ -512,15 +522,36 @@ export class Controller {
     this.agentRows.set(model, live);
     if (live.length) this.agentBusy.add(model);
     else this.agentBusy.delete(model);
+    // Lifecycle edges at info (t-aglg), from successful reads only: a failed read emits nothing and
+    // leaves the baseline alone, so the next good read diffs against the last good one. A read of
+    // the session a restart just ENDED counts as failed for the edges only (`rowsForEdges`) — its
+    // killed agents would otherwise log a false `agents-start` now and a second `agents-gone` once
+    // the new session resolves. The busy signal above is deliberately left as t-sbag defined it: a
+    // `/clear` context action keeps the process, and whether that ends its agents is unverified.
+    if (rows === undefined) this.agentsUnreadable.add(model);
+    else this.agentsUnreadable.delete(model);
+    if (edgeRows !== undefined) {
+      this.logAgentEdges(model, foldAgentEdges(this.agentBaseline.get(model) ?? [], edgeRows), now);
+      this.agentBaseline.set(model, edgeRows);
+    }
     return !same;
   }
 
   // Drops a slot's subagent state (its session is gone). Returns whether anything was actually
-  // dropped, so a stopped loop only forces one repaint.
+  // dropped, so a stopped loop only forces one repaint. Agents still in the baseline are logged as
+  // `agents-gone` first: the session going away is one of the ways an agent stops being live.
   private forgetAgents(model: Model): boolean {
+    this.logAgentEdges(model, foldAgentEdges(this.agentBaseline.get(model) ?? [], []), Date.now());
+    this.agentBaseline.delete(model);
+    this.agentsUnreadable.delete(model);
     const hadRows = (this.agentRows.get(model) ?? []).length > 0;
     this.agentRows.delete(model);
     return this.agentBusy.delete(model) || hadRows;
+  }
+
+  private logAgentEdges(model: Model, edges: AgentEdges, now: number): void {
+    for (const row of edges.gone) this.store.debugLog('info', 'agents-gone', `${model} ${describeAgentEdge('gone', row, now)}`);
+    for (const row of edges.started) this.store.debugLog('info', 'agents-start', `${model} ${describeAgentEdge('start', row, now)}`);
   }
 
   private fireContextRestart(model: Model, action: ContextAction): void {
@@ -533,7 +564,7 @@ export class Controller {
     // restart storm took, and for `action: 'clear'` there is no terminal close/open event to route
     // through `clearContextTrip`.
     const ended = this.rememberEndedSession(model);
-    this.store.debugLog('info', 'context-fire', `${model} ${action}${ended ? ` — ended session ${ended}` : ''}`);
+    this.store.debugLog('info', 'context-fire', `${model} ${action}${ended ? ` — ended session ${ended}` : ''} — ${this.describeAgents(model, true)}`);
     // preserveFocus — an automatic action never steals focus from whatever the user is doing.
     if (action === 'clear') this.terminals.clearSession(model);
     else this.terminals.recycle(model, true);
@@ -627,6 +658,14 @@ export class Controller {
     return reasons.length ? reasons.join(' + ') : 'busy';
   }
 
+  // The agent side of an action that went AHEAD (t-aglg) — the counterpart of `describeBusy`, which
+  // only the defer paths reach. `acting` is false for a swallowed action, which kills nothing. It
+  // reflects the LAST poll, so it can be up to one poll (30 s) old: an agent spawned since then is
+  // not named.
+  private describeAgents(model: Model, acting: boolean): string {
+    return describeAgentSide(this.agentRows.get(model) ?? [], this.agentsUnreadable.has(model), acting, Date.now());
+  }
+
   // Arms (or replaces) a model's schedule and starts its timer. Force consent is taken by the
   // caller, once, BEFORE this runs — fire time is silent.
   private armRestart(model: Model, action: LoopAction, minutes: number, repeat: boolean, force: boolean): void {
@@ -687,9 +726,10 @@ export class Controller {
     this.clearRestartTimer(model);
     const running = this.terminals.status().some((l) => l.id === model && l.running);
     if (!appliesTo(schedule.action, running)) {
-      this.store.debugLog('info', 'restart-skip', `${model} ${schedule.action} — loop is ${running ? 'already running' : 'not running'}, nothing to do`);
+      this.store.debugLog('info', 'restart-skip', `${model} ${schedule.action} — loop is ${running ? 'already running' : 'not running'}, nothing to do — ${this.describeAgents(model, false)}`);
     } else {
-      this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''}`);
+      // A start ends no session, so it kills nothing even when forced.
+      this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''} — ${this.describeAgents(model, schedule.action !== 'start')}`);
       this.clearContextTrip(model, `timed ${schedule.action}`);
       // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
       // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
@@ -847,7 +887,8 @@ export class Controller {
         // whether the user still wants the later one.
         if (isKnownModel(msg.model)) {
           this.clearContextTrip(msg.model, 'manual restart');
-          this.terminals.recycle(msg.model);
+          // The manual button ignores the subagent hold, so its log line records what it killed.
+          this.terminals.recycle(msg.model, false, this.describeAgents(msg.model, true));
         }
         return;
       case 'stopLoop':
@@ -856,7 +897,7 @@ export class Controller {
           // Stopping a loop clears any schedule it had — restarting a terminal the user just
           // stopped would be the opposite of what they asked for.
           this.cancelRestart(msg.model, 'loop stopped');
-          this.terminals.stop(msg.model);
+          this.terminals.stop(msg.model, this.describeAgents(msg.model, true));
         }
         return;
       case 'armRestart':

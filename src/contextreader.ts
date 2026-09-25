@@ -11,8 +11,8 @@ import {
   contextPercent, windowSizeFor, SessionPointer,
 } from './context';
 import {
-  AGENT_STALE_MS, AgentEntry, AgentRow, MarkerCarry, MarkerEvent, agentIdFromMetaName,
-  agentTranscriptName, foldAgents, parseAgentMeta, parseAgentStart, scanMarkers,
+  AGENT_STALE_MS, AgentEntry, MarkerCarry, MarkerEvent, agentIdFromMetaName,
+  agentTranscriptName, foldAgents, parseAgentMeta, parseAgentStart, scanMarkers, SubagentRead,
 } from './subagents';
 
 // The extension host is Node, so the environment is available at runtime — but `@types/node` is
@@ -183,9 +183,10 @@ export class ContextReader {
   // `read()` already resolves — there is no second discovery path.
   //
   // `undefined` means COULD NOT READ (no session, no transcript, an unreadable transcript);
-  // `[]` means read fine and nothing is live. The caller shows the same thing for both but logs
-  // them apart: a read failure must never masquerade as "idle" silently.
-  async readSubagents(model: Model, now: number): Promise<AgentRow[] | undefined> {
+  // `rows: []` means read fine and nothing is live. The caller shows the same thing for both but
+  // logs them apart: a read failure must never masquerade as "idle" silently. The resolved
+  // `sessionId` rides along so the caller can recognise a read of a session it just ended (t-aglg).
+  async readSubagents(model: Model, now: number): Promise<SubagentRead | undefined> {
     const dir = this.claudeDir();
     if (!dir) return undefined;
     const sessionId = await this.findSessionId(model, dir);
@@ -200,7 +201,7 @@ export class ContextReader {
     } catch {
       // No `subagents/` directory at all: this session never spawned one. That is a real, readable
       // "nothing is live", not a failure.
-      return [];
+      return { sessionId, rows: [] };
     }
     const metas: AgentEntry[] = [];
     for (const [name, type] of entries) {
@@ -226,7 +227,7 @@ export class ContextReader {
     }
     // Nothing was ever spawned here — skip the transcript scan entirely rather than walking
     // several MB to answer a question with no subjects.
-    if (metas.length === 0) return [];
+    if (metas.length === 0) return { sessionId, rows: [] };
     // Both id spaces a marker can name this session's agents by.
     const known = metas.flatMap((m) => [m.id, m.toolUseId]);
     const events = await this.readMarkers(transcript, sessionId, known);
@@ -240,7 +241,7 @@ export class ContextReader {
     for (const row of rows) {
       if (row.startedAt === undefined) row.startedAt = await this.readAgentStart(agentsDir, row.id);
     }
-    return rows;
+    return { sessionId, rows };
   }
 
   // Every finish/resume marker seen in this session's parent transcript so far. Read whole once,
