@@ -384,14 +384,17 @@ Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
 and likewise cannot be verified headless.
 
-29. **Context-usage bar + threshold restart (t-2b89):** with `loopBoard.contextLimit.percent` at its
-    `0` default, start a loop from the sidebar ▶ and let it take a turn — within ~30 s its row grows
+29. **Context-usage bar + threshold restart (t-2b89; default 35 since t-2047):** with
+    `loopBoard.contextLimit.percent` UNSET (its `35` default), start a loop from the sidebar ▶ and
+    let it take a turn → its bar paints orange from the 35% mark to its right edge, hovering it reads `restart at 35%`.
+    Now set `loopBoard.contextLimit.percent` to `0`, start a loop from the sidebar ▶ and let it take
+    a turn — within ~30 s its row grows
     a thin bar plus `ctx <n>k / <window>k · <n>%` under the label, and the number climbs as the
     conversation grows. Nothing restarts. Stop the loop → the bar disappears entirely (no "0%"
     row). BOTH numbers must match what that loop's own status line reports: a 5-series model reads
     `/ 1000k` with NO `[1m]` suffix configured, and the used figure tracks the loop's last turn
     rather than the one before it. Set `loopBoard.models.opus.model` to an older 200k model (e.g.
-    `claude-sonnet-4-5`), restart that loop with ♻, and the label reads `/ 200k`. At the `0` default
+    `claude-sonnet-4-5`), restart that loop with ♻, and the label reads `/ 200k`. At `0`
     the bar has NO orange section. Set `loopBoard.contextLimit.percent` to e.g. `80` and the bar
     paints orange from the 80% mark to its right edge, hovering it reads `restart at 80%` (or
     `/clear at 80%` when `loopBoard.contextLimit.action` is `clear`); the blue fill paints OVER that
@@ -548,13 +551,14 @@ and likewise cannot be verified headless.
 
 35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
     clause are unit-tested; what only F5 can show is the real terminal line. With both delegation
-    settings at their defaults, start a loop
+    settings UNSET (their t-2047 defaults: delegate work on, review off), start a loop
     → the pasted `/loop` line reads `… running as model <slot> with a grooming concurrency cap of
-    <n>. Open .loopboard/LOOP.md, …` and ends there — no `Delegate work` text, no effort (t-cffc:
-    effort is the `--effort <level>` flag on the spawn line, item 47).
-    Set `loopBoard.delegateWork` to `true`, restart the loop with ♻ → the line now ends with
-    `Delegate work to subagents.`; additionally set `loopBoard.delegateReview` to `false` and
-    ♻ again → it ends with `Delegate work to subagents without review.`. Flipping either setting
+    <n>. Open .loopboard/LOOP.md, …` and ends with `Delegate work to subagents without review.`
+    — no effort text (t-cffc: effort is the `--effort <level>` flag on the spawn line, item 47).
+    Set `loopBoard.delegateReview` to `true`, restart the loop with ♻ → the line now ends with
+    `Delegate work to subagents.`; then set `loopBoard.delegateWork` to `false` and ♻ again → the
+    line ends at `…follow them exactly for this and every pass.` with no `Delegate work` text at
+    all. Flipping either setting
     WITHOUT ♻ changes nothing in the running terminal (spawn-frozen, like the interval). With
     `loopBoard.debug` at `info`, each spawn logs one `loop-spawn` line naming `delegate on|off,
     review on|off`. Press **Synchronise Templates** (settings-page header) on a workspace whose `LOOP.md` predates this
@@ -583,10 +587,12 @@ and likewise cannot be verified headless.
     page itself, the config writes and the live listener.
 
     **Opens instead of the native editor:** click the sidebar's **Settings** row → a `LoopBoard
-    Settings` editor tab opens (NOT VSCode's Settings editor). It shows four sections in order —
-    *Models & Slots*, *Agent Setup*, *Board & Workspace*, *Beta* with an `experimental` chip — and
+    Settings` editor tab opens (NOT VSCode's Settings editor). It shows three sections in order —
+    *Models & Slots*, *Agent Setup*, *Board & Workspace* — with NO *Beta* section and no
+    `experimental` chip anywhere (t-2047: the delegation rows graduated; *Delegate work* and
+    *Delegate review* sit at the end of *Agent Setup*, after *Nudge loops*), and
     the two deprecated keys (`loopBoard.autoRecycle`, `loopBoard.clearSessionAfterTask`) appear
-    nowhere on it. Descriptions render as markdown: backticks are code chips, `**Beta —**` is bold,
+    nowhere on it. Descriptions render as markdown: backticks are code chips, `**bold**` is bold,
     nothing shows raw markers. Compare against `docs/mockups/t-sgrp-settings-page.html` — structure
     and feel should match; the footer there lists the deliberate departures.
 
@@ -598,8 +604,8 @@ and likewise cannot be verified headless.
     gate):** only the section→anchor slugs are unit-tested (`test/settingsform.test.js`); the list
     itself is CSS and a webview click handler. With the page open, make the editor group WIDE
     (≥ 1180px — drag the sidebar closed / maximise the window): a **Sections** list appears on the
-    left, its entries matching the page's headings one for one, in the same order, with the Beta
-    entry carrying the same `experimental` chip. Click each entry → the page scrolls to that
+    left, its three entries matching the page's headings one for one, in the same order, with no
+    Beta entry and no `experimental` chip. Click each entry → the page scrolls to that
     heading. Scroll down → the list stays put (sticky). Now NARROW the group (split the editor, or
     open the sidebar and Panel): below 1180px the list is GONE — no hamburger, no leftover gap, and
     the content column is centred exactly as it was before this was added. Do the whole check once
@@ -636,8 +642,8 @@ and likewise cannot be verified headless.
     only the classification, the wording and the manifest sentence are unit-tested in
     `test/manifest-settings.test.js` / `test/settingsform.test.js`):** exactly FOUR generic rows
     carry a `⟳ Applies on the next loop start (▶) or restart (♻)` line directly under their
-    description — *Permission mode*, *Loop interval*, and both Beta rows (*Delegate work*, *Delegate
-    review*) — plus the model grid's header note, which says the same thing for `--model`,
+    description — *Permission mode*, *Loop interval*, and both delegation rows in *Agent Setup*
+    (*Delegate work*, *Delegate review*) — plus the model grid's header note, which says the same thing for `--model`,
     `effort` and `groomers`. EVERY other row has nothing there: *After a task*, *Context limit —
     percent/action*, *Nudge loops*, *Max attachment size MB*, *Auto sync templates*, *Debug* and the
     grid's `on` / `default worker` / `default groomer` columns show no marker at all, and there is no
@@ -662,7 +668,7 @@ and likewise cannot be verified headless.
     surface cannot draw the marker. The grid's header note is one line and was already correct;
     confirm it has no duplicate sentence either.
 
-    **The renamed Beta key (untested in Docker — only the manifest invariant is):** the review
+    **The renamed delegation key (untested in Docker — only the manifest invariant is):** the review
     toggle is `loopBoard.delegateReview`, NOT `loopBoard.delegateWork.review`, which VSCode could
     never honour (it logged `Ignoring loopBoard.delegateWork.review as loopBoard.delegateWork is
     true` and used the default). Put BOTH keys in your user `settings.json` with
@@ -672,7 +678,8 @@ and likewise cannot be verified headless.
     page's *Delegate review* toggle reads OFF, and ♻ spawns a `/loop …` line ending in `Delegate
     work to subagents without review.` — i.e. the configured value actually reaches the prompt.
     Then turn *Delegate work* off on the page → the *Delegate review* row greys out (the dependency
-    is declared in the manifest as `loopBoardDependsOn`, no longer inferred from the key name).
+    is declared in the manifest as `loopBoardDependsOn`, no longer inferred from the key name) —
+    still true after t-2047 moved both rows into *Agent Setup*, where both still carry the ⟳ marker.
 
     **“Migrate Config” — stale settings (untested in Docker — only the PLAN is:
     `test/settingsmigrate.test.js` covers every rule, conflict, orphan and blind-removal case plus
@@ -716,8 +723,8 @@ and likewise cannot be verified headless.
     *Renamed key while it is readable:* with `loopBoard.delegateWork` NOT set, add
     `"loopBoard.delegateWork.review": false` → it is listed as `MIGRATE … set
     loopBoard.delegateReview to false`. Click the row's own **Migrate** button →
-    `loopBoard.delegateReview: false` is in `settings.json`, the old key is gone, and the Beta
-    *Delegate review* toggle reads OFF.
+    `loopBoard.delegateReview: false` is in `settings.json`, the old key is gone, and the
+    *Delegate review* toggle (in *Agent Setup*) reads OFF.
 
     *The key that cannot be read but CAN be removed — the blind removal (untested in Docker: the
     plan is, `test/settingsmigrate.test.js` pins that the sweep names the child key ALONE and that it
@@ -809,9 +816,10 @@ and likewise cannot be verified headless.
     still shows the user value, and a spawned loop's `--permission-mode` is the USER value. This is
     the security-relevant assertion of the whole story.
 
-    **`@tag:experimental` (unverified here):** the two Beta keys carry `tags: ["experimental"]`.
-    Search `@tag:experimental` in VSCode's Settings editor and confirm extension-contributed keys
-    are picked up. If they are NOT, the tag is inert rather than wrong — drop it and keep the
+    **`@tag:experimental` (unverified here):** since t-2047 no shipped key is Beta, so search
+    `@tag:experimental` in VSCode's Settings editor → no LoopBoard key is listed. Re-run the
+    original check (extension-contributed keys picked up by the tag) the next time a key enters a
+    Beta section. If they are NOT, the tag is inert rather than wrong — drop it and keep the
     section heading and the `**Beta —**` sentence, which carry the status on their own.
 
 38. **Groomer select on New cards + labelled selects row (t-eb64):** webview-only (`media/board.js`),

@@ -171,8 +171,8 @@ export class Controller {
       autoSyncTemplates: c.get<boolean>('autoSyncTemplates', true),
       sidebarMarquee: c.get<boolean>('sidebarMarquee', false),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
-      // 0 (the default) = the context threshold is off entirely; the indicator still renders.
-      contextPercent: sanitizeContextPercent(c.get<number>('contextLimit.percent', 0)),
+      // 35 is the default; 0 = the context threshold is off entirely (the indicator still renders).
+      contextPercent: sanitizeContextPercent(c.get<number>('contextLimit.percent', 35)),
       contextAction: sanitizeContextAction(c.get<string>('contextLimit.action', 'recycle')),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };

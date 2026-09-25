@@ -159,32 +159,63 @@ test('MODEL_GRID_KEYS is exactly the 14-key matrix the grid replaces', () => {
   }
 });
 
-test('the Beta section is beta because its properties are tagged, not because of its title', () => {
+test('the real manifest renders no Beta section and no Beta control (t-2047)', () => {
   const form = buildSettingsForm(manifest.contributes.configuration);
-  const beta = form.sections.find((s) => s.title === 'Beta (experimental)');
-  assert.equal(beta.beta, true);
-  assert.deepEqual(beta.controls.map((c) => c.key), ['loopBoard.delegateWork', 'loopBoard.delegateReview']);
-  assert.ok(beta.controls.every((c) => c.beta));
+  for (const section of form.sections) {
+    assert.equal(section.beta, false, `${section.title} must not read as Beta`);
+    for (const c of section.controls) assert.equal(c.beta, false, `${c.key} must not read as Beta`);
+  }
   // The review toggle only applies while delegation is on — declared in the manifest, not inferred
   // from the key name (the two ids no longer share a prefix, and must not).
-  assert.equal(beta.controls[1].dependsOn, 'loopBoard.delegateWork');
-  for (const section of form.sections) {
-    if (section === beta) continue;
-    assert.equal(section.beta, false, `${section.title} must not read as Beta`);
-  }
+  const agent = form.sections.find((s) => s.title === 'Agent Setup');
+  assert.equal(agent.controls.find((c) => c.key === 'loopBoard.delegateReview').dependsOn, 'loopBoard.delegateWork');
 });
 
-test('the real manifest renders as the four agreed sections', () => {
+test('Beta is tag-driven: an all-experimental section renders as Beta, a mixed or untagged one does not', () => {
+  // Synthetic manifest (t-2047 decision 3): no shipped key is Beta any more, but the rendering stays
+  // for future betas and this is what keeps it covered.
+  const tag = { tags: ['experimental'] };
+  const form = buildSettingsForm([
+    {
+      title: 'LoopBoard: Plain', order: 1,
+      properties: { 'loopBoard.plain': { type: 'boolean', order: 10, default: false, markdownDescription: 'p' } },
+    },
+    {
+      title: 'LoopBoard: Mixed', order: 2,
+      properties: {
+        'loopBoard.mixedBeta': { type: 'boolean', order: 10, default: false, markdownDescription: 'm', ...tag },
+        'loopBoard.mixedPlain': { type: 'boolean', order: 20, default: false, markdownDescription: 'm' },
+      },
+    },
+    {
+      title: 'LoopBoard: Beta (experimental)', order: 3,
+      properties: {
+        'loopBoard.betaOne': { type: 'boolean', order: 10, default: false, markdownDescription: 'b', ...tag },
+        'loopBoard.betaTwo': { type: 'string', order: 20, default: 'x', markdownDescription: 'b', ...tag },
+      },
+    },
+  ]);
+  const by = (t) => form.sections.find((s) => s.title === t);
+  assert.equal(by('Beta (experimental)').beta, true);
+  assert.ok(by('Beta (experimental)').controls.every((c) => c.beta === true));
+  assert.equal(by('Mixed').beta, false);
+  assert.deepEqual(by('Mixed').controls.map((c) => c.beta), [true, false], 'the tag still marks the single control');
+  assert.equal(by('Plain').beta, false);
+  assert.equal(by('Plain').controls[0].beta, false);
+});
+
+test('the real manifest renders as the three agreed sections', () => {
   const form = buildSettingsForm(manifest.contributes.configuration);
   assert.deepEqual(
     form.sections.map((s) => s.title),
-    ['Models & Slots', 'Agent Setup', 'Board & Workspace', 'Beta (experimental)']
+    ['Models & Slots', 'Agent Setup', 'Board & Workspace']
   );
   assert.deepEqual(
     form.sections.find((s) => s.title === 'Agent Setup').controls.map((c) => c.key),
     [
       'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
       'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.nudgeLoops',
+      'loopBoard.delegateWork', 'loopBoard.delegateReview',
     ]
   );
   assert.deepEqual(
