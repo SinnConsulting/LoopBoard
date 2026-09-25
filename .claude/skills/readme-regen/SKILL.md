@@ -10,7 +10,11 @@ description: Regenerate README.md's machine-owned settings region from package.j
 - The **settings region** is machine-owned. It sits between `<!-- loopboard:settings:begin -->` and
   `<!-- loopboard:settings:end -->`, and is re-derived from `package.json` on every run, so it can
   never drift. Never hand-edit inside the sentinels — the next run overwrites it.
-- The **feature prose** ("Why LoopBoard?", "Small on purpose", the board/sidebar walkthrough) is
+- The **showcase region** (`<!-- loopboard:showcase:begin/end -->`) is machine-owned too: a copy
+  of the same-sentinel slice of `docs/showcase/README.md`, relative links made absolute raw URLs.
+  Edit the showcase page, never README.md's copy. `make readme` regenerates both regions + checks;
+  `make showcase` re-records the GIFs and then runs it.
+- The **feature prose** ("Small on purpose", storage, sidebar, security, the settings prose) is
   hand-written and stays that way. The tool validates its COVERAGE against the real contribution
   points and FLAGS drift. It never rewrites a sentence. Auto-derived feature prose is out of scope.
 

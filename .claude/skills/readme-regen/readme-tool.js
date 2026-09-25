@@ -7,8 +7,8 @@
 // `.claude/**`; `make package` asserts it).
 //
 // Two jobs, deliberately different in kind:
-//   generate — the settings region is MACHINE-OWNED. Rewritten in place between the sentinels from
-//              `contributes.configuration`, so it can never drift.
+//   generate — two MACHINE-OWNED regions, rewritten in place between their sentinels: settings from
+//              `contributes.configuration`, the feature showcase from docs/showcase/README.md.
 //   check    — the feature prose is HAND-WRITTEN. Coverage is validated against the real
 //              contribution points and drift is FLAGGED, never rewritten.
 
@@ -17,6 +17,15 @@ const path = require('path');
 
 const BEGIN = '<!-- loopboard:settings:begin -->';
 const END = '<!-- loopboard:settings:end -->';
+
+// The feature showcase is hand-written ONCE, in docs/showcase/README.md (next to its GIFs), and
+// copied into README.md between the same sentinels it carries there. Relative links are resolved
+// against docs/showcase/ and made absolute, because README.md also renders on the Marketplace page,
+// where a repo-relative path means nothing.
+const SHOWCASE_SRC = 'docs/showcase/README.md';
+const SHOWCASE_BEGIN = '<!-- loopboard:showcase:begin -->';
+const SHOWCASE_END = '<!-- loopboard:showcase:end -->';
+const RAW_BASE = 'https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/';
 
 // Behaviours that are documented prose rather than a manifest entry, so coverage cannot be derived
 // from package.json alone. Each is a feature the README must keep describing; the regex is matched
@@ -87,22 +96,44 @@ function renderSettings(manifest) {
   return out.join('\n');
 }
 
-function splitReadme(text) {
-  const begin = text.indexOf(BEGIN);
-  const end = text.indexOf(END);
-  if (begin === -1 || end === -1) {
-    throw new Error(`README.md is missing the ${BEGIN} / ${END} sentinels — add them around the settings region first.`);
+function splitReadme(text, begin = BEGIN, end = END, file = 'README.md') {
+  const b = text.indexOf(begin);
+  const e = text.indexOf(end);
+  if (b === -1 || e === -1) {
+    throw new Error(`${file} is missing the ${begin} / ${end} sentinels — add them around the region first.`);
   }
-  if (end < begin) throw new Error('README.md has the settings sentinels in the wrong order.');
-  return { head: text.slice(0, begin), tail: text.slice(end + END.length) };
+  if (e < b) throw new Error(`${file} has the ${begin} / ${end} sentinels in the wrong order.`);
+  return { head: text.slice(0, b), inner: text.slice(b + begin.length, e), tail: text.slice(e + end.length) };
 }
 
-// Idempotent: the region is fully replaced from the manifest, so running twice is a no-op.
+// A relative URL in `src="…"`, `href="…"` or a markdown `](…)` becomes an absolute raw URL on main.
+// Absolute URLs, anchors and root-relative paths are left alone.
+function absolutizeLinks(text, fromDir) {
+  const abs = (url) => (/^([a-z][a-z0-9+.-]*:|#|\/)/i.test(url) ? url : RAW_BASE + path.posix.normalize(path.posix.join(fromDir, url)));
+  return text
+    .replace(/\b(src|href)="([^"]+)"/g, (_, attr, url) => `${attr}="${abs(url)}"`)
+    .replace(/\]\(([^)\s]+)\)/g, (_, url) => `](${abs(url)})`);
+}
+
+function renderShowcase(root) {
+  const source = fs.readFileSync(path.join(root, SHOWCASE_SRC), 'utf8');
+  const { inner } = splitReadme(source, SHOWCASE_BEGIN, SHOWCASE_END, SHOWCASE_SRC);
+  return SHOWCASE_BEGIN + absolutizeLinks(inner, path.posix.dirname(SHOWCASE_SRC)) + SHOWCASE_END;
+}
+
+// Both machine-owned regions, rebuilt from their sources. Pure: returns the text, writes nothing.
+function render(root, current) {
+  const s = splitReadme(current);
+  const withSettings = s.head + renderSettings(readManifest(root)) + s.tail;
+  const w = splitReadme(withSettings, SHOWCASE_BEGIN, SHOWCASE_END);
+  return w.head + renderShowcase(root) + w.tail;
+}
+
+// Idempotent: each region is fully replaced from its source, so running twice is a no-op.
 function generate(root = repoRoot()) {
   const readmePath = path.join(root, 'README.md');
   const current = fs.readFileSync(readmePath, 'utf8');
-  const { head, tail } = splitReadme(current);
-  const next = head + renderSettings(readManifest(root)) + tail;
+  const next = render(root, current);
   if (next === current) return { changed: false };
   fs.writeFileSync(readmePath, next);
   return { changed: true };
@@ -114,11 +145,19 @@ function check(root = repoRoot()) {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const problems = [];
 
-  // 1. The machine-owned region must already equal what generate() would write.
+  // 1. The machine-owned regions must already equal what generate() would write.
   try {
     const { head, tail } = splitReadme(readme);
     if (head + renderSettings(manifest) + tail !== readme) {
       problems.push('settings region is stale — run `generate` (a setting was added, removed or reworded in package.json)');
+    }
+  } catch (err) {
+    problems.push(err.message);
+  }
+  try {
+    const { head, tail } = splitReadme(readme, SHOWCASE_BEGIN, SHOWCASE_END);
+    if (head + renderShowcase(root) + tail !== readme) {
+      problems.push(`showcase region is stale — run \`generate\` (${SHOWCASE_SRC} changed)`);
     }
   } catch (err) {
     problems.push(err.message);
@@ -147,13 +186,13 @@ function check(root = repoRoot()) {
   return problems;
 }
 
-module.exports = { BEGIN, END, renderSettings, generate, check, repoRoot };
+module.exports = { BEGIN, END, SHOWCASE_BEGIN, SHOWCASE_END, RAW_BASE, renderSettings, absolutizeLinks, generate, check, repoRoot };
 
 if (require.main === module) {
   const mode = process.argv[2];
   if (mode === 'generate') {
     const { changed } = generate();
-    console.log(changed ? 'README.md settings region regenerated.' : 'README.md settings region already up to date.');
+    console.log(changed ? 'README.md regions regenerated.' : 'README.md regions already up to date.');
   } else if (mode === 'check') {
     const problems = check();
     if (problems.length === 0) {

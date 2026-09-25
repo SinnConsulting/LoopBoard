@@ -12,11 +12,14 @@ paths:
   `contributes.configuration` in `package.json`. Change the manifest's `default`,
   `markdownDescription`, `order` or `markdownDeprecationMessage`, then regenerate — an edit made
   directly in the README is silently discarded on the next run.
+* **Never hand-edit inside the showcase sentinels either.** `<!-- loopboard:showcase:begin/end -->`
+  is copied from `docs/showcase/README.md`; edit it there and run `make readme`. The settings
+  tables stay the last section of README.md (asserted in `test/readme-settings.test.js`).
 * **A `contributes.*` change is a README change.** Adding, removing, renaming or re-describing a
   setting, command or view means running the `readme-regen` skill in the same change. `make test`
   fails otherwise.
-* **The feature prose stays hand-written.** "Why LoopBoard?", "Small on purpose" and the board
-  walkthrough are never machine-generated. The tool only checks coverage and flags drift; a
+* **The feature prose stays hand-written.** The showcase page and README.md's own sections ("Small
+  on purpose", "Get started", security, the settings prose) are never machine-generated. The tool only checks coverage and flags drift; a
   failure means write the missing sentence, not loosen the check.
 * **The line budget backstop.** `test/readme-settings.test.js` asserts the settings region is
   byte-equal to the generator's output and that every command/view/documented behaviour still has
