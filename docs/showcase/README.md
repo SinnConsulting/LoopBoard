@@ -28,80 +28,34 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
 
 ---
 
-## Features at a glance
+## Features
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>1 · Getting started</h3>
-      <p>One click creates <code>.loopboard/</code> with <code>TODO.md</code>, <code>LOOP.md</code> and <code>tasks/</code>.</p>
-      <a href="gifs/09-getting-started.gif"><img src="gifs/09-getting-started.gif" width="100%" alt="Initialize scaffolds .loopboard/ and the first story is written" /></a>
-    </td>
-    <td width="50%" valign="top">
-      <h3>2 · Write a story in plain words</h3>
-      <p>A groomer loop turns it into problem, description, goals and questions for you.</p>
-      <a href="gifs/02-new-story.gif"><img src="gifs/02-new-story.gif" width="100%" alt="A plain-text story becomes a DRAFT and the Opus loop grooms it into problem, description, goals and a question" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>3 · Promote &amp; demote</h3>
-      <p>Promote puts a story in the Backlog, the only place loops take work from. Demote takes it back.</p>
-      <a href="gifs/03-gates.gif"><img src="gifs/03-gates.gif" width="100%" alt="Promote moves a story to Backlog, Demote sends it back to New" /></a>
-    </td>
-    <td width="50%" valign="top">
-      <h3>4 · Answer questions</h3>
-      <p>A stuck loop parks the task in Feedback instead of guessing. Answer, and it resumes.</p>
-      <a href="gifs/04-feedback.gif"><img src="gifs/04-feedback.gif" width="100%" alt="A task parked in Feedback; accepting a suggested answer lets the loop resume" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>5 · Review, send back or approve</h3>
-      <p>Review feedback sends the task back for rework. Approve archives it to <code>DONE.md</code>.</p>
-      <a href="gifs/05-review.gif"><img src="gifs/05-review.gif" width="100%" alt="Review feedback sends a task back; the loop reworks it; Approve archives it to DONE.md" /></a>
-    </td>
-    <td width="50%" valign="top">
-      <h3>6 · Loop terminals</h3>
-      <p>▶ starts one Claude Code terminal per model, with live context usage. Right-click to schedule.</p>
-      <a href="gifs/06-loops.gif"><img src="gifs/06-loops.gif" width="100%" alt="Starting loops, watching context usage and scheduling a restart" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>7 · Markdown is the source of truth</h3>
-      <p>A click rewrites <code>TODO.md</code>; an edit to <code>TODO.md</code> repaints the board. No database.</p>
-      <a href="gifs/07-markdown.gif"><img src="gifs/07-markdown.gif" width="100%" alt="Promoting rewrites TODO.md; editing TODO.md repaints the board" /></a>
-    </td>
-    <td width="50%" valign="top">
-      <h3>8 · Settings</h3>
-      <p>Every model in one grid: <code>--model</code>, effort, groomers. Plain VS Code user settings.</p>
-      <a href="gifs/08-settings.gif"><img src="gifs/08-settings.gif" width="100%" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
-    </td>
-  </tr>
-</table>
+### 1 · Getting started
 
----
+One click creates `.loopboard/` with `TODO.md`, `LOOP.md` and `tasks/`.
 
-## Details
+<p align="center">
+  <a href="gifs/09-getting-started.gif"><img src="gifs/09-getting-started.gif" width="860" alt="Initialize scaffolds .loopboard/ and the first story is written" /></a>
+</p>
 
 <details>
-<summary><b>1 · Getting started</b></summary>
+<summary>Details</summary>
 
 Click **Initialize LoopBoard workspace** or run **`LoopBoard: Initialize Workspace`**. It refuses
-if `.loopboard/` already exists.
-
-| File | Holds |
-|---|---|
-| `TODO.md` | The task index: id, phase, model, groomer, questions |
-| `LOOP.md` | The rules every loop re-reads on each pass |
-| `tasks/<id>.md` | Per task: problem, description, goals, worklog, delivered |
-| `DONE.md` | Approved work, newest first; created on the first approval |
+if `.loopboard/` already exists. What each file holds: [Storage layout](#storage-layout).
 
 </details>
 
+### 2 · Write a story in plain words
+
+A groomer loop turns it into problem, description, goals and questions for you.
+
+<p align="center">
+  <a href="gifs/02-new-story.gif"><img src="gifs/02-new-story.gif" width="860" alt="A plain-text story becomes a DRAFT and the Opus loop grooms it into problem, description, goals and a question" /></a>
+</p>
+
 <details>
-<summary><b>2 · Write a story in plain words</b></summary>
+<summary>Details</summary>
 
 Click **New Story**, write it like you'd brief a colleague, and pick who **grooms** and who
 **builds** it. The groomer loop expands it in a subagent (visible under **Agents** in the sidebar):
@@ -116,8 +70,16 @@ the story.
 
 </details>
 
+### 3 · Promote & demote
+
+Promote puts a story in the Backlog, the only place loops take work from. Demote takes it back.
+
+<p align="center">
+  <a href="gifs/03-gates.gif"><img src="gifs/03-gates.gif" width="860" alt="Promote moves a story to Backlog, Demote sends it back to New" /></a>
+</p>
+
 <details>
-<summary><b>3 · Promote &amp; demote</b></summary>
+<summary>Details</summary>
 
 - **Promote** moves a story from New to **Backlog**, the only place a loop claims work from.
 - **Demote** moves it back to New, nothing lost — refused once a loop has claimed it.
@@ -127,8 +89,16 @@ At most one task is **In Progress** across the board; the sidebar shows which.
 
 </details>
 
+### 4 · Answer questions
+
+A stuck loop parks the task in Feedback instead of guessing. Answer, and it resumes.
+
+<p align="center">
+  <a href="gifs/04-feedback.gif"><img src="gifs/04-feedback.gif" width="860" alt="A task parked in Feedback; accepting a suggested answer lets the loop resume" /></a>
+</p>
+
 <details>
-<summary><b>4 · Answer questions</b></summary>
+<summary>Details</summary>
 
 A loop that needs your decision parks the task in **Feedback** and stops. Once every question is
 answered, the loop resumes it. LoopBoard also **nudges** that loop's terminal, so it acts now
@@ -136,8 +106,16 @@ instead of on its next pass — without interrupting work in flight.
 
 </details>
 
+### 5 · Review, send back or approve
+
+Review feedback sends the task back for rework. Approve archives it to `DONE.md`.
+
+<p align="center">
+  <a href="gifs/05-review.gif"><img src="gifs/05-review.gif" width="860" alt="Review feedback sends a task back; the loop reworks it; Approve archives it to DONE.md" /></a>
+</p>
+
 <details>
-<summary><b>5 · Review, send back or approve</b></summary>
+<summary>Details</summary>
 
 Delivered work lands in **Review** with its `## Delivered` summary and a link to its PR or branch.
 
@@ -148,8 +126,16 @@ Loops never commit to `main` and never merge. Merging is your call.
 
 </details>
 
+### 6 · Loop terminals
+
+▶ starts one Claude Code terminal per model, with live context usage. Right-click to schedule.
+
+<p align="center">
+  <a href="gifs/06-loops.gif"><img src="gifs/06-loops.gif" width="860" alt="Starting loops, watching context usage and scheduling a restart" /></a>
+</p>
+
 <details>
-<summary><b>6 · Loop terminals</b></summary>
+<summary>Details</summary>
 
 Each **▶** opens a VS Code terminal named `Claude <Model>` running one command:
 
@@ -170,8 +156,16 @@ line is the real one.
 
 </details>
 
+### 7 · Markdown is the source of truth
+
+A click rewrites `TODO.md`; an edit to `TODO.md` repaints the board. No database.
+
+<p align="center">
+  <a href="gifs/07-markdown.gif"><img src="gifs/07-markdown.gif" width="860" alt="Promoting rewrites TODO.md; editing TODO.md repaints the board" /></a>
+</p>
+
 <details>
-<summary><b>7 · Markdown is the source of truth</b></summary>
+<summary>Details</summary>
 
 - **Board → file.** Each save re-reads the file, changes one field and writes it back atomically
   (temp file + rename), so you, the board and several loops can share it safely.
@@ -182,8 +176,16 @@ line is the real one.
 
 </details>
 
+### 8 · Settings
+
+Every model in one grid: `--model`, effort, groomers. Plain VS Code user settings.
+
+<p align="center">
+  <a href="gifs/08-settings.gif"><img src="gifs/08-settings.gif" width="860" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
+</p>
+
 <details>
-<summary><b>8 · Settings</b></summary>
+<summary>Details</summary>
 
 The sidebar's **Settings** row opens LoopBoard's settings page. One grid covers every model:
 **on**, **default worker**, **default groomer**, **`--model`**, **effort**, **groomers**. Other
@@ -238,8 +240,9 @@ section.
 - **Live.** Loops re-read `LOOP.md` every pass; no restart needed. LoopBoard never reads or edits
   the section.
 - **Survives template sync.** Sync (on activation while `loopBoard.autoSyncTemplates` is on, or
-  **Synchronise Templates** on the settings page) rewrites only `loopboard:sync:` blocks. Exception: a `LOOP.md` with no
-  `loopboard:sync:` markers at all is replaced whole, after a backup to `.loopboard/LOOP.md.bkp`.
+  **Synchronise Templates** on the settings page) rewrites only `loopboard:sync:` blocks.
+  Exception: a `LOOP.md` with no `loopboard:sync:` markers at all is replaced whole, after a backup
+  to `.loopboard/LOOP.md.bkp`.
 - **Custom wins.** Where a custom rule contradicts a built-in Rule, loops follow yours.
 
 ---
