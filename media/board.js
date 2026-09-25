@@ -581,7 +581,7 @@
   }
 
   // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
-  // textarea/input (description, title, draft, note). Blurring BEFORE render() matters: render()'s
+  // textarea/input (description, title, draft, note, feedback). Blurring BEFORE render() matters: render()'s
   // captureActiveField() reads document.activeElement at the very start, still pointing at the
   // about-to-be-removed field if we haven't blurred yet — so it recaptures a field that edit mode
   // just closed, and restoreActiveField() then either re-opens it or (since the post-close view has
@@ -596,8 +596,8 @@
   }
 
   // ---- shared editable-field exit (t-471a): click-outside COMMITS, ESC CANCELS ----
-  // Every editable field (description/title/draft-text/note toggle between a view and an
-  // editor; answer/feedback are always a textarea) registers itself here while its editor is
+  // Every editable field (description/title/draft-text/note/feedback toggle between a view and
+  // an editor; answer is always a textarea) registers itself here while its editor is
   // open. A single document-level `pointerdown` listener — capture phase, so it resolves before
   // any button's own pointerdown-commit handler (makeGateButton et al.) runs — detects a click
   // outside the active editor's container and commits it. This is deliberately NOT a per-field
@@ -2061,64 +2061,77 @@
       });
       wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
     }
-    if (t.feedback) {
+    // Feedback is ONE collapsible block with three exclusive states on `u.feedbackOpen` (t-2622,
+    // the note's collapse idiom, not its look — amber marks a Rule 13 change request): editing
+    // composer / saved amber block with edit+delete / empty-state button. The composer only exists
+    // while open, and `edit` seeds it with the FULL saved text, so the whole-value replace of the
+    // 'feedback' patch never drops lines the reviewer did not see.
+    if (u.feedbackOpen) {
+      const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
+      ta.value = u.feedbackDraft || '';
+      autoGrow(ta);
+      if (u.feedbackNeedsFocus) { u.feedbackNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
+      const commitFeedback = () => {
+        clearActiveEditor(feedbackFieldWrap);
+        const val = ta.value.trim();
+        if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
+        commitPatch(t.id, 'feedback', val, t.feedback || '', t, 'feedback');
+        u.feedbackDraft = '';
+        u.feedbackOpen = false;
+        render(); // paint the echoed feedback into the amber block now, not on the confirming refresh
+      };
+      const saveBtn = h('button', {
+        class: 'btn-sm primary field-save-btn', type: 'button',
+        disabled: (u.feedbackDraft || '').trim().length === 0,
+        title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
+      }, 'Save');
+      ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
+      ta.addEventListener('keydown', (e) => {
+        // Escape closes the composer without committing: the draft is dropped and any saved
+        // feedback stays as it was (collapsed amber block, or the empty-state button).
+        if (e.key === 'Escape') { exitFieldEdit(() => { u.feedbackOpen = false; u.feedbackDraft = ''; }, feedbackFieldWrap); return; }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
+      });
+      // Register when it gains focus (t-471a), same idiom the note composer uses: its empty-draft
+      // no-op commit leaves the composer open, and the next focus re-registers it.
+      ta.addEventListener('focus', () => setActiveEditor(feedbackFieldWrap, commitFeedback));
+      const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
+        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
+        commitFeedback();
+      });
+      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+      // alongside the existing silent drag-drop/paste support.
+      const feedbackAttachBtn = h('button', {
+        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+        onclick: () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.addEventListener('change', () => { if (input.files && input.files[0]) stageFeedback(input.files[0]); });
+          input.click();
+        },
+      }, '＋ Attach');
+      const feedbackFieldWrap = h('div', {}, ta,
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
+          saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+      wrap.append(feedbackFieldWrap);
+    } else if (t.feedback) {
       const feedbackText = h('span', { html: mdToHtml(t.feedback) });
       feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
       const feedbackAttachArea = renderFieldAttachmentsArea(t.feedback, (newVal) => sendPatch(t.id, 'feedback', newVal, t.feedback), t.id);
       wrap.append(h('div', { class: 'amber-block' },
-        h('div', { class: 'amber-label' }, 'Your pending feedback'),
+        h('div', { class: 'qa-note-head' },
+          h('div', { class: 'amber-label' }, 'Your pending feedback'),
+          h('div', { class: 'qa-note-tools' },
+            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.feedbackDraft = t.feedback; u.feedbackOpen = true; u.feedbackNeedsFocus = true; render(); } }, 'edit'),
+            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { commitPatch(t.id, 'feedback', '', t.feedback, t, 'feedback'); render(); } }, 'delete'))),
         h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText),
         feedbackAttachArea));
+    } else {
+      wrap.append(h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.feedbackOpen = true; u.feedbackNeedsFocus = true; render(); } },
+        '＋ Review feedback'));
     }
-    const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
-    ta.value = u.feedbackDraft || '';
-    autoGrow(ta);
-    const commitFeedback = () => {
-      clearActiveEditor(feedbackFieldWrap);
-      const val = ta.value.trim();
-      if (!val) return;
-      commitPatch(t.id, 'feedback', val, t.feedback || '', t, 'feedback');
-      u.feedbackDraft = '';
-      ta.value = '';
-      saveBtn.disabled = true;
-      render(); // paint the echoed feedback into the amber block now, not on the confirming refresh
-    };
-    const saveBtn = h('button', {
-      class: 'btn-sm primary field-save-btn', type: 'button',
-      disabled: (u.feedbackDraft || '').trim().length === 0,
-      title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
-    }, 'Save');
-    ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
-    ta.addEventListener('keydown', (e) => {
-      // Feedback has no separate view mode to close — Escape discards the draft (there is no
-      // saved value to revert to) and releases focus (previously a dead key here, t-esc1).
-      if (e.key === 'Escape') { clearActiveEditor(feedbackFieldWrap); ta.value = ''; u.feedbackDraft = ''; autoGrow(ta); saveBtn.disabled = true; ta.blur(); return; }
-      if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
-    });
-    // Always-textarea field, no view↔edit toggle to key registration off — register when it
-    // gains focus (t-471a), same idiom the note composer/answer field use.
-    ta.addEventListener('focus', () => setActiveEditor(feedbackFieldWrap, commitFeedback));
-    const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
-      insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-      commitFeedback();
-    });
-    // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
-    // alongside the existing silent drag-drop/paste support.
-    const feedbackAttachBtn = h('button', {
-      class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
-      onclick: () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.addEventListener('change', () => { if (input.files && input.files[0]) stageFeedback(input.files[0]); });
-        input.click();
-      },
-    }, '＋ Attach');
-    const feedbackFieldWrap = h('div', {}, ta,
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-        saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
-    wrap.append(feedbackFieldWrap);
     return wrap;
   }
 

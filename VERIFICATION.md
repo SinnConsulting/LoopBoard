@@ -1069,3 +1069,25 @@ and likewise cannot be verified headless.
     the loop groom a New task, then open that grooming subagent's `subagents/*.jsonl` transcript
     under `~/.claude/projects/<encoded cwd>/` → its assistant messages carry `"effort"` equal to the
     loop's session level.
+
+48. **Editable Review feedback (t-2622) — UNTESTED in the live webview:** the three-state
+    structure of `renderReview` is pinned as source text by `test/board-review-feedback.test.js`;
+    the switching, focus and repaint are webview-only (`media/board.js`), so this item is their
+    only acceptance path. **Empty:** a Review card with no `feedback:` shows only a dashed
+    **＋ Review feedback** button, no textarea. Click it → the composer opens with the textarea
+    focused and Save disabled; press Escape → it collapses back to the button, nothing written.
+    **Save:** open it again, type `first point`, Save → the amber "Your pending feedback" block
+    shows `first point` in the same frame (no flash, no textarea beneath it) and `TODO.md` has one
+    `feedback:` sub-bullet. **Edit:** click **edit** → the composer opens focused and prefilled
+    with `first point`; add a second line `second point`, press ⌘S → the block shows both lines
+    at once and `TODO.md` has both `feedback:` sub-bullets (the first was not lost). Click
+    **edit**, change the text, press Escape → the block returns showing the saved text unchanged,
+    nothing written. Clear the whole textarea → Save is disabled. **Delete:** click **delete** →
+    the block returns to the ＋ Review feedback button at once and `TODO.md` has no `feedback:`
+    sub-bullet. **Attachments:** in the open composer (prefilled via **edit**), ＋ Attach a file
+    → its link is inserted after the existing text and saved (attach/paste/drop still commit, as
+    before — t-5b29 owns that); click **edit** again and paste a screenshot → same. The collapsed
+    block keeps the earlier text and renders chips for both, and removing a chip re-commits the
+    text without it. **Loop write
+    while editing:** with the composer focused, let a loop write `TODO.md` → the textarea keeps
+    focus and text until you click out or Escape.
