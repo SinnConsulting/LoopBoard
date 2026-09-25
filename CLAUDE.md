@@ -18,7 +18,7 @@ Storage: everything under `.loopboard/` — `TODO.md` (slim task index, grammar 
 2. Zero runtime dependencies. devDependencies = exactly `typescript` + `@types/vscode`. No
    `@types/node`, no bundler, no frameworks; webview = vanilla HTML/CSS/JS.
 3. `.loopboard/` markdown = source of truth. Index (`TODO.md`, grammar v5) carries only
-   id/phase/model/groomer/questions/notes per entry; every other field lives in `tasks/<id>.md`.
+   id/phase/model/groomer/questions/feedback per entry; every other field lives in `tasks/<id>.md`.
    Parse tolerantly, write back canonical on every save, preserve unparseable lines verbatim
    (flagged in UI). Grammar + task-file format documented in `LOOP.md`.
 4. ALL markdown IO goes through `src/store.ts` — only module that knows `.loopboard/` paths; merge

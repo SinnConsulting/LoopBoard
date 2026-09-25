@@ -22,7 +22,7 @@ function readFix(name) {
 }
 
 test('patchTarget routes fields to the right file', () => {
-  for (const f of ['title', 'model', 'groomer', 'answer', 'answers', 'note', 'feedback']) assert.equal(patchTarget(f), 'index', f);
+  for (const f of ['title', 'model', 'groomer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
   for (const f of ['description', 'problem', 'goals']) assert.equal(patchTarget(f), 'detail', f);
 });
 
@@ -112,41 +112,102 @@ test('clearing problem or goals to whitespace drops the section (same trim rule 
   assert.equal(detail.goals, undefined);
 });
 
-test('note is an index field: edits the whole set, split on newlines, drop empties', () => {
-  const doc = parseTodo(readFix('index-full.md'));
-  const entry = doc.entries.find((e) => e.id === 't-bb01');
-  // The webview joins notes with \n as the rendered base.
-  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count.';
-  assert.equal(currentFieldValue(entry, 'note'), base);
-  const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: 'first\n\n  \nsecond\n', base });
-  assert.equal(r.status, 'applied');
-  assert.deepEqual(doc.entries.find((e) => e.id === 't-bb01').notes, ['first', 'second']);
+// ---- per-item feedback patches (t-ae10). The whole-set `note`/`feedback` value patches are gone:
+// `feedbackAdd` appends with no base, `feedbackItem` edits/deletes ONE item by index + its own base.
+const A = 'Rebase on main before opening the PR.';
+const B = 'Add a metric for retry count.';
+const fbOf = (doc, id) => doc.entries.find((e) => e.id === id).feedback;
+
+test('the feedback patch kinds route to the index file', () => {
+  for (const f of ['feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
 });
 
-test('clearing note via empty value empties the set', () => {
+test('feedbackAdd appends one item at the end, splitting line breaks and dropping empties', () => {
   const doc = parseTodo(readFix('index-full.md'));
-  const base = 'Rebase on main before opening the PR.\nAdd a metric for retry count.';
-  const r = applyPatch(doc, { taskId: 't-bb01', field: 'note', value: '', base });
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B]);
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: 'third', base: '' });
   assert.equal(r.status, 'applied');
-  assert.deepEqual(doc.entries.find((e) => e.id === 't-bb01').notes, []);
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B, 'third']);
+  applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: 'x\n\n  \ny\n', base: '' });
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B, 'third', 'x', 'y']);
 });
 
-test('feedback is an index field: edits the whole set, split on newlines, drop empties', () => {
+test('feedbackAdd is a pure append: an item the loop removed meanwhile is no conflict, both changes kept', () => {
   const doc = parseTodo(readFix('index-full.md'));
-  const entry = doc.entries.find((e) => e.id === 't-ee01');
-  const base = 'Redact the auth token from the request log fields.';
-  assert.equal(currentFieldValue(entry, 'feedback'), base);
-  const r = applyPatch(doc, { taskId: 't-ee01', field: 'feedback', value: 'first\n\n  \nsecond\n', base });
+  fbOf(doc, 't-bb01').splice(0, 1); // the loop addressed and deleted item A on disk
+  // The board's deferred refresh still shows [A, B]; the add carries no base that could go stale.
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: 'new point', base: `${A}\n${B}` });
   assert.equal(r.status, 'applied');
-  assert.deepEqual(doc.entries.find((e) => e.id === 't-ee01').feedback, ['first', 'second']);
+  assert.deepEqual(fbOf(doc, 't-bb01'), [B, 'new point']);
 });
 
-test('clearing feedback via empty value empties the set (Rule 13: removed when addressed)', () => {
+test('feedbackAdd also works on a drafted/New entry with no feedback yet', () => {
   const doc = parseTodo(readFix('index-full.md'));
-  const base = 'Redact the auth token from the request log fields.';
-  const r = applyPatch(doc, { taskId: 't-ee01', field: 'feedback', value: '', base });
+  const r = applyPatch(doc, { taskId: 't-aa02', field: 'feedbackAdd', value: 'fold this in', base: '' });
   assert.equal(r.status, 'applied');
-  assert.deepEqual(doc.entries.find((e) => e.id === 't-ee01').feedback, []);
+  assert.deepEqual(fbOf(doc, 't-aa02'), ['fold this in']);
+});
+
+test('feedbackItem edit replaces only its target line, resolved by index + its own base', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'B edited', base: B, itemIndex: 1 });
+  assert.equal(r.status, 'applied');
+  assert.equal(r.removed, B);
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, 'B edited']);
+});
+
+test('feedbackItem delete removes only its target line', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: '', base: A, itemIndex: 0 });
+  assert.equal(r.status, 'applied');
+  assert.equal(r.removed, A);
+  assert.deepEqual(fbOf(doc, 't-bb01'), [B]);
+});
+
+test('feedbackItem falls back to a text match when earlier items were removed (indices shifted)', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  fbOf(doc, 't-bb01').splice(0, 1); // the loop removed A; B moved from index 1 to 0
+  const edit = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'B edited', base: B, itemIndex: 1 });
+  assert.equal(edit.status, 'applied');
+  assert.deepEqual(fbOf(doc, 't-bb01'), ['B edited']);
+
+  const doc2 = parseTodo(readFix('index-full.md'));
+  fbOf(doc2, 't-bb01').unshift('loop-inserted'); // an index that now points at a DIFFERENT line
+  const del = applyPatch(doc2, { taskId: 't-bb01', field: 'feedbackItem', value: '', base: A, itemIndex: 0 });
+  assert.equal(del.status, 'applied');
+  assert.deepEqual(fbOf(doc2, 't-bb01'), ['loop-inserted', B], 'the line at index 0 is not A, so A is found by text');
+});
+
+test('feedbackItem edit splits line breaks into several items at the edit position', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'a1\n\na2', base: A, itemIndex: 0 });
+  assert.deepEqual(fbOf(doc, 't-bb01'), ['a1', 'a2', B]);
+});
+
+test('an edit whose base is gone is the disk-wins conflict; a delete whose base is gone is a noop', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  fbOf(doc, 't-bb01').splice(1, 1); // the loop addressed and removed B
+  const edit = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'B edited', base: B, itemIndex: 1 });
+  assert.equal(edit.status, 'conflict');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A], 'disk wins — nothing written');
+  const del = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: '', base: B, itemIndex: 1 });
+  assert.equal(del.status, 'noop');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A]);
+});
+
+test('changes to OTHER items never cause a conflict', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  fbOf(doc, 't-bb01')[0] = 'A rewritten by the loop';
+  fbOf(doc, 't-bb01').push('C added by hand');
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'B edited', base: B, itemIndex: 1 });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(fbOf(doc, 't-bb01'), ['A rewritten by the loop', 'B edited', 'C added by hand']);
+});
+
+test('feedback patches on an unknown id are notfound', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  assert.equal(applyPatch(doc, { taskId: 't-none', field: 'feedbackAdd', value: 'x', base: '' }).status, 'notfound');
+  assert.equal(applyPatch(doc, { taskId: 't-none', field: 'feedbackItem', value: '', base: 'x', itemIndex: 0 }).status, 'notfound');
 });
 
 test('normalizeModel', () => {

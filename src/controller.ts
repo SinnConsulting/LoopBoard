@@ -933,14 +933,14 @@ export class Controller {
       case 'attach': {
         // t-att1 (any file type since t-058e), drag-drop/paste only (no file-picker button). A
         // whole-card drop (no `field`) appends straight to the task's Description, same as
-        // before. A drop/paste scoped to an already-open Description, answer, feedback, or note
+        // before. A drop/paste scoped to an already-open Description, answer, or feedback
         // field (`field` set, keyed by `reqId`) only stages the bytes here — the webview folds
         // the returned link into that field's own draft value and saves it through the normal
         // field-patch path, so it lands in the right place instead of always the Description.
         const taskId = String(msg.taskId ?? '');
         const filename = String(msg.filename ?? '');
         if (!taskId || !filename || typeof msg.dataBase64 !== 'string') return;
-        const field = msg.field === 'description' || msg.field === 'answer' || msg.field === 'title' || msg.field === 'feedback' || msg.field === 'note' ? msg.field : undefined;
+        const field = msg.field === 'description' || msg.field === 'answer' || msg.field === 'title' || msg.field === 'feedback' ? msg.field : undefined;
         const result = await this.store.stageAttachment(
           taskId, filename, base64ToBytes(msg.dataBase64), this.config().maxAttachmentSizeMB * 1024 * 1024, !field
         );
@@ -966,7 +966,7 @@ export class Controller {
         if (!taskId || !relPath) return;
         const result = await this.store.removeAttachment(taskId, relPath);
         if (msg.reqId) {
-          BoardPanel.current?.post({ type: 'attachRemoved', reqId: msg.reqId, status: result.status, message: result.message, description: result.description, title: result.title });
+          BoardPanel.current?.post({ type: 'attachRemoved', reqId: msg.reqId, status: result.status, message: result.message, description: result.description, title: result.title, feedback: result.feedback });
         } else if (result.status === 'error') {
           this.toast('warning', result.message ?? 'Could not delete that attachment.', taskId);
         }
@@ -1421,7 +1421,8 @@ export class Controller {
   private async onPatch(patch: FieldPatch): Promise<void> {
     const outcome = await this.store.applyFieldPatch(patch);
     if (outcome.status === 'conflict') {
-      this.toast('warning', `Task changed on disk — your edit to ${patch.field} was not applied.`, patch.taskId, undefined, 'sameFieldConflict');
+      const what = patch.field === 'feedbackAdd' || patch.field === 'feedbackItem' ? 'feedback' : patch.field;
+      this.toast('warning', `Task changed on disk — your edit to ${what} was not applied.`, patch.taskId, undefined, 'sameFieldConflict');
     } else if (outcome.status === 'notfound') {
       this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', patch.taskId);
     }
