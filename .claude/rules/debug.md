@@ -54,6 +54,7 @@ paths:
   one poll, 30 s, old), not a fresh read at fire time.
 * **Don't log an echo as an edge.** A read of a session that was just ended (the new process has
   not written its pointer yet) is the old files again; it yields no `agents-*` edge, like a failed
-  read.
+  read. The guard only knows the ended session if the slot had a context reading before the
+  restart (the id comes from `contextUsage`); without one, the echo is not recognised.
 * Use an existing event namespace (`agents-*`, `restart-*`, `context-*`, `loop-*`) before inventing
   a new one, and keep the detail's first token the slot/model or task id it concerns.
