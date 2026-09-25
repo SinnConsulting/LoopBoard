@@ -101,9 +101,10 @@
   let collapsed = migrateCollapsed(saved);
   // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
   // `sections[phaseKey][taskId] = { problem?, description?, goals?, questions?: boolean }`. A
-  // section with no entry falls back to the tab default, which is what makes "expand one card
-  // after Collapse all" show every section folded. New key, so there is nothing to migrate — an
-  // unrecognized value just means "no overrides", i.e. everything follows the default. Ids are
+  // story section (problem/description/goals) with no entry is folded (t-d5f2); `questions` with
+  // no entry falls back to the tab default, which is what makes "expand one card
+  // after Collapse all" show its questions panel folded. New key, so nothing to migrate — an
+  // unrecognized value just means "no overrides", i.e. every section takes its default. Ids are
   // never pruned, for the same reason as `collapsed` above.
   let sections = saved.sections && typeof saved.sections === 'object' ? saved.sections : {};
   // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
@@ -269,12 +270,15 @@
     saveState();
     render();
   }
-  // A section with no override follows the tab default, so Collapse all folds the sections of
-  // every card in the tab and Expand all opens them (t-aee3) — one click always yields a uniform
-  // view, including for cards the user later expands by hand.
+  // Story sections (Problem / Description / Goals) with no override are FOLDED, whatever the tab
+  // default says: an expanded card opens to its one-line previews, and only a section's own
+  // chevron opens it (t-d5f2). The Open questions panel still follows the tab default, so
+  // Collapse all / Expand all fold and open it (t-aee3).
+  const STORY_SECTION_NAMES = ['problem', 'description', 'goals'];
   function isSectionCollapsed(id, name) {
     const over = sections[phase] && sections[phase][id];
-    return over && Object.prototype.hasOwnProperty.call(over, name) ? !!over[name] : phaseDefaultCollapsed();
+    if (over && Object.prototype.hasOwnProperty.call(over, name)) return !!over[name];
+    return STORY_SECTION_NAMES.includes(name) ? true : phaseDefaultCollapsed();
   }
   function toggleSection(id, name) {
     if (!sections[phase]) sections[phase] = {};
@@ -286,10 +290,13 @@
   function setPhaseCollapsed(value) {
     collapsedDefault[phase] = value;
     collapsed[phase] = {};
-    // Wipe the section overrides too, exactly as the card overrides are wiped: the button's whole
-    // point is that one click makes the tab uniform, which a surviving per-section override would
-    // break. Current tab only (t-7679).
-    sections[phase] = {};
+    // Wipe only the Open questions override of each card, so the panel follows the button again.
+    // Story-section overrides survive: Expand all / Collapse all act on cards, and those sections
+    // change only through their own chevron (t-d5f2). Current tab only (t-7679).
+    const tabSections = sections[phase] || {};
+    for (const id of Object.keys(tabSections)) {
+      if (tabSections[id] && typeof tabSections[id] === 'object') delete tabSections[id].questions;
+    }
     saveState();
     render();
   }
