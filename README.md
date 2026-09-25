@@ -320,6 +320,18 @@ them into your workspace's `.claude/agents/`, then add the rule to your custom s
 
 Without the rule, delegation works as before: the loop's own subagents, at the loop's `--effort`.
 
+Why files, and what to know:
+
+- **Effort only comes from the agent file.** Claude Code silently ignores an effort passed when a
+  subagent is spawned and runs it at the loop's own effort; the `effort:` frontmatter is honoured.
+  Model is the opposite: passed per spawn it wins, and a file without `model:` silently inherits
+  the loop's model — hence the rule's "every spawn MUST pass `model`".
+- **Restart the loop after adding or editing an agent file** (♻). Agent files are read at session
+  start: a running loop answers a new one with `Agent type '…' not found` and keeps spawning the
+  old text of an edited one.
+- **Check effort in the transcript, never by asking.** A subagent asked for its effort makes one
+  up; the `"effort"` field in its JSONL under `~/.claude/projects/` is the truth.
+
 ---
 
 ## Cheat sheet
