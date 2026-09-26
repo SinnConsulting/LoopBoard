@@ -288,3 +288,29 @@ test('template Automation block spells out the delegated-work mode the activatio
   assert.match(fence, /never self-accept/, 'Rule 1 gate survives');
   assert.ok(fence.indexOf('DELEGATED-WORK MODE') > fence.indexOf('reply "no changes"'), 'the clause trails the ordinary pass so the base instructions are untouched');
 });
+
+test('revealStep: the row that last revealed toggles the panel; any other row shows (t-9c3f)', () => {
+  const { revealStep } = require('../out-test/loop.js');
+  assert.equal(revealStep('opus', 'opus'), 'togglePanel', 'same model -> toggle panel');
+  assert.equal(revealStep('sonnet', 'opus'), 'show', 'different model -> show');
+  assert.equal(revealStep(undefined, 'opus'), 'show', 'nothing revealed -> show');
+});
+
+test('template: one feedback rule, no note: grammar and no Rule 16 (t-ae10)', () => {
+  const tpl = readMedia('template-loop.md');
+  assert.doesNotMatch(tpl, /^\s*- note: </m, 'no note: grammar line');
+  assert.doesNotMatch(tpl, /^16\. /m, 'Rule 16 is gone');
+  assert.doesNotMatch(tpl, /Rule 16/, 'nothing still points at it');
+  assert.match(tpl, /- feedback: <text> +\(repeatable, single line; any phase incl\. drafts;/);
+  assert.match(tpl, /legacy `note:` = `feedback:`/);
+  assert.match(tpl, /optional `model:`\/`groomer:`\/`feedback:`/, 'drafts may carry feedback');
+  const rule13 = tpl.slice(tpl.indexOf('\n13. '), tpl.indexOf('\n14. '));
+  assert.match(rule13, /On Review → move to In Progress/, 'Review reopens');
+  assert.match(rule13, /Backlog\/In Progress\/Feedback → apply in place \(no\s+phase move\)/, 'other phases apply in place');
+  assert.match(rule13, /New\/DRAFT → the groomer's \(Rule 14\)/);
+  const rule14 = tpl.slice(tpl.indexOf('\n14. '), tpl.indexOf('\n15. '));
+  assert.match(rule14, /A New\/DRAFT `feedback:` →\s+the groomer folds it into the story/);
+  const fence = automationFence(tpl);
+  assert.match(fence, /\(6\) Apply in place, with no phase move, and then delete any `feedback:` sub-bullet/);
+  assert.doesNotMatch(fence, /`note:`/, 'the Automation steps name no note');
+});

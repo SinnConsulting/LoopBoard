@@ -190,8 +190,9 @@ export interface IndexEntry {
   model?: Model;
   groomer?: GroomerValue; // which model grooms this task (absent = default model; 'none' = on hold)
   questions: Question[];
-  notes: string[]; // unprocessed human worker-notes (Rule 16): applied then deleted, index-only
-  feedback: string[]; // Review change requests (Rule 13): index-only, removed when addressed
+  // Human feedback, one item per `feedback:` line, any phase incl. drafts (Rule 13; t-ae10 folded the
+  // old `note:` key in here): index-only, removed once applied or folded.
+  feedback: string[];
   completed?: string; // DONE.md entries only
   unknownLines: string[]; // preserved verbatim, flagged in UI
   raw: string; // original block text, for conflict detection

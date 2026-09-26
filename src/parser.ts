@@ -18,8 +18,8 @@
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
-//     - note: <text>                         (repeatable; unprocessed human worker-note, Rule 16)
-//     - feedback: <text>                     (repeatable; Review change request, Rule 13)
+//     - feedback: <text>                     (repeatable; any phase incl. drafts, Rule 13;
+//                                             a legacy `note:` line reads as `feedback:`, t-ae10)
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
 //   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
 //   `rev:` was removed from the grammar (t-f1b0) and is recognized only to be DROPPED, see below.
@@ -53,7 +53,6 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
     checked,
     isDraft: /^DRAFT:/i.test(title),
     questions: [],
-    notes: [],
     feedback: [],
     unknownLines: [],
     raw: lines.join('\n'),
@@ -111,9 +110,9 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
           return true;
         }
         return false;
+      // `note:` was folded into `feedback:` (t-ae10): a legacy line reads as a feedback item in
+      // encounter order, and the writer emits only `feedback:`, so the file canonicalizes on save.
       case 'note':
-        entry.notes.push(v);
-        return true;
       case 'feedback':
         entry.feedback.push(stripLeadingEmoji(v));
         return true;
@@ -151,6 +150,10 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
   return entry;
 }
 
+function opensComment(line: string): boolean {
+  return line.trim().startsWith('<!--');
+}
+
 // Split a section body into entry blocks and preserved extra lines (HTML comments etc).
 function parseSection(bodyLines: string[], phase: Phase, allowCompleted: boolean): { entries: IndexEntry[]; extras: string } {
   const entries: IndexEntry[] = [];
@@ -158,8 +161,10 @@ function parseSection(bodyLines: string[], phase: Phase, allowCompleted: boolean
   let i = 0;
   while (i < bodyLines.length) {
     const line = bodyLines[i];
-    // HTML comment block: preserve verbatim, even if it contains task-like lines.
-    if (line.includes('<!--')) {
+    // HTML comment block: preserve verbatim, even if it contains task-like lines. It opens only at a
+    // line whose text STARTS with the opener (t-c4d1): entry lines start with `- [` or an indented
+    // `- `, so an opener inside a title, answer or feedback value never opens a comment.
+    if (opensComment(line)) {
       const block: string[] = [line];
       i++;
       while (i < bodyLines.length && !block[block.length - 1].includes('-->')) {
@@ -172,7 +177,7 @@ function parseSection(bodyLines: string[], phase: Phase, allowCompleted: boolean
     if (TASK_RE.test(line)) {
       const block: string[] = [line];
       i++;
-      while (i < bodyLines.length && !TASK_RE.test(bodyLines[i]) && !bodyLines[i].includes('<!--')) {
+      while (i < bodyLines.length && !TASK_RE.test(bodyLines[i]) && !opensComment(bodyLines[i])) {
         block.push(bodyLines[i]);
         i++;
       }

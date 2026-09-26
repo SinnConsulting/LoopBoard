@@ -15,6 +15,12 @@ size.
 
 <!-- Everything between the showcase sentinels is copied into the root README.md by `make readme`
      (relative links made absolute). Edit it HERE, never in README.md. -->
+<!-- Release visuals (t-7e1a): to show a GIF in the GitHub Release that ships its feature, add the
+     trailer `Release-Visual: <file>.gif` (one bare file name under docs/showcase/gifs/, one trailer
+     per GIF) to any commit in that release — squash merges keep it. The release job appends the GIF
+     after Features / Bug Fixes, captioned with the alt text of its <img src="gifs/<file>"> on this
+     page (no <img> here = skipped), and pinned to the tag. A GIF merely added or re-recorded
+     without the trailer is never announced; a GIF-only PR rides the next real release. -->
 <!-- loopboard:showcase:begin -->
 
 ## The whole loop in 17 seconds
@@ -213,6 +219,22 @@ settings are grouped below.
         <li>A restart or stop <b>waits</b> while the loop is working on the In Progress task or still has a subagent running, then fires.</li>
         <li><b>Force</b> skips the wait. A modal asks once, when you arm it: a forced restart or stop leaves the task In Progress with nobody on it.</li>
         <li>Schedules last until VS Code reloads.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>Right-click Promote</b><br>
+      <sub>Promote it once the questions are folded in.</sub><br>
+      <a href="gifs/11-auto-promote.gif"><img src="gifs/11-auto-promote.gif" width="100%" alt="Right-clicking Promote on a New story with an open question arms it and the check turns into a spinner; the question is answered, the groomer folds it in, and the story promotes itself to Backlog" /></a>
+    </td>
+    <td width="67%" valign="top">
+      <ul>
+        <li><b>Right-click</b> Promote on a New story to arm an automatic promote: the check becomes a spinner. Left-click still promotes immediately.</li>
+        <li>The arm waits while a question is open or answered but not yet folded in, or <code>feedback:</code> is pending. New questions from a re-groom never disarm it.</li>
+        <li>Once nothing is left open for 30 seconds, LoopBoard promotes the story to the Backlog and says so in a toast.</li>
+        <li>A draft can be armed too: it promotes after its groom once nothing is left open. Right-click again to cancel.</li>
+        <li>Arms last until VS Code reloads.</li>
       </ul>
     </td>
   </tr>

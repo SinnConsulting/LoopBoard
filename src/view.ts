@@ -22,11 +22,14 @@ export interface WebTask {
   problem: string;
   description: string;
   goals: string;
-  note: string | null;
   questions: { text: string; answer: string; answered: boolean; suggestions: string[] }[];
-  feedback: string | null;
+  feedback: string[]; // one item per `feedback:` line (t-ae10), any phase; [] when none
   delivered: string | null;
   unparsedLines: string[] | null;
+  // Right-click Promote (t-39e2): true while the controller holds a session-only auto-promote arm
+  // for this task. The webview never guesses it; the Promote button shows a spinner instead of the
+  // check. Always false outside New.
+  autoPromote: boolean;
 }
 
 export interface LoopStatus {
@@ -118,7 +121,7 @@ function doneIdSet(board: Board): Set<string> {
   return s;
 }
 
-function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
+function taskToWeb(t: Task, doneIds: Set<string>, armed: ReadonlySet<string>): WebTask {
   return {
     id: t.id,
     phase: t.phase,
@@ -137,11 +140,11 @@ function taskToWeb(t: Task, doneIds: Set<string>): WebTask {
     problem: t.problem ?? '',
     description: t.description ?? '',
     goals: t.goals ?? '',
-    note: t.notes.length ? t.notes.join('\n') : null,
     questions: t.questions.map((q) => ({ text: q.text, answer: q.answer, answered: q.answer.trim().length > 0, suggestions: q.suggestions || [] })),
-    feedback: t.feedback.length ? t.feedback.join('\n') : null,
+    feedback: t.feedback,
     delivered: t.delivered ?? null,
     unparsedLines: t.unknownLines.length ? t.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
+    autoPromote: armed.has(t.id),
   };
 }
 
@@ -164,11 +167,11 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     problem: e.problem ?? '',
     description: e.description ?? '',
     goals: e.goals ?? '',
-    note: null,
     questions: [],
-    feedback: null,
+    feedback: [],
     delivered: e.delivered ?? null,
     unparsedLines: e.unknownLines.length ? e.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
+    autoPromote: false,
   };
 }
 
@@ -221,7 +224,9 @@ export function toWebviewBoard(
   defaultWorkerModel: Model,
   loops: LoopStatus[],
   models: Model[] = [],
-  defaultGroomerModel: Model = defaultWorkerModel
+  defaultGroomerModel: Model = defaultWorkerModel,
+  // Task ids holding an auto-promote arm (t-39e2), from the controller's session-only map.
+  autoPromote: ReadonlySet<string> = new Set()
 ): WebBoard {
   const doneIds = doneIdSet(board);
   const phases: Record<Phase, WebTask[]> = {
@@ -233,7 +238,7 @@ export function toWebviewBoard(
     done: [],
   };
   for (const t of board.tasks) {
-    phases[t.phase].push(taskToWeb(t, doneIds));
+    phases[t.phase].push(taskToWeb(t, doneIds, autoPromote));
   }
   phases.done = board.done.slice(0, 50).map((e) => doneEntryToWeb(e, doneIds));
 

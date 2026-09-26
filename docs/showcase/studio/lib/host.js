@@ -50,6 +50,7 @@ class Host {
     this.pending = new Set();
     this.nudges = {}; // model -> last nudge line
     this.lastTasks = undefined;
+    this.autoPromote = new Set(); // task ids armed by a right-click on Promote (session-only, t-39e2)
     this.canonicalize();
   }
 
@@ -145,7 +146,7 @@ class Host {
     });
     const worker = this.setting('defaultWorkerModel', 'sonnet');
     const groomer = this.setting('defaultGroomerModel', 'opus');
-    const web = toWebviewBoard(board, 'acme-api', worker, loops, enabled, groomer);
+    const web = toWebviewBoard(board, 'acme-api', worker, loops, enabled, groomer, this.autoPromote);
     web.todoMissing = this.todoMissing;
     web.helpUrl = 'https://github.com/SinnConsulting/LoopBoard#get-started';
     web.maxAttachmentSizeMB = 10;
@@ -216,6 +217,14 @@ class Host {
         return this.onPatch(msg.patch);
       case 'gate':
         return this.onGate(msg.taskId, msg.action);
+      // Right-click Promote (controller.onArmPromote / disarmPromote): only the arm set changes;
+      // the auto-promote itself is fired by the scene, since its quiet period is scripted time.
+      case 'armPromote':
+        this.autoPromote.add(msg.taskId);
+        return this.refresh();
+      case 'disarmPromote':
+        this.autoPromote.delete(msg.taskId);
+        return this.refresh();
       case 'createDraft':
         this.createDraft(msg.text, msg.groomer || this.setting('defaultGroomerModel', 'opus'), msg.model || this.setting('defaultWorkerModel', 'sonnet'));
         await this.toast('info', 'Draft saved — the loop will groom it into a story.');
@@ -264,6 +273,7 @@ class Host {
     const text = this.read(`tasks/${taskId}.md`);
     const detail = text === undefined ? emptyDetail() : parseTaskFile(text);
     if (action === 'promote') {
+      this.autoPromote.delete(taskId);
       gates.promoteIndex(entry);
       gates.promoteDetail(detail, this.today);
       this.write('TODO.md', serializeTodo(doc));

@@ -12,7 +12,7 @@ function task(over) {
     {
       id: 't-x', title: 'T', phase: 'backlog', checked: false, isDraft: false,
       questions: [], hasDetailFile: true,
-      worklog: [], links: [], dependsOn: [], notes: [], feedback: [], unknownLines: [],
+      worklog: [], links: [], dependsOn: [], feedback: [], unknownLines: [],
       raw: '',
     },
     over
@@ -99,22 +99,20 @@ test('groomer: none reaches the webview payload uncoerced', () => {
   assert.equal(web.phases.new[0].groomer, 'none');
 });
 
-test('note maps from notes[] joined with newlines', () => {
+test('feedback maps to the feedback[] item list on every phase (t-ae10); the note field is gone', () => {
   const board = {
     preamble: '', done: [],
-    tasks: [task({ id: 't-1', phase: 'inprogress', notes: ['a', 'b'] })],
+    tasks: [
+      task({ id: 't-1', phase: 'inprogress', feedback: ['a', 'b'] }),
+      task({ id: 't-2', phase: 'review', feedback: ['c'] }),
+      task({ id: 't-3', phase: 'backlog' }),
+    ],
   };
   const web = toWebviewBoard(board, 'ws', 'opus', []);
-  assert.equal(web.phases.inprogress[0].note, 'a\nb');
-});
-
-test('feedback maps from feedback[] joined with newlines', () => {
-  const board = {
-    preamble: '', done: [],
-    tasks: [task({ id: 't-1', phase: 'review', feedback: ['a', 'b'] })],
-  };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
-  assert.equal(web.phases.review[0].feedback, 'a\nb');
+  assert.deepEqual(web.phases.inprogress[0].feedback, ['a', 'b']);
+  assert.deepEqual(web.phases.review[0].feedback, ['c']);
+  assert.deepEqual(web.phases.backlog[0].feedback, [], 'no feedback = empty list, not null');
+  assert.equal('note' in web.phases.inprogress[0], false);
 });
 
 test('computeConcurrency: nothing In Progress → empty status, no message, not breached', () => {
@@ -242,4 +240,27 @@ test('DONE entries carry problem/goals through as well, so the Done card can sho
   const web = toWebviewBoard(board, 'ws', 'opus', []);
   assert.equal(web.phases.done[0].problem, 'It was broken.');
   assert.equal(web.phases.done[0].goals, '- Fixed.');
+});
+
+// t-39e2: the Promote button's spinner reads the host's arm set, never a webview guess — so the
+// payload must flag exactly the armed ids, drafts included, and nothing else (Done cards never).
+test('autoPromote flags exactly the armed task ids, DRAFTs included', () => {
+  const board = {
+    preamble: '',
+    done: parseDone('## Tasks\n\n- [x] old\n  - id: t-d1\n  - completed: 2026-07-01'),
+    tasks: [
+      task({ id: 't-1', phase: 'new' }),
+      task({ id: 't-2', phase: 'new' }),
+      task({ id: 't-3', phase: 'new', isDraft: true }),
+      task({ id: 't-4', phase: 'new', isDraft: true }),
+      task({ id: 't-5', phase: 'backlog' }),
+    ],
+  };
+  const web = toWebviewBoard(board, 'ws', 'opus', [], [], 'opus', new Set(['t-1', 't-3']));
+  const flagged = Object.values(web.phases).flat().filter((t) => t.autoPromote).map((t) => t.id);
+  assert.deepEqual(flagged, ['t-1', 't-3']);
+  for (const t of Object.values(web.phases).flat()) assert.equal(typeof t.autoPromote, 'boolean', t.id);
+  // Omitted set (every existing caller) = nothing armed.
+  const plain = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(Object.values(plain.phases).flat().some((t) => t.autoPromote), false);
 });

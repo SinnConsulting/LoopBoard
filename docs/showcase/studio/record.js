@@ -17,7 +17,9 @@ const GIFS = path.join(__dirname, '..', 'gifs');
 const WORK = path.join(__dirname, '.frames');
 
 async function mount(browser, base, scene) {
-  const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+  // `viewport` = a close-up scene's narrower window, so the board lays its cards out at that width
+  // and the crop can frame one card at a readable size. Every other scene keeps W x H.
+  const context = await browser.newContext({ viewport: scene.viewport || { width: W, height: H }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
   const page = await context.newPage();
   await page.clock.install({ time: new Date('2026-09-25T10:00:00') });
   if (scene.webviewState) await page.addInitScript((st) => { window.__studioState = st; }, scene.webviewState);

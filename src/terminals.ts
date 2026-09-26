@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import { Model, ResolvedModel, BUILTIN_MODEL_IDS, isValidModelString, sanitizeGroomConcurrency } from './model';
 import { LoopStatus } from './view';
-import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval } from './loop';
+import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval, revealStep } from './loop';
 import { sessionSuffix, spawnSessionName } from './context';
 
 // Runtime allowlist for untrusted (webview-supplied) model ids — the logical slot ids. The webview
@@ -37,10 +37,10 @@ export class TerminalManager {
   private changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeStatus = this.changeEmitter.event;
   private disposables: vscode.Disposable[] = [];
-  // Which model's terminal our own toggle last revealed — tracked independently of
-  // `vscode.window.activeTerminal` because `workbench.action.closePanel` hides the panel without
-  // clearing it, so the active-terminal check alone can never observe "currently hidden" and a
-  // third click would try to hide an already-hidden panel instead of showing it again.
+  // Which model's terminal a loop-row click (or spawn) last revealed. It stays set across panel
+  // hides: a further click on that row runs `workbench.action.togglePanel`, which flips the panel's
+  // real visibility, so it needs no knowledge of whether the panel is currently shown (VS Code
+  // offers no panel-visibility API, and hiding the panel never clears `activeTerminal`) (t-9c3f).
   private revealedModel: Model | undefined;
 
   constructor(
@@ -60,10 +60,10 @@ export class TerminalManager {
     this.disposables.push(
       vscode.window.onDidOpenTerminal(() => this.changeEmitter.fire()),
       vscode.window.onDidCloseTerminal(() => this.changeEmitter.fire()),
-      // Self-heal `revealedModel` against an external hide (e.g. native CMD+J Toggle Panel):
-      // VS Code clears the active terminal when the terminal panel loses visibility, so if the
-      // active terminal is no longer the one we last revealed, our flag is stale — reset it so
-      // the next loop-row click show()s instead of firing a no-op closePanel (t-2e35).
+      // Reset `revealedModel` when the user switches to ANOTHER terminal: the panel would then show
+      // someone else's terminal, so the next click on this row must show() this model's terminal
+      // rather than toggle the panel. Hiding the panel does NOT clear the active terminal, so this
+      // never fires on a hide (⌘J included) — togglePanel in reveal() covers that (t-2e35, t-9c3f).
       vscode.window.onDidChangeActiveTerminal((active) => {
         if (this.revealedModel !== undefined && active !== this.find(this.revealedModel)) {
           this.revealedModel = undefined;
@@ -101,25 +101,24 @@ export class TerminalManager {
   // Reveal an already-running loop's terminal; does nothing if it isn't running (never creates
   // one — that's spawn()'s job). Focuses it unless `preserveFocus` is set — pass true for
   // automatic/lifecycle reveals (e.g. auto-recycle) so they never steal focus from the board;
-  // explicit user gestures (clicking ▶ or a loop row) keep the default, focusing behaviour. A
-  // second call for the same model toggles the whole bottom panel closed instead — VSCode has no
-  // per-terminal hide API, and closePanel never disposes a terminal, so every loop (including
-  // this one) stays alive and is shown intact on the next reveal. Tracked via `revealedModel`
-  // rather than `vscode.window.activeTerminal`: closePanel hides the panel without clearing the
-  // active terminal, so a live activeTerminal check can't tell "hidden" from "shown" and a third
-  // click would silently no-op instead of re-showing.
+  // explicit user gestures (clicking ▶ or a loop row) keep the default, focusing behaviour. Once
+  // this model's terminal has been revealed (`revealedModel`, decided by the pure `revealStep`),
+  // further calls run `workbench.action.togglePanel` — the command ⌘J runs — and keep the flag
+  // set: it flips the panel's REAL state, so a panel hidden or shown externally (⌘J) never costs a
+  // dead click, and re-opening restores the last panel view (the terminal, showing this model's
+  // active terminal) with focus. VSCode has no per-terminal hide API, and hiding the panel never
+  // disposes a terminal, so every loop stays alive and is shown intact on the next reveal (t-9c3f).
   reveal(model: Model, preserveFocus = false): void {
     const terminal = this.find(model);
     if (!terminal) return;
-    if (this.revealedModel === model) {
-      vscode.commands.executeCommand('workbench.action.closePanel');
-      this.revealedModel = undefined;
-      this.log('info', 'loop-reveal', `${model} -> hide`);
-      return;
+    if (revealStep(this.revealedModel, model) === 'togglePanel') {
+      vscode.commands.executeCommand('workbench.action.togglePanel');
+      this.log('info', 'loop-reveal', `${model} -> toggle panel`);
+    } else {
+      terminal.show(preserveFocus);
+      this.log('info', 'loop-reveal', `${model} -> show`);
     }
-    terminal.show(preserveFocus);
     this.revealedModel = model;
-    this.log('info', 'loop-reveal', `${model} -> show`);
   }
 
   spawn(model: Model, preserveFocus = false): void {

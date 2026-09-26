@@ -10,13 +10,13 @@
 import { IndexEntry, Task, Model, GROOMER_HOLD } from './model';
 
 // Why a loop was nudged. Mirrors the Rules the loop will apply once it looks:
-//   note     — an unprocessed `note:` sub-bullet (Rule 16)
 //   groom    — a DRAFT waiting to be expanded into a story (Rule 14)
 //   regroom  — a New task whose questions are ALL answered, not yet folded into the story (Rule 14)
 //   backlog  — a claimable Backlog task (Rules 2/15)
 //   answers  — a Feedback task whose every question now has an answer (Rule 10)
-//   feedback — a Review task carrying an unaddressed `feedback:` sub-bullet (Rule 13)
-export type NudgeReason = 'note' | 'groom' | 'regroom' | 'backlog' | 'answers' | 'feedback';
+//   feedback — an unaddressed `feedback:` sub-bullet, any phase incl. drafts (Rule 13; t-ae10 folded
+//              the old `note` reason in here)
+export type NudgeReason = 'groom' | 'regroom' | 'backlog' | 'answers' | 'feedback';
 
 // What the loop is told about one task. There is deliberately NO `title` field (t-f8bd): the nudge
 // names the task by id and the FIELDS that moved, never task text. Dropping the field — rather
@@ -51,7 +51,8 @@ export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model:
     // so it is never nudged, whatever else changed on it.
     if (entry.groomer === GROOMER_HOLD) return null;
     const model = (entry.groomer as Model | undefined) ?? defaults.groomer;
-    if (entry.notes.length > 0) return { model, reason: 'note' };
+    // Feedback on a New/DRAFT is folded into the story by the groomer (Rules 13/14).
+    if (entry.feedback.length > 0) return { model, reason: 'feedback' };
     // Questions must be FULLY answered before the change is pushed into a loop: one blank answer
     // means the human is still filling the form in, and a re-groom on a half-answered story would
     // fold in half a decision and re-ask the rest. Mirrors the Rule 10 gate Feedback already uses.
@@ -62,17 +63,17 @@ export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model:
   }
 
   const model = entry.model ?? defaults.worker;
-  // A note outranks the phase-specific reasons: it is an explicit human instruction (Rule 16).
-  if (entry.notes.length > 0) return { model, reason: 'note' };
+  // Feedback outranks the phase-specific reasons in every phase: it is an explicit human
+  // instruction (Rule 13 — Review reopens, any other phase applies it in place).
+  if (entry.feedback.length > 0) return { model, reason: 'feedback' };
   if (entry.phase === 'backlog') return { model, reason: 'backlog' };
   if (entry.phase === 'feedback') {
     // Rule 10: resume only when EVERY question has an answer. One blank answer = still parked.
     if (entry.questions.length > 0 && entry.questions.every(answered)) return { model, reason: 'answers' };
     return null;
   }
-  if (entry.phase === 'review' && entry.feedback.length > 0) return { model, reason: 'feedback' };
-  // In Progress belongs to a worker that is already on it; Review with no feedback awaits the
-  // human's [x].
+  // In Progress without feedback belongs to a worker that is already on it; Review with no feedback
+  // awaits the human's [x].
   return null;
 }
 
@@ -81,14 +82,14 @@ export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model:
 // keeps beside it. Both are needed (t-f1b0): the index block alone misses a Description edit or an
 // appended Worklog, which is exactly what the removed writer-managed `rev:` marker existed to
 // surface. Comparing text rather than parsed fields is deliberate — it also catches a question or
-// note TEXT edit, which describeChanges only counts.
+// feedback TEXT edit, which describeChanges only counts.
 function changed(prev: Task, next: Task): boolean {
   return prev.raw !== next.raw || prev.detailRaw !== next.detailRaw;
 }
 
 // The New/DRAFT carve-out of that fingerprint (t-6cbf): a change confined to `tasks/<id>.md`, with
 // the index block byte-identical, gives NO loop grooming work — every piece of grooming work is
-// signalled on the INDEX side (the DRAFT line, a `note:`, a filled `answer:`). Such a change is by
+// signalled on the INDEX side (the DRAFT line, a `feedback:`, a filled `answer:`). Such a change is by
 // construction either the groomer subagent mid-write — it writes the task file first and replaces
 // the DRAFT line after, so nudging here pastes "is a draft to groom" into the very loop that is
 // grooming it, costing a whole empty pass — or a human touching a story the groomer re-reads on its
@@ -103,7 +104,7 @@ function detailOnlyGrooming(prev: Task, next: Task): boolean {
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `${n} ${many}`);
 
 // What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
-// echoed — title, question, answer, note, feedback, problem, description, goals, worklog,
+// echoed — title, question, answer, feedback, problem, description, goals, worklog,
 // delivered. Metadata ENUM values (`phase`/`model`/`groomer`) are board state, not task content,
 // and ARE named verbatim so the loop is saved a lookup; counts and 1-based question positions
 // carry no text either.
@@ -137,13 +138,9 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
     else if (nq[i].suggestions.length < pq[i].suggestions.length) out.push(`suggestions removed ${at}`);
   }
 
-  for (const [one, many, before, after] of [
-    ['note', 'notes', prev.notes, next.notes],
-    ['feedback', 'feedback', prev.feedback, next.feedback],
-  ] as [string, string, string[], string[]][]) {
-    if (after.length > before.length) out.push(`${plural(after.length - before.length, one, many)} added`);
-    else if (after.length < before.length) out.push(`${plural(before.length - after.length, one, many)} removed`);
-  }
+  const [fbBefore, fbAfter] = [prev.feedback.length, next.feedback.length];
+  if (fbAfter > fbBefore) out.push(`${plural(fbAfter - fbBefore, 'feedback', 'feedback')} added`);
+  else if (fbAfter < fbBefore) out.push(`${plural(fbBefore - fbAfter, 'feedback', 'feedback')} removed`);
 
   // Detail changes are named per SECTION, never collapsed to a bare "detail changed".
   if ((prev.problem ?? '') !== (next.problem ?? '')) out.push('problem edited');
@@ -159,7 +156,7 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
   if (prev.dependsOn.join(',') !== next.dependsOn.join(',')) out.push('depends on edited');
 
   // The text fingerprint moved but no field above differs — a canonicalizing rewrite, a question or
-  // note text edit (counted, not compared, above), or edits coalesced into one refresh. The nudge is
+  // feedback text edit (counted, not compared, above), or edits coalesced into one refresh. The nudge is
   // still sent (never dropped); the loop falls back to its ordinary re-read.
   return out.length ? out : ['changed'];
 }
@@ -198,7 +195,8 @@ export function computeNudges(
   const before = new Map(prev.map((e) => [e.id, e]));
   // Rule 2's GLOBAL SINGLE-TASK LIMIT: while any task is In Progress board-wide, no loop may claim
   // a Backlog task, so a "claim this" nudge would be an instruction to do nothing. Grooming and
-  // notes are unaffected — those never set `inprogress`.
+  // feedback still route — feedback outside Review is applied in place, and a Review reopen is
+  // gated by Rule 2 on the loop's side anyway.
   const busy = next.some((e) => e.phase === 'inprogress');
   const routes = new Map<Model, NudgeItem[]>();
 
@@ -221,12 +219,11 @@ export function computeNudges(
 }
 
 const REASON_TEXT: Record<NudgeReason, string> = {
-  note: 'has a note to apply',
   groom: 'is a draft to groom',
   regroom: 'has answers to fold in',
   backlog: 'is claimable in Backlog',
   answers: 'has all its questions answered',
-  feedback: 'has review feedback to address',
+  feedback: 'has feedback to address',
 };
 
 // How many tasks a single nudge names before it summarises the rest. The line is pasted into a

@@ -6,7 +6,7 @@
 
   // Shared markdown renderer (media/markdown.js — loaded first by board.html). Destructured once
   // here rather than referenced through the global at every call site.
-  const { mdToHtml } = window.LoopBoardMarkdown;
+  const { mdToHtml, renderInline } = window.LoopBoardMarkdown;
 
   // ---- tiny DOM helper ----
   function h(tag, props) {
@@ -38,11 +38,14 @@
   // before a trailing `click` lands — t-3042/t-d3dd) while still supporting keyboard (Enter/
   // Space) activation, which dispatches a synthetic `click` with no preceding `pointerdown`. A
   // real mouse click fires both events; without the flag, both would reach `commit`.
+  // Primary button only (t-39e2): a right-click (or middle-click) never commits — it is left to the
+  // `contextmenu` event, which Promote uses to arm an automatic promote. No preventDefault either,
+  // so that event still fires.
   function makeGateButton(props, commit) {
     let firedByPointer = false;
     const children = Array.prototype.slice.call(arguments, 2);
     return h.apply(null, ['button', Object.assign({}, props, {
-      onpointerdown: (e) => { e.preventDefault(); firedByPointer = true; commit(); },
+      onpointerdown: (e) => { if (e.button !== 0) return; e.preventDefault(); firedByPointer = true; commit(); },
       onclick: () => { if (firedByPointer) { firedByPointer = false; return; } commit(); },
     })].concat(children));
   }
@@ -53,7 +56,32 @@
     chevron: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     undo: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v4h4M4 8a5 5 0 1 1 1.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     checkGreen: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--vscode-testing-iconPassed, #73c991)" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    spinner: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" stroke-linecap="round"/></svg>',
   };
+
+  // Promote button shared by ordinary New cards and draft cards (t-39e2), so an armed spinner stays
+  // put when the groom switches a card from renderDraft to renderCard. Right-click (or Menu /
+  // Shift+F10) toggles a session-only auto-promote arm the host owns — `t.autoPromote` is the host's
+  // word, never a guess. `commitPromote` null = a draft: left-click is inert, so `aria-disabled` +
+  // `.off`, never the real `disabled`, which would swallow the right-click too (sidebar precedent).
+  function promoteButton(t, commitPromote) {
+    const armed = !!t.autoPromote;
+    const draft = !commitPromote;
+    const title = armed
+      ? (draft
+        ? 'Promotes automatically once groomed and every question is answered and folded in — right-click to cancel'
+        : 'Promotes automatically once every question is answered and folded in — click to promote now, right-click to cancel')
+      : (draft
+        ? 'Right-click to promote automatically once this draft is groomed and nothing is left open'
+        : 'Promote to backlog — right-click to promote automatically once every question is answered and folded in');
+    const props = {
+      class: 'btn-sm primary approve-btn' + (draft ? ' off' : ''), type: 'button',
+      'aria-label': armed ? 'Automatic promote armed' : 'Promote to backlog', 'aria-disabled': draft ? 'true' : null, title,
+      oncontextmenu: (e) => { e.preventDefault(); post({ type: armed ? 'disarmPromote' : 'armPromote', taskId: t.id }); },
+    };
+    const glyph = armed ? icon(SVG.spinner, 'spin') : icon(SVG.check);
+    return draft ? h('button', props, glyph, 'Promote') : makeGateButton(props, commitPromote, glyph, 'Promote');
+  }
 
   const PHASE_META = [
     { key: 'new', label: 'New', explainer: 'Proposed tasks — approve to move into the Backlog' },
@@ -97,14 +125,20 @@
   // being written, keyed by task id then question index. Persisted in the setState blob; see the
   // held-answer helpers below saveState().
   let heldAnswers = saved.heldAnswers && typeof saved.heldAnswers === 'object' ? saved.heldAnswers : {};
+  // Refused text given back (t-5831), in the same blob so it survives the forced refresh, a panel
+  // hide and a webview reload. `rescuedAnswers[taskId]` = `[{ q, text }]`: held answers whose
+  // question a re-groom rewrote or removed, shown on the card until used or dismissed (New/Feedback
+  // only). `rescuedFeedback[taskId]` = the refused feedback patch `{ field, value, base, itemIndex }`
+  // whose text reopens in the card's composer until it is saved again or Escaped.
+  let rescuedAnswers = saved.rescuedAnswers && typeof saved.rescuedAnswers === 'object' ? saved.rescuedAnswers : {};
+  let rescuedFeedback = saved.rescuedFeedback && typeof saved.rescuedFeedback === 'object' ? saved.rescuedFeedback : {};
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
   // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
   // `sections[phaseKey][taskId] = { problem?, description?, goals?, questions?: boolean }`. A
-  // section with no entry falls back to the tab default, which is what makes "expand one card
-  // after Collapse all" show every section folded. New key, so there is nothing to migrate — an
-  // unrecognized value just means "no overrides", i.e. everything follows the default. Ids are
-  // never pruned, for the same reason as `collapsed` above.
+  // section with no entry is folded (t-d5f2), whatever the tab default says. New key, so nothing
+  // to migrate — an unrecognized value just means "no overrides", i.e. every section starts
+  // folded. Ids are never pruned, for the same reason as `collapsed` above.
   let sections = saved.sections && typeof saved.sections === 'object' ? saved.sections : {};
   // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
   // `collapsed` map): seed the old values into every phase bucket so an upgrade keeps the view the
@@ -142,6 +176,13 @@
   // must be replaced by what disk holds without waiting for a click-out. Every other toast leaves
   // the deferral alone (it would wipe a field the user is mid-editing).
   let forceNextBoard = false;
+  // Patch round trip (t-5831): every patch goes out through sendPatch with a request id and waits
+  // here until the host's `patchResult` names its outcome. A refused one (conflict / unsupported)
+  // moves to `refusedPatches`, which the next applied board turns into editor rescues.
+  const patchTag = Math.random().toString(36).slice(2, 8); // ids from an earlier webview never match
+  let patchSeq = 1;
+  const pendingPatches = {};
+  let refusedPatches = [];
   let pendingRender = false; // an async/external repaint deferred while a field is focused
   // Global "gate in flight" guard (t-a9d5): swallows a second gate click (Approve/Accept/Demote)
   // on ANY card between a click and the confirming board message, so a click landing on a
@@ -183,12 +224,23 @@
   }
 
   function getUi(id) {
-    if (!ui[id]) ui[id] = {};
+    if (!ui[id]) ui[id] = { taskId: id }; // taskId: lets a helper handed only `u` reach per-task state
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers });
+    vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
   }
+
+  // ---- single-line index values (t-c4d1) ----
+  // The canonical single-line form of an index value: each run of line breaks, with the whitespace
+  // around it, becomes one space, then both ends are trimmed. It is the host's `canonicalLine`
+  // (src/merge.ts) — what the host stores and what parse→write reads back — so an echo built
+  // through it equals disk. Self-contained: test/single-line.test.js lifts it into a vm.
+  function canonAnswer(v) {
+    return String(v).replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  }
+  // The hint both single-line editors (the DRAFT edit box and the answer) show beside their Save.
+  const SINGLE_LINE_HINT = 'Enter saves · line breaks become spaces';
 
   // ---- held answers (t-5e6d) ----
   // A story is complete only when EVERY question is answered — a 2/3 index state helps nobody and
@@ -220,36 +272,134 @@
     delete heldAnswers[taskId];
     saveState();
   }
-  // Drop held answers that no longer describe reality. Called on every incoming board: an answer
-  // is kept only while its task still exists, is still New/Feedback, its question still has the
-  // SAME text, and the answer ON DISK still differs from what is held. That last test is what
-  // makes the three outcomes work out: a LANDED answer now equals disk and prunes itself; a
-  // CONFLICTED flush left disk untouched, so the value stays held and re-savable; and an edit to
-  // a question that was ALREADY answered on disk also stays held (an earlier `!q.answered` test
-  // deleted exactly that case, silently losing the edit — t-5e6d review). A held answer whose
-  // question was rewritten or removed by a re-groom is dropped with a toast, since keeping it
-  // would attach it to a different question.
+  // Sort one task's held answers against its incoming questions (t-5831). Pure; its one outside
+  // reference is `canonAnswer` (t-c4d1), which test/refusal-rescue.test.js lifts into the same vm:
+  //   keep    — same question text, and the disk answer still differs from what is held (a
+  //             CONFLICTED flush left disk untouched, so it stays re-savable; an edit to a question
+  //             already answered on disk stays too — t-5e6d review);
+  //   landed  — the disk answer now equals the CANONICAL held text (the flush succeeded). Disk only
+  //             ever holds the folded, trimmed form, so a raw compare kept a landed answer amber
+  //             forever — including a raw value held in a setState blob from before t-c4d1;
+  //   rescued — the question text changed or the question is gone (a re-groom). This test comes
+  //             first, so the canonical compare only ever runs for the same question.
+  function splitHeldAnswers(held, questions) {
+    const out = { keep: [], landed: [], rescued: [] };
+    for (const i of Object.keys(held)) {
+      const q = questions[i];
+      if (!q || q.text !== held[i].q) out.rescued.push(i);
+      else if (q.answer === canonAnswer(held[i].text)) out.landed.push(i);
+      else out.keep.push(i);
+    }
+    return out;
+  }
+  function openQuestionTask(incoming, taskId) {
+    return ['new', 'feedback'].reduce((found, key) =>
+      found || (incoming.phases[key] || []).find((x) => x.id === taskId), null);
+  }
+  // Reconcile held answers with every incoming board. Held answers live only while their task is
+  // still New/Feedback. A LANDED answer prunes itself silently. A RESCUED one — its question was
+  // rewritten or removed — would attach to a different question if kept held, and deleting it lost
+  // the human's text (the t-5e6d behaviour), so it moves into `rescuedAnswers` with the question
+  // text it was written for, and the card shows it until the human uses or dismisses it (t-5831).
   function pruneHeldAnswers(incoming) {
-    const stale = [];
+    const moved = [];
     for (const taskId of Object.keys(heldAnswers)) {
-      const t = ['new', 'feedback'].reduce((found, key) =>
-        found || (incoming.phases[key] || []).find((x) => x.id === taskId), null);
+      const t = openQuestionTask(incoming, taskId);
       const held = heldAnswers[taskId];
       if (!t) { delete heldAnswers[taskId]; continue; } // gone, promoted, accepted — nothing to say
-      for (const i of Object.keys(held)) {
-        const q = t.questions[i];
-        if (q && q.text === held[i].q && q.answer !== held[i].text) continue;
-        // Only a question that CHANGED is worth telling the human about; one that simply landed
-        // on disk (the flush succeeded) is the normal path and says nothing.
-        if (!q || q.text !== held[i].q) stale.push(t.title);
+      const split = splitHeldAnswers(held, t.questions);
+      for (const i of split.rescued) {
+        if (String(held[i].text || '').trim()) {
+          if (!rescuedAnswers[taskId]) rescuedAnswers[taskId] = [];
+          rescuedAnswers[taskId].push({ q: held[i].q, text: held[i].text });
+          moved.push(t.title);
+        }
         delete held[i];
       }
+      for (const i of split.landed) delete held[i];
       if (Object.keys(held).length === 0) delete heldAnswers[taskId];
     }
-    saveState();
-    for (const title of [...new Set(stale)]) {
-      pushToast('info', 'Held answers for “' + title + '” were dropped — its questions changed.');
+    for (const taskId of Object.keys(rescuedAnswers)) {
+      if (!openQuestionTask(incoming, taskId) || !rescuedAnswers[taskId].length) delete rescuedAnswers[taskId];
     }
+    saveState();
+    for (const title of [...new Set(moved)]) {
+      pushToast('info', 'Held answers for “' + title + '” were kept on the card — its questions changed.');
+    }
+  }
+  function dropRescuedAnswer(taskId, k) {
+    const list = rescuedAnswers[taskId];
+    if (!list) return;
+    list.splice(k, 1);
+    if (!list.length) delete rescuedAnswers[taskId];
+    saveState();
+  }
+
+  // ---- refused-patch rescue (t-5831) ----
+  // Where a refused patch's text reopens. Pure and self-contained (lifted into a vm by
+  // test/refusal-rescue.test.js). `items` is the task's feedback list AS DISK NOW HAS IT.
+  //   feedbackAdd  -> the add composer;
+  //   feedbackItem -> that item's edit composer while the item still exists (by index, else by its
+  //                   text), otherwise the add composer, so the next Save is a pure append;
+  //   answer       -> that row reopens with the refused value (blank for a retraction);
+  //   anything else (answers, titles, sections) -> null: a conflicted `answers` flush is still
+  //                   held on its rows, and the other editors are a follow-up story.
+  function rescueTarget(patch, items) {
+    const value = String(patch.value || '');
+    if (patch.field === 'feedbackAdd' || patch.field === 'feedbackItem') {
+      if (!value.trim()) return null; // a delete — nothing typed to give back
+      if (patch.field === 'feedbackItem') {
+        const list = items || [];
+        const at = list[patch.itemIndex] === patch.base ? patch.itemIndex : list.indexOf(patch.base);
+        if (at >= 0) return { kind: 'feedback', edit: at, base: patch.base, text: value };
+      }
+      return { kind: 'feedback', edit: -1, base: '', text: value };
+    }
+    if (patch.field === 'answer' && typeof patch.questionIndex === 'number') {
+      return { kind: 'answer', index: patch.questionIndex, text: value };
+    }
+    return null;
+  }
+  function dropRescuedFeedback(taskId) {
+    if (!rescuedFeedback[taskId]) return;
+    delete rescuedFeedback[taskId];
+    saveState();
+  }
+  // Typing into a rescued composer keeps the persisted copy current, so a reload restores what the
+  // human has typed since, not the text as first refused.
+  function keepRescuedFeedback(taskId, value) {
+    if (!rescuedFeedback[taskId]) return;
+    rescuedFeedback[taskId].value = value;
+    saveState();
+  }
+  // Runs on the board that follows a refusal (applyBoard), so every decision is taken against
+  // what disk now holds — the pre-refresh board still carries the wrong local echo.
+  function applyRescues(incoming) {
+    const queue = refusedPatches;
+    refusedPatches = [];
+    for (const patch of queue) {
+      let t = null;
+      for (const key in incoming.phases) t = t || (incoming.phases[key] || []).find((x) => x.id === patch.taskId) || null;
+      if (!t) continue;
+      const target = rescueTarget(patch, t.feedback);
+      if (!target) continue;
+      if (target.kind === 'feedback') {
+        rescuedFeedback[t.id] = { field: patch.field, value: patch.value, base: patch.base, itemIndex: patch.itemIndex };
+      } else {
+        const u = getUi(t.id);
+        if (!u.answerDrafts) u.answerDrafts = {};
+        if (!u.qaEditOpen) u.qaEditOpen = {};
+        u.answerDrafts[target.index] = target.text;
+        u.qaEditOpen[target.index] = true;
+      }
+    }
+    // A rescued composer outlives nothing but its task (Done has no feedback surface).
+    for (const taskId of Object.keys(rescuedFeedback)) {
+      let live = false;
+      for (const key in incoming.phases) if (key !== 'done' && (incoming.phases[key] || []).some((x) => x.id === taskId)) live = true;
+      if (!live) delete rescuedFeedback[taskId];
+    }
+    saveState();
   }
 
   // ---- collapse/expand (per phase tab — the current `phase` is the implicit key) ----
@@ -269,12 +419,14 @@
     saveState();
     render();
   }
-  // A section with no override follows the tab default, so Collapse all folds the sections of
-  // every card in the tab and Expand all opens them (t-aee3) — one click always yields a uniform
-  // view, including for cards the user later expands by hand.
+  // Every section fold (Problem / Description / Goals and the Open questions panel) with no
+  // override is FOLDED, whatever the tab default says: an expanded card opens to its one-line
+  // previews and its questions head (count, meter, re-groom badge), and only a section's own
+  // chevron opens it (t-d5f2; the questions panel joined on review feedback).
   function isSectionCollapsed(id, name) {
     const over = sections[phase] && sections[phase][id];
-    return over && Object.prototype.hasOwnProperty.call(over, name) ? !!over[name] : phaseDefaultCollapsed();
+    if (over && Object.prototype.hasOwnProperty.call(over, name)) return !!over[name];
+    return true;
   }
   function toggleSection(id, name) {
     if (!sections[phase]) sections[phase] = {};
@@ -286,10 +438,9 @@
   function setPhaseCollapsed(value) {
     collapsedDefault[phase] = value;
     collapsed[phase] = {};
-    // Wipe the section overrides too, exactly as the card overrides are wiped: the button's whole
-    // point is that one click makes the tab uniform, which a surviving per-section override would
-    // break. Current tab only (t-7679).
-    sections[phase] = {};
+    // Section overrides (`sections[phase]`) are left alone: Expand all / Collapse all act on cards
+    // only, and every section changes only through its own chevron (t-d5f2). Current tab only
+    // (t-7679).
     saveState();
     render();
   }
@@ -436,9 +587,14 @@
   function normGroomerValue(v, leadOpt) { return v === GROOMER_HOLD_OPT ? GROOMER_HOLD : normModelValue(v, leadOpt); }
 
   // ---- field patch helper ----
-  function sendPatch(taskId, field, value, base, questionIndex) {
+  // The ONE place a `patch` message is posted (t-5831): each carries a request id, which the host
+  // echoes in a `patchResult` with the outcome, so a refusal can name exactly which edit failed.
+  function sendPatch(taskId, field, value, base, questionIndex, itemIndex) {
     if (value === base) return; // no-op
-    post({ type: 'patch', patch: { taskId, field, value, base, questionIndex } });
+    const reqId = patchTag + ':' + patchSeq++;
+    const patch = { taskId, field, value, base, questionIndex, itemIndex };
+    pendingPatches[reqId] = patch;
+    post({ type: 'patch', reqId, patch });
   }
 
   // Optimistic local echo (t-ff54): a patch is fire-and-forget, so the repaint that follows a
@@ -581,7 +737,7 @@
   }
 
   // Deterministic Escape-to-close+blur for editors that toggle between a "view" and an editing
-  // textarea/input (description, title, draft, note, feedback). Blurring BEFORE render() matters: render()'s
+  // textarea/input (description, title, draft, feedback). Blurring BEFORE render() matters: render()'s
   // captureActiveField() reads document.activeElement at the very start, still pointing at the
   // about-to-be-removed field if we haven't blurred yet — so it recaptures a field that edit mode
   // just closed, and restoreActiveField() then either re-opens it or (since the post-close view has
@@ -596,7 +752,7 @@
   }
 
   // ---- shared editable-field exit (t-471a): click-outside COMMITS, ESC CANCELS ----
-  // Every editable field (description/title/draft-text/note/feedback toggle between a view and
+  // Every editable field (description/title/draft-text/feedback toggle between a view and
   // an editor; answer is always a textarea) registers itself here while its editor is
   // open. A single document-level `pointerdown` listener — capture phase, so it resolves before
   // any button's own pointerdown-commit handler (makeGateButton et al.) runs — detects a click
@@ -853,7 +1009,7 @@
         saveState();
         render();
       }, false)));
-    // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+    // Behavioural parity with the feedback composer (t-f51c): a discoverable ＋ Attach button
     // alongside the existing silent drag-drop/paste support.
     const attachBtn = h('button', {
       class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
@@ -970,9 +1126,11 @@
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
       ta.value = u.draftText != null ? u.draftText : t.title;
       autoGrow(ta);
+      // The draft text is the index title, ONE line (t-c4d1): the echo is the canonical value the
+      // host stores, and Save stays disabled while the text folds to the saved title.
       const commitDraft = () => {
         clearActiveEditor(textEl);
-        const val = ta.value.trim();
+        const val = canonAnswer(ta.value);
         u.editingDraft = false;
         u.draftText = null;
         commitPatch(t.id, 'title', val, t.title, t, 'title');
@@ -980,18 +1138,27 @@
       };
       const saveBtn = h('button', {
         class: 'btn-sm primary field-save-btn', type: 'button',
-        disabled: ta.value.trim() === t.title,
+        disabled: canonAnswer(ta.value) === t.title,
         title: 'Save (Cmd/Ctrl+S)', onclick: commitDraft,
       }, 'Save');
-      ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
+      ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = canonAnswer(ta.value) === t.title; });
       ta.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }, textEl); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); return; }
+        // Single-line (t-c4d1): Enter saves, Shift+Enter inserts nothing, and an Enter that ends an
+        // IME composition belongs to the input method.
+        if (e.key === 'Enter') {
+          if (e.isComposing) return;
+          e.preventDefault();
+          if (!e.shiftKey) commitDraft();
+        }
       });
-      // t-att1 rework: no caret-insert into the raw draft text (links crammed into the title made
-      // it unreadable) — a paste/drop while editing bubbles to the card handler, which stages the
-      // image into the description, so it shows in the attachments area like everywhere else.
-      textEl = h('div', { class: 'field-col' }, ta, saveBtn);
+      // Text pastes fold at the caret. t-att1 rework: no caret-insert of FILE links into the raw
+      // draft text (links crammed into the title made it unreadable) — a file paste/drop while
+      // editing bubbles to the card handler, which stages the image into the attachments area.
+      wireSingleLinePaste(ta);
+      textEl = h('div', { class: 'field-col' }, ta,
+        h('div', { class: 'feedback-foot' }, saveBtn, h('span', { class: 'qa-hint single-line-hint' }, SINGLE_LINE_HINT)));
       // Click-outside commits (t-471a): registering AFTER textEl exists so the container passed
       // to setActiveEditor is the actual editing wrapper the pointerdown-outside check tests.
       setActiveEditor(textEl, commitDraft);
@@ -1030,6 +1197,19 @@
     // them with an open link and a remove × each.
     const attachEl = renderAttachmentsArea(t);
 
+    // Composer copy (t-c4d1): a multi-line New Story text also lands in the draft's ## Description,
+    // painted read-only under the one-line title so the pasted list or paragraphs stay readable.
+    // A legacy draft's Description may still carry cache links: those show only as their chips.
+    let descEl = null;
+    if ((t.description || '').trim()) {
+      const paths = extractAttachments(t.description, t.id).map((a) => a.path);
+      const desc = paths.length ? stripAttachmentLinks(t.description, paths) : t.description;
+      descEl = desc ? h('div', { class: 'done-detail-text draft-desc', style: { marginTop: '8px' }, html: mdToHtml(desc) }) : null;
+      if (descEl) descEl.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+    }
+
     let cls = 'card draft';
     if (isCollapsedCard) cls += ' collapsed';
 
@@ -1062,8 +1242,11 @@
             h('span', { class: 'muted-11' }, 'Work with'),
             workSel),
           isCollapsedCard ? null : textEl,
+          isCollapsedCard ? null : descEl,
           isCollapsedCard ? null : attachEl,
+          isCollapsedCard ? null : renderFeedback(t),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
+        promoteButton(t, null),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Delete draft', title: 'Delete draft', onclick: () => post({ type: 'gate', taskId: t.id, action: 'delete' }) }, icon(SVG.x))));
     wireAttachDropAndPaste(card, t.id);
     return card;
@@ -1074,7 +1257,7 @@
   // postMessage (the only path bytes can cross that boundary). Any file type is accepted here;
   // the host (store.stageAttachment) is the size-cap gate, the only remaining one. A whole-card
   // drop/paste (no field open) appends straight to Description (attachFile/wireAttachDropAndPaste
-  // below); a drop/paste inside an already-open Description, answer, feedback, note, or
+  // below); a drop/paste inside an already-open Description, answer, feedback, or
   // draft-text field instead folds the link into that field's own value (wireFieldAttach, below)
   // so it saves through the normal field-patch path.
   const ATTACH_MIME_EXT = {
@@ -1115,9 +1298,11 @@
   function applyAttachedMirror(taskId, msg) {
     const t = findBoardTask(taskId);
     if (!t) return;
-    if (typeof msg.description !== 'string' && typeof msg.title !== 'string') { scheduleRender(); return; }
+    if (typeof msg.description !== 'string' && typeof msg.title !== 'string' && !Array.isArray(msg.feedback)) { scheduleRender(); return; }
     if (typeof msg.description === 'string') t.description = msg.description;
     if (typeof msg.title === 'string') t.title = msg.title;
+    // A detach (t-ae10) also returns the post-strip feedback items: a feedback chip's link lives there.
+    if (Array.isArray(msg.feedback)) t.feedback = msg.feedback;
     repaintCard(t);
   }
   function repaintCard(t) {
@@ -1188,6 +1373,22 @@
     ta.value = before + pre + link + post + after;
     const caret = before.length + pre.length + link.length;
     ta.setSelectionRange(caret, caret);
+  }
+  // Single-line editors (t-c4d1: the DRAFT edit box and the answer): pasted TEXT with line breaks is
+  // inserted at the caret, replacing any selection, with its line breaks folded to spaces. A paste
+  // that carries files is not ours and returns untouched — wireFieldAttach (answer) or the card's
+  // handler (DRAFT edit) stages it. The `input` event keeps the editor's draft and Save state in step.
+  function wireSingleLinePaste(ta) {
+    ta.addEventListener('paste', (e) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      if (Array.from(cd.items || []).some((item) => item.kind === 'file')) return;
+      const text = cd.getData('text/plain');
+      if (!/[\r\n]/.test(text)) return; // one line: the native paste is already right
+      e.preventDefault();
+      ta.setRangeText(text.replace(/\s*[\r\n]+\s*/g, ' '), ta.selectionStart, ta.selectionEnd, 'end');
+      ta.dispatchEvent(new Event('input'));
+    });
   }
   function wireFieldAttach(el, taskId, field, questionIndex, onStaged) {
     const stage = (file) => {
@@ -1263,8 +1464,8 @@
     post({ type: 'detach', reqId, taskId, path });
   }
   // Shared attachment chip (t-f51c): ext badge + name + remove, in the qa-* visual idiom
-  // notes-to-worker introduced (t-b149) — every attachment-list surface (description/draft area,
-  // answer, feedback, note, new-story composer) renders through this one helper so the look and
+  // the old notes-to-worker introduced (t-b149) — every attachment-list surface (description/draft area,
+  // answer, feedback, new-story composer) renders through this one helper so the look and
   // CSS block (`.qa-attachment*`) stay single-sourced. `clickable === false` renders a static
   // (non-opening) name — used for the new-story composer's pending list, whose bytes aren't
   // staged to a real cache path until Save Draft, so there is nothing yet to open.
@@ -1293,10 +1494,11 @@
       h('div', { class: 'muted-11', style: { marginBottom: '4px' } }, 'Attachments'),
       h('div', { class: 'qa-attachments' }, items.map((it) => attachmentChip(it, () => detachAttachment(t.id, it.path)))));
   }
-  // Attachment list for a field whose links live inline in its own free text (answer/feedback,
+  // Attachment list for a field whose links live inline in its own free text (answers,
   // t-f51c) — extracts the same `[name](.loopboard/cache/...)` links renderAttachmentsArea does,
   // but removal strips the link out of THAT field's text and repatches it via `commit`, since
-  // there is no separate attachment store for these fields.
+  // there is no separate attachment store for these fields. Feedback no longer uses it (t-ae10):
+  // its chip × goes through `detach`, which also deletes the cached file.
   function renderFieldAttachmentsArea(text, commit, ownerId) {
     const items = extractAttachments(text, ownerId);
     if (!items.length) return null;
@@ -1420,10 +1622,7 @@
       };
       // Double-fire guard (t-02a2, now the shared makeGateButton helper — t-2238): without it, a
       // single mouse activation's pointerdown AND click would both reach commitPromote.
-      head.append(makeGateButton({
-        class: 'btn-sm primary approve-btn', type: 'button',
-        'aria-label': 'Promote to backlog', title: 'Promote to backlog',
-      }, commitPromote, icon(SVG.check), 'Promote'));
+      head.append(promoteButton(t, commitPromote));
     }
     // Demote (Backlog -> New, third board action alongside promote/accept — CLAUDE.md
     // Non-negotiable #5): Backlog cards only, an active/owned task must never be yankable out
@@ -1512,13 +1711,15 @@
       }
 
       // questions: Feedback always; New too, when the groomer left open decisions
-      if (variant === 'feedback' || (variant === 'new' && t.questions && t.questions.length)) card.append(renderQuestions(t));
+      // Rescued answers (t-5831) keep the panel on a New card even when a re-groom left no questions.
+      if (variant === 'feedback' || (variant === 'new' && ((t.questions && t.questions.length) || rescuedAnswers[t.id]))) card.append(renderQuestions(t));
 
-      // review blocks
-      if (variant === 'review') card.append(renderReview(t));
+      // review: the Delivered block
+      const reviewEl = variant === 'review' ? renderReview(t) : null;
+      if (reviewEl) card.append(reviewEl);
 
-      // note
-      card.append(renderNote(t));
+      // feedback: one block on every phase (t-ae10)
+      card.append(renderFeedback(t));
     }
 
     return card;
@@ -1726,7 +1927,7 @@
           insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
           commitSection();
         });
-        // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+        // Behavioural parity with the feedback composer (t-f51c): a discoverable ＋ Attach button
         // alongside the existing silent drag-drop/paste support.
         controls.push(h('button', {
           class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
@@ -1860,22 +2061,26 @@
     // The value is POSITIONAL, so a newline inside one answer would shift every later answer onto
     // the wrong question — the host rejects that as a conflict, which surfaced as an unexplained
     // "changed on disk" toast on every save of a multi-line answer (t-5e6d review). Answers are
-    // single-line by the index grammar, so the newlines are folded to spaces at the join and the
-    // SAME folded values are echoed locally, so the card shows exactly what was written.
+    // single-line by the index grammar, so each value goes through canonAnswer at the join (folded
+    // AND trimmed, t-c4d1 — exactly what disk will hold) and the SAME values are echoed locally, so
+    // the card shows exactly what was written and `value !== base` is an exact test.
     const flushAnswers = (raw) => {
-      const values = raw.map((v) => v.replace(/\s*\n+\s*/g, ' '));
+      const values = raw.map(canonAnswer);
       const base = t.questions.map((q) => q.answer).join('\n');
       const value = values.join('\n');
       // Held answers are NOT cleared when a patch goes out — the prune on the confirming board
       // drops them once they land, which is what leaves them intact (and re-savable) if the flush
       // comes back a disk-wins conflict. When there is nothing to write, though, no board message
       // follows, so nothing would ever prune them and the row would wear its `held` tag forever.
-      if (value !== base) post({ type: 'patch', patch: { taskId: t.id, field: 'answers', value, base } });
+      if (value !== base) sendPatch(t.id, 'answers', value, base);
       else clearHeldFor(t.id);
+      // The rows this flush writes (value differs from disk), taken before the echo below.
+      const written = t.questions.map((q, j) => values[j] !== q.answer);
       t.questions.forEach((q, j) => { q.answer = values[j]; q.answered = values[j].trim().length > 0; });
+      // Reset editor state only for the rows written (t-5831): another row's unsaved draft or open
+      // editor is the human's work in progress, not part of this save.
       const u2 = getUi(t.id);
-      u2.answerDrafts = {};
-      u2.qaEditOpen = {};
+      written.forEach((w, j) => { if (w) { delete u2.answerDrafts[j]; delete u2.qaEditOpen[j]; } });
       render();
     };
 
@@ -1905,6 +2110,8 @@
         : 'Type your answer — the worker resumes when every question is answered.' });
       ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : answerAt(i);
       autoGrow(ta);
+      // "use on question N" of a rescued answer (t-5831) asks for this row's focus once.
+      if (u.qaFocus === i) { u.qaFocus = undefined; requestAnimationFrame(() => ta.focus()); }
 
       const summaryText = h('span', { class: 'qa-answer-text' }, answerAt(i));
       // A held row says so: it looks saved (collapsed summary) but is not on disk yet, and
@@ -1939,17 +2146,24 @@
       // unsaved drafts (t-5e6d review).
       const stageRow = () => {
         clearActiveEditor(editor);
-        const val = ta.value;
+        // The CANONICAL value (t-c4d1), computed once: it is held, echoed and written back into the
+        // textarea, so the held text equals what disk will hold (the landed test can match it) and
+        // the row does not read as dirty against its own echo.
+        const val = canonAnswer(ta.value);
+        ta.value = val;
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
         // Clearing an answer that IS on disk is a retraction, and holding a blank could never
         // reach the index (a blank keeps the set incomplete, so no flush ever carries it) — the
         // human's deletion would silently revert on the next refresh. Retractions therefore keep
-        // the old single-question path and write straight through (t-5e6d review).
-        const isRetraction = val.trim().length === 0 && q.answer.trim().length > 0;
+        // the old single-question path and write straight through (t-5e6d review). A blank on a
+        // row with no answer on disk holds nothing: an empty hold could never flush.
+        const isRetraction = val.length === 0 && q.answer.trim().length > 0;
         if (isRetraction) {
           dropHeld(t.id, i);
           commitPatch(t.id, 'answer', val, q.answer, q, 'answer', i);
+        } else if (val.length === 0) {
+          dropHeld(t.id, i);
         } else {
           holdAnswer(t.id, i, q.text, val);
         }
@@ -1964,8 +2178,8 @@
           else qLine.replaceChild(posMarker, editBtn);
         }
         updateHead();
-        item.classList.toggle('is-held', !isRetraction);
-        heldTag.hidden = isRetraction;
+        item.classList.toggle('is-held', given);
+        heldTag.hidden = !given;
         summaryText.textContent = val;
         u.qaEditOpen[i] = false;
         setCollapsed(given);
@@ -1994,16 +2208,25 @@
           if (isGiven(i)) { u.qaEditOpen[i] = false; setCollapsed(true); }
           return;
         }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); return; }
+        // Single-line (t-c4d1): Enter saves like ⌘S, Shift+Enter inserts nothing, and an Enter that
+        // ends an IME composition belongs to the input method.
+        if (e.key === 'Enter') {
+          if (e.isComposing) return;
+          e.preventDefault();
+          if (!e.shiftKey) commitAnswer();
+        }
       });
+      // Text pastes fold at the caret; file pastes stay with wireFieldAttach below.
+      wireSingleLinePaste(ta);
       // Always-textarea field, no view↔edit toggle to key registration off — register when it
-      // gains focus (t-471a), same idiom the note composer uses.
+      // gains focus (t-471a), same idiom the feedback composer uses.
       ta.addEventListener('focus', () => setActiveEditor(editor, commitAnswer));
       const stageAnswer = wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
       });
-      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
+      // Behavioural parity with the feedback composer (t-f51c): a discoverable ＋ Attach button
       // alongside the existing silent drag-drop/paste support.
       const answerAttachBtn = h('button', {
         class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
@@ -2042,181 +2265,245 @@
         body.append(suggWrap);
       }
 
-      editor.append(ta, h('div', { class: 'qa-editor-foot' }, answerAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'), saveBtn));
+      editor.append(ta, h('div', { class: 'qa-editor-foot' }, answerAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'),
+        h('span', { class: 'qa-hint single-line-hint' }, SINGLE_LINE_HINT), saveBtn));
       refreshAnswerAttachments(answerAt(i));
       body.append(summary, editor, attachWrap);
-      setCollapsed(isGiven(i));
+      // An answered row stays open across a repaint while its editor is open — a rescued retraction
+      // or a "use on question N" (t-5831) opens it this way.
+      setCollapsed(isGiven(i) && !u.qaEditOpen[i]);
       list.append(item);
     });
+    if (!qFolded) {
+      const rescued = renderRescuedAnswers(t, u);
+      if (rescued) list.append(rescued);
+    }
     return panel;
   }
 
-  function renderReview(t) {
-    const u = getUi(t.id);
-    const wrap = h('div', { class: 'review-block' });
-    if (t.delivered) {
-      const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
-      delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+  // Rescued answers (t-5831): held answers whose question a re-groom rewrote or removed. They sit
+  // in the Open questions panel as their own block — the question they were written for, marked as
+  // changed, then the text — until the human moves one onto a current question or dismisses it.
+  // Nothing here reaches the host: "use on question N" only seeds, opens and focuses that row, and
+  // the human saves it the normal way.
+  function renderRescuedAnswers(t, u) {
+    const entries = rescuedAnswers[t.id];
+    if (!entries || !entries.length) return null;
+    const wrap = h('div', { class: 'qa-rescued' });
+    entries.forEach((r, k) => {
+      const uses = t.questions.map((q, n) => makeGateButton({ class: 'qa-link-btn', type: 'button', title: 'Put this answer into question ' + (n + 1) + ' to edit and save' }, () => {
+        u.answerDrafts[n] = r.text;
+        u.qaEditOpen[n] = true;
+        u.qaFocus = n;
+        dropRescuedAnswer(t.id, k);
+        render();
+      }, 'use on question ' + (n + 1)));
+      const dismiss = makeGateButton({ class: 'icon-btn', type: 'button', title: 'Dismiss this answer', 'aria-label': 'Dismiss this answer', style: { width: '20px', height: '20px' } },
+        () => { dropRescuedAnswer(t.id, k); render(); }, icon(SVG.x));
+      const qText = h('div', { class: 'qa-rescued-q', html: mdToHtml(r.q) });
+      qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
-      wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
-    }
-    // Feedback is ONE collapsible block with three exclusive states on `u.feedbackOpen` (t-2622,
-    // the note's collapse idiom, not its look — amber marks a Rule 13 change request): editing
-    // composer / saved amber block with edit+delete / empty-state button. The composer only exists
-    // while open, and `edit` seeds it with the FULL saved text, so the whole-value replace of the
-    // 'feedback' patch never drops lines the reviewer did not see.
-    if (u.feedbackOpen) {
-      const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write review feedback…' });
-      ta.value = u.feedbackDraft || '';
-      autoGrow(ta);
-      if (u.feedbackNeedsFocus) { u.feedbackNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
-      const commitFeedback = () => {
-        clearActiveEditor(feedbackFieldWrap);
-        const val = ta.value.trim();
-        if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
-        commitPatch(t.id, 'feedback', val, t.feedback || '', t, 'feedback');
-        u.feedbackDraft = '';
-        u.feedbackOpen = false;
-        render(); // paint the echoed feedback into the amber block now, not on the confirming refresh
-      };
-      const saveBtn = h('button', {
-        class: 'btn-sm primary field-save-btn', type: 'button',
-        disabled: (u.feedbackDraft || '').trim().length === 0,
-        title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
-      }, 'Save');
-      ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => {
-        // Escape closes the composer without committing: the draft is dropped and any saved
-        // feedback stays as it was (collapsed amber block, or the empty-state button).
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.feedbackOpen = false; u.feedbackDraft = ''; }, feedbackFieldWrap); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
-      });
-      // Register when it gains focus (t-471a), same idiom the note composer uses: its empty-draft
-      // no-op commit leaves the composer open, and the next focus re-registers it.
-      ta.addEventListener('focus', () => setActiveEditor(feedbackFieldWrap, commitFeedback));
-      const stageFeedback = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        commitFeedback();
-      });
-      // Behavioural parity with the note composer (t-f51c): a discoverable ＋ Attach button
-      // alongside the existing silent drag-drop/paste support.
-      const feedbackAttachBtn = h('button', {
-        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
-        onclick: () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.addEventListener('change', () => { if (input.files && input.files[0]) stageFeedback(input.files[0]); });
-          input.click();
-        },
-      }, '＋ Attach');
-      const feedbackFieldWrap = h('div', {}, ta,
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } },
-          saveBtn, feedbackAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
-      wrap.append(feedbackFieldWrap);
-    } else if (t.feedback) {
-      const feedbackText = h('span', { html: mdToHtml(t.feedback) });
-      feedbackText.querySelectorAll('a[data-mdlink]').forEach((a) => {
-        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-      });
-      const feedbackAttachArea = renderFieldAttachmentsArea(t.feedback, (newVal) => sendPatch(t.id, 'feedback', newVal, t.feedback), t.id);
-      wrap.append(h('div', { class: 'amber-block' },
-        h('div', { class: 'qa-note-head' },
-          h('div', { class: 'amber-label' }, 'Your pending feedback'),
-          h('div', { class: 'qa-note-tools' },
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.feedbackDraft = t.feedback; u.feedbackOpen = true; u.feedbackNeedsFocus = true; render(); } }, 'edit'),
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { commitPatch(t.id, 'feedback', '', t.feedback, t, 'feedback'); render(); } }, 'delete'))),
-        h('div', { style: { fontSize: '13px', lineHeight: '1.5' } }, h('span', { class: 'codicon codicon-warning' }), ' ', feedbackText),
-        feedbackAttachArea));
-    } else {
-      wrap.append(h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.feedbackOpen = true; u.feedbackNeedsFocus = true; render(); } },
-        '＋ Review feedback'));
-    }
+      wrap.append(h('div', { class: 'qa-rescued-item' },
+        h('div', { class: 'qa-rescued-head' }, h('span', { class: 'qa-rescued-label' }, 'Written for a question that has changed'), dismiss),
+        qText,
+        h('div', { class: 'qa-rescued-text' }, r.text),
+        uses.length ? h('div', { class: 'qa-rescued-uses' }, uses) : null));
+    });
     return wrap;
   }
 
-  function renderNote(t) {
-    const u = getUi(t.id);
-    const wrap = h('div', { class: 'note-wrap' });
-    if (u.noteOpen) {
-      const ta = h('textarea', {
-        class: 'field qa-note-field', 'data-field': 'note', rows: '2',
-        placeholder: 'Note to worker — context, constraints, links. Paste an image to attach it.',
-      });
-      ta.value = u.noteDraft || '';
-      if (u.noteNeedsFocus) { u.noteNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
-      const commitNote = () => {
-        clearActiveEditor(composer);
-        const d = (u.noteDraft || '').trim();
-        if (!d) return; // nothing to commit — composer stays open, same as today's Save-disabled state
-        u.noteOpen = false;
-        u.noteDraft = '';
-        commitPatch(t.id, 'note', d, t.note || '', t, 'note');
-        render();
-      };
-      ta.addEventListener('input', (e) => { u.noteDraft = e.target.value; sendBtn.disabled = e.target.value.trim().length === 0; });
-      ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { exitFieldEdit(() => { u.noteOpen = false; u.noteDraft = ''; }, composer); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitNote(); }
-      });
-      // The note composer has no auto-focus-on-open (unlike description/draft/composer), so
-      // registering on focus (rather than right after building `composer`, as the other toggle
-      // fields do) is both correct and sufficient — the user must focus `ta` to type anyway, and
-      // commitNote's empty-draft no-op (no render()) means a fresh registration on the next
-      // focus is exactly what's needed to keep click-outside working after that no-op.
-      ta.addEventListener('focus', () => setActiveEditor(composer, commitNote));
-      // Stage into the draft text without committing (t-b149): unlike the description/answer
-      // fields, the note composer stays open after a paste/drop so more text or attachments can
-      // follow — only Send/⌘↵ actually saves.
-      const stage = wireFieldAttach(ta, t.id, 'note', undefined, (path, filename) => {
-        insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
-        u.noteDraft = ta.value;
-        sendBtn.disabled = u.noteDraft.trim().length === 0;
-      });
-      const attachBtn = h('button', {
-        class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
-        onclick: () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.addEventListener('change', () => { if (input.files && input.files[0]) stage(input.files[0]); });
-          input.click();
-        },
-      }, '＋ Attach');
-      const sendBtn = h('button', {
-        class: 'btn-sm primary', type: 'button', disabled: (u.noteDraft || '').trim().length === 0,
-        title: 'Send (Cmd/Ctrl+S)', onclick: commitNote,
-      }, t.note ? 'Save note' : 'Add note');
-      const composer = h('div', { class: 'qa-note-composer' },
-        ta,
-        h('div', { class: 'qa-note-composer-foot' },
-          h('div', { class: 'qa-note-composer-hint' },
-            attachBtn,
-            h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘↵ saves')),
-          sendBtn));
-      wrap.append(composer);
-    } else if (t.note) {
-      const attachments = extractAttachments(t.note, t.id);
-      const bodyText = attachments.reduce((s, a) => s.split('[' + a.label + '](' + a.path + ')').join('').trim(), t.note);
-      let bodyEl = null;
-      if (bodyText) {
-        bodyEl = h('div', { class: 'qa-note-body', html: mdToHtml(bodyText) });
-        bodyEl.querySelectorAll('a[data-mdlink]').forEach((a) => {
-          a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-        });
-      }
-      wrap.append(h('div', { class: 'qa-note' },
-        h('div', { class: 'qa-note-head' },
-          h('div', { class: 'qa-note-meta' }, h('span', { class: 'qa-note-kind' }, 'Note')),
-          h('div', { class: 'qa-note-tools' },
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { u.noteDraft = t.note; u.noteOpen = true; u.noteNeedsFocus = true; render(); } }, 'edit'),
-            h('button', { class: 'qa-link-btn', type: 'button', onclick: () => { commitPatch(t.id, 'note', '', t.note, t, 'note'); render(); } }, 'delete'))),
-        bodyEl,
-        attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null));
-    } else {
-      const emptyBtn = h('button', { class: 'qa-note-empty', type: 'button', onclick: () => { u.noteOpen = true; u.noteNeedsFocus = true; render(); } },
-        '＋ Note to worker');
-      wrap.append(emptyBtn);
+  function renderReview(t) {
+    if (!t.delivered) return null;
+    const wrap = h('div', { class: 'review-block' });
+    const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
+    delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+    });
+    wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
+    return wrap;
+  }
+
+  // ---- feedback (t-ae10) ----
+  // ONE human-input concept on every card, drafts included: each `feedback:` line is its own amber
+  // row with its own chips, edit and delete, and the "＋ Feedback" add button stays under the list
+  // at all times. Review reopens the task on it (Rule 13); every other phase applies it in place;
+  // New/DRAFT folds it into the story (Rule 14). Replaces t-2622's single tri-state Review block and
+  // the separate note block; the composer still exists only while open, and edit seeds it with
+  // that ITEM's full saved text (links included).
+  //
+  // Per-card state: u.feedbackOpen (a composer is open — at most one per card), u.feedbackEdit
+  // (-1 = add composer, else the edited item's index), u.feedbackBase (the edited item's text when
+  // opened — the host resolves the item by it), u.feedbackDraft, u.feedbackNeedsFocus.
+
+  // Path-keyed, label-agnostic link strip (t-ae10): removes `[any label](path)` for each path, so a
+  // dedupe-renamed screenshot (`[image.png](…/image-2.png)`) still shows only as its chip. Pure —
+  // test/board-feedback.test.js runs it via vm extraction.
+  function stripAttachmentLinks(text, paths) {
+    let out = String(text || '');
+    for (const p of paths) {
+      const esc = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp('[ \\t]*\\[[^\\]]*\\]\\(' + esc + '\\)', 'g'), '');
     }
+    return out.replace(/[ \t]{2,}/g, ' ').trim();
+  }
+
+  // Echo + post one feedback patch. `feedbackAdd` appends (no base); `feedbackItem` edits or, with
+  // an empty value, deletes ONE item, addressed by index plus that item's own text — the same
+  // resolution src/merge.ts applies to the re-read disk list, so the local echo matches the write.
+  // One entry is ONE item (t-c4d1): the echo folds it through canonAnswer exactly as src/merge.ts
+  // folds the write, so `lines` holds zero or one item.
+  function commitFeedbackPatch(t, field, value, base, itemIndex) {
+    const list = (t.feedback || []).slice();
+    const item = canonAnswer(value || '');
+    const lines = item ? [item] : [];
+    let at = -1;
+    if (field === 'feedbackAdd') {
+      if (!lines.length) return;
+      t.feedback = list.concat(lines);
+    } else {
+      if (item === base) return; // unchanged edit — nothing to send
+      at = list[itemIndex] === base ? itemIndex : list.indexOf(base);
+      if (at >= 0) list.splice.apply(list, [at, 1].concat(lines));
+      t.feedback = list;
+    }
+    sendPatch(t.id, field, value, base, undefined, at >= 0 ? at : itemIndex);
+  }
+
+  // Open the card's one composer (edit = item index, or -1 to add). A composer already open with
+  // unsaved text is KEPT and refocused, never silently discarded; click-outside (setActiveEditor)
+  // has normally committed it already by the time this runs.
+  function openFeedbackComposer(u, edit, text) {
+    const pending = (u.feedbackDraft || '').trim();
+    if (u.feedbackOpen && pending && pending !== (u.feedbackEdit >= 0 ? u.feedbackBase : '')) {
+      u.feedbackNeedsFocus = true;
+      render();
+      return;
+    }
+    // Replacing the card's composer abandons a rescued text the human already emptied (t-5831).
+    if (u.taskId) dropRescuedFeedback(u.taskId);
+    u.feedbackOpen = true;
+    u.feedbackEdit = edit;
+    u.feedbackBase = text;
+    u.feedbackDraft = text;
+    u.feedbackNeedsFocus = true;
+    render();
+  }
+
+  function closeFeedbackComposer(u) {
+    u.feedbackOpen = false;
+    u.feedbackEdit = -1;
+    u.feedbackBase = '';
+    u.feedbackDraft = '';
+  }
+
+  function renderFeedbackComposer(t, u) {
+    const isEdit = u.feedbackEdit >= 0;
+    const ta = h('textarea', { class: 'field', 'data-field': 'feedback', rows: '2', placeholder: 'Write feedback…' });
+    ta.value = u.feedbackDraft || '';
+    autoGrow(ta);
+    if (u.feedbackNeedsFocus) { u.feedbackNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
+    const commitFeedback = () => {
+      clearActiveEditor(composer);
+      const val = ta.value.trim();
+      if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
+      dropRescuedFeedback(t.id); // saved again — if this save is refused too, its reply rescues it afresh (t-5831)
+      if (isEdit) commitFeedbackPatch(t, 'feedbackItem', val, u.feedbackBase, u.feedbackEdit);
+      else commitFeedbackPatch(t, 'feedbackAdd', val, '');
+      closeFeedbackComposer(u);
+      render(); // paint the echoed item into its amber row now, not on the confirming refresh
+    };
+    const saveBtn = h('button', {
+      class: 'btn-sm primary field-save-btn', type: 'button',
+      disabled: (u.feedbackDraft || '').trim().length === 0,
+      title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
+    }, 'Save');
+    ta.addEventListener('input', () => { u.feedbackDraft = ta.value; keepRescuedFeedback(t.id, ta.value); autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
+    ta.addEventListener('keydown', (e) => {
+      // Escape closes the composer without committing: the draft is dropped, saved items stay.
+      if (e.key === 'Escape') { dropRescuedFeedback(t.id); exitFieldEdit(() => closeFeedbackComposer(u), composer); return; }
+      if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
+    });
+    // Register when it gains focus (t-471a): the empty-draft no-op commit leaves the composer open,
+    // and the next focus re-registers it.
+    ta.addEventListener('focus', () => setActiveEditor(composer, commitFeedback));
+    // Paste, drop and ＋ Attach STAGE the link into the draft without committing — only Save/⌘S
+    // saves. The reply may land after a repaint, so the link goes into the live textarea.
+    const stage = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
+      const live = document.querySelector('[data-task="' + t.id + '"] textarea[data-field="feedback"]') || ta;
+      insertLinkAtCursor(live, '[' + filename + '](' + path + ')');
+      u.feedbackDraft = live.value;
+      keepRescuedFeedback(t.id, live.value);
+      autoGrow(live);
+      const liveSave = live.parentNode && live.parentNode.querySelector('.field-save-btn');
+      if (liveSave) liveSave.disabled = live.value.trim().length === 0;
+    });
+    const attachBtn = h('button', {
+      class: 'qa-btn is-secondary', type: 'button', title: 'Attach a file',
+      onclick: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.addEventListener('change', () => { if (input.files && input.files[0]) stage(input.files[0]); });
+        input.click();
+      },
+    }, '＋ Attach');
+    const composer = h('div', { class: 'feedback-composer' }, ta,
+      h('div', { class: 'feedback-foot' }, saveBtn, attachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'),
+        // Enter stays a newline here (t-c4d1): a saved item is an instruction a loop may act on at
+        // once, so Enter must not save half a thought — but the item is saved as ONE line.
+        h('span', { class: 'qa-hint single-line-hint' }, 'line breaks become spaces')));
+    return composer;
+  }
+
+  function renderFeedbackRow(t, u, text, i) {
+    const attachments = extractAttachments(text, t.id);
+    const body = stripAttachmentLinks(text, attachments.map((a) => a.path));
+    let bodyEl = null;
+    if (body) {
+      // An item is one line (t-c4d1): rendered inline beside its icon, so `- foo` or `1. bar` is
+      // text after the icon, not an empty icon line over a one-item list.
+      const bodyText = h('span', { html: renderInline(body) });
+      bodyText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      bodyEl = h('div', { class: 'feedback-body' }, h('span', { class: 'codicon codicon-warning' }), ' ', bodyText);
+    }
+    // edit/delete commit on pointerdown (makeGateButton): a click-outside commit of another open
+    // composer repaints first, and a plain click on the torn-down button would be lost.
+    return h('div', { class: 'amber-block feedback-row' },
+      h('div', { class: 'feedback-head' },
+        h('div', { class: 'amber-label' }, 'Your pending feedback'),
+        h('div', { class: 'feedback-tools' },
+          makeGateButton({ class: 'qa-link-btn', type: 'button' }, () => openFeedbackComposer(u, i, text), 'edit'),
+          makeGateButton({ class: 'qa-link-btn', type: 'button' }, () => { commitFeedbackPatch(t, 'feedbackItem', '', text, i); render(); }, 'delete'))),
+      bodyEl,
+      attachments.length ? h('div', { class: 'qa-attachments' }, attachments.map((a) => attachmentChip(a, () => detachAttachment(t.id, a.path)))) : null);
+  }
+
+  function renderFeedback(t) {
+    const u = getUi(t.id);
+    const items = t.feedback || [];
+    // A refused save's text reopens here (t-5831): on the refresh that follows the refusal and again
+    // after a reload, decided against the items as they are now. A composer already open wins.
+    const rescued = rescuedFeedback[t.id] && !u.feedbackOpen ? rescueTarget(rescuedFeedback[t.id], items) : null;
+    if (rescued) {
+      u.feedbackOpen = true;
+      u.feedbackEdit = rescued.edit;
+      u.feedbackBase = rescued.base;
+      u.feedbackDraft = rescued.text;
+    }
+    const wrap = h('div', { class: 'feedback-wrap' });
+    // An open EDIT composer sits in its item's row: that index while the line there still reads as
+    // the item's text, else the first line equal to it (the loop removed an earlier item).
+    let editAt = -1;
+    if (u.feedbackOpen && u.feedbackEdit >= 0) {
+      editAt = items[u.feedbackEdit] === u.feedbackBase ? u.feedbackEdit : items.indexOf(u.feedbackBase);
+    }
+    items.forEach((text, i) => wrap.append(i === editAt ? renderFeedbackComposer(t, u) : renderFeedbackRow(t, u, text, i)));
+    // The add composer — or an edit whose item the loop already addressed, kept so the typed text is
+    // not lost (its save is a disk-wins conflict) — sits under the list.
+    if (u.feedbackOpen && editAt < 0) wrap.append(renderFeedbackComposer(t, u));
+    wrap.append(makeGateButton({ class: 'feedback-add', type: 'button' }, () => openFeedbackComposer(u, -1, ''), '＋ Feedback'));
     return wrap;
   }
 
@@ -2268,6 +2555,15 @@
       if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
       pushToast(msg.level, msg.text, action, msg.icon);
+    } else if (msg.type === 'patchResult') {
+      // Posted for every patch, before the refresh that carries disk's answer. A refused one is
+      // queued for applyRescues, and that refresh must land even mid-edit: the local echo is wrong.
+      const patch = pendingPatches[msg.reqId];
+      delete pendingPatches[msg.reqId];
+      if (patch && (msg.status === 'conflict' || msg.status === 'unsupported')) {
+        refusedPatches.push(patch);
+        forceNextBoard = true;
+      }
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer, msg.search);
     } else if (msg.type === 'attachStaged' || msg.type === 'attachRemoved') {
@@ -2290,8 +2586,10 @@
     // otherwise the stale snapshot gets flushed on the next focusout and clobbers newer state.
     pendingBoard = null;
     // Reconcile held answers against what the tracker now says (t-5e6d): landed ones are dropped,
-    // ones whose question changed underneath are dropped with a toast, the rest survive.
+    // ones whose question changed underneath move to the card's rescued answers (t-5831), the rest
+    // survive. Then give any refused feedback/answer text back in its editor.
     pruneHeldAnswers(incoming);
+    applyRescues(incoming);
     pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
     lastSyncTs = Date.now();

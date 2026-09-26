@@ -44,7 +44,10 @@ test('sendPatch is only called from allowlisted, deliberately un-echoed sites', 
   const allowed = [
     'function sendPatch(', // the definition
     'sendPatch(taskId, field, value, base, questionIndex);', // the single call inside commitPatch
-    'renderFieldAttachmentsArea(t.feedback,', // Review-feedback attachment × callback (out of t-bbad scope)
+    // t-5831: sendPatch became the ONE poster of `patch` messages (it stamps the request id), so
+    // the two sites that echo on their own and used to post directly now call it.
+    "if (value !== base) sendPatch(t.id, 'answers', value, base);", // flushAnswers (echoes the set)
+    'sendPatch(t.id, field, value, base, undefined, at >= 0 ? at : itemIndex);', // commitFeedbackPatch (echoes the item)
   ];
   const offenders = board.filter((l) => l.includes('sendPatch(') && !allowed.some((a) => l.includes(a)));
   assert.deepEqual(offenders, []);

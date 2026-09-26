@@ -27,6 +27,10 @@ questions, an HTML-comment template) and `index-unknown.md`:
   or a DRAFT is recognized and **dropped** — never parsed onto the entry, never in `unknownLines`
   (so it draws no flagged chip), never re-emitted — for any value, integer or not; an index that
   arrives WITH `rev:` lines is still a **fixpoint** after the first canonical write.
+- **Single-line values (t-c4d1, scenarios B1-B4, C1-C7, D8):** the writer emits every title,
+  question, answer, suggestion and feedback item on one line (a hand-built `\n`/`\r\n`/`\r` value
+  cannot split an entry); a comment block opens only at a line that STARTS with `<!--`, so an opener
+  inside any value (TODO.md or DONE.md) keeps its entry and every later one.
 
 ### Task-file parser/writer — `test/taskfile.test.js` (§2.2)
 - Parses every canonical section; **fixpoint** and byte-for-byte round-trip of a full fixture.
@@ -39,27 +43,58 @@ questions, an HTML-comment template) and `index-unknown.md`:
   empty ones dropped rather than written back as bare headings; free markdown either way (prose
   Goals round-trip — the parser polices neither length nor bullet shape); a hand-written section in
   a pre-t-2191 file is recognized instead of landing in `unknownLines`, and relocates on save.
+- **`##` inside a story section (t-c4d1, H1-H12):** inside Problem, Description and Goals only one
+  of the six known headings ends the section, so an unknown `## ` line (or a fenced template
+  quoting one) stays in place; Meta, Worklog, Delivered and unknown sections split as before.
+  `draftDescription` (`test/draft-description.test.js`, G1-G8) builds the New Story composer copy.
 
 ### Merge routing + patches — `test/merge.test.js`
-- `patchTarget` routes title/model/groomer/answer/note/feedback → index, description/problem/goals
+- `patchTarget` routes title/model/groomer/answer/answers/feedbackAdd/feedbackItem → index, description/problem/goals
   → detail; `problem`/`goals` apply and conflict on a stale base exactly like `description`, a
   `problem` patch leaves description/goals untouched, and a whitespace value drops the section.
 - `applyPatch` (index) and `applyDetailPatch` (detail) keep disk-wins conflict semantics; answer
   patch targets the right question; model `default (opus)` clears the field; unknown id → notfound.
-- `note` and `feedback` each edit their whole set as one value: newline-split, empties dropped →
-  `notes: string[]` / `feedback: string[]`; clearing either empties the set.
+- Feedback is per ITEM (t-ae10), never the whole set: `feedbackAdd` appends to the re-read disk
+  list with no base (an item the loop removed meanwhile is no conflict, both changes kept);
+  `feedbackItem` edits/deletes one line found by index + that item's own base, falling back to a
+  text match when earlier items were removed; an edit whose base is gone = disk-wins conflict, a
+  delete whose base is gone = `noop`; other items never conflict. A multi-line value is ONE item,
+  folded to a single line (t-c4d1, was a per-line split). `unreferencedAttachments` (`src/attachments.ts`,
+  `test/attachments.test.js`) decides which of a deleted item's files are safe to delete.
+- **Host single-line rule (t-c4d1, A1-A15):** `applyPatch` folds title, answer and each answer of
+  `answers` (after the raw positional split and line-count guard) through `canonicalLine`, compares
+  canonical values for conflicts (an idempotent re-save is applied, a real change still conflicts),
+  and never folds Problem/Description/Goals; `test/single-line.test.js` checks the board's
+  `canonAnswer` equals it and pins the store's `verbose` `canonicalize` line.
 
 ### Gates — `test/gates.test.js`
 - `promoteIndex` (phase→backlog, uncheck), `promoteDetail` (`promoted:` + worklog, no dup),
   `acceptDetail` (`completed:` + worklog), `acceptDoneEntry` (slim DONE entry, no questions).
+- `promoteIndexIfReady` (t-39e2): refuses with `conflict`, entry untouched, when the re-parsed entry
+  is out of New, a DRAFT, has any question (blank or answered-unfolded) or feedback; otherwise the
+  same result as `promoteIndex`.
 
 ### View — `test/view.test.js`
 - `computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; dependency marked met when
-  its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `note` derives from `notes[]`;
-  `feedback` derives from `feedback[]`; DONE cards render from the slim IndexEntry (no composed
+  its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `feedback` is the
+  `feedback[]` item list (`[]` when none, t-ae10); DONE cards render from the slim IndexEntry (no composed
   detail).
 - `WebTask` carries `problem`/`goals` for active tasks AND for DONE entries, defaulting to `''`
   when the task file has neither section (t-2191).
+- `autoPromote` flags exactly the armed task ids (DRAFTs included), none when no set is passed (t-39e2).
+
+### Right-click auto-promote — `test/autopromote.test.js`, `test/board-gate-button.test.js` (t-39e2)
+- `readyToAutoPromote`: true only for `phase: new`, not a DRAFT, zero questions, no feedback — one
+  failing case per condition, including answered-but-not-folded.
+- `evaluateArm`: fires only after the predicate held with an unchanged fingerprint (index block +
+  task file) for `AUTO_PROMOTE_SETTLE_MS` (30 s); a change restarts the window; the window never
+  starts before the arm; drops when the task is gone or out of New; one arm held through five
+  question rounds fires after the last fold settles; an armed DRAFT holds `draft` until groomed,
+  then fires a full window after the DRAFT -> New change (and holds through a first groom's
+  questions).
+- `makeGateButton`, lifted from `media/board.js` into a vm: a `button: 2` (or 1) pointerdown never
+  commits and is not `preventDefault`ed; `button: 0` commits once and swallows its trailing click.
+  The live gestures are item 54 (F5 only).
 
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
@@ -155,7 +190,7 @@ one that never fires):
   `stopLoop` (trip, schedule, clock, terminal, in that order); observation, both fire-time checks
   and the context poll (after its `busyChanged` flushes) read `busyModels`; `idle-hold` carries
   `describeBusy`'s reason; `idle-stop` names the fail-open; `dispose()` clears the idle timers.
-  The manifest pair is pinned in `test/manifest-settings.test.js`. The live behaviour is item 51.
+  The manifest pair is pinned in `test/manifest-settings.test.js`. The live behaviour is item 59.
 
 ## Manual — Extension Development Host (F5)
 
@@ -206,30 +241,32 @@ New v2 checklist (from REFACTORING.md Phase 8):
     `description edited` — the detail-side change signal that replaced `rev:`. Append a
     `## Worklog` line to the same `tasks/<id>.md` by hand → one more nudge, naming
     `worklog appended`.
-11. **Delivered/Feedback/Note render as markdown (t-7a94):** a Review card whose Delivered note
+11. **Delivered/Feedback render as markdown (t-7a94):** a Review card whose Delivered note
     contains `` `code` ``, `**bold**`, a bare `https://…` URL, and a `-`/`1.` list renders all of
     them formatted (code chip, emphasis, clickable link, list) — same in the DONE-archive expanded
-    detail after acceptance. A Review feedback comment or a Note-to-worker instruction containing
-    a staged-attachment `[name](.loopboard/cache/<id>/name)` link renders it clickable (opens via
-    `openLink`), not as literal `[text](path)` — both keep their leading warning/clock codicon.
+    detail after acceptance. A feedback item's text renders as markdown with its leading warning
+    codicon; its staged-attachment links show only as chips (item 13).
     Plain Description/question-text rendering is unchanged (no regression).
 12. **Attachments, any file type (t-058e):** on each of the four surfaces — New Story composer,
-    Description/answer fields, Review feedback field, note-to-worker field — drag-drop AND paste
+    Description/answer fields, the feedback composer (any phase, t-ae10) — drag-drop AND paste
     a non-image file (e.g. a `.pdf` or `.zip`) → it stages under `.loopboard/cache/<id>/` and a
-    `[name](path)` link lands in that field's own text (feedback/note do NOT misfile into
+    `[name](path)` link lands in that field's own text (feedback does NOT misfile into
     Description). A file over `loopBoard.maxAttachmentSizeMB` (default 10MB) is still rejected
     host-side with a toast; that is the only remaining gate — no type allowlist/denylist, an
     `.exe`/`.sh` attaches too (explicit human decision, t-058e).
-13. **Notes-to-worker reskin (t-b149):** empty state shows the dashed "＋ Note to worker · or drop
-    files here" drop-zone; clicking it (or dropping a file on it) opens the `.qa-note-composer`.
-    Typing + Add note saves and renders the note as a `.qa-note` card (yellow rail, "NOTE" label,
-    edit/delete links) in both a light AND a dark theme. Pasting a screenshot into the open
-    composer stages it and inserts `[name](.loopboard/cache/<id>/name)` at the caret WITHOUT
-    closing the composer (further edits/attachments still possible before Save); the saved note
-    then shows an attachment chip (ext badge + clickable name → opens via `openLink`) below the
-    body text, and its × removes the file AND strips the link from the note (re-fetch confirms
-    no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
-    retracts the note entirely (existing behavior, unchanged).
+13. **Feedback attachments (t-ae10, replaces the t-b149 note item) — UNTESTED in the live
+    webview:** open a card's feedback composer and paste a screenshot, drop a file, and use
+    ＋ Attach → each stages under `.loopboard/cache/<id>/` and inserts its link at the caret WITHOUT
+    saving or closing the composer (Save stays the only commit; nothing new in `TODO.md` yet).
+    Save → the row shows each attachment ONLY as a chip, never as literal link text — including
+    two pasted screenshots both named `image.png` (the second is stored as `image-2.png` under the
+    label `image.png`: `stripAttachmentLinks` is path-keyed, vm-tested in
+    `test/board-review-feedback.test.js`). A chip × deletes the cached file AND strips its link from that
+    `feedback:` line in one store step (`store.removeAttachment`; check the cache dir and
+    `TODO.md`; `debug.log` at `verbose` shows `detach-feedback`). **Delete:** a row whose item
+    links a file no other text of the task mentions → **delete** removes the line and the file; a
+    file also linked from the Description (or another item) survives (`feedback-delete-file`
+    lines in `debug.log`).
 14. **Two-layer filter: the typed filter survives navigation, view queries do not (t-2452 →
     t-3d42, amended by t-1cdb):** type a plain-text filter while on one phase tab, then click
     through New / Backlog / In Progress / Review / Feedback / Done via the board tab strip — the
@@ -265,11 +302,11 @@ New v2 checklist (from REFACTORING.md Phase 8):
     pausing, immediately click a phase tab or a card field — the click lands normally (no
     mid-repaint glitch) and the filter is not lost. Type a query and hit ⌘R / reload while the list
     is still settling — the query comes back after the reload.
-15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
-    terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
-    row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
-    second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)
-    still works when the panel was never hidden externally.
+15. **Loop-row toggle survives ⌘J (t-2e35, t-9c3f) — UNTESTED, manual F5 only:** (1) spawn a
+    loop and click its sidebar row → its terminal shows. (2) Press ⌘J to hide the panel, then click
+    the row ONCE → the terminal shows and is focused (no dead first click). (3) Click the row again
+    → the panel hides; click again → it shows. (4) Press ⌘J to hide and ⌘J again to show the
+    panel, then click the row ONCE → the panel hides.
 16. **Attachment chip idiom unified (t-f51c):** a description, a draft, an answer, and Review
     feedback each with an attached image all render the SAME `.qa-attachment` chip (ext badge +
     link name + ×) as a note's attachment — no more bare-link description/draft lists. The
@@ -277,8 +314,9 @@ New v2 checklist (from REFACTORING.md Phase 8):
     (not clickable — no cache file yet). Every one of these four fields (new-story composer,
     description edit, answer edit, Review feedback) shows a `＋ Attach` button next to its
     Save/paste hint; clicking it opens a file picker and stages the file exactly like a drop/
-    paste would. Removing an answer or feedback attachment chip strips its link from that
-    field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
+    paste would. Removing an answer attachment chip strips its link from that field's own text
+    (re-fetch confirms no dangling link) rather than a separate detach call; a feedback chip goes
+    through `detach` since t-ae10 (item 13).
     No image thumbnails anywhere (unchanged from t-b149).
 17. **Composer save shortcut (t-9b50):** with the New Story composer open and text typed, press
     Cmd/Ctrl+S → the draft saves (same as clicking Save Draft) and the composer closes. With the
@@ -305,7 +343,8 @@ New v2 checklist (from REFACTORING.md Phase 8):
     composer still work). Click the empty button once → the composer opens AND the caret is
     already in the textarea, ready to type with no second click. Click "edit" on an existing note
     → same one-click-to-focused-caret behavior. Opening the composer via a background board
-    refresh (not a click) does not steal focus into the textarea.
+    refresh (not a click) does not steal focus into the textarea. (t-ae10: the note block is gone;
+    run the same checks on the ＋ Feedback composer, item 48.)
 21. **`owner:` field removed (t-33cb):** no card's chip row shows a robot-icon owner chip or an
     "unassigned" chip anymore (both are gone). Move a task to In Progress → the working indicator
     reads "Worker is on it · last activity today" (no name/attribution). Attempt to delete a task
@@ -407,6 +446,7 @@ New v2 checklist (from REFACTORING.md Phase 8):
     Review card, a feedback save (the amber "Your pending feedback" block appears immediately) and
     an answer save. Conflict path unchanged: edit the same field on disk between opening the editor
     and saving → the "changed on disk" toast still wins and the card shows the disk value.
+    (t-ae10: the note is now a feedback item — run the note steps on a feedback row, item 48.)
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
@@ -449,7 +489,8 @@ and likewise cannot be verified headless.
     story's `answer:` lines directly in `TODO.md`, then answer the last question — the
     "changed on disk" toast fires, nothing partial is written, and the held answers stay in the
     card so you can save again. Re-groom path: hold an answer, then change that question's TEXT in
-    `TODO.md` — the next refresh drops the held answer with an info toast naming the story. Repeat
+    `TODO.md` — the next refresh moves the held answer into the card's rescued-answer block with an
+    info toast naming the story (t-5831 — no longer dropped; walkthrough in item 56). Repeat
     the first walkthrough on a **Feedback** card: identical batching, with the worker-resumes
     tooltip wording.
 
@@ -463,6 +504,8 @@ and likewise cannot be verified headless.
     succeeds with the newline folded to a space; no "Task changed on disk" toast. Finally, save a
     row whose value equals what is already on disk as the last blank → no patch is posted and the
     `held` tag disappears immediately rather than sticking.
+
+    Rail colour after a landed answer (t-c4d1): item 52, steps **F7**-**F10**.
 
 31. **Toasts hold while hovered or focused (t-7905):** trigger a board toast — arm a schedule from
     a sidebar row (success, 4 s) or force a "changed on disk" conflict by editing a field in
@@ -520,9 +563,9 @@ and likewise cannot be verified headless.
     Docker suite does not cover any of it — this checklist is the acceptance path, exactly as for
     t-col1 / t-7411 / t-7679. On a **New** card that has open questions:
 
-    **Default:** with no saved section state (fresh board, or after Expand all), both the
-    **Description** and **Open questions** sections show expanded, each with a chevron in its
-    header.
+    **Default:** with no saved section state, the **Description** section shows FOLDED to its
+    one-line preview and the **Open questions** panel shows FOLDED to its header (t-d5f2 — every
+    section always starts folded), each with a chevron in its header.
 
     **Independent fold:** click the Description chevron → only that section folds; the questions
     panel and the card itself are untouched. Same in reverse for the Open questions chevron: its
@@ -536,13 +579,15 @@ and likewise cannot be verified headless.
     `Add a description…`. Expanding removes the preview.
 
     **Collapse all / Expand all:** click **Collapse all** → every card in the tab folds. Expand one
-    card by its own chevron → BOTH its sections come back folded. **Expand all** → every card and
-    every section open. Switch tabs: the other tab is unaffected.
+    card by its own chevron → its Open questions panel and Description each show whatever their
+    own chevron last set (folded unless opened by hand). **Expand all** → every card opens; neither
+    Description nor the Open questions panel is opened by it (t-d5f2). Switch tabs: the other tab
+    is unaffected.
 
-    **Persistence:** hand-fold one section, then (a) let a loop write to the tracker so the board
-    refreshes, (b) switch to another view in the activity bar and back, and (c) reload the window —
-    the fold survives all three. Then press Collapse all / Expand all in that tab: the hand-set
-    override is wiped by it.
+    **Persistence:** hand-fold/unfold one section, then (a) let a loop write to the tracker so the
+    board refreshes, (b) switch to another view in the activity bar and back, and (c) reload the
+    window — the fold survives all three. Then press Collapse all / Expand all in that tab: every
+    hand-set section override (Description and Open questions alike) survives (t-d5f2).
 
     **Commit on collapse:** click the description to open its editor, type without saving, then
     click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
@@ -978,8 +1023,10 @@ and likewise cannot be verified headless.
       `.loopboard/tasks/<id>.md` — `debug.log` shows one `patch` line naming the field and
       `.loopboard/TODO.md` is byte-for-byte unchanged on disk. The file on disk shows the section
       in canonical order (Problem above Description, Goals below it).
-    - **Collapse all** / **Expand all** folds and unfolds all three sections on every card in the
-      tab; per-section folds survive a tab hop and a panel hide/reveal (they ride `vscode.setState`).
+    - The three sections start **folded** on every expanded card, and **Collapse all** /
+      **Expand all** neither fold nor open them — only each section's own chevron does (t-d5f2,
+      item 51); per-section folds survive a tab hop and a panel hide/reveal (they ride
+      `vscode.setState`).
     - The tab **filter** matches text that appears only in Problem or only in Goals (the box's
       placeholder now reads "id, title or story text").
     - **Done tab:** expanding an accepted row shows Delivered, then Problem, Description and Goals
@@ -1098,27 +1145,24 @@ and likewise cannot be verified headless.
     under `~/.claude/projects/<encoded cwd>/` → its assistant messages carry `"effort"` equal to the
     loop's session level.
 
-48. **Editable Review feedback (t-2622) — UNTESTED in the live webview:** the three-state
-    structure of `renderReview` is pinned as source text by `test/board-review-feedback.test.js`;
-    the switching, focus and repaint are webview-only (`media/board.js`), so this item is their
-    only acceptance path. **Empty:** a Review card with no `feedback:` shows only a dashed
-    **＋ Review feedback** button, no textarea. Click it → the composer opens with the textarea
-    focused and Save disabled; press Escape → it collapses back to the button, nothing written.
-    **Save:** open it again, type `first point`, Save → the amber "Your pending feedback" block
-    shows `first point` in the same frame (no flash, no textarea beneath it) and `TODO.md` has one
-    `feedback:` sub-bullet. **Edit:** click **edit** → the composer opens focused and prefilled
-    with `first point`; add a second line `second point`, press ⌘S → the block shows both lines
-    at once and `TODO.md` has both `feedback:` sub-bullets (the first was not lost). Click
-    **edit**, change the text, press Escape → the block returns showing the saved text unchanged,
-    nothing written. Clear the whole textarea → Save is disabled. **Delete:** click **delete** →
-    the block returns to the ＋ Review feedback button at once and `TODO.md` has no `feedback:`
-    sub-bullet. **Attachments:** in the open composer (prefilled via **edit**), ＋ Attach a file
-    → its link is inserted after the existing text and saved (attach/paste/drop still commit, as
-    before — t-5b29 owns that); click **edit** again and paste a screenshot → same. The collapsed
-    block keeps the earlier text and renders chips for both, and removing a chip re-commits the
-    text without it. **Loop write
-    while editing:** with the composer focused, let a loop write `TODO.md` → the textarea keeps
-    focus and text until you click out or Escape.
+48. **One feedback input on every card (t-2622 → t-ae10) — UNTESTED in the live webview:** the
+    structure of `renderFeedback` is pinned as source text by `test/board-review-feedback.test.js`;
+    the switching, focus and repaint are webview-only (`media/board.js`), so this item is their only
+    acceptance path. On a DRAFT, New, Backlog, In Progress, Feedback and Review card alike: with no
+    `feedback:` the card shows only a dashed **＋ Feedback** button, no textarea and no "Note to
+    worker". Click it → the composer opens focused, Save disabled; Escape → it closes, nothing
+    written. **Add:** type `first point`, Save → one amber "Your pending feedback" row appears in
+    the same frame and `TODO.md` has one `feedback:` line; ＋ Feedback stays under the list; add
+    `second point` → a second row, a second line (the first untouched). **Edit:** a row's **edit**
+    opens the composer in that row, prefilled with that item only; change it, ⌘S → only that line
+    changes. While it is open, ＋ Feedback is still visible; clicking it (or another row's edit)
+    commits the open composer first — never discards typed text — and at most one composer is ever
+    open on the card. **Delete:** a row's **delete** removes that line only. **Loop race:** with
+    two items, open the composer on the second, have a loop delete the first line in `TODO.md`,
+    then Save → the edit lands on the right line with no conflict toast; add an item while the loop
+    deletes another → both changes kept. Edit an item the loop has since removed → the disk-wins
+    toast. **Drafts:** a draft's feedback survives a save of its text/selects. With the composer
+    focused, a loop write keeps focus and text until you click out or Escape.
 
 49. **Sidebar hover survives repaints (t-9a29 feedback) — UNTESTED in the live webview:** the
     in-place reconciler (`paint`/`morph` in `media/sidebar.js`) is run against a fake DOM by
@@ -1166,7 +1210,188 @@ and likewise cannot be verified headless.
       poll that still resolves the old session shows `agents-read … (ended session <id> — no
       edges)`. Repeat with a Force-on scheduled restart and with a `context-fire` recycle.
 
-51. **Idle stop (t-2dd4):** host + webview only (`src/controller.ts`, `media/sidebar.js`) — the
+51. **Story sections start folded; Expand all / Collapse all act on cards only (t-d5f2) —
+    UNTESTED in the live webview:** `media/board.js` `isSectionCollapsed` / `setPhaseCollapsed`;
+    the fallback and the narrowed wipe are pinned over the source text by
+    `test/board-section-folds.test.js`, the rendered result is this checklist. Start from a card
+    with no saved section state (e.g. a newly promoted task).
+    - **Default fold:** expand a non-draft card in each tab (New, Backlog, In Progress, Feedback,
+      Review) → the card is open (chips, selects, attachments, status) and **Problem**,
+      **Description** and **Goals** each show only their header, chevron and one-line preview.
+      Press **Collapse all** then **Expand all** → still folded; press only **Collapse all** and
+      expand one card by its chevron → still folded.
+    - **Chevron wins:** open Goals by its own chevron, then press Collapse all → the card folds;
+      Expand all → the card opens with Goals still open and Problem/Description still folded. The
+      opened Goals also survives (a) a loop write that refreshes the board, (b) a switch to another
+      activity-bar view and back, and (c) a window reload.
+    - **Open questions folded too (review feedback, supersedes the story's "unchanged" goal):** on a
+      New and a Feedback card with unanswered questions, the expanded card shows the panel FOLDED:
+      header only (chevron, `Open questions`, `N / M answered` with the wait tooltip, the
+      progress meter, and `re-groom pending` when every answer is in on a New card), no rows, no
+      **Save All**; the chips-row question chip shows the same status. **Expand all** does not
+      open it and **Collapse all** does not reset it; a panel opened by its own chevron stays open
+      across both buttons, a refresh, a view switch and a reload.
+
+52. **Multi-line text safety (t-c4d1) — UNTESTED in the live webview:** the host rule, the writer
+    fold, the comment-opener rule, the `##` rule and the composer copy are covered in Docker
+    (`test/merge.test.js`, `test/parser.test.js`, `test/taskfile.test.js`,
+    `test/single-line.test.js`, `test/draft-description.test.js`); the editors' Enter/paste
+    handlers and the hold decision are run in a vm and pinned as source text by
+    `test/board-single-line.test.js` and `test/board-review-feedback.test.js`, and the *landed*
+    compare (`splitHeldAnswers`, F3/F11) by `test/refusal-rescue.test.js`. What a real webview
+    renders, focuses and sends is F5 only, so the steps below are the only acceptance path for
+    it. Headless sessions cannot run them. Set `loopBoard.debug: verbose` and watch `debug.log`.
+    - **D12 (feedback, one item):** paste `It will decide:` / blank line / `- the tag scheme;` /
+      `- where it lives;` / `and a hard-wrapped sentence that` / `continues here.` into
+      **＋ Feedback** and Save → ONE amber row, the warning icon inline with the text, no bullet
+      list, and ONE `feedback:` line in `TODO.md` (plus a `canonicalize` line in `debug.log`).
+      Save items `- foo` and `1. bar` → each shows as text after the icon. Edit an item, add a line
+      break, Save → still one row. The composer shows `line breaks become spaces`, and Enter still
+      inserts a newline there.
+    - **E10:** in the DRAFT edit box and in an answer, ⌘S still saves and Escape still cancels
+      exactly as before.
+    - **E11:** paste a three-line list into a DRAFT edit box, press Enter → `TODO.md` holds the
+      draft on one title line with nothing at column 0 under it; the card shows one line; no
+      disk-wins toast. The box shows `Enter saves · line breaks become spaces`.
+    - **E12:** in an answer, Enter saves, Shift+Enter adds nothing, pasted multi-line text lands as
+      one line at the caret (replacing a selection), and a pasted screenshot still attaches. Type
+      with a Japanese/Chinese IME and confirm a candidate with Enter → the candidate is committed,
+      the answer is not saved.
+    - **F7 (next to item 30):** on a New story with three questions, answer the last blank with
+      text ending in a pasted line break (Enter now saves, so a trailing break arrives by paste),
+      then with an inner pasted line break, then with surrounding spaces — each through Save, Save
+      All and a suggestion's Accept → after the
+      confirming board the row is GREEN with no `held` tag, and `TODO.md` holds the answer folded
+      and trimmed.
+    - **F8:** stage a non-last answer with stray whitespace (`  yes  `) → the summary and the
+      textarea show `yes`, and neither its Save nor Save All reads the row as dirty.
+    - **F9:** hold two answers, hand-edit one of that story's `answer:` lines in `TODO.md`, then
+      complete the set → the flush conflicts (toast) and the rows stay amber and re-savable.
+    - **F10 (upgrade):** on a build without this story, answer the last blank with a trailing
+      newline so the row sticks amber; install this build and **Developer: Reload Webviews** → the
+      row turns green without a re-save.
+    - **G10:** in the New Story composer paste a list, paste a screenshot, Save Draft → the draft
+      card shows the list under its one-line title, the screenshot shows exactly ONE chip, and the
+      `TODO.md` title is one line; `tasks/<id>.md` has the list under `## Description` with no
+      `loopboard-pending:` and no `.loopboard/cache/` link.
+    - **H13 (Docker one-off, run 2026-09-26):** `.loopboard/` is gitignored, so the suite cannot
+      read it. `origin/main`'s and this branch's `parseTaskFile`, each compiled in `node:22`, parsed
+      all 189 `.loopboard/tasks/*.md` files of this workspace → identical results for every file
+      (the 12 files with `##` blocks after `## Delivered` included). The same check over
+      `.loopboard/TODO.md` and `DONE.md` with both `parseTodo`/`parseDone` → identical.
+
+53. **Refused feedback and answer text reopens in its editor (t-5831) — UNTESTED in the live
+    webview:** numbered 53, 56 and 57 (not 51–53) because 51, 52, 54 and 55 landed first. The
+    decision (`rescueTarget`) runs in a vm and the wiring is pinned as source text
+    by `test/refusal-rescue.test.js`; the round trip (`sendPatch` request id → host `patchResult`) by
+    `test/refusal-toast.test.js`. Reopening, focus and persistence are webview-only. Set
+    `loopBoard.debug: verbose`.
+    - **Feedback edit:** on any card with two `feedback:` items, open **edit** on the second, type
+      `my edit`, then change that same line by hand in `TODO.md` and Save → the warning toast reads
+      "Task changed on disk — your feedback edit was not applied. Your text was kept on the card —
+      save it again." (never `feedbackItem`), and the card shows the disk line in its row plus a
+      composer holding `my edit`: in that row while the edited line still exists, UNDER the list
+      (an add composer) when the line is gone. `debug.log` shows `patch-result … -> conflict`.
+    - **Feedback add:** a `feedbackAdd` is a pure append this host never refuses, so its path (text
+      back into the add composer) has no live trigger today and is covered by the vm test only.
+    - **Answer retraction:** clear an answered question to blank and, before saving, change that
+      `answer:` line by hand; Save → the toast names "answer", and the row reopens with a blank
+      editor next to the disk answer, Save enabled.
+    - **Survives:** with the rescued feedback composer showing, let a loop write refresh the board,
+      hide and re-show the panel, and run **Developer: Reload Webviews** → the composer and its text
+      (including anything typed into it since) are still there. The retraction's reopened row
+      survives the forced refresh; like any unsaved answer draft it does not survive a reload.
+    - **Clears:** Save the rescued feedback → it is written and the composer does not come back on
+      the next refresh or reload. Repeat and press Escape instead → closed, nothing written, and a
+      reload does not bring it back.
+    - **Untouched:** another answer row's unsaved draft survives a flush of the set (Save the last
+      blank question while a different, answered row is open with edited text → that row keeps its
+      text and stays open).
+
+54. **Right-click Promote arms an automatic promote (t-39e2) — UNTESTED in the live webview:**
+    numbered 54 (not 51) because open PRs #177/#179/#180 each add item 51 onward. The decision
+    (`evaluateArm`), the guarded gate and the payload flag are unit-tested (`test/autopromote.test.js`,
+    `test/gates.test.js`, `test/view.test.js`), the primary-button guard by
+    `test/board-gate-button.test.js`; the gestures, spinner, timers and toast are F5 only. Set
+    `loopBoard.debug: verbose` and read `.loopboard/debug.log` throughout.
+    - **Arm / disarm:** right-click an ordinary New card's **Promote** → no host context menu, the
+      check becomes a rotating spinner, the tooltip reads "Promotes automatically once every
+      question is answered and folded in — click to promote now, right-click to cancel", and the
+      card is NOT greyed; `auto-promote-arm <id>` at info. Right-click again → the check is back;
+      `auto-promote-disarm <id> — right-click`. Shift+F10 (or the Menu key) on the focused button
+      does the same. With OS reduced motion on, the spinner glyph shows but stays still.
+    - **Left-click while armed:** on a story with questions → the usual `confirmPromote` modal;
+      **Promote anyway** → promoted now, `auto-promote-disarm <id> — left-click promote`. Cancel →
+      the spinner stays (the arm is kept). On a story with no questions → promoted at once.
+    - **DRAFT:** a draft card shows a greyed **Promote** next to ✕ whose left-click does nothing
+      and whose tooltip says right-click arms it; right-click → spinner, `auto-promote-arm <id>
+      (draft — held until groomed)`, then verbose `auto-promote-hold <id> draft`. Let the groomer
+      groom it → the card switches to a story card and the spinner is still there.
+    - **Rounds:** arm a story whose groom files questions → verbose `auto-promote-hold <id>
+      questions — …`. Answer them, let the re-groom fold them and file NEW questions → the spinner
+      stays (no `auto-promote-drop`). Answer again; once the re-groom leaves zero questions and no
+      feedback → `auto-promote-hold <id> settling — …`, then about 30 s after the last write
+      `auto-promote-fire <id> -> backlog` at info, the card moves to Backlog and a toast reads
+      `Auto-promoted "<title>" to Backlog`. An edit to the entry or its task file during those
+      30 s restarts the wait.
+    - **Drop:** arm a story, then move it out of New another way (tick it `[x]` for the loop, or
+      edit `phase:` by hand) or delete it → `auto-promote-drop <id> — …` at info, no toast.
+    - **Reload:** arm two tasks, run **Developer: Reload Window** → both show the check again and
+      nothing auto-promotes.
+    - **Stray right-clicks gone:** right-click Review **Approve**, a feedback **delete** and
+      **＋ Feedback** → none of them acts (before: accept / delete / open); at most the webview's own
+      context menu shows.
+55. **Release visuals in the GitHub Release body (t-7e1a) — UNTESTED until a live release:**
+    numbered 55 because open PRs add items 51–53. The builder (`scripts/release-visual.js`) is
+    unit-tested in `test/release-visual.test.js` and the step's wiring is pinned in
+    `test/packaging.test.js`; the git/gh wrapper only runs in `release.yml`. Check the FIRST release
+    whose range carries a `Release-Visual: <file>.gif` trailer (e.g. `11-auto-promote.gif`):
+    - **Section:** the `vX` release body ends with a `### Showcase` section after Features / Bug
+      Fixes, one bold caption (the GIF's `alt` from `docs/showcase/README.md`) and one image per
+      designated GIF; the generated notes above it are unchanged.
+    - **Tag-pinned image renders:** the image loads on the release page and its URL is
+      `https://raw.githubusercontent.com/<owner>/<repo>/vX/docs/showcase/gifs/<file>`.
+    - **Trace:** the `Append release visuals` step log names the range, each trailer, each GIF added
+      or skipped with its reason, and that it edited the body. A release with no trailer logs
+      "body not edited" and its body is untouched.
+    - **Failure stays cheap:** if the step ever fails, it shows red with an annotation while `vsix`
+      and `publish` still run; restore the section by editing the body by hand, or by running
+      `node scripts/release-visual.js` (in Docker, never on the host; it needs `gh` and `git`) on a
+      checkout of `vX` with `GH_TOKEN`, `GITHUB_REPOSITORY`, `LAST_RELEASE_VERSION` and
+      `NEW_RELEASE_VERSION` set.
+
+56. **Held answers for a changed question are kept on the card (t-5831, amends t-c4d1) — UNTESTED in
+    the live webview:** the keep/landed/rescued split (`splitHeldAnswers`, its *landed* compare
+    through t-c4d1's `canonAnswer`) runs in a vm and
+    `pruneHeldAnswers`' routing is pinned as source text by `test/refusal-rescue.test.js`; the
+    block itself is webview-only. On a New story with three questions, answer the first (held, not
+    on disk), then edit that question's TEXT by hand in `TODO.md`.
+    - The next refresh shows an info toast "Held answers for “<title>” were kept on the card — its
+      questions changed.", the row is no longer held, and at the bottom of the Open questions panel
+      a dashed amber block reads "WRITTEN FOR A QUESTION THAT HAS CHANGED", then the OLD question
+      text (italic), then your answer.
+    - It offers "use on question 1", "use on question 2", "use on question 3". Click "use on
+      question 2" → row 2 opens, holds your text, has focus and Save enabled; the block entry is
+      gone. Nothing was written to `TODO.md` until you Save the row (held as usual).
+    - Repeat and click the block's × → the entry disappears, nothing is written.
+    - With an entry showing, run **Developer: Reload Webviews** → the entry is still there.
+    - Remove the question instead of rewriting it → the same block. Remove ALL questions from a New
+      story → the panel stays on the card for the block (no "use on" links, × only).
+    - Promote the story (or delete it) → the entry is gone.
+
+57. **Build-mismatch warning with Reload Window (t-5831) — UNTESTED (needs a live extension
+    host):** the compare (`stampsDiffer`) and the host wiring are covered by
+    `test/buildstamp.test.js`. Install the `.vsix` (or run from the installed extension directory),
+    set `loopBoard.debug: info`, open a window and close the board panel. Then `touch` the
+    installed `media/board.js` (under `~/.vscode/extensions/<publisher>.loopboard-todo-<version>/`)
+    and reopen the board → exactly ONE warning "LoopBoard was updated while this window was open …"
+    with a **Reload Window** button; `debug.log` has `build-mismatch activation: … | now: …` with
+    both stamps, `popup warning — …`, and after the click `popup-choice build-mismatch -> reload`
+    (or `-> dismissed`). Close and reopen the board again without reloading → no second warning,
+    only an `info` line `… already warned this session, no popup`. Reload Window → the board opens
+    with no warning (a verbose `build-stamp ready — webview assets match activation`).
+59. **Idle stop (t-2dd4):** numbered 59 (not 51) because items 51–57 landed first and open PR #185
+    claims 58. Host + webview only (`src/controller.ts`, `media/sidebar.js`) — the
     clock, the fire-time decisions and every wording are pure and covered by `test/idle.test.js`;
     this is the wiring, the popup and the row line. **Untested in headless sessions: needs the F5
     host.** Set `loopBoard.idleStop.enabled: true`, `loopBoard.idleStop.minutes: 2` and
