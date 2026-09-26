@@ -3,6 +3,9 @@
 
 import { IndexDoc, IndexEntry } from './model';
 import { getTasksHeading, getTasksExtras } from './parser';
+// Writer fold (t-c4d1): every index value is emitted on ONE line, whatever built the entry. Silent —
+// merge.ts already folds every patched value, so this only backs up a future host path.
+import { canonicalLine as oneLine } from './merge';
 
 const DEFAULT_TASKS_HEADING = '## Tasks';
 
@@ -24,7 +27,7 @@ function ensureIds(entries: IndexEntry[]): void {
 // Serialize one active index entry (TODO.md). Fixed key order per §2.1.
 export function serializeEntry(entry: IndexEntry): string[] {
   const box = entry.checked ? '[x]' : '[ ]';
-  const out: string[] = [`- ${box} ${entry.title}`];
+  const out: string[] = [`- ${box} ${oneLine(entry.title)}`];
 
   if (entry.id) out.push(`  - id: ${entry.id}`);
 
@@ -33,7 +36,7 @@ export function serializeEntry(entry: IndexEntry): string[] {
     // feedback (t-ae10) the groomer folds in while grooming (Rule 14).
     if (entry.model) out.push(`  - model: ${entry.model}`);
     if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
-    for (const f of entry.feedback) out.push(`  - feedback: ${f}`);
+    for (const f of entry.feedback) out.push(`  - feedback: ${oneLine(f)}`);
     for (const u of entry.unknownLines) out.push(u);
     return out;
   }
@@ -42,18 +45,18 @@ export function serializeEntry(entry: IndexEntry): string[] {
   if (entry.model) out.push(`  - model: ${entry.model}`);
   if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
   for (const q of entry.questions) {
-    out.push(`  - question: ${q.text}`);
-    out.push(`    - answer: ${q.answer}`.replace(/\s+$/, ''));
-    for (const s of q.suggestions) out.push(`    - suggestion: ${s}`);
+    out.push(`  - question: ${oneLine(q.text)}`);
+    out.push(`    - answer: ${oneLine(q.answer)}`.replace(/\s+$/, ''));
+    for (const s of q.suggestions) out.push(`    - suggestion: ${oneLine(s)}`);
   }
-  for (const f of entry.feedback) out.push(`  - feedback: ${f}`);
+  for (const f of entry.feedback) out.push(`  - feedback: ${oneLine(f)}`);
   for (const u of entry.unknownLines) out.push(u);
   return out;
 }
 
 // Serialize one accepted entry (DONE.md). Fixed key order per §2.3: id, model, groomer, completed.
 function serializeDoneEntry(entry: IndexEntry): string[] {
-  const out: string[] = [`- [x] ${entry.title}`];
+  const out: string[] = [`- [x] ${oneLine(entry.title)}`];
   if (entry.id) out.push(`  - id: ${entry.id}`);
   if (entry.model) out.push(`  - model: ${entry.model}`);
   if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);

@@ -122,14 +122,15 @@ test('the feedback patch kinds route to the index file', () => {
   for (const f of ['feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
 });
 
-test('feedbackAdd appends one item at the end, splitting line breaks and dropping empties', () => {
+// Rewritten by t-c4d1 (decision 4): one entry now folds into ONE item instead of splitting per line.
+test('[D7] feedbackAdd appends one item at the end, folding line breaks into that ONE item', () => {
   const doc = parseTodo(readFix('index-full.md'));
   assert.deepEqual(fbOf(doc, 't-bb01'), [A, B]);
   const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: 'third', base: '' });
   assert.equal(r.status, 'applied');
   assert.deepEqual(fbOf(doc, 't-bb01'), [A, B, 'third']);
   applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: 'x\n\n  \ny\n', base: '' });
-  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B, 'third', 'x', 'y']);
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B, 'third', 'x y']);
 });
 
 test('feedbackAdd is a pure append: an item the loop removed meanwhile is no conflict, both changes kept', () => {
@@ -178,10 +179,11 @@ test('feedbackItem falls back to a text match when earlier items were removed (i
   assert.deepEqual(fbOf(doc2, 't-bb01'), ['loop-inserted', B], 'the line at index 0 is not A, so A is found by text');
 });
 
-test('feedbackItem edit splits line breaks into several items at the edit position', () => {
+// Rewritten by t-c4d1 (decision 4): the edit replaces its item with ONE folded item.
+test('[D7] feedbackItem edit folds line breaks into ONE item at the edit position', () => {
   const doc = parseTodo(readFix('index-full.md'));
   applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'a1\n\na2', base: A, itemIndex: 0 });
-  assert.deepEqual(fbOf(doc, 't-bb01'), ['a1', 'a2', B]);
+  assert.deepEqual(fbOf(doc, 't-bb01'), ['a1 a2', B]);
 });
 
 test('an edit whose base is gone is the disk-wins conflict; a delete whose base is gone is a noop', () => {
@@ -285,4 +287,180 @@ test('an answers patch whose line count no longer matches the questions is a con
 test('an answers patch for an unknown task is notfound', () => {
   const doc = parseTodo(readFix('index-full.md'));
   assert.equal(applyPatch(doc, { taskId: 't-zzzz', field: 'answers', value: 'a', base: '' }).status, 'notfound');
+});
+
+// ---- t-c4d1: the host single-line rule (item 1) and one feedback entry = one item (item 3) ----
+// Every index value is one line (grammar v5); applyPatch folds title, answer, each answer of
+// `answers` and feedback, and conflicts compare canonical values. "Fixpoint" = the first written
+// text survives parse→write unchanged.
+const { serializeTodo } = require('../out-test/writer.js');
+const { feedbackLines } = require('../out-test/merge.js');
+
+const entryOf = (doc, id) => doc.entries.find((e) => e.id === id);
+const idsOf = (doc) => doc.entries.map((e) => e.id);
+function assertFixpoint(doc) {
+  const out = serializeTodo(doc);
+  assert.equal(serializeTodo(parseTodo(out)), out, 'the first write is a fixpoint');
+  return out;
+}
+const DRAFT_TITLE = 'DRAFT: the /orders endpoint sometimes returns 500 on stale cursor';
+const Q0 = 'Exponential with jitter, cap at 5 attempts.';
+
+test('[A1] a multi-line DRAFT title patch is stored as one line: no unknownLines, fixpoint', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-aa02', field: 'title', value: 'DRAFT:\n1. a\n2. b', base: DRAFT_TITLE });
+  assert.equal(r.status, 'applied');
+  assert.equal(entryOf(doc, 't-aa02').title, 'DRAFT: 1. a 2. b');
+  const out = assertFixpoint(doc);
+  const back = entryOf(parseTodo(out), 't-aa02');
+  assert.equal(back.title, 'DRAFT: 1. a 2. b');
+  assert.deepEqual(back.unknownLines, []);
+  assert.equal(back.isDraft, true);
+});
+
+test('[A2] a title line starting `- [ ]` cannot become a phantom task that takes the id', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const before = idsOf(doc);
+  const r = applyPatch(doc, { taskId: 't-aa01', field: 'title', value: 'x\n- [ ] phantom', base: entryOf(doc, 't-aa01').title });
+  assert.equal(r.status, 'applied');
+  assert.equal(entryOf(doc, 't-aa01').title, 'x - [ ] phantom');
+  const back = parseTodo(assertFixpoint(doc));
+  assert.equal(back.entries.length, before.length, 'entry count unchanged');
+  assert.deepEqual(idsOf(back), before, 'every id unchanged');
+  assert.equal(entryOf(back, 't-aa01').title, 'x - [ ] phantom');
+  assert.equal(back.entries.find((e) => e.title === 'phantom'), undefined, 'no phantom entry');
+});
+
+test('[A3] a lone CR in a title folds to a space', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  applyPatch(doc, { taskId: 't-aa01', field: 'title', value: 'a\rb', base: entryOf(doc, 't-aa01').title });
+  assert.equal(entryOf(doc, 't-aa01').title, 'a b');
+});
+
+test('[A4] a CRLF in a title folds to a space', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  applyPatch(doc, { taskId: 't-aa01', field: 'title', value: 'a\r\nb', base: entryOf(doc, 't-aa01').title });
+  assert.equal(entryOf(doc, 't-aa01').title, 'a b');
+});
+
+test('[A5] edge spaces, a tab and a blank line around the break fold to one space and trim', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  applyPatch(doc, { taskId: 't-aa01', field: 'title', value: '  a\n\n\tb  ', base: entryOf(doc, 't-aa01').title });
+  assert.equal(entryOf(doc, 't-aa01').title, 'a b');
+});
+
+test('[A6] an answer carrying `\\n  - feedback:` stays one answer and injects no feedback item', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answer', value: 'x\n  - feedback: injected', base: '', questionIndex: 1 });
+  assert.equal(r.status, 'applied');
+  assert.equal(entryOf(doc, 't-cc01').questions[1].answer, 'x - feedback: injected');
+  const back = entryOf(parseTodo(assertFixpoint(doc)), 't-cc01');
+  assert.equal(back.questions[1].answer, 'x - feedback: injected');
+  assert.deepEqual(back.feedback, [], 'no feedback: item appeared');
+  assert.deepEqual(back.unknownLines, []);
+});
+
+test('[A7] a whitespace-only answer retraction stores an empty answer and a blank `- answer:` line', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answer', value: '   ', base: Q0, questionIndex: 0 });
+  assert.equal(r.status, 'applied');
+  assert.equal(entryOf(doc, 't-cc01').questions[0].answer, '');
+  const lines = serializeTodo(doc).split('\n');
+  const q = lines.indexOf('  - question: Exponential backoff with jitter, or fixed 30s intervals?');
+  assert.equal(lines[q + 1], '    - answer:', 'the answer line is blank');
+});
+
+test('[A8] an `answers` patch folds each answer AFTER the positional split', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answers', value: ' a \r b \nc', base: `${Q0}\n` });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(entryOf(doc, 't-cc01').questions.map((q) => q.answer), ['a b', 'c']);
+});
+
+test('[A9] an `answers` patch with one line too many (a line break inside an answer) is a conflict, nothing written', () => {
+  for (const value of ['a\nb\nc', 'a\r\nb\nc']) {
+    const doc = parseTodo(readFix('index-full.md'));
+    const before = serializeTodo(parseTodo(readFix('index-full.md')));
+    const r = applyPatch(doc, { taskId: 't-cc01', field: 'answers', value, base: `${Q0}\n` });
+    assert.equal(r.status, 'conflict', JSON.stringify(value));
+    assert.equal(serializeTodo(doc), before, 'nothing changed');
+  }
+});
+
+test('[A10] an idempotent answer re-save with a stale raw base is applied, not a false conflict', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  entryOf(doc, 't-cc01').questions[0].answer = 'a b';
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answer', value: 'a b ', base: 'a\nb', questionIndex: 0 });
+  assert.equal(r.status, 'applied');
+  assert.equal(entryOf(doc, 't-cc01').questions[0].answer, 'a b');
+});
+
+test('[A11] a title re-save that folds to what is on disk is applied even with a stale base', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  entryOf(doc, 't-aa01').title = 'a b';
+  const r = applyPatch(doc, { taskId: 't-aa01', field: 'title', value: 'a\nb', base: 'x\ny' });
+  assert.equal(r.status, 'applied');
+  assert.equal(entryOf(doc, 't-aa01').title, 'a b');
+});
+
+test('[A12] a real same-field change on disk still conflicts', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  entryOf(doc, 't-cc01').questions[1].answer = 'theirs';
+  const r = applyPatch(doc, { taskId: 't-cc01', field: 'answer', value: 'mine', base: '', questionIndex: 1 });
+  assert.equal(r.status, 'conflict');
+  assert.equal(entryOf(doc, 't-cc01').questions[1].answer, 'theirs', 'disk wins');
+});
+
+test('[A13] Problem, Description and Goals patches keep their line breaks (never folded)', () => {
+  for (const field of ['description', 'problem', 'goals']) {
+    const detail = parseTaskFile('');
+    const r = applyDetailPatch(detail, { taskId: 't-1', field, value: 'l1\n\nl2', base: '' });
+    assert.equal(r.status, 'applied');
+    assert.equal(detail[field], 'l1\n\nl2', field);
+  }
+});
+
+const D1_TEXT = 'It will decide:\n\n- the tag scheme;\n- where it lives;\nand a hard-wrapped sentence that\ncontinues here.';
+const D1_ITEM = 'It will decide: - the tag scheme; - where it lives; and a hard-wrapped sentence that continues here.';
+
+test('[D1] feedbackAdd of a pasted multi-line message adds exactly ONE folded item', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: D1_TEXT, base: '' });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B, D1_ITEM]);
+  assert.deepEqual(feedbackLines(D1_TEXT), [D1_ITEM]);
+  const back = parseTodo(assertFixpoint(doc));
+  assert.deepEqual(fbOf(back, 't-bb01'), [A, B, D1_ITEM]);
+});
+
+test('[D2] feedbackAdd of blank lines and spaces only is a noop', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackAdd', value: '\n  \n\t\n ', base: '' });
+  assert.equal(r.status, 'noop');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B]);
+});
+
+test('[D3] feedbackItem edit with a line break becomes ONE item at the same index; removed is the old text', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'a1\n\na2', base: A, itemIndex: 0 });
+  assert.equal(r.status, 'applied');
+  assert.equal(r.removed, A);
+  assert.deepEqual(fbOf(doc, 't-bb01'), ['a1 a2', B]);
+});
+
+test('[D4] feedbackItem delete removes its item; a delete whose base is gone is a noop (unchanged)', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: '', base: B, itemIndex: 1 });
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A]);
+  const again = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: '', base: B, itemIndex: 1 });
+  assert.equal(again.status, 'noop');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A]);
+});
+
+test('[D5] feedbackItem edit whose base is gone is a conflict (unchanged)', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const r = applyPatch(doc, { taskId: 't-bb01', field: 'feedbackItem', value: 'x\ny', base: 'not there', itemIndex: 0 });
+  assert.equal(r.status, 'conflict');
+  assert.deepEqual(fbOf(doc, 't-bb01'), [A, B]);
 });

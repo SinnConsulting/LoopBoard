@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone } from './writer';
-import { parseTaskFile, serializeTaskFile } from './taskfile';
+import { parseTaskFile, serializeTaskFile, draftDescription } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
 import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
@@ -502,6 +502,11 @@ export class Store {
         }
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
         this.debugLog('verbose', fb ?? 'patch', `${patch.taskId} ${fb ? `#${patch.itemIndex ?? 'end'}` : patch.field} -> applied = ${patch.value}`);
+        // The single-line rule (t-c4d1) changed the value on its way to disk: say what came in and
+        // what was stored (JSON-quoted, so the folded line breaks stay visible on one log line).
+        if (result.canonicalized) {
+          this.debugLog('verbose', 'canonicalize', `${patch.taskId} ${fb ?? patch.field} -> ${JSON.stringify(result.canonicalized.raw)} → ${JSON.stringify(result.canonicalized.stored)}`);
+        }
         // Deleting a feedback item from the board deletes the cached files only it linked (t-ae10);
         // a path still mentioned anywhere else in the entry or its task file is kept.
         if (fb === 'feedback-delete' && result.removed !== undefined && result.entry) {
@@ -630,8 +635,15 @@ export class Store {
       // stays a fixpoint) instead of leaving consumers to handle a missing file.
       const skeleton = parseTaskFile('');
       skeleton.added = today;
+      // Composer copy (t-c4d1): the title above is flattened to one line, so a multi-line composer
+      // text also lands verbatim in ## Description (placeholders and cache links stripped — the
+      // links stay in the title), where its lists and paragraphs survive.
+      skeleton.description = draftDescription(text);
       await this.atomicWrite(this.taskUri(draft.id), serializeTaskFile(skeleton, draft.title, draft.id));
       this.debugLog('info', 'createDraft', `${draft.id} = ${draft.title}`);
+      this.debugLog('verbose', 'createDraft-description', skeleton.description === undefined
+        ? `${draft.id} -> no copy (one line or nothing left once links are stripped)`
+        : `${draft.id} -> copied ${skeleton.description.split('\n').length} line(s) into ## Description`);
       return { status: 'applied', id: draft.id };
     });
   }
