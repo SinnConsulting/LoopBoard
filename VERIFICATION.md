@@ -1438,8 +1438,8 @@ and likewise cannot be verified headless.
 58. **What's New tab after an update, and on demand from the sidebar (t-f070) — UNTESTED in the live
     webview:** numbered 58, the number item 59 left for it. The decision, the link, the
     `whats-new` / `whats-new-open` lines, the sidebar row's order and messages (evaluated from
-    `media/sidebar.js`), its narrow-viewport CSS rule and the command's wiring are unit-tested in
-    `test/whatsnew.test.js` (first install, same version, upgrade on/off, downgrade, unparseable,
+    `media/sidebar.js`), its centring and narrow-viewport CSS rules and the command's wiring are
+    unit-tested in `test/whatsnew.test.js` (first install, same version, upgrade on/off, downgrade, unparseable,
     `3.10.0` > `3.9.0`, tag page vs releases list, a failed record, no `fetch` in `src/`, the
     shared CSP, theme-variable-only CSS); the tab, the rendered sidebar line, the globalState
     write, the tick and the browser hand-off are host/webview only.
@@ -1474,7 +1474,8 @@ and likewise cannot be verified headless.
       opens, `whats-new upgrade 3.26.0 → 3.26.1 — setting off, not shown; recorded 3.26.1`. Turning
       the setting back on and reloading does not replay that update (`same version 3.26.1`).
     - **On demand, from the sidebar:** the sidebar's bottom line reads `What's new? | Settings |
-      Help` on ONE line above **New Story** (no icons, bars dimmed, a label underlines on hover).
+      Help` on ONE line, horizontally CENTRED, above **New Story** (no icons, bars dimmed, a label
+      underlines on hover).
       Click **What's new?** → the **What's New in LoopBoard** tab opens with `LoopBoard <running
       version>` and no from → to step; **Open the release notes** opens
       `…/releases/tag/v<running version>`. `debug.log` has `whats-new-open on demand (sidebar) —
@@ -1484,5 +1485,6 @@ and likewise cannot be verified headless.
       `on demand (command)`. With the update tab already open, either one repaints that same tab
       with the on-demand content (no second tab).
     - **Narrow sidebar:** drag the sidebar narrower → below 240 px **Help** and the bar before it
-      disappear and `What's new? | Settings` stays on one line; widen it again → Help is back.
+      disappear and `What's new? | Settings` stays on one line, still centred; at the minimum width
+      (170 px) **Settings** is fully visible, not clipped; widen it again → Help is back.
       **Settings** opens the settings page and **Help** the help page, as the old rows did.
