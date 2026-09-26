@@ -440,5 +440,55 @@ test('no workflow action is left on a Node-20 runtime', () => {
       );
     }
   }
-  assert.equal(seen, 8, 'expected all 8 uses: lines across the three workflows to be checked.');
+  // 9 since t-7e1a added the release job's setup-node step.
+  assert.equal(seen, 9, 'expected all 9 uses: lines across the three workflows to be checked.');
+});
+
+// ---------------------------------------------------------------------------
+// Release visuals (t-7e1a). The step lives INSIDE the release job, so its guard is what keeps a
+// failure from skipping vsix and publish (both `needs: release`, implicit success()). The builder
+// itself is covered by test/release-visual.test.js; this pins the wiring.
+// ---------------------------------------------------------------------------
+
+test('release visuals: a guarded step right after Semantic release in the release job', () => {
+  const lines = read('.github', 'workflows', 'release.yml').split('\n');
+  const start = lines.findIndex((l) => /^ {2}release:\s*$/.test(l));
+  const end = lines.findIndex((l, i) => i > start && /^ {2}\S/.test(l));
+  assert.ok(start !== -1 && end !== -1, 'release.yml must have a release job followed by another');
+  const job = lines.slice(start, end).join('\n');
+  // Each step is its own chunk, from one `      - name:` to the next.
+  const steps = job.split(/\n(?= {6}- name:)/).slice(1);
+  const at = (re) => steps.findIndex((s) => re.test(s));
+
+  const semantic = at(/uses: cycjimmy\/semantic-release-action@/);
+  const node = at(/uses: actions\/setup-node@/);
+  const visual = at(/run: node scripts\/release-visual\.js\s*$/m);
+  assert.ok(semantic !== -1 && node !== -1 && visual !== -1);
+  assert.ok(node > semantic && visual > node, 'setup-node, then the step, after Semantic release');
+
+  const gate = "if: steps.release.outputs.new_release_published == 'true'";
+  for (const step of [steps[node], steps[visual]]) {
+    assert.ok(step.includes(gate), 'gated on this run actually publishing a release');
+    assert.match(
+      step, /^\s*continue-on-error: true\s*$/m,
+      'without continue-on-error a failure fails the release job and skips vsix + publish.',
+    );
+  }
+  assert.match(steps[node], /node-version: 22/);
+  const visualStep = steps[visual];
+  assert.match(visualStep, /LAST_RELEASE_VERSION: \$\{\{ steps\.release\.outputs\.last_release_version \}\}/);
+  assert.match(visualStep, /NEW_RELEASE_VERSION: \$\{\{ steps\.release\.outputs\.new_release_version \}\}/);
+  assert.match(visualStep, /GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+
+  // The step's I/O wrapper writes the body back with gh release edit … --notes-file.
+  assert.match(
+    read('scripts', 'release-visual.js'),
+    /run\('gh', \['release', 'edit', tag, '--notes-file', file\]\)/,
+  );
+
+  // The job-output wiring stays exactly what vsix and publish consume.
+  assert.match(
+    job,
+    /\n {4}outputs:\n {6}published: \$\{\{ steps\.release\.outputs\.new_release_published \}\}\n {6}version: \$\{\{ steps\.release\.outputs\.new_release_version \}\}\n\n/,
+  );
 });

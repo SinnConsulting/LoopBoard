@@ -1,9 +1,11 @@
 'use strict';
 // Typed text given back when the board refuses a save (t-5831). media/board.js is a webview asset
 // the Docker suite never loads as a module, so its two decision functions — `rescueTarget` and
-// `splitHeldAnswers`, both deliberately self-contained — are lifted out of the SOURCE TEXT and run
-// in a bare vm context (the test/question-status.test.js technique); the wiring around them is
-// pinned as source-text invariants. Live behaviour: VERIFICATION.md items 51 and 52.
+// `splitHeldAnswers`, both pure — are lifted out of the SOURCE TEXT and run in a bare vm context
+// (the test/question-status.test.js technique); `splitHeldAnswers`' one outside reference, t-c4d1's
+// `canonAnswer`, is lifted into the same context. The wiring around them is pinned as source-text
+// invariants. t-c4d1's held-answer scenarios F3 and F11 live here too. Live behaviour:
+// VERIFICATION.md items 53 and 56.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -28,7 +30,9 @@ const code = (text) => text.split('\n').filter((l) => !l.trim().startsWith('//')
 const plain = (v) => JSON.parse(JSON.stringify(v)); // vm-realm objects vs deepEqual's prototype check
 
 const rescueTarget = vm.runInNewContext('(' + extractFunction('rescueTarget') + ')');
-const splitHeldAnswers = vm.runInNewContext('(' + extractFunction('splitHeldAnswers') + ')');
+const heldCtx = {};
+vm.runInNewContext(extractFunction('canonAnswer') + '\n' + extractFunction('splitHeldAnswers'), heldCtx);
+const splitHeldAnswers = heldCtx.splitHeldAnswers;
 
 // ---- rescueTarget ----
 
@@ -92,6 +96,48 @@ test('splitHeldAnswers: a rewritten question text is rescued', () => {
 test('splitHeldAnswers: a removed question is rescued', () => {
   assert.deepEqual(plain(splitHeldAnswers({ 2: { q: 'Q three?', text: 'mine' } }, questions)), { keep: [], landed: [], rescued: ['2'] });
   assert.deepEqual(plain(splitHeldAnswers({ 0: { q: 'Q one?', text: 'mine' } }, [])), { keep: [], landed: [], rescued: ['0'] });
+});
+
+// ---- t-c4d1's held-answer scenarios F3 and F11, on the merged split ----
+// pruneHeldAnswers, run for real in a vm with the helpers it calls, so the whole reconcile — not
+// only the split — is exercised.
+function runPrune(held, incomingQuestions) {
+  const toasts = [];
+  const ctx = { heldAnswers: { 't-1': held }, rescuedAnswers: {}, saveState() {}, pushToast: (level, text) => toasts.push(text) };
+  vm.runInNewContext(['canonAnswer', 'splitHeldAnswers', 'openQuestionTask', 'pruneHeldAnswers'].map(extractFunction).join('\n'), ctx);
+  ctx.pruneHeldAnswers({ phases: { new: [{ id: 't-1', title: 'Story', questions: incomingQuestions }], feedback: [] } });
+  return { held: plain(ctx.heldAnswers['t-1'] || {}), rescued: plain(ctx.rescuedAnswers['t-1'] || []), toasts };
+}
+const splitCode = code(extractFunction('splitHeldAnswers'));
+
+test('[F3] a held answer whose canonical form equals disk is landed; one that differs is kept', () => {
+  const qs = [{ text: 'Q1?', answer: 'a b' }, { text: 'Q2?', answer: 'x' }, { text: 'Q3?', answer: 'c' }];
+  const held = { 0: { q: 'Q1?', text: 'a\nb ' }, 1: { q: 'Q2?', text: '  x  ' }, 2: { q: 'Q3?', text: 'c d' } };
+  assert.deepEqual(plain(splitHeldAnswers(held, qs)), { keep: ['2'], landed: ['0', '1'], rescued: [] },
+    'rows 0 and 1 landed; row 2 (canonical `c d` ≠ disk `c`) kept');
+  const r = runPrune(held, qs);
+  assert.deepEqual(Object.keys(r.held), ['2'], 'the reconcile drops only the landed rows');
+  assert.deepEqual(r.rescued, [], 'a landed answer is never rescued');
+  assert.deepEqual(r.toasts, [], 'a landed answer says nothing');
+  assert.match(splitCode, /else if \(q\.answer === canonAnswer\(held\[i\]\.text\)\) out\.landed\.push\(i\);/, 'the landed compare canonicalises the held text');
+});
+
+test('[F11] a changed or removed question goes to the rescue path; the canonical compare sits behind the same-question test', () => {
+  // t-5831 owns what happens to a held answer whose question changed; t-c4d1 only changes the
+  // keep/landed compare, so such an answer is rescued, never matched against a different question —
+  // even when its canonical text equals the new question's disk answer.
+  const qs = [{ text: 'Q1?', answer: 'a' }];
+  const held = { 0: { q: 'Q1, before the re-groom?', text: 'a\n' }, 1: { q: 'Q gone?', text: 'b' } };
+  assert.deepEqual(plain(splitHeldAnswers(held, qs)), { keep: [], landed: [], rescued: ['0', '1'] });
+  const r = runPrune(held, qs);
+  assert.deepEqual(r.held, {}, 'neither kept as a live hold nor matched against a different question');
+  assert.deepEqual(r.rescued, [{ q: 'Q1, before the re-groom?', text: 'a\n' }, { q: 'Q gone?', text: 'b' }], 'both moved to the rescue block');
+  assert.deepEqual(r.toasts, ['Held answers for “Story” were kept on the card — its questions changed.']);
+  const lines = splitCode.split('\n');
+  const rescuedAt = lines.findIndex((l) => /if \(!q \|\| q\.text !== held\[i\]\.q\) out\.rescued\.push\(i\);/.test(l));
+  const canonAt = lines.findIndex((l) => l.includes('canonAnswer('));
+  assert.ok(rescuedAt >= 0 && canonAt === rescuedAt + 1, 'the only canonAnswer use is the else-branch right after the rescue test');
+  assert.equal(splitCode.split('canonAnswer(').length - 1, 1, 'canonAnswer is used once');
 });
 
 // ---- wiring (source text) ----

@@ -27,6 +27,7 @@ import { ContextReader, ContextReading } from './contextreader';
 import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide, rowsForEdges } from './subagents';
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
+import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -144,6 +145,14 @@ export class Controller {
   // whether this window already showed its one warning.
   private activationStamp: Promise<BuildStamp> | undefined;
   private buildMismatchWarned = false;
+  // Right-click Promote (t-39e2): armed auto-promotes by task id, any number at once. SESSION-ONLY
+  // BY DESIGN, like the restart schedules: nothing is persisted, so a reload clears every arm. Each
+  // settling arm owns a timer that re-runs refresh() when its quiet period ends, so the promote fires
+  // without waiting for another disk write; `autoPromoteFiring` keeps a concurrent refresh from
+  // firing the same arm while its guarded promote is still writing.
+  private autoPromoteArms = new Map<string, AutoPromoteArm>();
+  private autoPromoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private autoPromoteFiring = new Set<string>();
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -214,6 +223,7 @@ export class Controller {
   dispose(): void {
     if (this.contextTimer !== undefined) clearInterval(this.contextTimer);
     for (const model of [...this.restartTimers.keys()]) this.clearRestartTimer(model);
+    for (const id of [...this.autoPromoteTimers.keys()]) this.clearAutoPromoteTimer(id);
   }
 
   private config() {
@@ -267,7 +277,7 @@ export class Controller {
       // 30 s polls. A stopped loop has no session and therefore no agents.
       l.agents = (l.running ? this.agentRows.get(l.id) ?? [] : []).map((r) => describeAgent(r, now));
     }
-    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel);
+    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel, new Set(this.autoPromoteArms.keys()));
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
     web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
@@ -290,6 +300,7 @@ export class Controller {
     this.flushPendingRestarts(board);
     this.flushPendingContext(board);
     this.flushAfterTask(board);
+    this.evaluateAutoPromotes(board);
     // Re-measure on every refresh as well as on the interval (t-2b89 review feedback): a loop's
     // turn ends by writing `.loopboard/` markdown, which is exactly what triggers a refresh — so
     // the bar tracks the conversation instead of trailing it by up to a poll. Cheap: each read is
@@ -890,6 +901,11 @@ export class Controller {
         return this.onPatch(msg.patch as FieldPatch, msg.reqId);
       case 'gate':
         return this.onGate(msg.taskId, msg.action);
+      case 'armPromote':
+        return this.onArmPromote(String(msg.taskId ?? ''));
+      case 'disarmPromote':
+        this.disarmPromote(String(msg.taskId ?? ''), 'right-click');
+        return this.refresh('auto-promote-disarm');
       case 'createDraft': {
         // Ungroomed drafts carry explicit groomer/model (default when unspecified) so a loop
         // knows unambiguously who grooms and works the story — never left to the implicit default.
@@ -1492,6 +1508,7 @@ export class Controller {
     this.store.debugLog('info', 'gate-request', `${action} ${taskId}`);
     if (action === 'promote') {
       if (await this.confirmPromote(taskId)) {
+        this.disarmPromote(taskId, 'left-click promote');
         await this.store.promote(taskId, today());
         this.toast('success', 'Promoted to Backlog', undefined, 'check');
       } else {
@@ -1518,6 +1535,87 @@ export class Controller {
       if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     }
     return this.refresh();
+  }
+
+  // Right-click on Promote (t-39e2). Validated against the last board — never trust the webview:
+  // only a New task can be armed, a DRAFT included (human decision 3, 2026-09-25). Arming an armed
+  // task is a no-op; the board posts `disarmPromote` for the second right-click.
+  private async onArmPromote(taskId: string): Promise<void> {
+    const task = this.lastBoard?.tasks.find((t) => t.id === taskId);
+    if (!task || task.phase !== 'new') {
+      this.store.debugLog('info', 'auto-promote-arm', `${taskId} refused — ${task ? `phase ${task.phase}` : 'not on the board'}`);
+    } else if (!this.autoPromoteArms.has(taskId)) {
+      this.autoPromoteArms.set(taskId, createArm(Date.now()));
+      this.store.debugLog('info', 'auto-promote-arm', `${taskId}${task.isDraft ? ' (draft — held until groomed)' : ''}`);
+    }
+    return this.refresh('auto-promote-arm');
+  }
+
+  // An explicit human action ends an arm: the second right-click, or a left-click promote.
+  private disarmPromote(taskId: string, cause: string): void {
+    if (!this.autoPromoteArms.delete(taskId)) return;
+    this.clearAutoPromoteTimer(taskId);
+    this.store.debugLog('info', 'auto-promote-disarm', `${taskId} — ${cause}`);
+  }
+
+  private clearAutoPromoteTimer(taskId: string): void {
+    const timer = this.autoPromoteTimers.get(taskId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.autoPromoteTimers.delete(taskId);
+  }
+
+  // Runs on every board load. The decision is pure (`evaluateArm`, src/autopromote.ts); a hold never
+  // disarms (human decision 2) — only the task going away or leaving New drops an arm.
+  private evaluateAutoPromotes(board: Board): void {
+    if (this.autoPromoteArms.size === 0) return;
+    const now = Date.now();
+    for (const [id, arm] of [...this.autoPromoteArms]) {
+      if (this.autoPromoteFiring.has(id)) continue;
+      const task = board.tasks.find((t) => t.id === id);
+      const { decision, arm: next } = evaluateArm(arm, task, now);
+      this.clearAutoPromoteTimer(id);
+      if (decision.kind === 'drop') {
+        this.autoPromoteArms.delete(id);
+        this.store.debugLog('info', 'auto-promote-drop', `${id} — ${task ? `left New (now ${task.phase})` : 'no longer on the board'}`);
+      } else if (decision.kind === 'hold') {
+        this.autoPromoteArms.set(id, next);
+        this.store.debugLog('verbose', 'auto-promote-hold', `${id} ${decision.reason} — ${decision.detail}`);
+        if (decision.wakeAt !== undefined) {
+          this.autoPromoteTimers.set(id, setTimeout(() => {
+            this.autoPromoteTimers.delete(id);
+            void this.refresh('auto-promote-settle');
+          }, Math.max(0, decision.wakeAt - now)));
+        }
+      } else if (task) {
+        this.autoPromoteArms.set(id, next);
+        void this.fireAutoPromote(id, task.title);
+      }
+    }
+  }
+
+  // The fire path: no confirm modal — it only ever fires on confirmPromote's no-modal case (zero
+  // questions). The store re-checks the fresh entry under its write lock and refuses with
+  // `conflict` if a loop filed a question since; the arm then stays held for a fresh quiet period.
+  private async fireAutoPromote(taskId: string, title: string): Promise<void> {
+    this.autoPromoteFiring.add(taskId);
+    try {
+      const r = await this.store.promote(taskId, today(), true);
+      if (r.status === 'applied') {
+        this.autoPromoteArms.delete(taskId);
+        this.store.debugLog('info', 'auto-promote-fire', `${taskId} -> backlog`);
+        this.toast('success', `Auto-promoted "${title}" to Backlog`, taskId, 'check');
+      } else if (r.status === 'notfound') {
+        this.autoPromoteArms.delete(taskId);
+        this.store.debugLog('info', 'auto-promote-drop', `${taskId} — no longer on disk`);
+      } else {
+        const arm = this.autoPromoteArms.get(taskId);
+        if (arm) this.autoPromoteArms.set(taskId, { ...arm, fingerprint: null });
+        this.store.debugLog('info', 'auto-promote-refused', `${taskId} — the re-read entry is no longer ready; arm kept`);
+      }
+    } finally {
+      this.autoPromoteFiring.delete(taskId);
+    }
+    return this.refresh('auto-promote');
   }
 
   // Native VS Code modal guarding a New→Backlog promote, in two cases (Rule 10 only parks Feedback

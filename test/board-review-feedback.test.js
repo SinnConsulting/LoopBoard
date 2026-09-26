@@ -153,3 +153,26 @@ test('stripAttachmentLinks is path-keyed and label-agnostic (vm)', () => {
   assert.equal(strip(`keep [doc](https://x.test/a.png)`, [`${C}a.png`]), 'keep [doc](https://x.test/a.png)');
   assert.equal(strip('a (b) [c].d*e', [`${C}a+b(c).png`]), 'a (b) [c].d*e', 'regex metacharacters in a path are escaped');
 });
+
+// ---- t-c4d1: one feedback entry stays ONE item (item 3) ----
+test('[D9] commitFeedbackPatch builds its one item through canonAnswer, with no per-line split', () => {
+  assert.match(code(commit), /const item = canonAnswer\(value \|\| ''\);/);
+  assert.match(code(commit), /const lines = item \? \[item\] : \[\];/, 'zero or one item');
+  assert.doesNotMatch(code(commit), /split\('\\n'\)/, 'no per-line split');
+  assert.match(code(commit), /if \(item === base\) return;/, 'an edit that folds to its own text sends nothing');
+});
+
+test('[D10] the composer keeps Enter as a newline and shows the line-break hint beside the unchanged ⌘V hint', () => {
+  const keydown = composer.slice(composer.indexOf("ta.addEventListener('keydown'"), composer.indexOf("ta.addEventListener('focus'"));
+  assert.ok(keydown.length > 0);
+  assert.doesNotMatch(code(keydown), /'Enter'/, 'no Enter commit in the composer');
+  const foot = composer.slice(composer.indexOf("h('div', { class: 'feedback-foot' }"));
+  assert.match(foot, /h\('span', \{ class: 'qa-hint' \}, '⌘V pastes screenshots · ⌘S saves'\),\s+(\/\/[^\n]*\n\s+)*h\('span', \{ class: 'qa-hint single-line-hint' \}, 'line breaks become spaces'\)/,
+    'its own hint element, right after the pinned one');
+});
+
+test('[D11] a feedback row renders its one-line body inline with renderInline, not mdToHtml', () => {
+  assert.match(code(row), /const bodyText = h\('span', \{ html: renderInline\(body\) \}\);/);
+  assert.doesNotMatch(code(row), /mdToHtml/);
+  assert.match(source, /const \{ mdToHtml, renderInline \} = window\.LoopBoardMarkdown;/, 'media/board.js imports renderInline');
+});

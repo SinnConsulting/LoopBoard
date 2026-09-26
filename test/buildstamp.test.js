@@ -1,7 +1,7 @@
 'use strict';
 // Host/webview build-mismatch check (t-5831). The compare is the pure `stampsDiffer` in
 // src/buildstamp.ts, run for real; the host wiring (src/controller.ts, src/extension.ts) imports
-// vscode, so it is pinned as source text. Live path: VERIFICATION.md item 53.
+// vscode, so it is pinned as source text. Live path: VERIFICATION.md item 57.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
