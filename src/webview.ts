@@ -11,7 +11,7 @@ function nonce(): string {
 export async function renderHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
-  page: 'board' | 'sidebar' | 'settings'
+  page: 'board' | 'sidebar' | 'settings' | 'whatsnew'
 ): Promise<string> {
   const mediaUri = vscode.Uri.joinPath(extensionUri, 'media');
   const htmlUri = vscode.Uri.joinPath(mediaUri, `${page}.html`);

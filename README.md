@@ -195,7 +195,7 @@ line is the real one.
 <details>
 <summary><b>8 · Settings</b></summary>
 
-The sidebar's **Settings** row opens LoopBoard's settings page. One grid covers every model:
+The sidebar's **Settings** link opens LoopBoard's settings page. One grid covers every model:
 **on**, **default worker**, **default groomer**, **`--model`**, **effort**, **groomers**. Other
 settings are grouped below.
 
@@ -258,6 +258,8 @@ Commands:
 - **LoopBoard: Open Board** — open the board.
 - **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
 - **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+- **LoopBoard: What's New** — open the release notes for the version you're running, like
+  **What's new?** in the sidebar.
 
 Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
 flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
@@ -443,7 +445,7 @@ either is stale.
 
 ## Settings
 
-The sidebar's **Settings** row opens LoopBoard's settings page: four sections, the model slots as
+The sidebar's **Settings** link opens LoopBoard's settings page: four sections, the model slots as
 one grid, a reset per setting, **Synchronise Templates**, and **Open in VSCode Settings**
 (`@ext:SinnConsulting.loopboard-todo`) for search and JSON. They're ordinary user settings — see
 [Security model](#security-model) for why they're user-only. Questions like "why no Haiku slot?"
@@ -536,6 +538,7 @@ show them.
 | `loopBoard.autoSyncTemplates` | `true` | Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page. |
 | `loopBoard.sidebarMarquee` | `false` | Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way. |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
+| `loopBoard.showWhatsNew` | `true` | After LoopBoard updates, open a **What's New** tab once, on the first window load with a LoopBoard workspace. It names the version you updated to and links to its release notes on GitHub (the releases list when you skipped versions); LoopBoard fetches nothing. A first install or a downgrade opens nothing. The tab's **Don't show this again** tick turns this setting off. |
 
 <!-- loopboard:settings:end -->
 

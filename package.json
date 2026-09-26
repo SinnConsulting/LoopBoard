@@ -68,6 +68,10 @@
       {
         "command": "loopboard.init",
         "title": "LoopBoard: Initialize Workspace"
+      },
+      {
+        "command": "loopBoard.whatsNew",
+        "title": "LoopBoard: What's New"
       }
     ],
     "configuration": [
@@ -404,6 +408,14 @@
             "default": "off",
             "loopBoardApplies": "live",
             "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
+          },
+          "loopBoard.showWhatsNew": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 50,
+            "default": true,
+            "loopBoardApplies": "live",
+            "markdownDescription": "After LoopBoard updates, open a **What's New** tab once, on the first window load with a LoopBoard workspace. It names the version you updated to and links to its release notes on GitHub (the releases list when you skipped versions); LoopBoard fetches nothing. A first install or a downgrade opens nothing. The tab's **Don't show this again** tick turns this setting off."
           }
         }
       }

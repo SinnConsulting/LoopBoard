@@ -44,8 +44,6 @@
     play: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3l9 5-9 5V3z" stroke-linejoin="round" stroke-linecap="round"/></svg>',
     recycle: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 4.2A5.5 5.5 0 1 0 14 8" stroke-linecap="round"/><path d="M13 1.5V4.5H10" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     stop: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>',
-    gear: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" stroke-linecap="round"/></svg>',
-    help: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.2a2 2 0 1 1 2.8 1.8c-.6.3-1 .8-1 1.5v.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="11.6" r="0.15" fill="currentColor" stroke-width="0.6"/></svg>',
   };
 
   const PHASES = [
@@ -399,11 +397,15 @@
     }
 
     sb.append(h('div', { class: 'spacer' }));
+    // What's new? | Settings | Help — one line (t-f070 review). sidebar.css drops Help (and the bar
+    // before it) first when the sidebar is too narrow for all three.
     sb.append(h('div', { class: 'open-wrap' },
-      h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Open LoopBoard help', title: 'Open LoopBoard help', onclick: () => vscode.postMessage({ type: 'openLink', url: board.helpUrl }) },
-        icon(SVG.help), h('span', { class: 'label' }, 'Help')),
-      h('button', { class: 'sb-row click', type: 'button', 'aria-label': 'Open extension settings', title: 'Open LoopBoard settings', onclick: () => vscode.postMessage({ type: 'openSettings' }) },
-        icon(SVG.gear), h('span', { class: 'label' }, 'Settings')),
+      h('div', { class: 'sb-links' },
+        h('button', { class: 'sb-link', type: 'button', title: "Open the release notes for this LoopBoard version", onclick: () => vscode.postMessage({ type: 'whatsNew' }) }, "What's new?"),
+        h('span', { class: 'sb-sep', 'aria-hidden': 'true' }, '|'),
+        h('button', { class: 'sb-link', type: 'button', 'aria-label': 'Open extension settings', title: 'Open LoopBoard settings', onclick: () => vscode.postMessage({ type: 'openSettings' }) }, 'Settings'),
+        h('span', { class: 'sb-sep sb-help', 'aria-hidden': 'true' }, '|'),
+        h('button', { class: 'sb-link sb-help', type: 'button', 'aria-label': 'Open LoopBoard help', title: 'Open LoopBoard help', onclick: () => vscode.postMessage({ type: 'openLink', url: board.helpUrl }) }, 'Help')),
       board.todoMissing ? null : h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
     paint(root, sb);
     setupMarquees();

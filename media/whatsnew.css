@@ -1,0 +1,100 @@
+/* LoopBoard's What's New tab (t-f070) — opened once after an update. Same visual language as the
+   settings page (media/settings.css): every colour is a var(--vscode-*), so the page follows the
+   light, dark and high-contrast themes by construction. The page reaches nothing — it only links. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-foreground, #cccccc);
+  font-family: var(--vscode-font-family, -apple-system, "Segoe UI", sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+}
+code, .ver { font-family: var(--vscode-editor-font-family, Menlo, Consolas, monospace); }
+
+.wrap { max-width: 620px; margin: 0 auto; padding: 48px 28px 64px; }
+
+/* ---- header ---- */
+header { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+.mark {
+  flex: none; width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--vscode-button-background, #0078d4);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+.mark .codicon { font-size: 22px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; color: var(--vscode-foreground, #ffffff); }
+.subtle { color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 12px; }
+
+/* ---- the update card ---- */
+.card {
+  padding: 22px 24px; border-radius: 6px;
+  background: var(--vscode-textBlockQuote-background, #2a2a2a);
+  border: 1px solid var(--vscode-widget-border, #454545);
+}
+.eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+.headline { font-size: 22px; font-weight: 600; margin: 4px 0 12px; color: var(--vscode-foreground, #ffffff); }
+.headline .ver { font-size: 21px; }
+
+.step { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.pill {
+  font-size: 12px; border-radius: 10px; padding: 1px 9px;
+  border: 1px solid var(--vscode-widget-border, #454545);
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+.pill.to {
+  border-color: transparent;
+  background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #ffffff);
+}
+.step .codicon { color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 14px; }
+
+.card p { margin: 0 0 16px; max-width: 58ch; }
+
+.primary {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--vscode-button-background, #0078d4);
+  color: var(--vscode-button-foreground, #ffffff);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.primary:hover { background: var(--vscode-button-hoverBackground, #026ec1); }
+.primary:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+.primary .codicon { font-size: 14px; }
+.note { margin-top: 10px; }
+
+/* ---- footer: the "don't show again" tick ---- */
+footer {
+  margin-top: 30px; padding-top: 14px;
+  border-top: 1px solid var(--vscode-widget-border, #454545);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.tick { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.tick input {
+  appearance: none; -webkit-appearance: none; margin: 0; cursor: pointer; flex: none;
+  width: 16px; height: 16px; border-radius: 3px; display: grid; place-content: center;
+  background: var(--vscode-checkbox-background, var(--vscode-input-background, #313131));
+  border: 1px solid var(--vscode-checkbox-border, var(--vscode-widget-border, #3c3c3c));
+}
+.tick input::after {
+  content: ""; width: 9px; height: 5px; margin-top: -2px;
+  border-left: 2px solid var(--vscode-checkbox-foreground, var(--vscode-foreground, #cccccc));
+  border-bottom: 2px solid var(--vscode-checkbox-foreground, var(--vscode-foreground, #cccccc));
+  transform: rotate(-45deg); visibility: hidden;
+}
+.tick input:checked::after { visibility: visible; }
+.tick input:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+
+.link {
+  margin-left: auto; background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--vscode-textLink-foreground, #3794ff);
+}
+.link:hover { text-decoration: underline; color: var(--vscode-textLink-activeForeground, #3794ff); }
+.link:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+
+.err { color: var(--vscode-errorForeground, #f14c4c); font-size: 12px; margin-top: 8px; }
+.err:empty { display: none; }

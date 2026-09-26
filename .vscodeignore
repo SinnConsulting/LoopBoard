@@ -26,6 +26,9 @@
 !media/settings.html
 !media/settings.css
 !media/settings.js
+!media/whatsnew.html
+!media/whatsnew.css
+!media/whatsnew.js
 
 # Shared markdown renderer — src/webview.ts injects it into every page that renders markdown
 # (board, settings) ahead of that page's own script.

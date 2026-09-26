@@ -32,6 +32,8 @@ import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge,
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
+import { currentReleaseUrl, decideWhatsNew, describeWhatsNew, describeWhatsNewOnDemand, RELEASES_URL, WhatsNewSource } from './whatsnew';
+import { WhatsNewPanel } from './whatsnewpanel';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -66,6 +68,9 @@ export const EXTENSION_ID = 'SinnConsulting.loopboard-todo';
 export const NATIVE_SETTINGS_FILTER = `@ext:${EXTENSION_ID}`;
 
 const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
+// The extension version the What's New check last saw (t-f070). globalState, not workspaceState:
+// "I have seen this version" is per user profile and shared by every window.
+const WHATS_NEW_LAST_SEEN_KEY = 'loopboard.whatsNew.lastSeenVersion';
 // DEAD KEY, kept only to be deleted. An earlier build of the migration panel could not remove
 // `loopBoard.delegateWork.review` (it is unreadable behind its scalar parent) and instead asked the
 // user to confirm they had dealt with it by hand, remembering that here. The removal turned out to
@@ -169,6 +174,9 @@ export class Controller {
   private autoPromoteArms = new Map<string, AutoPromoteArm>();
   private autoPromoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private autoPromoteFiring = new Set<string>();
+  // What the open What's New tab shows (t-f070): set when the activation check or an on-demand open
+  // (no `previous`) opens it. The link the tab opens is THIS url, never one the webview sends back.
+  private whatsNew: { previous?: string; current?: string; url: string } | undefined;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -1312,6 +1320,9 @@ export class Controller {
       case 'openSettings':
         this.openSettings();
         return;
+      case 'whatsNew':
+        // The sidebar's "What's new?" link (t-f070 review).
+        return this.showWhatsNew('sidebar');
       case 'openNativeSettings':
         // The escape hatch t-set1's gear used to be. Settings search and JSON editing are NOT
         // reproduced on LoopBoard's own page — this covers both.
@@ -1700,6 +1711,108 @@ export class Controller {
       void vscode.env.openExternal(vscode.Uri.parse(HELP_URL));
     } else if (choice === 'Show never again') {
       void this.globalState.update(GETTING_STARTED_DISMISSED_KEY, true);
+    }
+  }
+
+  // ---- What's New after an update (t-f070) ----
+
+  // Run once per activation. The decision (first install / same / upgrade / downgrade / unparseable,
+  // and the link) is the pure decideWhatsNew's; this only reads and writes globalState, opens the tab
+  // and logs. Two windows reloading at once after an update can both read the old version before
+  // either writes it and each open the tab — accepted, no locking (decisions/board-ui.md).
+  async maybeShowWhatsNew(): Promise<void> {
+    const log = (detail: string) => this.store.debugLog('info', 'whats-new', detail);
+    const current = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON?.version;
+    if (typeof current !== 'string') return log('skipped — running version unknown');
+    const lastSeen = this.globalState.get<unknown>(WHATS_NEW_LAST_SEEN_KEY);
+    const settingOn = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
+    const decision = decideWhatsNew(lastSeen, current, settingOn);
+    // A failed write is carried into the ONE line below (describeWhatsNew), never logged beside a
+    // line that still claims "recorded".
+    let recordError: string | undefined;
+    if (decision.record) {
+      try {
+        await this.globalState.update(WHATS_NEW_LAST_SEEN_KEY, current);
+      } catch (err) {
+        recordError = err instanceof Error ? err.message : String(err);
+      }
+    }
+    if (decision.show && decision.url) {
+      this.openWhatsNew({ previous: String(lastSeen), current, url: decision.url });
+    }
+    log(describeWhatsNew(decision, recordError));
+  }
+
+  // On demand (t-f070 review): the sidebar's "What's new?" link and the `loopBoard.whatsNew` command.
+  // Shows the running version and links to its own release page. Reads nothing but the running
+  // version and writes nothing: the last-seen key belongs to the activation check alone.
+  showWhatsNew(source: WhatsNewSource): void {
+    const raw = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON?.version;
+    const current = typeof raw === 'string' ? raw : undefined;
+    const url = currentReleaseUrl(current);
+    this.openWhatsNew({ current, url });
+    this.store.debugLog('info', 'whats-new-open', describeWhatsNewOnDemand(source, current, url));
+  }
+
+  private openWhatsNew(info: { previous?: string; current?: string; url: string }): void {
+    this.whatsNew = info;
+    const panel = WhatsNewPanel.show(this.extensionUri);
+    panel.onMessage((msg) => void this.onWhatsNewMessage(msg));
+    // A fresh panel asks with `whatsNewReady` once its script runs (this post is lost then); an
+    // already-open one is only revealed and never asks, so it is repainted here.
+    this.postWhatsNew();
+  }
+
+  private postWhatsNew(): void {
+    const info = this.whatsNew;
+    if (!info) return;
+    const showAgain = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
+    WhatsNewPanel.current?.post({
+      type: 'whatsNew', previous: info.previous, current: info.current, url: info.url,
+      list: info.url === RELEASES_URL, dontShowAgain: !showAgain,
+    });
+  }
+
+  private async onWhatsNewMessage(msg: any): Promise<void> {
+    if (!msg || typeof msg.type !== 'string') return;
+    this.store.debugLog('verbose', 'dispatch', `whats-new ${msg.type}`);
+    const info = this.whatsNew;
+    switch (msg.type) {
+      case 'whatsNewReady':
+        return this.postWhatsNew();
+      case 'whatsNewOpen': {
+        if (!info) return;
+        // One line with the outcome: openExternal resolves false when no handler took the URL (as
+        // the board's openLink surfaces), and a rejection is a failure, not an open.
+        const link = (outcome: string) => this.store.debugLog('info', 'whats-new-link', `${info.url} — ${outcome}`);
+        void vscode.env.openExternal(vscode.Uri.parse(info.url)).then(
+          (opened) => link(opened ? 'opened' : 'not opened (no handler took it)'),
+          (err) => link(`failed — ${err instanceof Error ? err.message : String(err)}`)
+        );
+        return;
+      }
+      case 'whatsNewOptOut': {
+        // The tick IS the setting (Global, like every loopBoard.* key): ticked writes false, unticked
+        // clears the key back to its default (on).
+        const optOut = msg.optOut === true;
+        try {
+          await vscode.workspace.getConfiguration().update(
+            'loopBoard.showWhatsNew', optOut ? false : undefined, vscode.ConfigurationTarget.Global
+          );
+          this.store.debugLog('info', 'whats-new-optout', optOut
+            ? 'ticked — loopBoard.showWhatsNew set to false (Global)'
+            : 'unticked — loopBoard.showWhatsNew reset to its default (on)');
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          this.store.debugLog('info', 'whats-new-optout', `failed — ${reason}`);
+          // Shown on the tab itself (a board toast would land on a panel that may not be open), which
+          // also puts the tick back to what is really stored.
+          WhatsNewPanel.current?.post({ type: 'whatsNewError', reason, dontShowAgain: !optOut });
+        }
+        return;
+      }
+      case 'openSettings':
+        return this.openSettings();
     }
   }
 

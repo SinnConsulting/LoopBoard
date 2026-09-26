@@ -54,13 +54,15 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('loopBoard.openBoard', () => controller.openBoard()),
     vscode.commands.registerCommand('loopBoard.refresh', () => controller.refresh()),
     vscode.commands.registerCommand('loopBoard.spawnLoop', (model: Model) => terminals.spawn(model)),
-    vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles())
+    vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles()),
+    vscode.commands.registerCommand('loopBoard.whatsNew', () => controller.showWhatsNew('command'))
   );
 
   store.debugLog('info', 'activate', folder.name);
   store.startWatching();
   void controller.autoHeal().then(() => controller.autoSyncTemplates()).then(() => controller.refresh());
   void controller.maybeShowGettingStarted();
+  void controller.maybeShowWhatsNew();
 }
 
 export async function deactivate(): Promise<void> {

@@ -12,6 +12,6 @@
     "types": [],
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/parser.ts", "src/writer.ts", "src/model.ts", "src/merge.ts", "src/gates.ts", "src/view.ts", "src/loop.ts", "src/taskfile.ts", "src/sync.ts", "src/serialize.ts", "src/schedule.ts", "src/nudge.ts", "src/context.ts", "src/subagents.ts", "src/settingsform.ts", "src/settingsgrid.ts", "src/settingsmigrate.ts", "src/attachments.ts", "src/buildstamp.ts", "src/autopromote.ts", "src/idle.ts"],
+  "include": ["src/parser.ts", "src/writer.ts", "src/model.ts", "src/merge.ts", "src/gates.ts", "src/view.ts", "src/loop.ts", "src/taskfile.ts", "src/sync.ts", "src/serialize.ts", "src/schedule.ts", "src/nudge.ts", "src/context.ts", "src/subagents.ts", "src/settingsform.ts", "src/settingsgrid.ts", "src/settingsmigrate.ts", "src/attachments.ts", "src/buildstamp.ts", "src/autopromote.ts", "src/idle.ts", "src/whatsnew.ts"],
   "exclude": ["node_modules"]
 }
