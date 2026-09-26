@@ -44,3 +44,11 @@ test('unreferencedAttachments never selects another task\'s file', () => {
   const removed = '[b](.loopboard/cache/t-9999/b.png)';
   assert.deepEqual(unreferencedAttachments(removed, [], 't-1a2b'), []);
 });
+
+test('[D6] a feedback item folded from `note\\n[image.png](…)` still yields its path, and the strip removes it (t-c4d1)', () => {
+  const { feedbackLines } = require('../out-test/merge.js');
+  const [item] = feedbackLines('note\n[image.png](.loopboard/cache/t-1/image.png)');
+  assert.equal(item, 'note [image.png](.loopboard/cache/t-1/image.png)');
+  assert.deepEqual(attachmentPaths(item, 't-1'), ['.loopboard/cache/t-1/image.png']);
+  assert.equal(stripAttachmentLink(item, '.loopboard/cache/t-1/image.png'), 'note');
+});

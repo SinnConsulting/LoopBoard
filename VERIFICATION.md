@@ -27,6 +27,10 @@ questions, an HTML-comment template) and `index-unknown.md`:
   or a DRAFT is recognized and **dropped** — never parsed onto the entry, never in `unknownLines`
   (so it draws no flagged chip), never re-emitted — for any value, integer or not; an index that
   arrives WITH `rev:` lines is still a **fixpoint** after the first canonical write.
+- **Single-line values (t-c4d1, scenarios B1-B4, C1-C7, D8):** the writer emits every title,
+  question, answer, suggestion and feedback item on one line (a hand-built `\n`/`\r\n`/`\r` value
+  cannot split an entry); a comment block opens only at a line that STARTS with `<!--`, so an opener
+  inside any value (TODO.md or DONE.md) keeps its entry and every later one.
 
 ### Task-file parser/writer — `test/taskfile.test.js` (§2.2)
 - Parses every canonical section; **fixpoint** and byte-for-byte round-trip of a full fixture.
@@ -39,6 +43,10 @@ questions, an HTML-comment template) and `index-unknown.md`:
   empty ones dropped rather than written back as bare headings; free markdown either way (prose
   Goals round-trip — the parser polices neither length nor bullet shape); a hand-written section in
   a pre-t-2191 file is recognized instead of landing in `unknownLines`, and relocates on save.
+- **`##` inside a story section (t-c4d1, H1-H12):** inside Problem, Description and Goals only one
+  of the six known headings ends the section, so an unknown `## ` line (or a fenced template
+  quoting one) stays in place; Meta, Worklog, Delivered and unknown sections split as before.
+  `draftDescription` (`test/draft-description.test.js`, G1-G8) builds the New Story composer copy.
 
 ### Merge routing + patches — `test/merge.test.js`
 - `patchTarget` routes title/model/groomer/answer/answers/feedbackAdd/feedbackItem → index, description/problem/goals
@@ -50,9 +58,14 @@ questions, an HTML-comment template) and `index-unknown.md`:
   list with no base (an item the loop removed meanwhile is no conflict, both changes kept);
   `feedbackItem` edits/deletes one line found by index + that item's own base, falling back to a
   text match when earlier items were removed; an edit whose base is gone = disk-wins conflict, a
-  delete whose base is gone = `noop`; other items never conflict. A multi-line value splits into
-  several items at the add/edit position. `unreferencedAttachments` (`src/attachments.ts`,
+  delete whose base is gone = `noop`; other items never conflict. A multi-line value is ONE item,
+  folded to a single line (t-c4d1, was a per-line split). `unreferencedAttachments` (`src/attachments.ts`,
   `test/attachments.test.js`) decides which of a deleted item's files are safe to delete.
+- **Host single-line rule (t-c4d1, A1-A15):** `applyPatch` folds title, answer and each answer of
+  `answers` (after the raw positional split and line-count guard) through `canonicalLine`, compares
+  canonical values for conflicts (an idempotent re-save is applied, a real change still conflicts),
+  and never folds Problem/Description/Goals; `test/single-line.test.js` checks the board's
+  `canonAnswer` equals it and pins the store's `verbose` `canonicalize` line.
 
 ### Gates — `test/gates.test.js`
 - `promoteIndex` (phase→backlog, uncheck), `promoteDetail` (`promoted:` + worklog, no dup),
@@ -472,6 +485,8 @@ and likewise cannot be verified headless.
     succeeds with the newline folded to a space; no "Task changed on disk" toast. Finally, save a
     row whose value equals what is already on disk as the last blank → no patch is posted and the
     `held` tag disappears immediately rather than sticking.
+
+    Rail colour after a landed answer (t-c4d1): item 52, steps **F7**-**F10**.
 
 31. **Toasts hold while hovered or focused (t-7905):** trigger a board toast — arm a schedule from
     a sidebar row (success, 4 s) or force a "changed on disk" conflict by editing a field in
@@ -1197,6 +1212,54 @@ and likewise cannot be verified headless.
       **Save All**; the chips-row question chip shows the same status. **Expand all** does not
       open it and **Collapse all** does not reset it; a panel opened by its own chevron stays open
       across both buttons, a refresh, a view switch and a reload.
+
+52. **Multi-line text safety (t-c4d1) — UNTESTED in the live webview:** the host rule, the writer
+    fold, the comment-opener rule, the `##` rule and the composer copy are covered in Docker
+    (`test/merge.test.js`, `test/parser.test.js`, `test/taskfile.test.js`,
+    `test/single-line.test.js`, `test/draft-description.test.js`); the editors' Enter/paste
+    handlers, the hold decision and `pruneHeldAnswers` are run in a vm and pinned as source text by
+    `test/board-single-line.test.js` and `test/board-review-feedback.test.js`. What a real webview
+    renders, focuses and sends is F5 only, so the steps below are the only acceptance path for
+    it. Headless sessions cannot run them. Set `loopBoard.debug: verbose` and watch `debug.log`.
+    - **D12 (feedback, one item):** paste `It will decide:` / blank line / `- the tag scheme;` /
+      `- where it lives;` / `and a hard-wrapped sentence that` / `continues here.` into
+      **＋ Feedback** and Save → ONE amber row, the warning icon inline with the text, no bullet
+      list, and ONE `feedback:` line in `TODO.md` (plus a `canonicalize` line in `debug.log`).
+      Save items `- foo` and `1. bar` → each shows as text after the icon. Edit an item, add a line
+      break, Save → still one row. The composer shows `line breaks become spaces`, and Enter still
+      inserts a newline there.
+    - **E10:** in the DRAFT edit box and in an answer, ⌘S still saves and Escape still cancels
+      exactly as before.
+    - **E11:** paste a three-line list into a DRAFT edit box, press Enter → `TODO.md` holds the
+      draft on one title line with nothing at column 0 under it; the card shows one line; no
+      disk-wins toast. The box shows `Enter saves · line breaks become spaces`.
+    - **E12:** in an answer, Enter saves, Shift+Enter adds nothing, pasted multi-line text lands as
+      one line at the caret (replacing a selection), and a pasted screenshot still attaches. Type
+      with a Japanese/Chinese IME and confirm a candidate with Enter → the candidate is committed,
+      the answer is not saved.
+    - **F7 (next to item 30):** on a New story with three questions, answer the last blank with
+      text ending in a pasted line break (Enter now saves, so a trailing break arrives by paste),
+      then with an inner pasted line break, then with surrounding spaces — each through Save, Save
+      All and a suggestion's Accept → after the
+      confirming board the row is GREEN with no `held` tag, and `TODO.md` holds the answer folded
+      and trimmed.
+    - **F8:** stage a non-last answer with stray whitespace (`  yes  `) → the summary and the
+      textarea show `yes`, and neither its Save nor Save All reads the row as dirty.
+    - **F9:** hold two answers, hand-edit one of that story's `answer:` lines in `TODO.md`, then
+      complete the set → the flush conflicts (toast) and the rows stay amber and re-savable.
+    - **F10 (upgrade):** on a build without this story, answer the last blank with a trailing
+      newline so the row sticks amber; install this build and **Developer: Reload Webviews** → the
+      row turns green without a re-save.
+    - **G10:** in the New Story composer paste a list, paste a screenshot, Save Draft → the draft
+      card shows the list under its one-line title, the screenshot shows exactly ONE chip, and the
+      `TODO.md` title is one line; `tasks/<id>.md` has the list under `## Description` with no
+      `loopboard-pending:` and no `.loopboard/cache/` link.
+    - **H13 (Docker one-off, run 2026-09-26):** `.loopboard/` is gitignored, so the suite cannot
+      read it. `origin/main`'s and this branch's `parseTaskFile`, each compiled in `node:22`, parsed
+      all 189 `.loopboard/tasks/*.md` files of this workspace → identical results for every file
+      (the 12 files with `##` blocks after `## Delivered` included). The same check over
+      `.loopboard/TODO.md` and `DONE.md` with both `parseTodo`/`parseDone` → identical.
+
 54. **Right-click Promote arms an automatic promote (t-39e2) — UNTESTED in the live webview:**
     numbered 54 (not 51) because open PRs #177/#179/#180 each add item 51 onward. The decision
     (`evaluateArm`), the guarded gate and the payload flag are unit-tested (`test/autopromote.test.js`,

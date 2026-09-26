@@ -6,7 +6,7 @@
 
   // Shared markdown renderer (media/markdown.js — loaded first by board.html). Destructured once
   // here rather than referenced through the global at every call site.
-  const { mdToHtml } = window.LoopBoardMarkdown;
+  const { mdToHtml, renderInline } = window.LoopBoardMarkdown;
 
   // ---- tiny DOM helper ----
   function h(tag, props) {
@@ -217,6 +217,17 @@
     vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers });
   }
 
+  // ---- single-line index values (t-c4d1) ----
+  // The canonical single-line form of an index value: each run of line breaks, with the whitespace
+  // around it, becomes one space, then both ends are trimmed. It is the host's `canonicalLine`
+  // (src/merge.ts) — what the host stores and what parse→write reads back — so an echo built
+  // through it equals disk. Self-contained: test/single-line.test.js lifts it into a vm.
+  function canonAnswer(v) {
+    return String(v).replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  }
+  // The hint both single-line editors (the DRAFT edit box and the answer) show beside their Save.
+  const SINGLE_LINE_HINT = 'Enter saves · line breaks become spaces';
+
   // ---- held answers (t-5e6d) ----
   // A story is complete only when EVERY question is answered — a 2/3 index state helps nobody and
   // costs a write and a nudge that sends the groomer at a half-answered story.
@@ -265,7 +276,10 @@
       if (!t) { delete heldAnswers[taskId]; continue; } // gone, promoted, accepted — nothing to say
       for (const i of Object.keys(held)) {
         const q = t.questions[i];
-        if (q && q.text === held[i].q && q.answer !== held[i].text) continue;
+        // Landed = disk equals the CANONICAL held text (t-c4d1): disk only ever holds the folded,
+        // trimmed form, so a raw compare kept a landed answer amber forever — including a raw
+        // value held in a setState blob from before this rule.
+        if (q && q.text === held[i].q && q.answer !== canonAnswer(held[i].text)) continue;
         // Only a question that CHANGED is worth telling the human about; one that simply landed
         // on disk (the flush succeeded) is the normal path and says nothing.
         if (!q || q.text !== held[i].q) stale.push(t.title);
@@ -998,9 +1012,11 @@
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
       ta.value = u.draftText != null ? u.draftText : t.title;
       autoGrow(ta);
+      // The draft text is the index title, ONE line (t-c4d1): the echo is the canonical value the
+      // host stores, and Save stays disabled while the text folds to the saved title.
       const commitDraft = () => {
         clearActiveEditor(textEl);
-        const val = ta.value.trim();
+        const val = canonAnswer(ta.value);
         u.editingDraft = false;
         u.draftText = null;
         commitPatch(t.id, 'title', val, t.title, t, 'title');
@@ -1008,18 +1024,27 @@
       };
       const saveBtn = h('button', {
         class: 'btn-sm primary field-save-btn', type: 'button',
-        disabled: ta.value.trim() === t.title,
+        disabled: canonAnswer(ta.value) === t.title,
         title: 'Save (Cmd/Ctrl+S)', onclick: commitDraft,
       }, 'Save');
-      ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim() === t.title; });
+      ta.addEventListener('input', () => { u.draftText = ta.value; autoGrow(ta); saveBtn.disabled = canonAnswer(ta.value) === t.title; });
       ta.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingDraft = false; u.draftText = null; }, textEl); return; }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); return; }
+        // Single-line (t-c4d1): Enter saves, Shift+Enter inserts nothing, and an Enter that ends an
+        // IME composition belongs to the input method.
+        if (e.key === 'Enter') {
+          if (e.isComposing) return;
+          e.preventDefault();
+          if (!e.shiftKey) commitDraft();
+        }
       });
-      // t-att1 rework: no caret-insert into the raw draft text (links crammed into the title made
-      // it unreadable) — a paste/drop while editing bubbles to the card handler, which stages the
-      // image into the description, so it shows in the attachments area like everywhere else.
-      textEl = h('div', { class: 'field-col' }, ta, saveBtn);
+      // Text pastes fold at the caret. t-att1 rework: no caret-insert of FILE links into the raw
+      // draft text (links crammed into the title made it unreadable) — a file paste/drop while
+      // editing bubbles to the card handler, which stages the image into the attachments area.
+      wireSingleLinePaste(ta);
+      textEl = h('div', { class: 'field-col' }, ta,
+        h('div', { class: 'feedback-foot' }, saveBtn, h('span', { class: 'qa-hint single-line-hint' }, SINGLE_LINE_HINT)));
       // Click-outside commits (t-471a): registering AFTER textEl exists so the container passed
       // to setActiveEditor is the actual editing wrapper the pointerdown-outside check tests.
       setActiveEditor(textEl, commitDraft);
@@ -1058,6 +1083,19 @@
     // them with an open link and a remove × each.
     const attachEl = renderAttachmentsArea(t);
 
+    // Composer copy (t-c4d1): a multi-line New Story text also lands in the draft's ## Description,
+    // painted read-only under the one-line title so the pasted list or paragraphs stay readable.
+    // A legacy draft's Description may still carry cache links: those show only as their chips.
+    let descEl = null;
+    if ((t.description || '').trim()) {
+      const paths = extractAttachments(t.description, t.id).map((a) => a.path);
+      const desc = paths.length ? stripAttachmentLinks(t.description, paths) : t.description;
+      descEl = desc ? h('div', { class: 'done-detail-text draft-desc', style: { marginTop: '8px' }, html: mdToHtml(desc) }) : null;
+      if (descEl) descEl.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+    }
+
     let cls = 'card draft';
     if (isCollapsedCard) cls += ' collapsed';
 
@@ -1090,6 +1128,7 @@
             h('span', { class: 'muted-11' }, 'Work with'),
             workSel),
           isCollapsedCard ? null : textEl,
+          isCollapsedCard ? null : descEl,
           isCollapsedCard ? null : attachEl,
           isCollapsedCard ? null : renderFeedback(t),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
@@ -1220,6 +1259,22 @@
     ta.value = before + pre + link + post + after;
     const caret = before.length + pre.length + link.length;
     ta.setSelectionRange(caret, caret);
+  }
+  // Single-line editors (t-c4d1: the DRAFT edit box and the answer): pasted TEXT with line breaks is
+  // inserted at the caret, replacing any selection, with its line breaks folded to spaces. A paste
+  // that carries files is not ours and returns untouched — wireFieldAttach (answer) or the card's
+  // handler (DRAFT edit) stages it. The `input` event keeps the editor's draft and Save state in step.
+  function wireSingleLinePaste(ta) {
+    ta.addEventListener('paste', (e) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      if (Array.from(cd.items || []).some((item) => item.kind === 'file')) return;
+      const text = cd.getData('text/plain');
+      if (!/[\r\n]/.test(text)) return; // one line: the native paste is already right
+      e.preventDefault();
+      ta.setRangeText(text.replace(/\s*[\r\n]+\s*/g, ' '), ta.selectionStart, ta.selectionEnd, 'end');
+      ta.dispatchEvent(new Event('input'));
+    });
   }
   function wireFieldAttach(el, taskId, field, questionIndex, onStaged) {
     const stage = (file) => {
@@ -1891,10 +1946,11 @@
     // The value is POSITIONAL, so a newline inside one answer would shift every later answer onto
     // the wrong question — the host rejects that as a conflict, which surfaced as an unexplained
     // "changed on disk" toast on every save of a multi-line answer (t-5e6d review). Answers are
-    // single-line by the index grammar, so the newlines are folded to spaces at the join and the
-    // SAME folded values are echoed locally, so the card shows exactly what was written.
+    // single-line by the index grammar, so each value goes through canonAnswer at the join (folded
+    // AND trimmed, t-c4d1 — exactly what disk will hold) and the SAME values are echoed locally, so
+    // the card shows exactly what was written and `value !== base` is an exact test.
     const flushAnswers = (raw) => {
-      const values = raw.map((v) => v.replace(/\s*\n+\s*/g, ' '));
+      const values = raw.map(canonAnswer);
       const base = t.questions.map((q) => q.answer).join('\n');
       const value = values.join('\n');
       // Held answers are NOT cleared when a patch goes out — the prune on the confirming board
@@ -1970,17 +2026,24 @@
       // unsaved drafts (t-5e6d review).
       const stageRow = () => {
         clearActiveEditor(editor);
-        const val = ta.value;
+        // The CANONICAL value (t-c4d1), computed once: it is held, echoed and written back into the
+        // textarea, so the held text equals what disk will hold (the landed test can match it) and
+        // the row does not read as dirty against its own echo.
+        const val = canonAnswer(ta.value);
+        ta.value = val;
         delete u.answerDrafts[i];
         saveBtn.disabled = true;
         // Clearing an answer that IS on disk is a retraction, and holding a blank could never
         // reach the index (a blank keeps the set incomplete, so no flush ever carries it) — the
         // human's deletion would silently revert on the next refresh. Retractions therefore keep
-        // the old single-question path and write straight through (t-5e6d review).
-        const isRetraction = val.trim().length === 0 && q.answer.trim().length > 0;
+        // the old single-question path and write straight through (t-5e6d review). A blank on a
+        // row with no answer on disk holds nothing: an empty hold could never flush.
+        const isRetraction = val.length === 0 && q.answer.trim().length > 0;
         if (isRetraction) {
           dropHeld(t.id, i);
           commitPatch(t.id, 'answer', val, q.answer, q, 'answer', i);
+        } else if (val.length === 0) {
+          dropHeld(t.id, i);
         } else {
           holdAnswer(t.id, i, q.text, val);
         }
@@ -1995,8 +2058,8 @@
           else qLine.replaceChild(posMarker, editBtn);
         }
         updateHead();
-        item.classList.toggle('is-held', !isRetraction);
-        heldTag.hidden = isRetraction;
+        item.classList.toggle('is-held', given);
+        heldTag.hidden = !given;
         summaryText.textContent = val;
         u.qaEditOpen[i] = false;
         setCollapsed(given);
@@ -2025,8 +2088,17 @@
           if (isGiven(i)) { u.qaEditOpen[i] = false; setCollapsed(true); }
           return;
         }
-        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); }
+        if (isSaveShortcut(e)) { e.preventDefault(); commitAnswer(); return; }
+        // Single-line (t-c4d1): Enter saves like ⌘S, Shift+Enter inserts nothing, and an Enter that
+        // ends an IME composition belongs to the input method.
+        if (e.key === 'Enter') {
+          if (e.isComposing) return;
+          e.preventDefault();
+          if (!e.shiftKey) commitAnswer();
+        }
       });
+      // Text pastes fold at the caret; file pastes stay with wireFieldAttach below.
+      wireSingleLinePaste(ta);
       // Always-textarea field, no view↔edit toggle to key registration off — register when it
       // gains focus (t-471a), same idiom the feedback composer uses.
       ta.addEventListener('focus', () => setActiveEditor(editor, commitAnswer));
@@ -2073,7 +2145,8 @@
         body.append(suggWrap);
       }
 
-      editor.append(ta, h('div', { class: 'qa-editor-foot' }, answerAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'), saveBtn));
+      editor.append(ta, h('div', { class: 'qa-editor-foot' }, answerAttachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'),
+        h('span', { class: 'qa-hint single-line-hint' }, SINGLE_LINE_HINT), saveBtn));
       refreshAnswerAttachments(answerAt(i));
       body.append(summary, editor, attachWrap);
       setCollapsed(isGiven(i));
@@ -2120,15 +2193,18 @@
   // Echo + post one feedback patch. `feedbackAdd` appends (no base); `feedbackItem` edits or, with
   // an empty value, deletes ONE item, addressed by index plus that item's own text — the same
   // resolution src/merge.ts applies to the re-read disk list, so the local echo matches the write.
+  // One entry is ONE item (t-c4d1): the echo folds it through canonAnswer exactly as src/merge.ts
+  // folds the write, so `lines` holds zero or one item.
   function commitFeedbackPatch(t, field, value, base, itemIndex) {
     const list = (t.feedback || []).slice();
-    const lines = String(value || '').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    const item = canonAnswer(value || '');
+    const lines = item ? [item] : [];
     let at = -1;
     if (field === 'feedbackAdd') {
       if (!lines.length) return;
       t.feedback = list.concat(lines);
     } else {
-      if (value === base) return; // unchanged edit — nothing to send
+      if (item === base) return; // unchanged edit — nothing to send
       at = list[itemIndex] === base ? itemIndex : list.indexOf(base);
       if (at >= 0) list.splice.apply(list, [at, 1].concat(lines));
       t.feedback = list;
@@ -2210,7 +2286,10 @@
       },
     }, '＋ Attach');
     const composer = h('div', { class: 'feedback-composer' }, ta,
-      h('div', { class: 'feedback-foot' }, saveBtn, attachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves')));
+      h('div', { class: 'feedback-foot' }, saveBtn, attachBtn, h('span', { class: 'qa-hint' }, '⌘V pastes screenshots · ⌘S saves'),
+        // Enter stays a newline here (t-c4d1): a saved item is an instruction a loop may act on at
+        // once, so Enter must not save half a thought — but the item is saved as ONE line.
+        h('span', { class: 'qa-hint single-line-hint' }, 'line breaks become spaces')));
     return composer;
   }
 
@@ -2219,7 +2298,9 @@
     const body = stripAttachmentLinks(text, attachments.map((a) => a.path));
     let bodyEl = null;
     if (body) {
-      const bodyText = h('span', { html: mdToHtml(body) });
+      // An item is one line (t-c4d1): rendered inline beside its icon, so `- foo` or `1. bar` is
+      // text after the icon, not an empty icon line over a one-item list.
+      const bodyText = h('span', { html: renderInline(body) });
       bodyText.querySelectorAll('a[data-mdlink]').forEach((a) => {
         a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
       });
