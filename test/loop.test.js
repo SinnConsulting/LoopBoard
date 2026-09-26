@@ -289,6 +289,13 @@ test('template Automation block spells out the delegated-work mode the activatio
   assert.ok(fence.indexOf('DELEGATED-WORK MODE') > fence.indexOf('reply "no changes"'), 'the clause trails the ordinary pass so the base instructions are untouched');
 });
 
+test('revealStep: the row that last revealed toggles the panel; any other row shows (t-9c3f)', () => {
+  const { revealStep } = require('../out-test/loop.js');
+  assert.equal(revealStep('opus', 'opus'), 'togglePanel', 'same model -> toggle panel');
+  assert.equal(revealStep('sonnet', 'opus'), 'show', 'different model -> show');
+  assert.equal(revealStep(undefined, 'opus'), 'show', 'nothing revealed -> show');
+});
+
 test('template: one feedback rule, no note: grammar and no Rule 16 (t-ae10)', () => {
   const tpl = readMedia('template-loop.md');
   assert.doesNotMatch(tpl, /^\s*- note: </m, 'no note: grammar line');
