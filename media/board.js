@@ -746,37 +746,19 @@
   // no `data-field`) silently no-ops, leaving focus stranded on the now-tabindex=0 view element
   // instead of released — the "needs a second ESC" bug (t-esc1). Blurring first means
   // captureActiveField() finds nothing to recapture.
+  //
+  // Where there is a Save button there is no auto-save (t-4877, reverses t-471a's click-outside
+  // commit): an open editor closes ONLY through Save, Cmd/Ctrl+S, Enter (single-line answer and
+  // DRAFT) or this Escape exit. A click outside it, a click into another editor, or folding its
+  // section does nothing — the editor stays open with its text (on the transient `ui` map) and an
+  // enabled Save, and several editors may be open at once. `container` (the editor being closed)
+  // is no longer read now the registry that used it is gone; every Escape exit still passes it,
+  // which test/board-review-feedback.test.js pins for the feedback composer.
   function exitFieldEdit(clearFn, container) {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    clearActiveEditor(container);
     clearFn();
     render();
   }
-
-  // ---- shared editable-field exit (t-471a): click-outside COMMITS, ESC CANCELS ----
-  // Every editable field (description/title/draft-text/feedback toggle between a view and
-  // an editor; answer is always a textarea) registers itself here while its editor is
-  // open. A single document-level `pointerdown` listener — capture phase, so it resolves before
-  // any button's own pointerdown-commit handler (makeGateButton et al.) runs — detects a click
-  // outside the active editor's container and commits it. This is deliberately NOT a per-field
-  // `blur` handler: render()'s `root.textContent = ''` and the focus-restore round-trip
-  // (restoreActiveField/repaintCard) both fire spurious blur events on every deferred repaint
-  // that a blur handler can't tell apart from a real user exit — only a genuine pointerdown
-  // proves the user actually clicked away. Only one editor is ever active at a time; a click
-  // that opens a DIFFERENT field's editor first commits whichever one was open (its pointerdown
-  // lands outside that container), then opens the new one on the following render — mirroring
-  // ESC's existing "one exit path" semantics rather than adding a second one.
-  let activeEditor = null; // { container, commit }
-  function setActiveEditor(container, commit) { activeEditor = { container, commit }; }
-  function clearActiveEditor(container) {
-    if (activeEditor && (!container || activeEditor.container === container)) activeEditor = null;
-  }
-  document.addEventListener('pointerdown', (e) => {
-    if (!activeEditor || activeEditor.container.contains(e.target)) return;
-    const ed = activeEditor;
-    activeEditor = null;
-    ed.commit();
-  }, true);
 
   function renderSearchBar(shownCount, totalCount) {
     const input = h('input', {
@@ -979,11 +961,9 @@
     area.addEventListener('keydown', (e) => {
       // t-471a: the composer previously had no ESC handler at all. ESC cancels (matches every
       // other field's ESC semantics) — reuses closeComposer(), the same path the Cancel button
-      // takes, so the draft text/model selections/attachments are discarded consistently. Not
-      // wired into the shared click-outside registry (setActiveEditor): click-outside on the
-      // composer already preserves the draft today (switching tabs closes it without clearing
-      // composerText), which already satisfies "typed text is never lost" without the surprise
-      // of auto-creating a task on an incidental outside click.
+      // takes, so the draft text/model selections/attachments are discarded consistently. A
+      // click outside creates nothing and keeps the draft (switching tabs closes it without
+      // clearing composerText) — the same no-auto-save rule every card editor follows (t-4877).
       if (e.key === 'Escape') { e.preventDefault(); closeComposer(); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitDraft(); }
     });
@@ -1122,7 +1102,6 @@
       // The draft text is the index title, ONE line (t-c4d1): the echo is the canonical value the
       // host stores, and Save stays disabled while the text folds to the saved title.
       const commitDraft = () => {
-        clearActiveEditor(textEl);
         const val = canonAnswer(ta.value);
         u.editingDraft = false;
         u.draftText = null;
@@ -1152,9 +1131,7 @@
       wireSingleLinePaste(ta);
       textEl = h('div', { class: 'field-col' }, ta,
         h('div', { class: 'feedback-foot' }, saveBtn, h('span', { class: 'qa-hint single-line-hint' }, SINGLE_LINE_HINT)));
-      // Click-outside commits (t-471a): registering AFTER textEl exists so the container passed
-      // to setActiveEditor is the actual editing wrapper the pointerdown-outside check tests.
-      setActiveEditor(textEl, commitDraft);
+      // No click-outside commit (t-4877): only Save, ⌘S and Enter save; Escape discards.
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.draftNeedsFocus) { u.draftNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
@@ -1531,7 +1508,6 @@
       const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
       const commitTitle = () => {
-        clearActiveEditor(titleWrap);
         const val = input.value.trim();
         u.editingTitle = false;
         u.titleDraft = null;
@@ -1549,10 +1525,12 @@
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
       titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
-      setActiveEditor(titleWrap, commitTitle); // click-outside commits (t-471a)
-      requestAnimationFrame(() => input.focus());
+      // No click-outside commit (t-4877): only Save and ⌘S save; Escape discards. So the editor can
+      // stay open across repaints, and focusing it on every render would pull focus back from
+      // wherever the human clicked — one-shot, like the DRAFT and section editors.
+      if (u.titleNeedsFocus) { u.titleNeedsFocus = false; requestAnimationFrame(() => input.focus()); }
     } else {
-      titleWrap.append(h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; render(); } }, t.title));
+      titleWrap.append(h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; u.titleNeedsFocus = true; render(); } }, t.title));
     }
     head.append(titleWrap);
 
@@ -1819,14 +1797,14 @@
 
   // Shared chevron for the two foldable card sections (t-aee3). Same class, aria contract and
   // rotation CSS as the card chevron in renderCard, so the three toggles read identically.
-  function sectionToggle(taskId, name, label, onBefore) {
+  function sectionToggle(taskId, name, label) {
     const folded = isSectionCollapsed(taskId, name);
     const verb = folded ? 'Expand ' : 'Collapse ';
     return h('button', {
       class: 'icon-btn collapse-toggle', type: 'button',
       'aria-expanded': folded ? 'false' : 'true',
       'aria-label': verb + label, title: verb + label,
-      onclick: () => { if (onBefore) onBefore(); toggleSection(taskId, name); },
+      onclick: () => toggleSection(taskId, name),
     }, icon(SVG.chevron));
   }
 
@@ -1897,12 +1875,11 @@
     const current = () => t[field] || '';
     const wrap = h('div', { class: 'desc-wrap' });
     const folded = isSectionCollapsed(t.id, field);
-    // Assigned below when the editor is open. The chevron lives INSIDE .desc-wrap, so t-471a's
-    // click-outside commit never fires for it — collapsing has to commit explicitly, or the fold
-    // would silently drop whatever was typed (t-aee3 decision 3).
-    let commitOpenEditor = null;
+    // Folding an open editor saves nothing (t-4877, reverses t-aee3's commit-on-collapse): the fold
+    // leaves sectionEditing[field] and sectionDrafts[field] alone, so unfolding reopens the editor
+    // reseeded with the unsaved text and an enabled Save.
     const head = h('div', { class: 'desc-head' },
-      sectionToggle(t.id, field, section.label.toLowerCase(), () => { if (commitOpenEditor) commitOpenEditor(); }),
+      sectionToggle(t.id, field, section.label.toLowerCase()),
       h('div', { class: 'section-title' }, section.label));
     if (folded) {
       // Empty section => no preview, but the header still renders so the "Add a …" affordance
@@ -1917,17 +1894,11 @@
       const ta = h('textarea', { class: 'desc', rows: '2', placeholder: section.placeholder, 'data-field': field });
       ta.value = u.sectionDrafts[field] != null ? u.sectionDrafts[field] : current();
       autoGrow(ta);
-      // Split so the collapse chevron can commit WITHOUT a render of its own — toggleSection
-      // renders straight after, and two repaints in one tick is one wasted rebuild of every card.
-      commitOpenEditor = () => {
-        clearActiveEditor(wrap);
+      const commitSection = () => {
         const val = ta.value;
         u.sectionEditing[field] = false;
         u.sectionDrafts[field] = null;
         commitPatch(t.id, field, val, current(), t, field);
-      };
-      const commitSection = () => {
-        commitOpenEditor();
         render();
       };
       const saveBtn = h('button', {
@@ -1960,7 +1931,6 @@
       }
       controls.push(h('span', { class: 'qa-hint' }, section.attach ? '⌘V pastes screenshots · ⌘S saves' : '⌘S saves'));
       wrap.append(ta, h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' } }, controls));
-      setActiveEditor(wrap, commitSection); // click-outside commits (t-471a)
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.sectionNeedsFocus[field]) { u.sectionNeedsFocus[field] = false; requestAnimationFrame(() => ta.focus()); }
@@ -2164,7 +2134,6 @@
       // Splitting the two is what stops Save All from flushing per row against its neighbours'
       // unsaved drafts (t-5e6d review).
       const stageRow = () => {
-        clearActiveEditor(editor);
         // The CANONICAL value (t-c4d1), computed once: it is held, echoed and written back into the
         // textarea, so the held text equals what disk will hold (the landed test can match it) and
         // the row does not read as dirty against its own echo.
@@ -2217,7 +2186,6 @@
         // the last-saved answer and releases focus (it was previously a dead key here, t-esc1).
         // On an already-answered row being edited, Escape also collapses back to the summary.
         if (e.key === 'Escape') {
-          clearActiveEditor(editor);
           ta.value = answerAt(i);
           delete u.answerDrafts[i];
           autoGrow(ta);
@@ -2238,9 +2206,8 @@
       });
       // Text pastes fold at the caret; file pastes stay with wireFieldAttach below.
       wireSingleLinePaste(ta);
-      // Always-textarea field, no view↔edit toggle to key registration off — register when it
-      // gains focus (t-471a), same idiom the feedback composer uses.
-      ta.addEventListener('focus', () => setActiveEditor(editor, commitAnswer));
+      // No click-outside commit (t-4877): leaving the row keeps its draft on u.answerDrafts[i]
+      // and Save enabled; only Save, Save All, ⌘S, Enter, Accept, a chip × or an attach saves.
       const stageAnswer = wireFieldAttach(ta, t.id, 'answer', i, (path, filename) => {
         insertLinkAtCursor(ta, '[' + filename + '](' + path + ')');
         commitAnswer();
@@ -2386,8 +2353,8 @@
   }
 
   // Open the card's one composer (edit = item index, or -1 to add). A composer already open with
-  // unsaved text is KEPT and refocused, never silently discarded; click-outside (setActiveEditor)
-  // has normally committed it already by the time this runs.
+  // unsaved text is KEPT and refocused, never silently discarded — and never saved either: the
+  // ＋ Feedback / edit click that got here is not a save (t-4877).
   function openFeedbackComposer(u, edit, text) {
     const pending = (u.feedbackDraft || '').trim();
     if (u.feedbackOpen && pending && pending !== (u.feedbackEdit >= 0 ? u.feedbackBase : '')) {
@@ -2419,7 +2386,6 @@
     autoGrow(ta);
     if (u.feedbackNeedsFocus) { u.feedbackNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
     const commitFeedback = () => {
-      clearActiveEditor(composer);
       const val = ta.value.trim();
       if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
       dropRescuedFeedback(t.id); // saved again — if this save is refused too, its reply rescues it afresh (t-5831)
@@ -2439,9 +2405,7 @@
       if (e.key === 'Escape') { dropRescuedFeedback(t.id); exitFieldEdit(() => closeFeedbackComposer(u), composer); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
-    // Register when it gains focus (t-471a): the empty-draft no-op commit leaves the composer open,
-    // and the next focus re-registers it.
-    ta.addEventListener('focus', () => setActiveEditor(composer, commitFeedback));
+    // No click-outside commit (t-4877): a click elsewhere keeps the composer open with its text.
     // Paste, drop and ＋ Attach STAGE the link into the draft without committing — only Save/⌘S
     // saves. The reply may land after a repaint, so the link goes into the live textarea.
     const stage = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
@@ -2483,8 +2447,8 @@
       });
       bodyEl = h('div', { class: 'feedback-body' }, h('span', { class: 'codicon codicon-warning' }), ' ', bodyText);
     }
-    // edit/delete commit on pointerdown (makeGateButton): a click-outside commit of another open
-    // composer repaints first, and a plain click on the torn-down button would be lost.
+    // edit/delete commit on pointerdown (makeGateButton): a board refresh landing mid-gesture
+    // repaints first, and a plain click on the torn-down button would be lost (t-2238/t-3042).
     return h('div', { class: 'amber-block feedback-row' },
       h('div', { class: 'feedback-head' },
         h('div', { class: 'amber-label' }, 'Your pending feedback'),
