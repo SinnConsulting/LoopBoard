@@ -20,8 +20,12 @@ import { FieldPatch, refusalToast } from './merge';
 import { BuildStamp, WEBVIEW_ASSETS, describeStamp, stampsDiffer } from './buildstamp';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
-  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
+  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo, MAX_DELAY_MS,
 } from './schedule';
+import {
+  IdleState, IdleFireContext, IDLE_WARN_MS, resetIdle, observeIdle, idleWarnAt, markWarned, keepRunning,
+  describeIdle, describeIdleStop, sanitizeIdleMinutes, decideIdleWarn, decideIdleStop,
+} from './idle';
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
 import { ContextReader, ContextReading } from './contextreader';
 import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide, rowsForEdges } from './subagents';
@@ -137,6 +141,18 @@ export class Controller {
   private agentsUnreadable = new Set<Model>();
   private agentBaseline = new Map<Model, AgentRow[]>();
   private afterTaskPending = new Set<Model>();
+  // Idle stop (t-2dd4) — session-only, like everything above. `idleStates` holds a slot's clock
+  // only while it runs (feature on, loop running, slot out of `busyModels`); `idleTimers` is that
+  // slot's ONE timer — the warning while the clock runs, the stop while the warning is up.
+  // `idleWarnings` is the open popup, keyed by the `warnedAt` stamp it was shown for: a popup can
+  // resolve long after its warning was superseded (VSCode cannot close a notification), and a late
+  // click must never act on the session that replaced it. `answered` = its choice was already
+  // logged (a dismissal still stops at 30 s). `idleLabels` is what the rows last showed, so the
+  // poll repaints a countdown that moved and nothing else.
+  private idleStates = new Map<Model, IdleState>();
+  private idleTimers = new Map<Model, ReturnType<typeof setTimeout>>();
+  private idleWarnings = new Map<Model, { stamp: number; answered: boolean }>();
+  private idleLabels = new Map<Model, string>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
   // awaits file IO.
@@ -223,6 +239,7 @@ export class Controller {
   dispose(): void {
     if (this.contextTimer !== undefined) clearInterval(this.contextTimer);
     for (const model of [...this.restartTimers.keys()]) this.clearRestartTimer(model);
+    for (const model of [...this.idleTimers.keys()]) this.clearIdleTimer(model);
     for (const id of [...this.autoPromoteTimers.keys()]) this.clearAutoPromoteTimer(id);
   }
 
@@ -244,6 +261,9 @@ export class Controller {
       // 35 is the default; 0 = the context threshold is off entirely (the indicator still renders).
       contextPercent: sanitizeContextPercent(c.get<number>('contextLimit.percent', 35)),
       contextAction: sanitizeContextAction(c.get<string>('contextLimit.action', 'recycle')),
+      // Idle stop (t-2dd4): opt-in, off by default; an invalid minutes value falls back to 60.
+      idleStopEnabled: c.get<boolean>('idleStop.enabled', false) === true,
+      idleStopMinutes: sanitizeIdleMinutes(c.get<number>('idleStop.minutes', 60)),
       models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
     };
   }
@@ -276,6 +296,13 @@ export class Controller {
       // Live subagents (t-sbag): rendered per repaint so each row's duration ticks between the
       // 30 s polls. A stopped loop has no session and therefore no agents.
       l.agents = (l.running ? this.agentRows.get(l.id) ?? [] : []).map((r) => describeAgent(r, now));
+      // Idle clock (t-2dd4): only while the feature is on, the loop runs and a clock exists — a busy
+      // slot has no state, so it draws no line.
+      const idle = cfg.idleStopEnabled && l.running ? this.idleStates.get(l.id) : undefined;
+      const idleLabel = idle ? describeIdle(idle, cfg.idleStopMinutes, now) : '';
+      l.idle = idleLabel ? { label: idleLabel, stopping: idle?.warnedAt !== undefined } : null;
+      if (idleLabel) this.idleLabels.set(l.id, idleLabel);
+      else this.idleLabels.delete(l.id);
     }
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel, new Set(this.autoPromoteArms.keys()));
     web.todoMissing = this.store.todoMissing;
@@ -300,6 +327,9 @@ export class Controller {
     this.flushPendingRestarts(board);
     this.flushPendingContext(board);
     this.flushAfterTask(board);
+    // Idle stop (t-2dd4): after the afterTask checks, on the same freshly loaded board. A
+    // `config-change` refresh that finds the feature off drops every clock here.
+    this.observeIdleClocks(board);
     this.evaluateAutoPromotes(board);
     // Re-measure on every refresh as well as on the interval (t-2b89 review feedback): a loop's
     // turn ends by writing `.loopboard/` markdown, which is exactly what triggers a refresh — so
@@ -377,6 +407,7 @@ export class Controller {
         // board (e.g. typing in an answer field).
         this.store.debugLog('info', 'auto-recycle', `${model} — ${this.describeAgents(model, true)}`);
         this.clearContextTrip(model, 'auto-recycle');
+        this.resetIdleClock(model, 'auto-recycle');
         this.terminals.recycle(model, true);
       }
     }
@@ -451,7 +482,10 @@ export class Controller {
       this.store.debugLog('info', held.act === 'clear' ? 'clear-session' : 'auto-recycle', `${model} (held for a live subagent)`);
       this.clearContextTrip(model, held.act === 'clear' ? 'clear-session' : 'auto-recycle');
       if (held.act === 'clear') this.terminals.clearSession(model);
-      else this.terminals.recycle(model, true);
+      else {
+        this.resetIdleClock(model, 'auto-recycle');
+        this.terminals.recycle(model, true);
+      }
     }
   }
 
@@ -561,6 +595,15 @@ export class Controller {
       this.flushPendingContext(this.lastBoard);
       this.flushAfterTask(this.lastBoard);
     }
+    // Idle stop (t-2dd4): the busy set moved (`busyChanged`) — a subagent finishing or starting is
+    // visible ONLY here, since it writes no `.loopboard/` file — so observe the clocks against it.
+    // Run on EVERY poll, not only on `busyChanged`: observing is idempotent, and it is also what
+    // starts a clock after the feature was switched on in settings.json with the settings page
+    // closed (no refresh fires then) and what moves a row's countdown between board writes.
+    if (this.lastBoard) {
+      this.observeIdleClocks(this.lastBoard);
+      if (this.idleRowsStale()) changed = true;
+    }
     if (changed) await this.postBoard();
   }
 
@@ -632,7 +675,10 @@ export class Controller {
     this.store.debugLog('info', 'context-fire', `${model} ${action}${ended ? ` — ended session ${ended}` : ''} — ${this.describeAgents(model, true)}`);
     // preserveFocus — an automatic action never steals focus from whatever the user is doing.
     if (action === 'clear') this.terminals.clearSession(model);
-    else this.terminals.recycle(model, true);
+    else {
+      this.resetIdleClock(model, 'context recycle');
+      this.terminals.recycle(model, true);
+    }
   }
 
   // A pending context trip fires on the same idle edge deferred schedules watch.
@@ -796,6 +842,7 @@ export class Controller {
       // A start ends no session, so it kills nothing even when forced.
       this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''} — ${this.describeAgents(model, schedule.action !== 'start')}`);
       this.clearContextTrip(model, `timed ${schedule.action}`);
+      this.resetIdleClock(model, `timed ${schedule.action}`);
       // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
       // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
       if (schedule.action === 'start') this.terminals.spawn(model, true);
@@ -821,6 +868,222 @@ export class Controller {
     for (const schedule of [...this.restartSchedules.values()]) {
       if (schedule.pending && mayFire(schedule, busy)) this.fireRestart(schedule);
     }
+  }
+
+  // ---- ■, shared (t-2dd4 decision 4) ----
+
+  // The one stop path. The ■ button and the idle stop both call this, so an idle stop is a ■ by
+  // construction: drop the context trip (and with it any held afterTask action), cancel an armed
+  // schedule — a repeating restart included, since restarting a terminal that was just stopped
+  // would be the opposite of what stopping meant — reset the idle clock, dispose the terminal.
+  // `note` becomes the `loop-stop` line's detail and is what tells a manual ■ from an idle stop in
+  // the log (t-aglg): the ■ passes its agent side, the idle stop prefixes `idle stop`.
+  private stopLoop(model: Model, reason: string, note: string): void {
+    this.clearContextTrip(model, reason);
+    this.cancelRestart(model, reason);
+    this.resetIdleClock(model, reason);
+    this.terminals.stop(model, note);
+  }
+
+  // ---- idle stop (t-2dd4) ----
+
+  // Observes every slot against `busyModels` and (re)arms its one timer. Called on every refresh
+  // and every context poll (the poll is the only place a subagent's start or finish is visible).
+  // Idle = out of `busyModels` and nothing else (human decision, 2026-09-25): no In-Progress task
+  // and no live subagent SEEN — a failed subagent read counts as none, exactly as `busyModels`
+  // treats it. Feature off, or loop not running → no state, no timer, no row line.
+  private observeIdleClocks(board: Board): void {
+    const cfg = this.config();
+    if (!cfg.idleStopEnabled) {
+      for (const model of [...this.idleStates.keys()]) this.resetIdleClock(model, 'disabled');
+      return;
+    }
+    const busy = this.busyModels(board);
+    const running = new Set(this.terminals.status().filter((l) => l.running).map((l) => l.id));
+    const now = Date.now();
+    for (const model of BUILTIN_MODEL_IDS) {
+      if (!running.has(model)) {
+        this.resetIdleClock(model, 'loop is not running');
+        continue;
+      }
+      const before = this.idleStates.get(model) ?? resetIdle();
+      const after = observeIdle(before, model, busy, now);
+      if (after.idleSince === undefined) {
+        if (before.idleSince === undefined) continue; // busy, and no clock to drop
+        // Turned busy. During the 30 s warning that is the hold the stop must never go past.
+        const why = this.describeBusy(model, board);
+        if (before.warnedAt !== undefined) this.store.debugLog('info', 'idle-hold', `${model} — ${why} during the idle warning, stop cancelled`);
+        this.resetIdleClock(model, why);
+        continue;
+      }
+      if (before.idleSince === undefined) {
+        this.store.debugLog('verbose', 'idle-start', `${model} — no task in progress, ${this.describeAgents(model, false)}; stop at ${cfg.idleStopMinutes}m`);
+      }
+      this.idleStates.set(model, after);
+      // Re-armed from the CURRENT minutes on every observation, so a change applied through the
+      // settings page (which refreshes) moves the deadline at once. An open warning keeps its stop
+      // timer untouched.
+      if (after.warnedAt === undefined) this.armIdleTimer(model, after, cfg.idleStopMinutes);
+    }
+  }
+
+  private armIdleTimer(model: Model, state: IdleState, minutes: number): void {
+    const at = idleWarnAt(state, minutes);
+    if (at === undefined) return;
+    this.clearIdleTimer(model);
+    const timer = setTimeout(() => {
+      this.idleTimers.delete(model);
+      this.onIdleWarnDue(model);
+    }, Math.max(0, Math.min(MAX_DELAY_MS, at - Date.now())));
+    this.idleTimers.set(model, timer);
+  }
+
+  private clearIdleTimer(model: Model): void {
+    const timer = this.idleTimers.get(model);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.idleTimers.delete(model);
+  }
+
+  // Drops a slot's clock, timer and open warning. Spawn, recycle, ■, a terminal that closed, the
+  // feature turned off, a slot that turned busy: whatever the reason, a popup still on screen for
+  // this slot is now stale, and its choice is recorded as `superseded` here — a late click on it is
+  // ignored by stamp.
+  private resetIdleClock(model: Model, reason: string): void {
+    this.clearIdleTimer(model);
+    this.settleIdleWarning(model, 'superseded');
+    if (this.idleStates.delete(model)) this.store.debugLog('verbose', 'idle-reset', `${model} (${reason})`);
+  }
+
+  // Closes the books on an open warning: logs its outcome once (unless a dismissal already did).
+  private settleIdleWarning(model: Model, outcome: string): void {
+    const warning = this.idleWarnings.get(model);
+    if (!warning) return;
+    this.idleWarnings.delete(model);
+    if (!warning.answered) this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> ${outcome}`);
+  }
+
+  // Everything a fire-time decision re-reads. Configuration is read NOW, not remembered: a change
+  // made in settings.json with the settings page closed triggers no refresh (t-sgrp). An unknown
+  // board counts as busy — the fail-open direction is the forbidden one here, as for the context
+  // trip.
+  private idleFireContext(model: Model): IdleFireContext {
+    const cfg = this.config();
+    return {
+      enabled: cfg.idleStopEnabled,
+      running: this.terminals.status().some((l) => l.id === model && l.running),
+      busy: !this.lastBoard || this.busyModels(this.lastBoard).includes(model),
+      minutes: cfg.idleStopMinutes,
+      now: Date.now(),
+    };
+  }
+
+  private idleBusyReason(model: Model): string {
+    return this.lastBoard ? this.describeBusy(model, this.lastBoard) : 'board not loaded yet';
+  }
+
+  // The warning timer fired: 30 s before the slot has been idle `minutes`.
+  private onIdleWarnDue(model: Model): void {
+    const state = this.idleStates.get(model);
+    if (!state || state.warnedAt !== undefined) return;
+    const ctx = this.idleFireContext(model);
+    const decision = decideIdleWarn(state, ctx);
+    if (decision.act === 'reset') {
+      this.resetIdleClock(model, decision.reason);
+      void this.postBoard();
+      return;
+    }
+    if (decision.act === 'hold') {
+      // A claim or a newly seen subagent raced the timer. Never forced: the clock restarts from
+      // the next idle edge.
+      this.store.debugLog('info', 'idle-hold', `${model} — ${this.idleBusyReason(model)}, idle warning skipped`);
+      this.resetIdleClock(model, 'busy at warning time');
+      void this.postBoard();
+      return;
+    }
+    if (decision.act === 'rearm') {
+      // `minutes` was raised since the timer was armed.
+      this.armIdleTimer(model, state, ctx.minutes);
+      return;
+    }
+    this.showIdleWarning(model, state, ctx.minutes);
+  }
+
+  // Non-modal, never steals focus. The 30 s deadline is our own timer racing the popup's promise:
+  // VSCode tucks an unclicked notification into the bell WITHOUT resolving it.
+  private showIdleWarning(model: Model, state: IdleState, minutes: number): void {
+    const stamp = Date.now();
+    this.idleStates.set(model, markWarned(state, stamp));
+    this.idleWarnings.set(model, { stamp, answered: false });
+    this.store.debugLog('info', 'idle-warn', `${model} idle ${minutes}m — no task in progress, ${this.describeAgents(model, false)}; stopping in ${IDLE_WARN_MS / 1000}s unless kept running`);
+    this.clearIdleTimer(model);
+    this.idleTimers.set(model, setTimeout(() => {
+      this.idleTimers.delete(model);
+      this.onIdleStopDue(model, stamp, 'timeout');
+    }, IDLE_WARN_MS));
+    const message = `LoopBoard: the ${model} loop has been idle for ${minutes} min — stopping in ${IDLE_WARN_MS / 1000} s.`;
+    this.store.debugLog('info', 'popup', `warning — ${message}`);
+    void vscode.window.showWarningMessage(message, 'Keep running', 'Stop now').then((choice) => this.onIdleChoice(model, stamp, choice));
+    void this.postBoard();
+  }
+
+  private onIdleChoice(model: Model, stamp: number, choice: string | undefined): void {
+    const warning = this.idleWarnings.get(model);
+    // Superseded (already logged as such) or already answered: a late click does nothing.
+    if (!warning || warning.stamp !== stamp || warning.answered) return;
+    if (choice === 'Stop now') {
+      this.onIdleStopDue(model, stamp, 'stop-now');
+      return;
+    }
+    if (choice === 'Keep running') {
+      this.idleWarnings.delete(model);
+      this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> keep`);
+      const state = keepRunning(this.idleStates.get(model) ?? resetIdle(), Date.now());
+      this.idleStates.set(model, state);
+      this.store.debugLog('verbose', 'idle-start', `${model} — kept running, clock restarted`);
+      this.armIdleTimer(model, state, this.config().idleStopMinutes);
+      void this.postBoard();
+      return;
+    }
+    // Closed without a choice: the stop still goes ahead at 30 s.
+    warning.answered = true;
+    this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> dismissed`);
+  }
+
+  // The stop is due: the 30 s ran out (`timeout`) or the human clicked `Stop now`.
+  private onIdleStopDue(model: Model, stamp: number, choice: 'timeout' | 'stop-now'): void {
+    const warning = this.idleWarnings.get(model);
+    if (!warning || warning.stamp !== stamp) return;
+    const state = this.idleStates.get(model);
+    const ctx = this.idleFireContext(model);
+    const decision = decideIdleStop(state, stamp, ctx);
+    if (decision === 'superseded') {
+      this.resetIdleClock(model, !ctx.enabled ? 'disabled' : !ctx.running ? 'loop is not running' : 'superseded');
+      void this.postBoard();
+      return;
+    }
+    if (decision === 'hold') {
+      this.store.debugLog('info', 'idle-hold', `${model} — ${this.idleBusyReason(model)} during the idle warning, stop cancelled`);
+      this.resetIdleClock(model, 'busy at stop time');
+      void this.postBoard();
+      return;
+    }
+    this.clearIdleTimer(model);
+    this.settleIdleWarning(model, choice);
+    this.store.debugLog('info', 'idle-stop', `${model} ${describeIdleStop(state ?? resetIdle(), ctx.now, this.agentsUnreadable.has(model))}`);
+    this.stopLoop(model, 'idle stop', `idle stop — ${this.describeAgents(model, true)}`);
+  }
+
+  // Whether a row's idle line would read differently from what was last painted — the poll's cue
+  // to repaint a countdown that moved.
+  private idleRowsStale(): boolean {
+    const minutes = this.config().idleStopMinutes;
+    const now = Date.now();
+    for (const model of new Set([...this.idleStates.keys(), ...this.idleLabels.keys()])) {
+      const state = this.idleStates.get(model);
+      if ((state ? describeIdle(state, minutes, now) : '') !== (this.idleLabels.get(model) ?? '')) return true;
+    }
+    return false;
   }
 
   // Arm request from the sidebar popover. Validates in the host too (never trust the webview), and
@@ -948,7 +1211,11 @@ export class Controller {
         return this.refresh();
       }
       case 'spawnLoop':
-        if (isKnownModel(msg.model)) this.terminals.spawn(msg.model);
+        if (isKnownModel(msg.model)) {
+          // A ▶ on a running loop only reveals it, so the clock is reset only for a real start.
+          if (!this.terminals.status().some((l) => l.id === msg.model && l.running)) this.resetIdleClock(msg.model, 'loop started');
+          this.terminals.spawn(msg.model);
+        }
         return;
       case 'revealTerminal':
         if (isKnownModel(msg.model)) this.terminals.reveal(msg.model);
@@ -959,18 +1226,13 @@ export class Controller {
         // whether the user still wants the later one.
         if (isKnownModel(msg.model)) {
           this.clearContextTrip(msg.model, 'manual restart');
+          this.resetIdleClock(msg.model, 'manual restart');
           // The manual button ignores the subagent hold, so its log line records what it killed.
           this.terminals.recycle(msg.model, false, this.describeAgents(msg.model, true));
         }
         return;
       case 'stopLoop':
-        if (isKnownModel(msg.model)) {
-          this.clearContextTrip(msg.model, 'loop stopped');
-          // Stopping a loop clears any schedule it had — restarting a terminal the user just
-          // stopped would be the opposite of what they asked for.
-          this.cancelRestart(msg.model, 'loop stopped');
-          this.terminals.stop(msg.model, this.describeAgents(msg.model, true));
-        }
+        if (isKnownModel(msg.model)) this.stopLoop(msg.model, 'loop stopped', this.describeAgents(msg.model, true));
         return;
       case 'armRestart':
         return this.onArmRestart(msg);

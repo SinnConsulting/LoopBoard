@@ -320,6 +320,24 @@
             "loopBoardDependsOn": "loopBoard.delegateWork",
             "markdownDescription": "Only applies while `loopBoard.delegateWork` is on. Off (default): no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. On: after the implementer subagent returns its PR, a review subagent (same slot model, same session effort) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
+          "loopBoard.idleStop.enabled": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 90,
+            "default": false,
+            "loopBoardApplies": "live",
+            "markdownDescription": "Off (default): a loop runs until you stop it. On: stop a loop that has been idle for `loopBoard.idleStop.minutes` — idle meaning it owns no In Progress task and its session has no live subagent, the same busy test the context-limit restart waits on. A warning appears 30 seconds before the stop with **Keep running** (restarts the idle clock) and **Stop now**; with no click the stop goes ahead. The stop is exactly the ■ button: the terminal closes and any scheduled start/restart/stop for that loop is cancelled. A busy loop is never stopped, and a loop that turns busy during the 30 seconds keeps running. Start it again with ▶."
+          },
+          "loopBoard.idleStop.minutes": {
+            "type": "integer",
+            "scope": "application",
+            "minimum": 1,
+            "order": 100,
+            "default": 60,
+            "loopBoardApplies": "live",
+            "loopBoardDependsOn": "loopBoard.idleStop.enabled",
+            "markdownDescription": "Only applies while `loopBoard.idleStop.enabled` is on. How many minutes a loop must be idle before it is stopped; `60` (default). The warning appears 30 seconds before that mark, and the stop behaves exactly like the ■ button. An invalid value falls back to 60."
+          },
           "loopBoard.autoRecycle": {
             "type": "boolean",
             "scope": "application",

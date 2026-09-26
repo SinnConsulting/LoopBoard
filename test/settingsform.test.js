@@ -216,6 +216,7 @@ test('the real manifest renders as the three agreed sections', () => {
       'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
       'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.nudgeLoops',
       'loopBoard.delegateWork', 'loopBoard.delegateReview',
+      'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     ]
   );
   assert.deepEqual(

@@ -182,6 +182,44 @@ test('every host c.get fallback for the t-2047 keys equals its manifest default'
   }
 });
 
+test('the idle-stop pair ships in Agent Setup after delegateReview, off by default (t-2dd4)', () => {
+  const agent = sections.find((s) => s.title === 'LoopBoard: Agent Setup');
+  const enabled = agent.properties['loopBoard.idleStop.enabled'];
+  const minutes = agent.properties['loopBoard.idleStop.minutes'];
+  assert.ok(enabled && minutes, 'both idle-stop keys must be declared in Agent Setup');
+  assert.equal(enabled.type, 'boolean');
+  assert.equal(enabled.default, false, 'the idle stop is opt-in');
+  assert.equal(minutes.type, 'integer');
+  assert.equal(minutes.default, 60);
+  assert.equal(minutes.minimum, 1);
+  assert.equal(enabled.order, 90);
+  assert.equal(minutes.order, 100);
+  const keys = Object.entries(agent.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
+  const at = keys.indexOf('loopBoard.delegateReview');
+  assert.deepEqual(keys.slice(at + 1, at + 3), ['loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes']);
+  for (const prop of [enabled, minutes]) {
+    assert.equal(prop.loopBoardApplies, 'live');
+    assert.equal(prop.scope, 'application');
+  }
+  assert.equal(minutes.loopBoardDependsOn, 'loopBoard.idleStop.enabled');
+  // Both descriptions name the 30 s warning and the ■-equivalent stop.
+  for (const prop of [enabled, minutes]) {
+    assert.match(prop.markdownDescription, /30 seconds/);
+    assert.match(prop.markdownDescription, /■/);
+  }
+  // The host fallbacks say the same as the manifest (read as source text, as above).
+  const src = fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8');
+  for (const [key, prop] of [['idleStop.enabled', enabled], ['idleStop.minutes', minutes]]) {
+    const escaped = key.replace(/\./g, '\\.');
+    const hits = [...src.matchAll(new RegExp(`c\\.get(?:<[^>]+>)?\\('${escaped}',\\s*([^)]+)\\)`, 'g'))];
+    assert.equal(hits.length, 1, `expected exactly one c.get('${key}', …) in src/controller.ts`);
+    assert.deepEqual(JSON.parse(hits[0][1].trim()), prop.default, `c.get('${key}', ${hits[0][1].trim()}) disagrees with the manifest`);
+  }
+  // …and the pure sanitizer's fallback is the manifest default too.
+  const { DEFAULT_IDLE_MINUTES } = require('../out-test/idle.js');
+  assert.equal(DEFAULT_IDLE_MINUTES, minutes.default);
+});
+
 test('no property id is a prefix of another — a scalar key can never have a child key', () => {
   // The trap this exists for (found in a user's VSCode log, shipped in v3.7.0 as
   // `loopBoard.delegateWork.review`):
@@ -343,7 +381,7 @@ test('every key the code reads is still declared in the manifest', () => {
     'loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee',
     'loopBoard.nudgeLoops',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
-    'loopBoard.delegateWork', 'loopBoard.delegateReview',
+    'loopBoard.delegateWork', 'loopBoard.delegateReview', 'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     'loopBoard.models.opus.enabled', 'loopBoard.models.opus.model',
     'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency',
     'loopBoard.models.sonnet.enabled', 'loopBoard.models.sonnet.model',

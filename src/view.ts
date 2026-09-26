@@ -72,6 +72,11 @@ export interface LoopStatus {
   // are listed flat. Each entry is `describeAgent()`'s output, recomputed per repaint so the
   // duration ticks between polls.
   agents?: { id: string; label: string; duration: string }[];
+  // Idle-stop clock of this slot (t-2dd4), filled in by the controller. Null whenever the feature
+  // is off, the loop is stopped, or the slot is busy (In-Progress task or live subagent) — there is
+  // then no clock to show. `label` is `describeIdle()`'s output ("idle 12m · stop at 60m",
+  // "stopping in 30s"); `stopping` = the 30 s warning is up.
+  idle?: { label: string; stopping: boolean } | null;
 }
 
 export interface WebBoard {
