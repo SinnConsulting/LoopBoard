@@ -4,7 +4,7 @@
 
 # LoopBoard
 
-[![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml) [![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinnConsulting/LoopBoard/blob/main/LICENSE) [![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model)
+[![Publish to Marketplace](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/publish.yml) [![Release](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml/badge.svg)](https://github.com/SinnConsulting/LoopBoard/actions/workflows/release.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SinnConsulting/LoopBoard/blob/main/LICENSE) [![runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-brightgreen.svg)](#security-model) [![Reddit: r/LoopBoard](https://img.shields.io/badge/reddit-r%2FLoopBoard-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/r/LoopBoard/)
 
 **The missing UI for Claude Code loops.**<br>
 Claude Code is the engine. LoopBoard is the cockpit. You're still the pilot.<br>
@@ -415,6 +415,10 @@ Pro and Max limits assume *"ordinary, individual usage of Claude Code and the Ag
 loops running around the clock (default interval `5m`) can exceed that and get the account
 rate-limited. LoopBoard drives your own Claude Code CLI and breaks no terms — just watch the
 volume.
+
+## Community
+
+Questions, ideas, bug reports and show-and-tell live on **[r/LoopBoard](https://www.reddit.com/r/LoopBoard/)** (bugs with a reproduction also welcome as a [GitHub issue](https://github.com/SinnConsulting/LoopBoard/issues)), where new features and releases are announced too.
 
 ## Build & contribute (Docker only)
 

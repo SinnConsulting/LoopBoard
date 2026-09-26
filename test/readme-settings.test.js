@@ -70,6 +70,15 @@ test('the settings tables are the last section of README.md', () => {
   assert.ok(!/^## /m.test(text.slice(text.indexOf(tool.END))), 'a ## section follows the generated settings');
 });
 
+test('README.md links r/LoopBoard, and ## Community sits outside both machine-owned regions (t-2e7d)', () => {
+  const text = readme();
+  assert.ok(text.includes('https://www.reddit.com/r/LoopBoard/'), 'the r/LoopBoard link is gone');
+  const community = text.search(/^## Community$/m);
+  assert.ok(community !== -1, 'no ## Community section');
+  assert.ok(community > text.indexOf(tool.SHOWCASE_END), '## Community is inside or before the showcase region');
+  assert.ok(community < text.indexOf(tool.BEGIN), '## Community is inside or after the settings region');
+});
+
 test('every command, view and documented behaviour still has README prose', () => {
   const problems = tool.check(root).filter((p) => !/^(settings|showcase) region/.test(p));
   assert.deepEqual(problems, [], 'README.md lost coverage of a real contribution point');
