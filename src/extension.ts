@@ -61,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
   store.startWatching();
   void controller.autoHeal().then(() => controller.autoSyncTemplates()).then(() => controller.refresh());
   void controller.maybeShowGettingStarted();
+  void controller.maybeShowWhatsNew();
 }
 
 export async function deactivate(): Promise<void> {

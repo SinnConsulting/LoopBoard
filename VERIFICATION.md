@@ -96,6 +96,16 @@ questions, an HTML-comment template) and `index-unknown.md`:
   commits and is not `preventDefault`ed; `button: 0` commits once and swallows its trailing click.
   The live gestures are item 54 (F5 only).
 
+### What's New after an update — `test/whatsnew.test.js` (t-f070)
+- `decideWhatsNew`: first install records without showing; same version writes nothing; an upgrade
+  records and shows only with `loopBoard.showWhatsNew` on; downgrade and unparseable versions record
+  without showing; versions compare numerically (`3.10.0` > `3.9.0`).
+- `releaseNotesUrl`: the tag page for a one-version step (`3.25.0→3.25.1`, `3.25.3→3.26.0`,
+  `3.26.2→4.0.0`), the releases list for a skip (`3.22.0→3.26.0`, `3.25.0→3.25.2`, …).
+- No network: nothing in `src/` calls `fetch`, the shared CSP keeps `default-src 'none'` with no
+  connect/frame source, and `media/whatsnew.css` holds no colour outside `var(--vscode-*)`. The live
+  tab is item 56 (untested).
+
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
   `.loopboard/LOOP.md`, is a single apostrophe-free line < 300 chars.
@@ -1423,3 +1433,28 @@ and likewise cannot be verified headless.
       (30 s) and no warning appears when its time would have come.
     - **Schedule cancelled:** arm a repeating `restart` from the ♻ right-click popover, then let the
       idle stop fire → `restart-cancel <slot> (idle stop)` and no restart afterwards.
+56. **What's New tab after an update (t-f070) — UNTESTED in the live webview:** the decision and
+    the link are unit-tested in `test/whatsnew.test.js` (first install, same version, upgrade on/off,
+    downgrade, unparseable, `3.10.0` > `3.9.0`, tag page vs releases list, no `fetch` in `src/`, the
+    shared CSP, theme-variable-only CSS); the tab, the globalState write, the tick and the browser
+    hand-off are host/webview only. With `loopBoard.debug` = `info`, using installed `.vsix` builds
+    (or F5 after editing `package.json`'s `version`), in a window with a LoopBoard workspace:
+    - **Opens once:** install an older `.vsix` (e.g. `3.25.0`), reload, then install a newer one
+      (`3.26.0`) and reload → a **What's New in LoopBoard** tab opens showing `Updated to 3.26.0`
+      and `3.25.0 → 3.26.0`; `debug.log` has `whats-new upgrade 3.25.0 → 3.26.0 — opened tab
+      (https://github.com/SinnConsulting/LoopBoard/releases/tag/v3.26.0)`. Reload again → no tab,
+      `whats-new same version 3.26.0`.
+    - **Themed:** switch between a light, a dark and a high-contrast theme with the tab open → every
+      colour follows the theme; the page reads as the settings page's sibling (card, primary button,
+      footer tick), not a bare link.
+    - **Link:** click **Open the release notes** → the browser opens the tag's release page;
+      `whats-new-link <url>` at info. Skipping versions (`3.22.0` → `3.26.0`) instead shows **Open all
+      release notes** and opens `https://github.com/SinnConsulting/LoopBoard/releases`.
+    - **Tick:** tick **Don't show this again after future updates** → `loopBoard.showWhatsNew` is
+      `false` in the USER `settings.json` (Global) and the settings page's switch is off;
+      `whats-new-optout ticked — …` at info. Untick → the key is removed again.
+    - **Setting off:** with the setting off, upgrade again → nothing opens, `whats-new upgrade … —
+      setting off, not shown`. Turning it back on afterwards does not replay that update.
+    - **Fresh install:** on a profile that never ran LoopBoard (no stored version) → nothing opens,
+      `whats-new first install — recorded <version>`. A downgrade → nothing opens, `whats-new
+      downgrade … — recorded, not shown`.

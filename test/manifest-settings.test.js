@@ -379,7 +379,7 @@ test('every key the code reads is still declared in the manifest', () => {
     'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel',
     'loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee',
-    'loopBoard.nudgeLoops',
+    'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
     'loopBoard.delegateWork', 'loopBoard.delegateReview', 'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     'loopBoard.models.opus.enabled', 'loopBoard.models.opus.model',
@@ -417,6 +417,18 @@ test('template auto-sync is a live boolean in Board & Workspace, on by default (
   assert.equal(prop.loopBoardApplies, 'live');
   assert.match(prop.markdownDescription, /LOOP\.md\.bkp/, 'the description must name the legacy backup');
   assert.match(prop.markdownDescription, /loopboard:custom/, 'the description must promise the custom section is untouched');
+});
+
+test("the What's New tab is a live boolean in Board & Workspace, on by default (t-f070)", () => {
+  const board = sections.find((s) => s.title === 'LoopBoard: Board & Workspace');
+  const prop = board.properties['loopBoard.showWhatsNew'];
+  assert.ok(prop, 'loopBoard.showWhatsNew must be declared in Board & Workspace');
+  assert.equal(prop.type, 'boolean');
+  assert.equal(prop.default, true, 'the tab opens after an update unless the human opts out');
+  assert.equal(prop.scope, 'application');
+  assert.equal(prop.loopBoardApplies, 'live');
+  // The host reads it with the same fallback the manifest declares.
+  assert.match(fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8'), /get<boolean>\('showWhatsNew', true\)/);
 });
 
 test('the dropped sidebar pulse toggle is no longer declared anywhere (t-4dce)', () => {

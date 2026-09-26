@@ -32,6 +32,8 @@ import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge,
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
+import { decideWhatsNew, RELEASES_URL } from './whatsnew';
+import { WhatsNewPanel } from './whatsnewpanel';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -66,6 +68,9 @@ export const EXTENSION_ID = 'SinnConsulting.loopboard-todo';
 export const NATIVE_SETTINGS_FILTER = `@ext:${EXTENSION_ID}`;
 
 const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
+// The extension version the What's New check last saw (t-f070). globalState, not workspaceState:
+// "I have seen this version" is per user profile and shared by every window.
+const WHATS_NEW_LAST_SEEN_KEY = 'loopboard.whatsNew.lastSeenVersion';
 // DEAD KEY, kept only to be deleted. An earlier build of the migration panel could not remove
 // `loopBoard.delegateWork.review` (it is unreadable behind its scalar parent) and instead asked the
 // user to confirm they had dealt with it by hand, remembering that here. The removal turned out to
@@ -169,6 +174,9 @@ export class Controller {
   private autoPromoteArms = new Map<string, AutoPromoteArm>();
   private autoPromoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private autoPromoteFiring = new Set<string>();
+  // What the open What's New tab shows (t-f070): set when the activation check opens it. The link
+  // the tab opens is THIS url, never one the webview sends back.
+  private whatsNew: { previous: string; current: string; url: string } | undefined;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -1700,6 +1708,78 @@ export class Controller {
       void vscode.env.openExternal(vscode.Uri.parse(HELP_URL));
     } else if (choice === 'Show never again') {
       void this.globalState.update(GETTING_STARTED_DISMISSED_KEY, true);
+    }
+  }
+
+  // ---- What's New after an update (t-f070) ----
+
+  // Run once per activation. The decision (first install / same / upgrade / downgrade / unparseable,
+  // and the link) is the pure decideWhatsNew's; this only reads and writes globalState, opens the tab
+  // and logs. Two windows reloading at once after an update can both read the old version before
+  // either writes it and each open the tab — accepted, no locking (decisions/board-ui.md).
+  async maybeShowWhatsNew(): Promise<void> {
+    const log = (detail: string) => this.store.debugLog('info', 'whats-new', detail);
+    const current = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON?.version;
+    if (typeof current !== 'string') return log('skipped — running version unknown');
+    const lastSeen = this.globalState.get<unknown>(WHATS_NEW_LAST_SEEN_KEY);
+    const settingOn = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
+    const decision = decideWhatsNew(lastSeen, current, settingOn);
+    if (decision.record) {
+      try {
+        await this.globalState.update(WHATS_NEW_LAST_SEEN_KEY, current);
+      } catch (err) {
+        log(`could not record ${current} — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (!decision.show || !decision.url) return log(decision.reason);
+    this.whatsNew = { previous: String(lastSeen), current, url: decision.url };
+    log(`${decision.reason} — opened tab (${decision.url})`);
+    const panel = WhatsNewPanel.show(this.extensionUri);
+    panel.onMessage((msg) => void this.onWhatsNewMessage(msg));
+  }
+
+  private async onWhatsNewMessage(msg: any): Promise<void> {
+    if (!msg || typeof msg.type !== 'string') return;
+    this.store.debugLog('verbose', 'dispatch', `whats-new ${msg.type}`);
+    const info = this.whatsNew;
+    switch (msg.type) {
+      case 'whatsNewReady': {
+        if (!info) return;
+        const showAgain = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
+        WhatsNewPanel.current?.post({
+          type: 'whatsNew', previous: info.previous, current: info.current, url: info.url,
+          list: info.url === RELEASES_URL, dontShowAgain: !showAgain,
+        });
+        return;
+      }
+      case 'whatsNewOpen': {
+        if (!info) return;
+        this.store.debugLog('info', 'whats-new-link', info.url);
+        void vscode.env.openExternal(vscode.Uri.parse(info.url));
+        return;
+      }
+      case 'whatsNewOptOut': {
+        // The tick IS the setting (Global, like every loopBoard.* key): ticked writes false, unticked
+        // clears the key back to its default (on).
+        const optOut = msg.optOut === true;
+        try {
+          await vscode.workspace.getConfiguration().update(
+            'loopBoard.showWhatsNew', optOut ? false : undefined, vscode.ConfigurationTarget.Global
+          );
+          this.store.debugLog('info', 'whats-new-optout', optOut
+            ? 'ticked — loopBoard.showWhatsNew set to false (Global)'
+            : 'unticked — loopBoard.showWhatsNew reset to its default (on)');
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          this.store.debugLog('info', 'whats-new-optout', `failed — ${reason}`);
+          // Shown on the tab itself (a board toast would land on a panel that may not be open), which
+          // also puts the tick back to what is really stored.
+          WhatsNewPanel.current?.post({ type: 'whatsNewError', reason, dontShowAgain: !optOut });
+        }
+        return;
+      }
+      case 'openSettings':
+        return this.openSettings();
     }
   }
 
