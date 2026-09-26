@@ -13,9 +13,10 @@ import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, 
 import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
+import { stripAttachmentLink, unreferencedAttachments } from './attachments';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
-export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string };
+export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string; feedback?: string[] };
 export type DraftOutcome = SaveOutcome & { id?: string };
 
 // Opt-in debug trace level (loopBoard.debug). `off` = the sink is never touched.
@@ -433,20 +434,21 @@ export class Store {
         await this.ensureTasksDir();
         await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
       }
-      // t-b149: a note-scoped attachment link lives in the note text itself (notes[], an index
-      // field) — strip it there too so removing an attachment chip from a note actually clears
-      // its link, not just the cached file.
-      const noteJoined = entry.notes.join('\n');
-      const strippedNote = noteJoined.replace(linkRe, '').replace(/[ \t]{2,}/g, ' ').trim();
-      const noteChanged = strippedNote !== noteJoined;
-      if (noteChanged) entry.notes = strippedNote ? strippedNote.split('\n') : [];
-      // Only the INDEX halves (title on a draft, note text) need the index rewritten; a description
+      // A feedback-scoped link lives in its own `feedback:` line (t-ae10, replacing t-b149's note
+      // strip): strip it from whichever line holds that path, and drop a line the strip empties.
+      const strippedFeedback = entry.feedback.map((f) => stripAttachmentLink(f, relPath)).filter((f) => f.length > 0);
+      const feedbackChanged = strippedFeedback.join('\n') !== entry.feedback.join('\n');
+      if (feedbackChanged) {
+        entry.feedback = strippedFeedback;
+        this.debugLog('verbose', 'detach-feedback', `${taskId} -> stripped ${relPath} from feedback`);
+      }
+      // Only the INDEX halves (title on a draft, feedback text) need the index rewritten; a description
       // strip is a task-file write on its own since the `rev:` bump it used to persist is gone.
-      if (titleChanged || noteChanged) {
+      if (titleChanged || feedbackChanged) {
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
       }
       this.debugLog('verbose', 'detach', `${taskId} -> ${relPath}`);
-      return { status: 'applied' as const, description: detail.description, title: entry.title };
+      return { status: 'applied' as const, description: detail.description, title: entry.title, feedback: entry.feedback };
     });
   }
 
@@ -460,6 +462,24 @@ export class Store {
     }
   }
 
+  // Delete the cached files a removed feedback item linked, unless the same path is still
+  // mentioned elsewhere in the entry (title, questions/answers, other feedback items) or its task
+  // file. The keep/delete decision is the pure `unreferencedAttachments`. Called inside the
+  // write lock, after the index write. Best-effort per file.
+  private async deleteUnreferencedAttachments(entry: IndexEntry, removed: string): Promise<void> {
+    const detailText = (await this.readFile(this.taskUri(entry.id))) ?? '';
+    const remaining = [entry.title, ...entry.questions.flatMap((q) => [q.text, q.answer, ...q.suggestions]), ...entry.feedback, detailText];
+    for (const relPath of unreferencedAttachments(removed, remaining, entry.id)) {
+      const name = relPath.slice(`.loopboard/cache/${entry.id}/`.length);
+      try {
+        await vscode.workspace.fs.delete(vscode.Uri.joinPath(this.taskCacheDir(entry.id), name));
+        this.debugLog('verbose', 'feedback-delete-file', `${entry.id} -> ${relPath}`);
+      } catch {
+        // already gone — nothing to clean up
+      }
+    }
+  }
+
   // Re-read -> re-parse -> apply one field patch -> serialize whole file -> atomic write.
   // Index fields patch TODO.md; detail fields patch tasks/<id>.md (created if absent).
   async applyFieldPatch(patch: FieldPatch): Promise<SaveOutcome> {
@@ -467,13 +487,26 @@ export class Store {
       if (patchTarget(patch.field) === 'index') {
         const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
         const result = applyPatch(doc, patch);
+        const fb = patch.field === 'feedbackAdd' ? 'feedback-add'
+          : patch.field === 'feedbackItem' ? (patch.value.trim() ? 'feedback-edit' : 'feedback-delete')
+          : undefined;
+        if (result.status === 'noop') {
+          // A feedback delete whose item the loop already removed (or an empty add): nothing to do.
+          this.debugLog('verbose', `${fb}-noop`, `${patch.taskId} #${patch.itemIndex ?? '-'} -> nothing to do (item already gone, or empty)`);
+          return { status: 'applied' };
+        }
         if (result.status !== 'applied') {
           // A same-field disk-wins conflict silently drops a human edit — an especially important line.
-          if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${patch.field} -> ${patch.value}`);
+          if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${fb ?? patch.field} -> ${patch.value}`);
           return { status: result.status };
         }
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
-        this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied = ${patch.value}`);
+        this.debugLog('verbose', fb ?? 'patch', `${patch.taskId} ${fb ? `#${patch.itemIndex ?? 'end'}` : patch.field} -> applied = ${patch.value}`);
+        // Deleting a feedback item from the board deletes the cached files only it linked (t-ae10);
+        // a path still mentioned anywhere else in the entry or its task file is kept.
+        if (fb === 'feedback-delete' && result.removed !== undefined && result.entry) {
+          await this.deleteUnreferencedAttachments(result.entry, result.removed);
+        }
         return { status: 'applied' };
       }
       // Detail patch: need the index entry for its id + title (writer rewrites the H1).
@@ -582,7 +615,6 @@ export class Store {
         model: normalizeModel(model ?? ''),
         groomer: normalizeGroomer(groomer ?? ''), // accepts the on-hold sentinel too (t-65a2)
         questions: [],
-        notes: [],
         feedback: [],
         unknownLines: [],
         raw: '',

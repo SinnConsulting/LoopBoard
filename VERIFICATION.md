@@ -41,13 +41,18 @@ questions, an HTML-comment template) and `index-unknown.md`:
   a pre-t-2191 file is recognized instead of landing in `unknownLines`, and relocates on save.
 
 ### Merge routing + patches — `test/merge.test.js`
-- `patchTarget` routes title/model/groomer/answer/note/feedback → index, description/problem/goals
+- `patchTarget` routes title/model/groomer/answer/answers/feedbackAdd/feedbackItem → index, description/problem/goals
   → detail; `problem`/`goals` apply and conflict on a stale base exactly like `description`, a
   `problem` patch leaves description/goals untouched, and a whitespace value drops the section.
 - `applyPatch` (index) and `applyDetailPatch` (detail) keep disk-wins conflict semantics; answer
   patch targets the right question; model `default (opus)` clears the field; unknown id → notfound.
-- `note` and `feedback` each edit their whole set as one value: newline-split, empties dropped →
-  `notes: string[]` / `feedback: string[]`; clearing either empties the set.
+- Feedback is per ITEM (t-ae10), never the whole set: `feedbackAdd` appends to the re-read disk
+  list with no base (an item the loop removed meanwhile is no conflict, both changes kept);
+  `feedbackItem` edits/deletes one line found by index + that item's own base, falling back to a
+  text match when earlier items were removed; an edit whose base is gone = disk-wins conflict, a
+  delete whose base is gone = `noop`; other items never conflict. A multi-line value splits into
+  several items at the add/edit position. `unreferencedAttachments` (`src/attachments.ts`,
+  `test/attachments.test.js`) decides which of a deleted item's files are safe to delete.
 
 ### Gates — `test/gates.test.js`
 - `promoteIndex` (phase→backlog, uncheck), `promoteDetail` (`promoted:` + worklog, no dup),
@@ -55,8 +60,8 @@ questions, an HTML-comment template) and `index-unknown.md`:
 
 ### View — `test/view.test.js`
 - `computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; dependency marked met when
-  its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `note` derives from `notes[]`;
-  `feedback` derives from `feedback[]`; DONE cards render from the slim IndexEntry (no composed
+  its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `feedback` is the
+  `feedback[]` item list (`[]` when none, t-ae10); DONE cards render from the slim IndexEntry (no composed
   detail).
 - `WebTask` carries `problem`/`goals` for active tasks AND for DONE entries, defaulting to `''`
   when the task file has neither section (t-2191).
@@ -188,30 +193,32 @@ New v2 checklist (from REFACTORING.md Phase 8):
     `description edited` — the detail-side change signal that replaced `rev:`. Append a
     `## Worklog` line to the same `tasks/<id>.md` by hand → one more nudge, naming
     `worklog appended`.
-11. **Delivered/Feedback/Note render as markdown (t-7a94):** a Review card whose Delivered note
+11. **Delivered/Feedback render as markdown (t-7a94):** a Review card whose Delivered note
     contains `` `code` ``, `**bold**`, a bare `https://…` URL, and a `-`/`1.` list renders all of
     them formatted (code chip, emphasis, clickable link, list) — same in the DONE-archive expanded
-    detail after acceptance. A Review feedback comment or a Note-to-worker instruction containing
-    a staged-attachment `[name](.loopboard/cache/<id>/name)` link renders it clickable (opens via
-    `openLink`), not as literal `[text](path)` — both keep their leading warning/clock codicon.
+    detail after acceptance. A feedback item's text renders as markdown with its leading warning
+    codicon; its staged-attachment links show only as chips (item 13).
     Plain Description/question-text rendering is unchanged (no regression).
 12. **Attachments, any file type (t-058e):** on each of the four surfaces — New Story composer,
-    Description/answer fields, Review feedback field, note-to-worker field — drag-drop AND paste
+    Description/answer fields, the feedback composer (any phase, t-ae10) — drag-drop AND paste
     a non-image file (e.g. a `.pdf` or `.zip`) → it stages under `.loopboard/cache/<id>/` and a
-    `[name](path)` link lands in that field's own text (feedback/note do NOT misfile into
+    `[name](path)` link lands in that field's own text (feedback does NOT misfile into
     Description). A file over `loopBoard.maxAttachmentSizeMB` (default 10MB) is still rejected
     host-side with a toast; that is the only remaining gate — no type allowlist/denylist, an
     `.exe`/`.sh` attaches too (explicit human decision, t-058e).
-13. **Notes-to-worker reskin (t-b149):** empty state shows the dashed "＋ Note to worker · or drop
-    files here" drop-zone; clicking it (or dropping a file on it) opens the `.qa-note-composer`.
-    Typing + Add note saves and renders the note as a `.qa-note` card (yellow rail, "NOTE" label,
-    edit/delete links) in both a light AND a dark theme. Pasting a screenshot into the open
-    composer stages it and inserts `[name](.loopboard/cache/<id>/name)` at the caret WITHOUT
-    closing the composer (further edits/attachments still possible before Save); the saved note
-    then shows an attachment chip (ext badge + clickable name → opens via `openLink`) below the
-    body text, and its × removes the file AND strips the link from the note (re-fetch confirms
-    no dangling link). "edit" reopens the composer prefilled with the current text; "delete"
-    retracts the note entirely (existing behavior, unchanged).
+13. **Feedback attachments (t-ae10, replaces the t-b149 note item) — UNTESTED in the live
+    webview:** open a card's feedback composer and paste a screenshot, drop a file, and use
+    ＋ Attach → each stages under `.loopboard/cache/<id>/` and inserts its link at the caret WITHOUT
+    saving or closing the composer (Save stays the only commit; nothing new in `TODO.md` yet).
+    Save → the row shows each attachment ONLY as a chip, never as literal link text — including
+    two pasted screenshots both named `image.png` (the second is stored as `image-2.png` under the
+    label `image.png`: `stripAttachmentLinks` is path-keyed, vm-tested in
+    `test/board-review-feedback.test.js`). A chip × deletes the cached file AND strips its link from that
+    `feedback:` line in one store step (`store.removeAttachment`; check the cache dir and
+    `TODO.md`; `debug.log` at `verbose` shows `detach-feedback`). **Delete:** a row whose item
+    links a file no other text of the task mentions → **delete** removes the line and the file; a
+    file also linked from the Description (or another item) survives (`feedback-delete-file`
+    lines in `debug.log`).
 14. **Two-layer filter: the typed filter survives navigation, view queries do not (t-2452 →
     t-3d42, amended by t-1cdb):** type a plain-text filter while on one phase tab, then click
     through New / Backlog / In Progress / Review / Feedback / Done via the board tab strip — the
@@ -259,8 +266,9 @@ New v2 checklist (from REFACTORING.md Phase 8):
     (not clickable — no cache file yet). Every one of these four fields (new-story composer,
     description edit, answer edit, Review feedback) shows a `＋ Attach` button next to its
     Save/paste hint; clicking it opens a file picker and stages the file exactly like a drop/
-    paste would. Removing an answer or feedback attachment chip strips its link from that
-    field's own text (re-fetch confirms no dangling link) rather than a separate detach call.
+    paste would. Removing an answer attachment chip strips its link from that field's own text
+    (re-fetch confirms no dangling link) rather than a separate detach call; a feedback chip goes
+    through `detach` since t-ae10 (item 13).
     No image thumbnails anywhere (unchanged from t-b149).
 17. **Composer save shortcut (t-9b50):** with the New Story composer open and text typed, press
     Cmd/Ctrl+S → the draft saves (same as clicking Save Draft) and the composer closes. With the
@@ -287,7 +295,8 @@ New v2 checklist (from REFACTORING.md Phase 8):
     composer still work). Click the empty button once → the composer opens AND the caret is
     already in the textarea, ready to type with no second click. Click "edit" on an existing note
     → same one-click-to-focused-caret behavior. Opening the composer via a background board
-    refresh (not a click) does not steal focus into the textarea.
+    refresh (not a click) does not steal focus into the textarea. (t-ae10: the note block is gone;
+    run the same checks on the ＋ Feedback composer, item 48.)
 21. **`owner:` field removed (t-33cb):** no card's chip row shows a robot-icon owner chip or an
     "unassigned" chip anymore (both are gone). Move a task to In Progress → the working indicator
     reads "Worker is on it · last activity today" (no name/attribution). Attempt to delete a task
@@ -389,6 +398,7 @@ New v2 checklist (from REFACTORING.md Phase 8):
     Review card, a feedback save (the amber "Your pending feedback" block appears immediately) and
     an answer save. Conflict path unchanged: edit the same field on disk between opening the editor
     and saving → the "changed on disk" toast still wins and the card shows the disk value.
+    (t-ae10: the note is now a feedback item — run the note steps on a feedback row, item 48.)
 
 Pre-v2 board behaviors (read-only render + live refresh, edit/gates/merge toasts, sidebar badge,
 loop spawn/recycle/stop, icon rendering in light/dark themes) still require the same F5 walkthrough
@@ -502,9 +512,9 @@ and likewise cannot be verified headless.
     Docker suite does not cover any of it — this checklist is the acceptance path, exactly as for
     t-col1 / t-7411 / t-7679. On a **New** card that has open questions:
 
-    **Default:** with no saved section state (fresh board, or after Expand all), both the
-    **Description** and **Open questions** sections show expanded, each with a chevron in its
-    header.
+    **Default:** with no saved section state, the **Description** section shows FOLDED to its
+    one-line preview and the **Open questions** panel shows FOLDED to its header (t-d5f2 — every
+    section always starts folded), each with a chevron in its header.
 
     **Independent fold:** click the Description chevron → only that section folds; the questions
     panel and the card itself are untouched. Same in reverse for the Open questions chevron: its
@@ -518,13 +528,15 @@ and likewise cannot be verified headless.
     `Add a description…`. Expanding removes the preview.
 
     **Collapse all / Expand all:** click **Collapse all** → every card in the tab folds. Expand one
-    card by its own chevron → BOTH its sections come back folded. **Expand all** → every card and
-    every section open. Switch tabs: the other tab is unaffected.
+    card by its own chevron → its Open questions panel and Description each show whatever their
+    own chevron last set (folded unless opened by hand). **Expand all** → every card opens; neither
+    Description nor the Open questions panel is opened by it (t-d5f2). Switch tabs: the other tab
+    is unaffected.
 
-    **Persistence:** hand-fold one section, then (a) let a loop write to the tracker so the board
-    refreshes, (b) switch to another view in the activity bar and back, and (c) reload the window —
-    the fold survives all three. Then press Collapse all / Expand all in that tab: the hand-set
-    override is wiped by it.
+    **Persistence:** hand-fold/unfold one section, then (a) let a loop write to the tracker so the
+    board refreshes, (b) switch to another view in the activity bar and back, and (c) reload the
+    window — the fold survives all three. Then press Collapse all / Expand all in that tab: every
+    hand-set section override (Description and Open questions alike) survives (t-d5f2).
 
     **Commit on collapse:** click the description to open its editor, type without saving, then
     click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
@@ -960,8 +972,10 @@ and likewise cannot be verified headless.
       `.loopboard/tasks/<id>.md` — `debug.log` shows one `patch` line naming the field and
       `.loopboard/TODO.md` is byte-for-byte unchanged on disk. The file on disk shows the section
       in canonical order (Problem above Description, Goals below it).
-    - **Collapse all** / **Expand all** folds and unfolds all three sections on every card in the
-      tab; per-section folds survive a tab hop and a panel hide/reveal (they ride `vscode.setState`).
+    - The three sections start **folded** on every expanded card, and **Collapse all** /
+      **Expand all** neither fold nor open them — only each section's own chevron does (t-d5f2,
+      item 51); per-section folds survive a tab hop and a panel hide/reveal (they ride
+      `vscode.setState`).
     - The tab **filter** matches text that appears only in Problem or only in Goals (the box's
       placeholder now reads "id, title or story text").
     - **Done tab:** expanding an accepted row shows Delivered, then Problem, Description and Goals
@@ -1080,27 +1094,24 @@ and likewise cannot be verified headless.
     under `~/.claude/projects/<encoded cwd>/` → its assistant messages carry `"effort"` equal to the
     loop's session level.
 
-48. **Editable Review feedback (t-2622) — UNTESTED in the live webview:** the three-state
-    structure of `renderReview` is pinned as source text by `test/board-review-feedback.test.js`;
-    the switching, focus and repaint are webview-only (`media/board.js`), so this item is their
-    only acceptance path. **Empty:** a Review card with no `feedback:` shows only a dashed
-    **＋ Review feedback** button, no textarea. Click it → the composer opens with the textarea
-    focused and Save disabled; press Escape → it collapses back to the button, nothing written.
-    **Save:** open it again, type `first point`, Save → the amber "Your pending feedback" block
-    shows `first point` in the same frame (no flash, no textarea beneath it) and `TODO.md` has one
-    `feedback:` sub-bullet. **Edit:** click **edit** → the composer opens focused and prefilled
-    with `first point`; add a second line `second point`, press ⌘S → the block shows both lines
-    at once and `TODO.md` has both `feedback:` sub-bullets (the first was not lost). Click
-    **edit**, change the text, press Escape → the block returns showing the saved text unchanged,
-    nothing written. Clear the whole textarea → Save is disabled. **Delete:** click **delete** →
-    the block returns to the ＋ Review feedback button at once and `TODO.md` has no `feedback:`
-    sub-bullet. **Attachments:** in the open composer (prefilled via **edit**), ＋ Attach a file
-    → its link is inserted after the existing text and saved (attach/paste/drop still commit, as
-    before — t-5b29 owns that); click **edit** again and paste a screenshot → same. The collapsed
-    block keeps the earlier text and renders chips for both, and removing a chip re-commits the
-    text without it. **Loop write
-    while editing:** with the composer focused, let a loop write `TODO.md` → the textarea keeps
-    focus and text until you click out or Escape.
+48. **One feedback input on every card (t-2622 → t-ae10) — UNTESTED in the live webview:** the
+    structure of `renderFeedback` is pinned as source text by `test/board-review-feedback.test.js`;
+    the switching, focus and repaint are webview-only (`media/board.js`), so this item is their only
+    acceptance path. On a DRAFT, New, Backlog, In Progress, Feedback and Review card alike: with no
+    `feedback:` the card shows only a dashed **＋ Feedback** button, no textarea and no "Note to
+    worker". Click it → the composer opens focused, Save disabled; Escape → it closes, nothing
+    written. **Add:** type `first point`, Save → one amber "Your pending feedback" row appears in
+    the same frame and `TODO.md` has one `feedback:` line; ＋ Feedback stays under the list; add
+    `second point` → a second row, a second line (the first untouched). **Edit:** a row's **edit**
+    opens the composer in that row, prefilled with that item only; change it, ⌘S → only that line
+    changes. While it is open, ＋ Feedback is still visible; clicking it (or another row's edit)
+    commits the open composer first — never discards typed text — and at most one composer is ever
+    open on the card. **Delete:** a row's **delete** removes that line only. **Loop race:** with
+    two items, open the composer on the second, have a loop delete the first line in `TODO.md`,
+    then Save → the edit lands on the right line with no conflict toast; add an item while the loop
+    deletes another → both changes kept. Edit an item the loop has since removed → the disk-wins
+    toast. **Drafts:** a draft's feedback survives a save of its text/selects. With the composer
+    focused, a loop write keeps focus and text until you click out or Escape.
 
 49. **Sidebar hover survives repaints (t-9a29 feedback) — UNTESTED in the live webview:** the
     in-place reconciler (`paint`/`morph` in `media/sidebar.js`) is run against a fake DOM by
@@ -1147,3 +1158,25 @@ and likewise cannot be verified headless.
       ONE `agents-gone` for that agent, and NO `agents-start` for it afterwards. At `verbose`, a
       poll that still resolves the old session shows `agents-read … (ended session <id> — no
       edges)`. Repeat with a Force-on scheduled restart and with a `context-fire` recycle.
+
+51. **Story sections start folded; Expand all / Collapse all act on cards only (t-d5f2) —
+    UNTESTED in the live webview:** `media/board.js` `isSectionCollapsed` / `setPhaseCollapsed`;
+    the fallback and the narrowed wipe are pinned over the source text by
+    `test/board-section-folds.test.js`, the rendered result is this checklist. Start from a card
+    with no saved section state (e.g. a newly promoted task).
+    - **Default fold:** expand a non-draft card in each tab (New, Backlog, In Progress, Feedback,
+      Review) → the card is open (chips, selects, attachments, status) and **Problem**,
+      **Description** and **Goals** each show only their header, chevron and one-line preview.
+      Press **Collapse all** then **Expand all** → still folded; press only **Collapse all** and
+      expand one card by its chevron → still folded.
+    - **Chevron wins:** open Goals by its own chevron, then press Collapse all → the card folds;
+      Expand all → the card opens with Goals still open and Problem/Description still folded. The
+      opened Goals also survives (a) a loop write that refreshes the board, (b) a switch to another
+      activity-bar view and back, and (c) a window reload.
+    - **Open questions folded too (review feedback, supersedes the story's "unchanged" goal):** on a
+      New and a Feedback card with unanswered questions, the expanded card shows the panel FOLDED:
+      header only (chevron, `Open questions`, `N / M answered` with the wait tooltip, the
+      progress meter, and `re-groom pending` when every answer is in on a New card), no rows, no
+      **Save All**; the chips-row question chip shows the same status. **Expand all** does not
+      open it and **Collapse all** does not reset it; a panel opened by its own chevron stays open
+      across both buttons, a refresh, a view switch and a reload.
