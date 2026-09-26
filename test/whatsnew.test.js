@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const {
   RELEASES_URL, parseVersion, compareVersions, isOneStep, releaseNotesUrl, decideWhatsNew, describeWhatsNew,
+  currentReleaseUrl, describeWhatsNewOnDemand,
 } = require('../out-test/whatsnew.js');
 
 const root = path.resolve(__dirname, '..');
@@ -155,4 +156,99 @@ test('the What\'s New page is styled from VS Code theme variables only — no ha
   // Every colour sits inside a var(--vscode-*) as its fallback, never on its own.
   const stripped = css.replace(/var\(--vscode-[\w-]+(?:,[^()]*(?:\([^()]*\)[^()]*)*)?\)/g, '');
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/.test(stripped), 'a colour outside var(--vscode-*)');
+});
+
+// ---- on demand: the sidebar's "What's new?" link and the command (t-f070 review) ----
+
+test('on demand links the running version\'s own release page, the list when it cannot be placed', () => {
+  assert.equal(currentReleaseUrl('3.28.0'), TAG('3.28.0'));
+  assert.equal(currentReleaseUrl('3.10.2'), TAG('3.10.2'));
+  for (const bad of [undefined, '', '3.28', '3.28.0-beta.1', 'v3.28.0', 3]) {
+    assert.equal(currentReleaseUrl(bad), LIST, JSON.stringify(bad));
+  }
+});
+
+test('the whats-new-open line names the source, the version and the url, and leaves last-seen alone', () => {
+  assert.equal(describeWhatsNewOnDemand('sidebar', '3.28.0', TAG('3.28.0')),
+    `on demand (sidebar) — running 3.28.0, opened tab (${TAG('3.28.0')}); last-seen version untouched`);
+  assert.equal(describeWhatsNewOnDemand('command', undefined, LIST),
+    `on demand (command) — running version unknown, opened tab (${LIST}); last-seen version untouched`);
+});
+
+// The source text between `open(` and its matching `)`, skipping quoted strings (the labels hold
+// apostrophes and question marks).
+function balanced(src, open) {
+  const start = src.indexOf(open);
+  assert.ok(start >= 0, `missing ${open}`);
+  let depth = 0;
+  let quote = null;
+  for (let i = start + open.indexOf('('); i < src.length; i++) {
+    const c = src[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+    } else if (c === '\'' || c === '"' || c === '`') quote = c;
+    else if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) return src.slice(start, i + 1);
+  }
+  throw new Error(`unbalanced ${open}`);
+}
+
+test('sidebar: What\'s new? | Settings | Help sit on one line, in that order, each sending its message', () => {
+  const vm = require('node:vm');
+  const source = fs.readFileSync(path.join(root, 'media', 'sidebar.js'), 'utf8');
+  const expr = balanced(source, "h('div', { class: 'sb-links' },");
+  // Evaluate the row itself with a fake `h`, so the order, the classes and the click messages are
+  // the real ones rather than a pattern match on the text.
+  const posted = [];
+  const h = (tag, props, ...kids) => ({ tag, props: props || {}, kids: kids.flat().filter((k) => k != null) });
+  const row = vm.runInNewContext(expr, {
+    h, board: { helpUrl: 'https://help.example/' }, vscode: { postMessage: (m) => posted.push(JSON.parse(JSON.stringify(m))) }, // out of the vm realm
+  });
+  const buttons = row.kids.filter((k) => k.tag === 'button');
+  assert.deepEqual(buttons.map((b) => b.kids.join('')), ["What's new?", 'Settings', 'Help']);
+  const seps = row.kids.filter((k) => k.tag === 'span');
+  assert.equal(seps.length, 2);
+  for (const s of seps) {
+    assert.deepEqual(s.kids, ['|']);
+    assert.equal(s.props['aria-hidden'], 'true');
+  }
+  assert.deepEqual(row.kids.map((k) => k.tag), ['button', 'span', 'button', 'span', 'button']);
+  for (const b of buttons) b.props.onclick();
+  assert.deepEqual(posted, [
+    { type: 'whatsNew' }, { type: 'openSettings' }, { type: 'openLink', url: 'https://help.example/' },
+  ]);
+  // Only Help and the bar before it carry the class the narrow-viewport rule hides.
+  const help = row.kids.filter((k) => (k.props.class || '').split(' ').includes('sb-help'));
+  assert.deepEqual(help, [row.kids[3], row.kids[4]]);
+});
+
+test('sidebar CSS: the links row never wraps, and a narrow sidebar hides Help', () => {
+  const css = fs.readFileSync(path.join(root, 'media', 'sidebar.css'), 'utf8');
+  const rule = /\.sb-links \{([^}]*)\}/.exec(css);
+  assert.ok(rule, '.sb-links rule');
+  assert.match(rule[1], /display: flex;/);
+  assert.match(rule[1], /white-space: nowrap;/);
+  const media = /@media \(max-width: (\d+)px\) \{ \.sb-links \.sb-help \{ display: none; \} \}/.exec(css);
+  assert.ok(media, 'a max-width rule hiding .sb-help');
+  // Wide enough that the three labels (~215 px with the sidebar padding) never clip before Help goes.
+  assert.ok(Number(media[1]) >= 220, `breakpoint ${media[1]}px`);
+});
+
+test('host: the sidebar message and the command open the tab on demand, without touching last-seen', () => {
+  const ctl = fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8');
+  assert.match(ctl, /case 'whatsNew':[^]*?return this\.showWhatsNew\('sidebar'\);/);
+  const fn = ctl.slice(ctl.indexOf('  showWhatsNew(source: WhatsNewSource): void {'), ctl.indexOf('  private openWhatsNew('));
+  assert.match(fn, /currentReleaseUrl\(current\)/);
+  assert.match(fn, /debugLog\('info', 'whats-new-open', describeWhatsNewOnDemand\(source, current, url\)\)/);
+  assert.ok(!/globalState|WHATS_NEW_LAST_SEEN_KEY/.test(fn), 'an on-demand open must not read or write last-seen');
+  // An already-open tab is repainted with the new content, not only revealed.
+  const open = ctl.slice(ctl.indexOf('  private openWhatsNew('), ctl.indexOf('  private postWhatsNew('));
+  assert.match(open, /this\.postWhatsNew\(\);/);
+
+  const ext = fs.readFileSync(path.join(root, 'src', 'extension.ts'), 'utf8');
+  assert.match(ext, /registerCommand\('loopBoard\.whatsNew', \(\) => controller\.showWhatsNew\('command'\)\)/);
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  assert.deepEqual(pkg.contributes.commands.find((c) => c.command === 'loopBoard.whatsNew'),
+    { command: 'loopBoard.whatsNew', title: "LoopBoard: What's New" });
 });

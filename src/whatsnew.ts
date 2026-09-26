@@ -43,7 +43,24 @@ export function releaseNotesUrl(lastSeen: string, current: string): string {
   return RELEASES_URL;
 }
 
-export type WhatsNewKind = 'first-install' | 'same' | 'upgrade' | 'downgrade' | 'unparseable';
+// Where an on-demand open came from: the sidebar's "What's new?" link or the command palette.
+export type WhatsNewSource = 'sidebar' | 'command';
+
+// On demand (t-f070 review) there is no update to describe, so the tab shows the running version and
+// links to that version's own release page; a version the numbers cannot place gets the list.
+export function currentReleaseUrl(current: unknown): string {
+  const v = parseVersion(current);
+  return v ? `${RELEASES_URL}/tag/v${v.join('.')}` : RELEASES_URL;
+}
+
+// The `whats-new-open` debug line for an on-demand open. It never touches the last-seen version, so
+// it can neither swallow nor replay the automatic tab after an update, and the line says so.
+export function describeWhatsNewOnDemand(source: WhatsNewSource, current: string | undefined, url: string): string {
+  const running = current === undefined ? 'running version unknown' : `running ${current}`;
+  return `on demand (${source}) — ${running}, opened tab (${url}); last-seen version untouched`;
+}
+
+export type WhatsNewKind ='first-install' | 'same' | 'upgrade' | 'downgrade' | 'unparseable';
 
 export interface WhatsNewDecision {
   kind: WhatsNewKind;

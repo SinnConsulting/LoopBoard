@@ -195,7 +195,7 @@ line is the real one.
 <details>
 <summary><b>8 · Settings</b></summary>
 
-The sidebar's **Settings** row opens LoopBoard's settings page. One grid covers every model:
+The sidebar's **Settings** link opens LoopBoard's settings page. One grid covers every model:
 **on**, **default worker**, **default groomer**, **`--model`**, **effort**, **groomers**. Other
 settings are grouped below.
 
@@ -258,6 +258,8 @@ Commands:
 - **LoopBoard: Open Board** — open the board.
 - **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
 - **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+- **LoopBoard: What's New** — open the release notes for the version you're running, like
+  **What's new?** in the sidebar.
 
 Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
 flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since
@@ -443,7 +445,7 @@ either is stale.
 
 ## Settings
 
-The sidebar's **Settings** row opens LoopBoard's settings page: four sections, the model slots as
+The sidebar's **Settings** link opens LoopBoard's settings page: four sections, the model slots as
 one grid, a reset per setting, **Synchronise Templates**, and **Open in VSCode Settings**
 (`@ext:SinnConsulting.loopboard-todo`) for search and JSON. They're ordinary user settings — see
 [Security model](#security-model) for why they're user-only. Questions like "why no Haiku slot?"

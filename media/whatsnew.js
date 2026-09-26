@@ -42,9 +42,14 @@
     tick.checked = !!s.dontShowAgain;
     const err = h('div', { class: 'err', role: 'alert' });
 
+    // No `previous` = opened on demand (the sidebar's "What's new?" link or the command), not by an
+    // update: the running version and its own release notes, no from → to step.
+    const onDemand = s.previous == null;
     const lead = s.list
-      ? ['You skipped a few releases on the way from ', h('code', null, s.previous), ' — the notes for ',
-         'every release, newest first, are on GitHub.']
+      ? (onDemand
+        ? ['The notes for every release, newest first, are on GitHub.']
+        : ['You skipped a few releases on the way from ', h('code', null, s.previous), ' — the notes for ',
+           'every release, newest first, are on GitHub.'])
       : ['See what changed in ', h('code', null, 'v' + s.current), ' in its release notes on GitHub.'];
 
     root.replaceChildren(h('div', { class: 'wrap' },
@@ -52,11 +57,13 @@
         h('div', { class: 'mark' }, icon('sparkle')),
         h('div', null,
           h('h1', null, "What's New in LoopBoard"),
-          h('div', { class: 'subtle' }, 'Shown once after an update.'))),
+          h('div', { class: 'subtle' }, onDemand ? 'The release notes for the version you are running.' : 'Shown once after an update.'))),
       h('section', { class: 'card' },
-        h('div', { class: 'eyebrow' }, 'Extension updated'),
-        h('div', { class: 'headline' }, 'Updated to ', h('span', { class: 'ver' }, s.current)),
-        h('div', { class: 'step', 'aria-label': 'from ' + s.previous + ' to ' + s.current },
+        h('div', { class: 'eyebrow' }, onDemand ? 'Installed version' : 'Extension updated'),
+        onDemand
+          ? h('div', { class: 'headline' }, 'LoopBoard ', s.current ? h('span', { class: 'ver' }, s.current) : null)
+          : h('div', { class: 'headline' }, 'Updated to ', h('span', { class: 'ver' }, s.current)),
+        onDemand ? null : h('div', { class: 'step', 'aria-label': 'from ' + s.previous + ' to ' + s.current },
           h('span', { class: 'pill ver' }, s.previous),
           icon('arrow-right'),
           h('span', { class: 'pill to ver' }, s.current)),

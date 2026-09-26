@@ -32,7 +32,7 @@ import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge,
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
-import { decideWhatsNew, describeWhatsNew, RELEASES_URL } from './whatsnew';
+import { currentReleaseUrl, decideWhatsNew, describeWhatsNew, describeWhatsNewOnDemand, RELEASES_URL, WhatsNewSource } from './whatsnew';
 import { WhatsNewPanel } from './whatsnewpanel';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
@@ -174,9 +174,9 @@ export class Controller {
   private autoPromoteArms = new Map<string, AutoPromoteArm>();
   private autoPromoteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private autoPromoteFiring = new Set<string>();
-  // What the open What's New tab shows (t-f070): set when the activation check opens it. The link
-  // the tab opens is THIS url, never one the webview sends back.
-  private whatsNew: { previous: string; current: string; url: string } | undefined;
+  // What the open What's New tab shows (t-f070): set when the activation check or an on-demand open
+  // (no `previous`) opens it. The link the tab opens is THIS url, never one the webview sends back.
+  private whatsNew: { previous?: string; current?: string; url: string } | undefined;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -1320,6 +1320,9 @@ export class Controller {
       case 'openSettings':
         this.openSettings();
         return;
+      case 'whatsNew':
+        // The sidebar's "What's new?" link (t-f070 review).
+        return this.showWhatsNew('sidebar');
       case 'openNativeSettings':
         // The escape hatch t-set1's gear used to be. Settings search and JSON editing are NOT
         // reproduced on LoopBoard's own page — this covers both.
@@ -1735,11 +1738,39 @@ export class Controller {
       }
     }
     if (decision.show && decision.url) {
-      this.whatsNew = { previous: String(lastSeen), current, url: decision.url };
-      const panel = WhatsNewPanel.show(this.extensionUri);
-      panel.onMessage((msg) => void this.onWhatsNewMessage(msg));
+      this.openWhatsNew({ previous: String(lastSeen), current, url: decision.url });
     }
     log(describeWhatsNew(decision, recordError));
+  }
+
+  // On demand (t-f070 review): the sidebar's "What's new?" link and the `loopBoard.whatsNew` command.
+  // Shows the running version and links to its own release page. Reads nothing but the running
+  // version and writes nothing: the last-seen key belongs to the activation check alone.
+  showWhatsNew(source: WhatsNewSource): void {
+    const raw = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON?.version;
+    const current = typeof raw === 'string' ? raw : undefined;
+    const url = currentReleaseUrl(current);
+    this.openWhatsNew({ current, url });
+    this.store.debugLog('info', 'whats-new-open', describeWhatsNewOnDemand(source, current, url));
+  }
+
+  private openWhatsNew(info: { previous?: string; current?: string; url: string }): void {
+    this.whatsNew = info;
+    const panel = WhatsNewPanel.show(this.extensionUri);
+    panel.onMessage((msg) => void this.onWhatsNewMessage(msg));
+    // A fresh panel asks with `whatsNewReady` once its script runs (this post is lost then); an
+    // already-open one is only revealed and never asks, so it is repainted here.
+    this.postWhatsNew();
+  }
+
+  private postWhatsNew(): void {
+    const info = this.whatsNew;
+    if (!info) return;
+    const showAgain = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
+    WhatsNewPanel.current?.post({
+      type: 'whatsNew', previous: info.previous, current: info.current, url: info.url,
+      list: info.url === RELEASES_URL, dontShowAgain: !showAgain,
+    });
   }
 
   private async onWhatsNewMessage(msg: any): Promise<void> {
@@ -1747,15 +1778,8 @@ export class Controller {
     this.store.debugLog('verbose', 'dispatch', `whats-new ${msg.type}`);
     const info = this.whatsNew;
     switch (msg.type) {
-      case 'whatsNewReady': {
-        if (!info) return;
-        const showAgain = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
-        WhatsNewPanel.current?.post({
-          type: 'whatsNew', previous: info.previous, current: info.current, url: info.url,
-          list: info.url === RELEASES_URL, dontShowAgain: !showAgain,
-        });
-        return;
-      }
+      case 'whatsNewReady':
+        return this.postWhatsNew();
       case 'whatsNewOpen': {
         if (!info) return;
         // One line with the outcome: openExternal resolves false when no handler took the URL (as

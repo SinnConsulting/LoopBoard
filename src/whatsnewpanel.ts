@@ -1,7 +1,8 @@
 // The What's New tab (t-f070) — a singleton webview panel, same shape as SettingsPanel. It opens once
 // after an extension update (the decision is src/whatsnew.ts's) and shows the version it updated to,
-// a link to the GitHub release notes and a "don't show again" tick. GitHub cannot be framed, and the
-// page is link-only by decision: it is rendered by the shared renderHtml policy (`default-src 'none'`)
+// a link to the GitHub release notes and a "don't show again" tick; the sidebar's "What's new?" link
+// and the `LoopBoard: What's New` command open it on demand for the running version. GitHub cannot
+// be framed, and the page is link-only by decision: it is rendered by the shared renderHtml policy (`default-src 'none'`)
 // and reaches nothing; the host opens the link with vscode.env.openExternal.
 import * as vscode from 'vscode';
 import { renderHtml } from './webview';

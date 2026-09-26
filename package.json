@@ -68,6 +68,10 @@
       {
         "command": "loopboard.init",
         "title": "LoopBoard: Initialize Workspace"
+      },
+      {
+        "command": "loopBoard.whatsNew",
+        "title": "LoopBoard: What's New"
       }
     ],
     "configuration": [
