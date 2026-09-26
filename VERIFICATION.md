@@ -1486,3 +1486,25 @@ and likewise cannot be verified headless.
     - **Narrow sidebar:** drag the sidebar narrower → below 240 px **Help** and the bar before it
       disappear and `What's new? | Settings` stays on one line; widen it again → Help is back.
       **Settings** opens the settings page and **Help** the help page, as the old rows did.
+
+60. **Delivered and Done rows fold; nested lists keep counting (t-c7e3) — UNTESTED in the live
+    webview:** `renderReadOnlySection`, its callers `renderReview` / `renderDone` and the removal of
+    `doneDetailBlock` are pinned over the source text by `test/board-readonly-folds.test.js`, and the
+    one-level nested lists by `test/markdown.test.js` (the real `media/markdown.js` in `node:vm`);
+    the rendered board is this checklist. Start from tasks with no saved section state.
+    - **Review:** expand a Review card with a `## Delivered` → below Problem, Description and Goals
+      (all folded) **Delivered** shows only its chevron, `DELIVERED` label and one-line preview,
+      looking like the three folds above it. Its chevron opens the full report (links still open);
+      the chevron again folds it. A Review task with no Delivered shows no Delivered block.
+    - **Done:** open a Done row whose task file has all four sections → **Delivered**,
+      **Problem**, **Description**, **Goals**, in that order, each folded to a one-line preview,
+      with no doubled spacing between them; a row missing a section omits it. Each chevron opens
+      only its own section, and clicking inside the opened detail does not close the row. Opening
+      Delivered on the Done tab does not open it for the same task on the Review tab, or the reverse.
+    - **Persistence:** an opened Delivered (Review) and an opened Done section survive (a) a loop
+      write that refreshes the board, (b) a switch to another activity-bar view and back, and (c) a
+      window reload (the Done row itself re-opens by its own chevron: `doneOpen` is transient).
+      **Expand all** / **Collapse all** leave every one of these folds as it is.
+    - **Numbering:** open t-2e7d's Delivered ("README: link the r/LoopBoard subreddit", on the
+      Review or Done tab) → its `Goals:` list reads 1, 2, 3, 4 with the four bullets indented
+      under goal 1, not 1, 1, 2, 3.
