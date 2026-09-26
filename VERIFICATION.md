@@ -254,11 +254,11 @@ New v2 checklist (from REFACTORING.md Phase 8):
     pausing, immediately click a phase tab or a card field — the click lands normally (no
     mid-repaint glitch) and the filter is not lost. Type a query and hit ⌘R / reload while the list
     is still settling — the query comes back after the reload.
-15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
-    terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
-    row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
-    second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)
-    still works when the panel was never hidden externally.
+15. **Loop-row toggle survives ⌘J (t-2e35, t-9c3f) — UNTESTED, manual F5 only:** (1) spawn a
+    loop and click its sidebar row → its terminal shows. (2) Press ⌘J to hide the panel, then click
+    the row ONCE → the terminal shows and is focused (no dead first click). (3) Click the row again
+    → the panel hides; click again → it shows. (4) Press ⌘J to hide and ⌘J again to show the
+    panel, then click the row ONCE → the panel hides.
 16. **Attachment chip idiom unified (t-f51c):** a description, a draft, an answer, and Review
     feedback each with an attached image all render the SAME `.qa-attachment` chip (ext badge +
     link name + ×) as a note's attachment — no more bare-link description/draft lists. The

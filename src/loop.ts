@@ -102,3 +102,12 @@ export function buildLoopCommand(
     delegatePhrase
   );
 }
+
+// Loop-row click decision (t-9c3f). The row that last revealed its terminal toggles the whole
+// bottom panel (`workbench.action.togglePanel`, the command ⌘J runs), so each click flips the
+// panel's REAL state even after an external ⌘J hide/show; any other row (or nothing revealed yet)
+// shows its own terminal. VS Code exposes no panel-visibility API, so the toggle is the only way to
+// act on the actual state rather than a cached guess.
+export function revealStep(revealed: Model | undefined, model: Model): 'togglePanel' | 'show' {
+  return revealed === model ? 'togglePanel' : 'show';
+}
