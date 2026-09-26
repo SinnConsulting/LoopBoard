@@ -10,7 +10,7 @@ import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone } from './writer';
 import { parseTaskFile, serializeTaskFile, draftDescription } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
-import { promoteIndex, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
+import { promoteIndex, promoteIndexIfReady, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
 import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
 import { stripAttachmentLink, unreferencedAttachments } from './attachments';
@@ -536,15 +536,24 @@ export class Store {
   }
 
   // Promote a New task to Backlog: index patch (phase/checkbox) then detail patch (promoted/worklog).
-  async promote(taskId: string, today: string): Promise<SaveOutcome> {
+  // `onlyIfReady` is the armed auto-promote's fire path (t-39e2): the fresh entry must still pass
+  // the ready predicate, else nothing is written and the outcome is `conflict`.
+  async promote(taskId: string, today: string, onlyIfReady = false): Promise<SaveOutcome> {
     return this.writeLock.run(async () => {
       const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
       const entry = doc.entries.find((e) => e.id === taskId);
       if (!entry) return { status: 'notfound' };
+      if (onlyIfReady) {
+        if (promoteIndexIfReady(entry) === 'conflict') {
+          this.debugLog('info', 'promote', `${entry.id} -> conflict (no longer ready to auto-promote)`);
+          return { status: 'conflict' };
+        }
+      } else {
+        promoteIndex(entry);
+      }
 
       const detailText = await this.readFile(this.taskUri(entry.id));
       const detail = detailText === undefined ? emptyDetail() : parseTaskFile(detailText);
-      promoteIndex(entry);
       promoteDetail(detail, today);
       await this.atomicWrite(this.todoUri, serializeTodo(doc));
 

@@ -70,6 +70,9 @@ questions, an HTML-comment template) and `index-unknown.md`:
 ### Gates — `test/gates.test.js`
 - `promoteIndex` (phase→backlog, uncheck), `promoteDetail` (`promoted:` + worklog, no dup),
   `acceptDetail` (`completed:` + worklog), `acceptDoneEntry` (slim DONE entry, no questions).
+- `promoteIndexIfReady` (t-39e2): refuses with `conflict`, entry untouched, when the re-parsed entry
+  is out of New, a DRAFT, has any question (blank or answered-unfolded) or feedback; otherwise the
+  same result as `promoteIndex`.
 
 ### View — `test/view.test.js`
 - `computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; dependency marked met when
@@ -78,6 +81,20 @@ questions, an HTML-comment template) and `index-unknown.md`:
   detail).
 - `WebTask` carries `problem`/`goals` for active tasks AND for DONE entries, defaulting to `''`
   when the task file has neither section (t-2191).
+- `autoPromote` flags exactly the armed task ids (DRAFTs included), none when no set is passed (t-39e2).
+
+### Right-click auto-promote — `test/autopromote.test.js`, `test/board-gate-button.test.js` (t-39e2)
+- `readyToAutoPromote`: true only for `phase: new`, not a DRAFT, zero questions, no feedback — one
+  failing case per condition, including answered-but-not-folded.
+- `evaluateArm`: fires only after the predicate held with an unchanged fingerprint (index block +
+  task file) for `AUTO_PROMOTE_SETTLE_MS` (30 s); a change restarts the window; the window never
+  starts before the arm; drops when the task is gone or out of New; one arm held through five
+  question rounds fires after the last fold settles; an armed DRAFT holds `draft` until groomed,
+  then fires a full window after the DRAFT -> New change (and holds through a first groom's
+  questions).
+- `makeGateButton`, lifted from `media/board.js` into a vm: a `button: 2` (or 1) pointerdown never
+  commits and is not `preventDefault`ed; `button: 0` commits once and swallows its trailing click.
+  The live gestures are item 54 (F5 only).
 
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
@@ -267,11 +284,11 @@ New v2 checklist (from REFACTORING.md Phase 8):
     pausing, immediately click a phase tab or a card field — the click lands normally (no
     mid-repaint glitch) and the filter is not lost. Type a query and hit ⌘R / reload while the list
     is still settling — the query comes back after the reload.
-15. **Loop-row reveal desync (t-2e35):** spawn a loop, click its sidebar row once to reveal the
-    terminal panel, then hide the panel with native CMD+J (Toggle Panel) instead of clicking the
-    row again. Click the same loop row ONE more time → the terminal panel re-opens immediately (no
-    second click needed, no no-op). Normal same-row toggle (click to show, click again to hide)
-    still works when the panel was never hidden externally.
+15. **Loop-row toggle survives ⌘J (t-2e35, t-9c3f) — UNTESTED, manual F5 only:** (1) spawn a
+    loop and click its sidebar row → its terminal shows. (2) Press ⌘J to hide the panel, then click
+    the row ONCE → the terminal shows and is focused (no dead first click). (3) Click the row again
+    → the panel hides; click again → it shows. (4) Press ⌘J to hide and ⌘J again to show the
+    panel, then click the row ONCE → the panel hides.
 16. **Attachment chip idiom unified (t-f51c):** a description, a draft, an answer, and Review
     feedback each with an attached image all render the SAME `.qa-attachment` chip (ext badge +
     link name + ×) as a note's attachment — no more bare-link description/draft lists. The
@@ -1242,3 +1259,37 @@ and likewise cannot be verified headless.
       all 189 `.loopboard/tasks/*.md` files of this workspace → identical results for every file
       (the 12 files with `##` blocks after `## Delivered` included). The same check over
       `.loopboard/TODO.md` and `DONE.md` with both `parseTodo`/`parseDone` → identical.
+
+54. **Right-click Promote arms an automatic promote (t-39e2) — UNTESTED in the live webview:**
+    numbered 54 (not 51) because open PRs #177/#179/#180 each add item 51 onward. The decision
+    (`evaluateArm`), the guarded gate and the payload flag are unit-tested (`test/autopromote.test.js`,
+    `test/gates.test.js`, `test/view.test.js`), the primary-button guard by
+    `test/board-gate-button.test.js`; the gestures, spinner, timers and toast are F5 only. Set
+    `loopBoard.debug: verbose` and read `.loopboard/debug.log` throughout.
+    - **Arm / disarm:** right-click an ordinary New card's **Promote** → no host context menu, the
+      check becomes a rotating spinner, the tooltip reads "Promotes automatically once every
+      question is answered and folded in — click to promote now, right-click to cancel", and the
+      card is NOT greyed; `auto-promote-arm <id>` at info. Right-click again → the check is back;
+      `auto-promote-disarm <id> — right-click`. Shift+F10 (or the Menu key) on the focused button
+      does the same. With OS reduced motion on, the spinner glyph shows but stays still.
+    - **Left-click while armed:** on a story with questions → the usual `confirmPromote` modal;
+      **Promote anyway** → promoted now, `auto-promote-disarm <id> — left-click promote`. Cancel →
+      the spinner stays (the arm is kept). On a story with no questions → promoted at once.
+    - **DRAFT:** a draft card shows a greyed **Promote** next to ✕ whose left-click does nothing
+      and whose tooltip says right-click arms it; right-click → spinner, `auto-promote-arm <id>
+      (draft — held until groomed)`, then verbose `auto-promote-hold <id> draft`. Let the groomer
+      groom it → the card switches to a story card and the spinner is still there.
+    - **Rounds:** arm a story whose groom files questions → verbose `auto-promote-hold <id>
+      questions — …`. Answer them, let the re-groom fold them and file NEW questions → the spinner
+      stays (no `auto-promote-drop`). Answer again; once the re-groom leaves zero questions and no
+      feedback → `auto-promote-hold <id> settling — …`, then about 30 s after the last write
+      `auto-promote-fire <id> -> backlog` at info, the card moves to Backlog and a toast reads
+      `Auto-promoted "<title>" to Backlog`. An edit to the entry or its task file during those
+      30 s restarts the wait.
+    - **Drop:** arm a story, then move it out of New another way (tick it `[x]` for the loop, or
+      edit `phase:` by hand) or delete it → `auto-promote-drop <id> — …` at info, no toast.
+    - **Reload:** arm two tasks, run **Developer: Reload Window** → both show the check again and
+      nothing auto-promotes.
+    - **Stray right-clicks gone:** right-click Review **Approve**, a feedback **delete** and
+      **＋ Feedback** → none of them acts (before: accept / delete / open); at most the webview's own
+      context menu shows.
