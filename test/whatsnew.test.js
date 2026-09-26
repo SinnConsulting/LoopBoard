@@ -235,6 +235,21 @@ test('sidebar CSS: the links row never wraps, and a narrow sidebar hides Help', 
   assert.ok(Number(media[1]) >= 220, `breakpoint ${media[1]}px`);
 });
 
+test('sidebar CSS: the links row is centred, and a very narrow sidebar tightens it so Settings fits', () => {
+  const css = fs.readFileSync(path.join(root, 'media', 'sidebar.css'), 'utf8');
+  const rule = /\.sb-links \{([^}]*)\}/.exec(css);
+  assert.ok(rule, '.sb-links rule');
+  // `safe center`: centred while it fits, start-aligned (never clipped on the left) if it overflows.
+  assert.match(rule[1], /justify-content: safe center;/);
+  assert.match(rule[1], /white-space: nowrap;/);
+  const hide = Number(/@media \(max-width: (\d+)px\) \{ \.sb-links \.sb-help \{ display: none; \} \}/.exec(css)[1]);
+  const tight = /@media \(max-width: (\d+)px\) \{ \.open-wrap \{ padding-left: (\d+)px; padding-right: (\d+)px; \} \.sb-links \{ gap: (\d+)px; \} \}/.exec(css);
+  assert.ok(tight, 'a max-width rule tightening .open-wrap padding and .sb-links gap');
+  // Kicks in above VS Code's 170 px minimum sidebar width, and only once Help is already gone.
+  assert.ok(Number(tight[1]) > 170 && Number(tight[1]) < hide, `tight breakpoint ${tight[1]}px`);
+  assert.ok(Number(tight[2]) < 16 && Number(tight[3]) < 16 && Number(tight[4]) < 8);
+});
+
 test('host: the sidebar message and the command open the tab on demand, without touching last-seen', () => {
   const ctl = fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8');
   assert.match(ctl, /case 'whatsNew':[^]*?return this\.showWhatsNew\('sidebar'\);/);
