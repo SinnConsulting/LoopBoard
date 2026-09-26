@@ -447,6 +447,10 @@ textarea { resize: vertical; }
 .done-chevron svg { transition: transform 120ms ease; }
 .done-chevron.open svg { transform: rotate(180deg); }
 .done-detail { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 14px 26px; border-bottom: 1px solid var(--vscode-widget-border, #454545); }
+/* t-c7e3: Delivered (in .review-block) and an opened Done row's sections are read-only folds built
+   on .desc-wrap. Both parents already space their children (flex gap / own margin), so the fold's
+   own top margin would double it. */
+.review-block > .desc-wrap, .done-detail > .desc-wrap { margin-top: 0; }
 .done-detail-text { font-size: 13px; line-height: 1.5; overflow-wrap: break-word; }
 .done-detail-text code { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 12px; background: var(--vscode-textCodeBlock-background, #2c2c2c); border-radius: 3px; padding: 1px 4px; }
 .done-detail-text a { color: var(--vscode-textLink-foreground, #3794ff); }

@@ -135,10 +135,12 @@
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
   // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
-  // `sections[phaseKey][taskId] = { problem?, description?, goals?, questions?: boolean }`. A
-  // section with no entry is folded (t-d5f2), whatever the tab default says. New key, so nothing
-  // to migrate — an unrecognized value just means "no overrides", i.e. every section starts
-  // folded. Ids are never pruned, for the same reason as `collapsed` above.
+  // `sections[phaseKey][taskId] = { problem?, description?, goals?, questions?, delivered?: boolean }`
+  // — `delivered` is the read-only Delivered fold on a Review card, and under `sections.done` the
+  // same four names (delivered/problem/description/goals) are an opened Done row's read-only folds
+  // (t-c7e3). A section with no entry is folded (t-d5f2), whatever the tab default says. New key,
+  // so nothing to migrate — an unrecognized value just means "no overrides", i.e. every section
+  // starts folded. Ids are never pruned, for the same reason as `collapsed` above.
   let sections = saved.sections && typeof saved.sections === 'object' ? saved.sections : {};
   // Tolerant migration of the pre-t-7679 flat shape (boolean `collapsedDefault`, flat
   // `collapsed` map): seed the old values into every phase bucket so an upgrade keeps the view the
@@ -1035,16 +1037,6 @@
     );
   }
 
-  // One read-only section of an expanded Done row. Four of them now (Delivered + the three story
-  // sections, t-2191), so the markdown render + link wiring lives here once.
-  function doneDetailBlock(label, text) {
-    const body = h('div', { class: 'done-detail-text', html: mdToHtml(text) });
-    body.querySelectorAll('a[data-mdlink]').forEach((a) => {
-      a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-    });
-    return h('div', {}, h('div', { class: 'section-title' }, label), body);
-  }
-
   function renderDone(list) {
     const wrap = h('div', {});
     if (list.length === 0 && effectiveQuery().trim()) {
@@ -1055,12 +1047,13 @@
       const u = getUi(t.id);
       // Delivered first (what shipped), then the story in file order: Problem → Description →
       // Goals — Delivered is read against Goals, so both have to be on the same expanded row.
+      // Each one is a read-only fold (t-c7e3), keyed by its lowercase name in `sections.done`.
       const doneSections = [
-        ['Delivered', t.delivered],
-        ['Problem', t.problem],
-        ['Description', t.description],
-        ['Goals', t.goals],
-      ].filter(([, text]) => text && text.trim());
+        ['delivered', 'Delivered', t.delivered],
+        ['problem', 'Problem', t.problem],
+        ['description', 'Description', t.description],
+        ['goals', 'Goals', t.goals],
+      ].filter(([, , text]) => text && text.trim());
       const hasDetail = doneSections.length > 0;
       const toggleOpen = () => { u.doneOpen = !u.doneOpen; render(); };
       const row = h('div', {
@@ -1089,7 +1082,7 @@
       wrap.append(row);
       if (hasDetail && u.doneOpen) {
         const detail = h('div', { class: 'done-detail' });
-        for (const [label, text] of doneSections) detail.append(doneDetailBlock(label, text));
+        for (const [name, label, text] of doneSections) detail.append(renderReadOnlySection(t, name, label, text));
         wrap.append(detail);
       }
     }
@@ -1857,6 +1850,32 @@
     return '';
   }
 
+  // Read-only fold (t-c7e3): Delivered on a Review card, and each non-empty section of an opened
+  // Done row. Same header, chevron, one-line preview and `sections[phase][id]` fold state as the
+  // story sections — so it starts FOLDED through isSectionCollapsed's fallback, persists per tab,
+  // and Expand all / Collapse all never touch it — but no editor: Delivered is the worker's report
+  // and a Done task is archived (merge.ts has no patch path for either), so this is deliberately
+  // not renderDetailSection. Folded, the markdown is never rendered at all.
+  function renderReadOnlySection(t, name, label, text) {
+    const wrap = h('div', { class: 'desc-wrap' });
+    const folded = isSectionCollapsed(t.id, name);
+    const head = h('div', { class: 'desc-head' },
+      sectionToggle(t.id, name, label.toLowerCase()),
+      h('div', { class: 'section-title' }, label));
+    if (folded) {
+      const preview = descPreview(text);
+      if (preview) head.append(h('div', { class: 'desc-preview', title: preview }, preview));
+      wrap.append(head);
+      return wrap;
+    }
+    const body = h('div', { class: 'done-detail-text', html: mdToHtml(text) });
+    body.querySelectorAll('a[data-mdlink]').forEach((a) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+    });
+    wrap.append(head, body);
+    return wrap;
+  }
+
   // The three free-markdown story sections of tasks/<id>.md (t-2191), rendered by ONE
   // implementation: Problem, Description, Goals. A second copy of the editor would drift, so the
   // FIELD NAME drives everything — the fold key in `sections[...]`, `data-field`, the patch field,
@@ -2316,11 +2335,7 @@
   function renderReview(t) {
     if (!t.delivered) return null;
     const wrap = h('div', { class: 'review-block' });
-    const delivered = h('div', { class: 'done-detail-text', html: mdToHtml(t.delivered) });
-    delivered.querySelectorAll('a[data-mdlink]').forEach((a) => {
-      a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
-    });
-    wrap.append(h('div', {}, h('div', { class: 'section-title' }, 'Delivered'), delivered));
+    wrap.append(renderReadOnlySection(t, 'delivered', 'Delivered', t.delivered));
     return wrap;
   }
 
