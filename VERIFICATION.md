@@ -1230,3 +1230,21 @@ and likewise cannot be verified headless.
     - **Stray right-clicks gone:** right-click Review **Approve**, a feedback **delete** and
       **＋ Feedback** → none of them acts (before: accept / delete / open); at most the webview's own
       context menu shows.
+55. **Release visuals in the GitHub Release body (t-7e1a) — UNTESTED until a live release:**
+    numbered 55 because open PRs add items 51–53. The builder (`scripts/release-visual.js`) is
+    unit-tested in `test/release-visual.test.js` and the step's wiring is pinned in
+    `test/packaging.test.js`; the git/gh wrapper only runs in `release.yml`. Check the FIRST release
+    whose range carries a `Release-Visual: <file>.gif` trailer (e.g. `11-auto-promote.gif`):
+    - **Section:** the `vX` release body ends with a `### Showcase` section after Features / Bug
+      Fixes, one bold caption (the GIF's `alt` from `docs/showcase/README.md`) and one image per
+      designated GIF; the generated notes above it are unchanged.
+    - **Tag-pinned image renders:** the image loads on the release page and its URL is
+      `https://raw.githubusercontent.com/<owner>/<repo>/vX/docs/showcase/gifs/<file>`.
+    - **Trace:** the `Append release visuals` step log names the range, each trailer, each GIF added
+      or skipped with its reason, and that it edited the body. A release with no trailer logs
+      "body not edited" and its body is untouched.
+    - **Failure stays cheap:** if the step ever fails, it shows red with an annotation while `vsix`
+      and `publish` still run; restore the section by editing the body by hand, or by running
+      `node scripts/release-visual.js` (in Docker, never on the host; it needs `gh` and `git`) on a
+      checkout of `vX` with `GH_TOKEN`, `GITHUB_REPOSITORY`, `LAST_RELEASE_VERSION` and
+      `NEW_RELEASE_VERSION` set.
