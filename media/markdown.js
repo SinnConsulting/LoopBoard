@@ -2,8 +2,8 @@
    t-sgrp). Loaded as a plain classic script under the page's CSP nonce BEFORE the page script, and
    exposed as one global — the webviews have no module loader and zero runtime dependencies.
 
-   Supports ATX headings, - / * and 1. lists, **bold**, italic in either *asterisk* or _underscore_
-   form, `code`, [text](scheme://url), and blank-line paragraph breaks.
+   Supports ATX headings, - / * and 1. lists (one nesting level, t-c7e3), **bold**, italic in either
+   *asterisk* or _underscore_ form, `code`, [text](scheme://url), and blank-line paragraph breaks.
 
    All user text is HTML-escaped FIRST, so the only tags in the output are the ones we emit; link
    hrefs are limited to any absolute `scheme://...` URL (t-adf2 — matches the `link:` meta chip's
@@ -53,26 +53,38 @@
   // The classifier only inspects RAW markers; user text is always escaped before it lands in a tag.
   // Plain (marker-free) descriptions keep the legacy soft-wrap behaviour: single newline = space,
   // blank line = paragraph break (<br><br>), no <p> wrapper.
+  //
+  // Lists nest ONE level (t-c7e3): a list line indented deeper than the list's first item opens a
+  // list of its own type inside the previous item's <li>, and a line back at (or left of) that
+  // indent continues the outer list — so `1. a` / `   - x` / `2. b` is one <ol> counting 1, 2 with
+  // x under a, instead of an <ol>, a <ul> and a second <ol> restarting at 1. Deeper indents stay at
+  // the nested level. A flat list renders exactly as before (an item with no nested lists adds
+  // nothing between its text and </li>).
   function mdToHtml(src) {
     const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
     const parts = [];
     let para = [];
     let listType = null;
-    let listItems = [];
+    let listIndent = 0;
+    let listItems = []; // [{ text, subs: [{ type, items: [text] }] }]
     const flushPara = () => {
       if (para.length) { parts.push({ t: 'p', html: renderInline(para.join('\n')).replace(/\n/g, ' ') }); para = []; }
     };
+    const renderLis = (texts) => texts.map((x) => '<li>' + renderInline(x) + '</li>').join('');
     const flushList = () => {
       if (listItems.length) {
         parts.push({ t: 'block', html: '<' + listType + '>'
-          + listItems.map((it) => '<li>' + renderInline(it) + '</li>').join('') + '</' + listType + '>' });
+          + listItems.map((it) => '<li>' + renderInline(it.text)
+            + it.subs.map((s) => '<' + s.type + '>' + renderLis(s.items) + '</' + s.type + '>').join('')
+            + '</li>').join('')
+          + '</' + listType + '>' });
         listItems = []; listType = null;
       }
     };
     for (const line of lines) {
       const heading = /^ {0,3}(#{1,6})\s+(.*)$/.exec(line);
-      const ul = /^\s*[-*]\s+(.*)$/.exec(line);
-      const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+      const ul = /^(\s*)[-*]\s+(.*)$/.exec(line);
+      const ol = /^(\s*)\d+\.\s+(.*)$/.exec(line);
       if (heading) {
         flushPara(); flushList();
         const level = heading[1].length;
@@ -80,9 +92,19 @@
       } else if (ul || ol) {
         flushPara();
         const type = ul ? 'ul' : 'ol';
-        if (listType && listType !== type) flushList();
-        listType = type;
-        listItems.push(ul ? ul[1] : ol[1]);
+        const m = ul || ol;
+        const indent = m[1].length;
+        if (listType && indent > listIndent) {
+          const last = listItems[listItems.length - 1];
+          const sub = last.subs[last.subs.length - 1];
+          if (sub && sub.type === type) sub.items.push(m[2]);
+          else last.subs.push({ type, items: [m[2]] });
+        } else {
+          if (listType && listType !== type) flushList();
+          if (!listType) listIndent = indent;
+          listType = type;
+          listItems.push({ text: m[2], subs: [] });
+        }
       } else if (line.trim() === '') {
         flushList(); flushPara();
       } else {
