@@ -2,6 +2,7 @@
 // The two human gates now span two files; gates.ts stays pure by mutating the in-memory index
 // entry / task detail objects it is handed, and store.ts orchestrates the per-file writes.
 import { IndexEntry, TaskDetail } from './model';
+import { readyToAutoPromote } from './autopromote';
 
 function addWorklog(detail: TaskDetail, day: string): void {
   if (!detail.worklog.includes(day)) detail.worklog.push(day);
@@ -11,6 +12,16 @@ function addWorklog(detail: TaskDetail, day: string): void {
 export function promoteIndex(entry: IndexEntry): void {
   entry.phase = 'backlog';
   entry.checked = false;
+}
+
+// Guarded promote for the armed auto-promote (t-39e2) — index side. The store re-parses the index
+// under its write lock and calls this on the FRESH entry: it promotes exactly like promoteIndex only
+// while the entry is still ready (a loop may have filed a question since the board last looked);
+// otherwise it leaves the entry untouched and reports `conflict`, so the arm stays held.
+export function promoteIndexIfReady(entry: IndexEntry): 'applied' | 'conflict' {
+  if (!readyToAutoPromote(entry)) return 'conflict';
+  promoteIndex(entry);
+  return 'applied';
 }
 
 // Promote — detail side: record promoted: and log the day in the task file's Meta.

@@ -216,6 +216,22 @@ settings are grouped below.
       </ul>
     </td>
   </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>Right-click Promote</b><br>
+      <sub>Promote it once the questions are folded in.</sub><br>
+      <a href="gifs/11-auto-promote.gif"><img src="gifs/11-auto-promote.gif" width="100%" alt="Right-clicking Promote on a New story with an open question arms it and the check turns into a spinner; the question is answered, the groomer folds it in, and the story promotes itself to Backlog" /></a>
+    </td>
+    <td width="67%" valign="top">
+      <ul>
+        <li><b>Right-click</b> Promote on a New story to arm an automatic promote: the check becomes a spinner. Left-click still promotes immediately.</li>
+        <li>The arm waits while a question is open or answered but not yet folded in, or <code>feedback:</code> is pending. New questions from a re-groom never disarm it.</li>
+        <li>Once nothing is left open for 30 seconds, LoopBoard promotes the story to the Backlog and says so in a toast.</li>
+        <li>A draft can be armed too: it promotes after its groom once nothing is left open. Right-click again to cancel.</li>
+        <li>Arms last until VS Code reloads.</li>
+      </ul>
+    </td>
+  </tr>
 </table>
 
 ---
