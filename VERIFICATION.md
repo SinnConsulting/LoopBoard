@@ -452,9 +452,9 @@ New v2 checklist (from REFACTORING.md Phase 8):
     change the text and press ⌘S — the card shows the NEW note in the same frame (previously the
     old, shorter one). Add a note to a card that has none → the note card appears instantly, not
     the `＋ Note to worker` button. Click the note's **delete** → the note disappears at once.
-    Repeat each with a click-outside commit (⌘S replaced by clicking into another card field, so a
-    field is focused when the confirming refresh lands): the saved text still stands, and does not
-    revert to the old value while that field stays focused. Same for a description edit and, on a
+    Repeat each by pressing Save, then clicking into another card field before the confirming
+    refresh lands (a click outside no longer saves anything — t-4877): the saved text still
+    stands, and does not revert to the old value while that field stays focused. Same for a description edit and, on a
     Review card, a feedback save (the amber "Your pending feedback" block appears immediately) and
     an answer save. Conflict path unchanged: edit the same field on disk between opening the editor
     and saving → the "changed on disk" toast still wins and the card shows the disk value.
@@ -601,10 +601,11 @@ and likewise cannot be verified headless.
     window — the fold survives all three. Then press Collapse all / Expand all in that tab: every
     hand-set section override (Description and Open questions alike) survives (t-d5f2).
 
-    **Commit on collapse:** click the description to open its editor, type without saving, then
-    click the Description chevron → the edit is COMMITTED (the patch lands, and expanding the
-    section shows the new text); nothing typed is lost. Separately, type an answer draft without
-    saving, fold the questions panel and unfold it → the draft is still there.
+    **Fold keeps, never saves (t-4877, replaces t-aee3's commit on collapse):** click the
+    description to open its editor, type without saving, then click the Description chevron →
+    nothing is written (no patch, `tasks/<id>.md` unchanged); unfold it → the editor is back with
+    the typed text and an enabled Save. Separately, type an answer draft without saving, fold the
+    questions panel and unfold it → the draft is still there.
 
 34. **Card selects commit on pick (t-bbad):** the echo + repaint is webview-only
     (`media/board.js`), so alongside the source-text guard `test/board-patch-echo.test.js` this
@@ -1019,10 +1020,11 @@ and likewise cannot be verified headless.
       one-line preview: the first non-empty line, markdown stripped, which for Goals is the first
       bullet. Empty sections still show their header plus the italic `Add a problem statement…` /
       `Add a description…` / `Add goals…` affordance.
-    - Click (or Enter on) a section → its textarea opens with the current text; **Save**,
-      **Cmd/Ctrl+S** and a click OUTSIDE the card all commit; **ESC** cancels in ONE press and
-      releases focus. Collapsing an open editor with the chevron commits first (nothing typed is
-      lost). Opening a second section commits the first.
+    - Click (or Enter on) a section → its textarea opens with the current text; only **Save** and
+      **Cmd/Ctrl+S** commit, and a click OUTSIDE the card saves nothing (t-4877); **ESC** cancels
+      in ONE press and releases focus. Collapsing an open editor with the chevron saves nothing
+      and keeps the text for the unfold (nothing typed is lost). Opening a second section leaves
+      the first open, unsaved, with its text.
     - Problem and Goals have **no ＋ Attach button** and no field-scoped attach wiring, so nothing
       is ever inserted into THEIR text. Dropping/pasting a file while one of them is open is not
       blocked, though: the event bubbles to the pre-existing whole-card handler
@@ -1168,8 +1170,8 @@ and likewise cannot be verified headless.
     `second point` → a second row, a second line (the first untouched). **Edit:** a row's **edit**
     opens the composer in that row, prefilled with that item only; change it, ⌘S → only that line
     changes. While it is open, ＋ Feedback is still visible; clicking it (or another row's edit)
-    commits the open composer first — never discards typed text — and at most one composer is ever
-    open on the card. **Delete:** a row's **delete** removes that line only. **Loop race:** with
+    with unsaved text in the open composer refocuses that composer and saves nothing (t-4877) —
+    never discards typed text — and at most one composer is ever open on the card. **Delete:** a row's **delete** removes that line only. **Loop race:** with
     two items, open the composer on the second, have a loop delete the first line in `TODO.md`,
     then Save → the edit lands on the right line with no conflict toast; add an item while the loop
     deletes another → both changes kept. Edit an item the loop has since removed → the disk-wins
@@ -1510,3 +1512,21 @@ and likewise cannot be verified headless.
     - **Numbering:** open t-2e7d's Delivered ("README: link the r/LoopBoard subreddit", on the
       Review or Done tab) → its `Goals:` list reads 1, 2, 3, 4 with the four bullets indented
       under goal 1, not 1, 1, 2, 3.
+
+61. **No auto-save on click-outside (t-4877; reverses t-471a's click-outside commit and t-aee3's
+    commit on collapse) — UNTESTED in the live webview:** the removed registry, each commit's call
+    sites, the chevron fold, where drafts and editing flags are cleared, and the title's one-shot
+    focus are pinned over the source text by `test/board-no-autosave.test.js`; clicking, focus and
+    repaints are webview-only, so this checklist is their only acceptance path. Keep `TODO.md` and
+    the task's `tasks/<id>.md` open beside the board.
+    - Type into an answer, a Description, a title, a DRAFT text and a feedback composer, without
+      saving. After each, click elsewhere on the board (empty space, another card) and then into
+      another editor → nothing reaches `TODO.md` or `tasks/<id>.md`. Every editor stays open with
+      its text and an enabled **Save**, and focus stays where the click landed (the title editor
+      does not pull it back).
+    - Fold a Description with unsaved text → nothing is written. Unfold it → the editor is back
+      with the text and an enabled **Save**.
+    - With a dirty feedback composer, ＋ Feedback or another row's **edit** refocuses the composer
+      and saves nothing.
+    - **Save**, **Save All**, **⌘S** and **Enter** (answer, DRAFT) still write, and **Escape**
+      still discards.

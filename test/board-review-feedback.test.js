@@ -116,7 +116,7 @@ test('at most one composer per card: an open one with unsaved text is kept, neve
   assert.match(open, /if \(u\.feedbackOpen && pending && pending !== \(u\.feedbackEdit >= 0 \? u\.feedbackBase : ''\)\) \{/);
   const kept = open.slice(open.indexOf('if (u.feedbackOpen && pending'), open.indexOf('return;'));
   assert.doesNotMatch(kept, /feedbackDraft = |feedbackEdit = /, 'the kept composer\'s state is untouched');
-  assert.match(composer, /ta\.addEventListener\('focus', \(\) => setActiveEditor\(composer, commitFeedback\)\);/, 'click-outside commits it');
+  assert.doesNotMatch(composer, /setActiveEditor\([^)]*commitFeedback/, 'click-outside never commits it (t-4877)');
 });
 
 test('save adds or edits exactly one item through the per-item patches; Escape never commits', () => {
