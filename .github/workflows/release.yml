@@ -52,6 +52,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Release visuals (t-7e1a): append the showcase GIFs that a commit in this release's range
+      # designated with a `Release-Visual: <file>.gif` trailer to the vX release body. The range is
+      # taken from the step outputs above (tagFormat is the default v{version}), and the fetch-depth: 0
+      # checkout makes every commit in it readable. continue-on-error on BOTH steps: without it a
+      # failure here fails this job and, through `needs: release`, skips vsix and publish — a tag and
+      # a GitHub Release with no .vsix. With it, a failure costs only this release's GIF section. It
+      # still shows red, and nothing retries it: a re-run finds nothing to release, so it is fixed by
+      # hand (re-run the script, or edit the body).
+      - name: Set up Node 22
+        if: steps.release.outputs.new_release_published == 'true'
+        continue-on-error: true
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Append release visuals
+        if: steps.release.outputs.new_release_published == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAST_RELEASE_VERSION: ${{ steps.release.outputs.last_release_version }}
+          NEW_RELEASE_VERSION: ${{ steps.release.outputs.new_release_version }}
+        run: node scripts/release-visual.js
+
   vsix:
     needs: release
     if: needs.release.outputs.published == 'true'

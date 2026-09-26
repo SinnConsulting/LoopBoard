@@ -15,6 +15,12 @@ size.
 
 <!-- Everything between the showcase sentinels is copied into the root README.md by `make readme`
      (relative links made absolute). Edit it HERE, never in README.md. -->
+<!-- Release visuals (t-7e1a): to show a GIF in the GitHub Release that ships its feature, add the
+     trailer `Release-Visual: <file>.gif` (one bare file name under docs/showcase/gifs/, one trailer
+     per GIF) to any commit in that release — squash merges keep it. The release job appends the GIF
+     after Features / Bug Fixes, captioned with the alt text of its <img src="gifs/<file>"> on this
+     page (no <img> here = skipped), and pinned to the tag. A GIF merely added or re-recorded
+     without the trailer is never announced; a GIF-only PR rides the next real release. -->
 <!-- loopboard:showcase:begin -->
 
 ## The whole loop in 17 seconds
