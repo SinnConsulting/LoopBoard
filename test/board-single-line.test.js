@@ -3,8 +3,9 @@
 // draft card's composer copy (item 4). media/board.js is a webview asset the Docker suite never
 // loads, so — like test/board-review-feedback.test.js — its structure is pinned as source text, and
 // the self-contained pieces (the Enter branch of both keydown handlers, the paste fold, the hold
-// decision in stageRow, pruneHeldAnswers) are lifted out of the SOURCE and run in a vm against
-// fakes. Live behaviour: VERIFICATION.md "Multi-line text safety (t-c4d1)".
+// decision in stageRow) are lifted out of the SOURCE and run in a vm against fakes; the landed
+// compare (F3, F11) is run in test/refusal-rescue.test.js beside `splitHeldAnswers`, which holds it.
+// Live behaviour: VERIFICATION.md "Multi-line text safety (t-c4d1)".
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -36,7 +37,7 @@ const draftKeydown = extractBlock(draft, "ta.addEventListener('keydown', (e) => 
 const answerKeydown = extractBlock(questions, "ta.addEventListener('keydown', (e) => {");
 const stageRow = extractBlock(questions, 'const stageRow = () => {');
 const flushAnswers = extractBlock(questions, 'const flushAnswers = (raw) => {');
-const prune = fn('pruneHeldAnswers');
+const split = fn('splitHeldAnswers'); // holds the landed test since t-5831 (PR #180)
 
 // Run a keydown's Enter branch against a fake event; `commit` is the editor's commit function.
 function enterBranch(keydown, commitName) {
@@ -138,22 +139,9 @@ test('[E9] answer: the single-line hint sits beside the ⌘V hint', () => {
   assert.match(questions, /h\('span', \{ class: 'qa-hint' \}, '⌘V pastes screenshots · ⌘S saves'\),\s+h\('span', \{ class: 'qa-hint single-line-hint' \}, SINGLE_LINE_HINT\), saveBtn\)/);
 });
 
-// pruneHeldAnswers, run for real: on origin/main (before t-5831's PR #180) the landed/keep compare
-// lives here, not in `splitHeldAnswers`.
-function runPrune(held, incomingQuestions) {
-  const toasts = [];
-  const ctx = { heldAnswers: { 't-1': held }, saveState() {}, pushToast: (level, text) => toasts.push(text), Object, Set };
-  vm.runInNewContext(fn('canonAnswer') + '\n' + prune, ctx);
-  ctx.pruneHeldAnswers({ phases: { new: [{ id: 't-1', title: 'Story', questions: incomingQuestions }], feedback: [] } });
-  return { held: JSON.parse(JSON.stringify(ctx.heldAnswers['t-1'] || {})), toasts };
-}
-
-test('[F3] a held answer whose canonical form equals disk is landed; one that differs is kept', () => {
-  const qs = [{ text: 'Q1?', answer: 'a b' }, { text: 'Q2?', answer: 'x' }, { text: 'Q3?', answer: 'c' }];
-  const r = runPrune({ 0: { q: 'Q1?', text: 'a\nb ' }, 1: { q: 'Q2?', text: '  x  ' }, 2: { q: 'Q3?', text: 'c d' } }, qs);
-  assert.deepEqual(Object.keys(r.held), ['2'], 'rows 0 and 1 landed; row 2 (canonical `c d` ≠ disk `c`) kept');
-  assert.deepEqual(r.toasts, [], 'a landed answer says nothing');
-});
+// [F3] and [F11] — the landed/keep compare and the changed-question branch — moved to
+// test/refusal-rescue.test.js with the compare itself, which t-5831's PR #180 lifted out of
+// pruneHeldAnswers into `splitHeldAnswers`.
 
 test('[F4] stageRow holds, echoes and writes back ONE canonical value; flushAnswers and the landed test use canonAnswer', () => {
   const s = code(stageRow);
@@ -166,7 +154,7 @@ test('[F4] stageRow holds, echoes and writes back ONE canonical value; flushAnsw
   assert.match(f, /const values = raw\.map\(canonAnswer\);/, 'the posted value');
   assert.match(f, /const value = values\.join\('\\n'\);/);
   assert.match(f, /q\.answer = values\[j\];/, 'the echo');
-  assert.match(code(prune), /if \(q && q\.text === held\[i\]\.q && q\.answer !== canonAnswer\(held\[i\]\.text\)\) continue;/);
+  assert.match(code(split), /else if \(q\.answer === canonAnswer\(held\[i\]\.text\)\) out\.landed\.push\(i\);/);
 });
 
 // The hold decision in stageRow, run for real against spies.
@@ -188,16 +176,6 @@ test('[F5] a canonical empty value on a row with no answer on disk drops the hol
 test('[F6] a canonical empty value on an answered row is a retraction patching `\'\'` through the single answer patch', () => {
   assert.deepEqual(stageDecision('', 'yes'), [['dropHeld', 't-1', 0], ['commitPatch', 't-1', 'answer', '', 'yes', 'answer', 0]]);
   assert.deepEqual(stageDecision('yes please', ''), [['holdAnswer', 't-1', 0, 'Q?', 'yes please']], 'a non-empty value is held');
-});
-
-test('[F11] the changed-question branch is untouched: the canonical compare sits behind the same-question test', () => {
-  // t-5831 (PR #180) owns what happens to a held answer whose question changed; this story only
-  // changes the keep/landed compare, so such an answer still leaves the held set as before.
-  const r = runPrune({ 0: { q: 'Q1, before the re-groom?', text: 'a' }, 1: { q: 'Q gone?', text: 'b' } }, [{ text: 'Q1?', answer: '' }]);
-  assert.deepEqual(r.held, {}, 'neither kept as a live hold nor matched against a different question');
-  const guard = code(prune).split('\n').find((l) => l.includes('canonAnswer('));
-  assert.match(guard, /if \(q && q\.text === held\[i\]\.q && q\.answer !== canonAnswer\(held\[i\]\.text\)\) continue;/,
-    'the only canonAnswer use is behind the same-question test');
 });
 
 test('[G9] createDraft writes the composer copy into the skeleton before serializing; renderDraft paints t.description', () => {

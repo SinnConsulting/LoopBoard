@@ -16,7 +16,8 @@ import {
 } from './settingsform';
 import { buildModelGrid, gridPatch } from './settingsgrid';
 import { MigrationPlan, SettingValues, actionWrites, buildMigrationPlan, scanKeys } from './settingsmigrate';
-import { FieldPatch } from './merge';
+import { FieldPatch, refusalToast } from './merge';
+import { BuildStamp, WEBVIEW_ASSETS, describeStamp, stampsDiffer } from './buildstamp';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
   describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo,
@@ -140,6 +141,10 @@ export class Controller {
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
   // awaits file IO.
   private contextPolling = false;
+  // Build-mismatch check (t-5831), session-only: the webview-asset stamp taken at activation, and
+  // whether this window already showed its one warning.
+  private activationStamp: Promise<BuildStamp> | undefined;
+  private buildMismatchWarned = false;
   // Right-click Promote (t-39e2): armed auto-promotes by task id, any number at once. SESSION-ONLY
   // BY DESIGN, like the restart schedules: nothing is persisted, so a reload clears every arm. Each
   // settling arm owns a timer that re-runs refresh() when its quiet period ends, so the promote fires
@@ -164,6 +169,55 @@ export class Controller {
       this.contextTimer = setInterval(() => void this.pollContext(), CONTEXT_POLL_MS);
       void this.pollContext();
     }
+  }
+
+  // ---- build-mismatch check (t-5831) ----
+  // Size + mtime of every media/ asset the board and sidebar webviews load. Missing = null.
+  private async takeBuildStamp(): Promise<BuildStamp> {
+    const stamp: BuildStamp = {};
+    for (const name of WEBVIEW_ASSETS) {
+      try {
+        const st = await vscode.workspace.fs.stat(vscode.Uri.joinPath(this.extensionUri, 'media', name));
+        stamp[name] = { size: st.size, mtime: st.mtime };
+      } catch {
+        stamp[name] = null;
+      }
+    }
+    return stamp;
+  }
+
+  // Called once from `activate`: the stamp of the webview files THIS host was loaded alongside.
+  stampBuild(): void {
+    this.activationStamp = this.takeBuildStamp().then((s) => {
+      this.store.debugLog('verbose', 'build-stamp', `activation — ${describeStamp(s)}`);
+      return s;
+    });
+  }
+
+  // On every board `ready`: a freshly created panel re-reads its assets from disk, so if they
+  // changed since activation (a new build installed under this running window) the webview now
+  // runs code the host does not. ONE native warning per window session — native on purpose, since
+  // the mismatched webview cannot be trusted to show it.
+  private async checkBuildStamp(): Promise<void> {
+    if (!this.activationStamp) return;
+    const [then, now] = await Promise.all([this.activationStamp, this.takeBuildStamp()]);
+    if (!stampsDiffer(then, now)) {
+      this.store.debugLog('verbose', 'build-stamp', 'ready — webview assets match activation');
+      return;
+    }
+    const detail = `activation: ${describeStamp(then)} | now: ${describeStamp(now)}`;
+    if (this.buildMismatchWarned) {
+      this.store.debugLog('info', 'build-mismatch', `${detail} — already warned this session, no popup`);
+      return;
+    }
+    this.buildMismatchWarned = true;
+    this.store.debugLog('info', 'build-mismatch', detail);
+    const message = 'LoopBoard was updated while this window was open — the board and the extension are out of step, so edits may be refused. Reload the window to finish the update.';
+    const reload = 'Reload Window';
+    this.store.debugLog('info', 'popup', `warning — ${message}`);
+    const choice = await vscode.window.showWarningMessage(message, reload);
+    this.store.debugLog('info', 'popup-choice', `build-mismatch -> ${choice === reload ? 'reload' : 'dismissed'}`);
+    if (choice === reload) await vscode.commands.executeCommand('workbench.action.reloadWindow');
   }
 
   dispose(): void {
@@ -831,6 +885,8 @@ export class Controller {
     this.store.debugLog('verbose', 'dispatch', String(msg?.type ?? '?'));
     switch (msg?.type) {
       case 'ready':
+        // Not awaited: the warning waits on the human, the board must not.
+        void this.checkBuildStamp();
         if (this.lastBoard) {
           const web = await this.buildWebBoard(this.lastBoard);
           BoardPanel.current?.post({ type: 'board', board: web });
@@ -842,7 +898,7 @@ export class Controller {
         this.flushReveal();
         return;
       case 'patch':
-        return this.onPatch(msg.patch as FieldPatch);
+        return this.onPatch(msg.patch as FieldPatch, msg.reqId);
       case 'gate':
         return this.onGate(msg.taskId, msg.action);
       case 'armPromote':
@@ -1434,14 +1490,15 @@ export class Controller {
     return this.refresh();
   }
 
-  private async onPatch(patch: FieldPatch): Promise<void> {
+  // `reqId` (t-5831) is the webview's id for this patch (`sendPatch`). Every outcome is answered
+  // with it in a `patchResult`, posted before the refresh, so the board knows WHICH edit was
+  // refused and can give its text back in an editor. The toast text is the pure `refusalToast`.
+  private async onPatch(patch: FieldPatch, reqId?: string): Promise<void> {
     const outcome = await this.store.applyFieldPatch(patch);
-    if (outcome.status === 'conflict') {
-      const what = patch.field === 'feedbackAdd' || patch.field === 'feedbackItem' ? 'feedback' : patch.field;
-      this.toast('warning', `Task changed on disk — your edit to ${what} was not applied.`, patch.taskId, undefined, 'sameFieldConflict');
-    } else if (outcome.status === 'notfound') {
-      this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', patch.taskId);
-    }
+    const text = refusalToast(outcome.status, patch.field);
+    if (text) this.toast('warning', text, patch.taskId, undefined, outcome.status === 'conflict' ? 'sameFieldConflict' : undefined);
+    this.store.debugLog('verbose', 'patch-result', `${patch.taskId} ${patch.field} #${reqId ?? '-'} -> ${outcome.status}`);
+    BoardPanel.current?.post({ type: 'patchResult', reqId, status: outcome.status, taskId: patch.taskId });
     return this.refresh();
   }
 

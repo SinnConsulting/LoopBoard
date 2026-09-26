@@ -289,6 +289,48 @@ test('an answers patch for an unknown task is notfound', () => {
   assert.equal(applyPatch(doc, { taskId: 't-zzzz', field: 'answers', value: 'a', base: '' }).status, 'notfound');
 });
 
+// ---- unrecognised fields are refused as `unsupported`, never as a conflict (t-5831) ----
+// The incident: a webview newer than the running host posted `feedbackAdd`; the host did not know
+// it, routed it to the task file, found no current value and reported a disk-wins conflict — eight
+// times in a row, although nothing on disk had changed.
+
+test('applyPatch refuses an unrecognised field as unsupported, and writes nothing', () => {
+  const text = readFix('index-full.md');
+  const doc = parseTodo(text);
+  const before = JSON.stringify(doc);
+  const r = applyPatch(doc, { taskId: 't-aa01', field: 'noteAppend', value: 'typed text', base: '' });
+  assert.equal(r.status, 'unsupported');
+  assert.notEqual(r.status, 'conflict');
+  assert.equal(JSON.stringify(doc), before, 'the doc is untouched');
+});
+
+test('an unrecognised field routes to detail, where applyDetailPatch refuses it as unsupported', () => {
+  assert.equal(patchTarget('noteAppend'), 'detail', 'patchTarget still falls through to detail');
+  const detail = parseTaskFile(readFix('taskfile-full.md'));
+  const before = JSON.stringify(detail);
+  for (const base of ['', 'anything', detail.description]) {
+    const r = applyDetailPatch(detail, { taskId: 't-cc01', field: 'noteAppend', value: 'typed text', base });
+    assert.equal(r.status, 'unsupported', 'base ' + JSON.stringify(base));
+  }
+  assert.equal(JSON.stringify(detail), before, 'the detail is untouched');
+});
+
+test('applyDetailPatch refuses an index field as unsupported rather than comparing it', () => {
+  const detail = parseTaskFile(readFix('taskfile-full.md'));
+  for (const field of ['feedbackAdd', 'feedbackItem', 'answers', 'title']) {
+    assert.equal(applyDetailPatch(detail, { taskId: 't-cc01', field, value: 'x', base: '' }).status, 'unsupported', field);
+  }
+});
+
+test('known fields keep their conflict semantics next to the new status', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  assert.equal(applyPatch(doc, { taskId: 't-aa01', field: 'title', value: 'x', base: 'STALE' }).status, 'conflict');
+  const detail = parseTaskFile(readFix('taskfile-full.md'));
+  for (const field of ['description', 'problem', 'goals']) {
+    assert.equal(applyDetailPatch(detail, { taskId: 't-cc01', field, value: 'x', base: 'STALE' }).status, 'conflict', field);
+  }
+});
+
 // ---- t-c4d1: the host single-line rule (item 1) and one feedback entry = one item (item 3) ----
 // Every index value is one line (grammar v5); applyPatch folds title, answer, each answer of
 // `answers` and feedback, and conflicts compare canonical values. "Fixpoint" = the first written

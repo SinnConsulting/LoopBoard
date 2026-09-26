@@ -26,7 +26,9 @@ export interface FieldPatch {
 export interface MergeResult {
   // `noop` (t-ae10): a feedback patch with nothing to do (an empty add, or a delete whose item is
   // already gone) — nothing to write, no toast.
-  status: 'applied' | 'conflict' | 'notfound' | 'noop';
+  // `unsupported` (t-5831): the patch names a field this build does not know — typically a webview
+  // newer than the running extension host. Nothing is written, and it is NOT a disk-wins conflict.
+  status: 'applied' | 'conflict' | 'notfound' | 'noop' | 'unsupported';
   entry?: IndexEntry;
   removed?: string; // `feedbackItem` only: the line that was replaced or deleted
   // Set only when the single-line rule (t-c4d1) changed the value on its way to disk: the raw
@@ -35,13 +37,15 @@ export interface MergeResult {
 }
 
 export interface DetailMergeResult {
-  status: 'applied' | 'conflict';
+  status: 'applied' | 'conflict' | 'unsupported';
 }
 
 const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
 const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem'];
+const DETAIL_FIELDS: DetailField[] = ['description', 'problem', 'goals'];
 
-// Which file a field patch targets.
+// Which file a field patch targets. An unrecognised field falls through to `detail`, where
+// applyDetailPatch refuses it as `unsupported` (t-5831) — never as a conflict.
 export function patchTarget(field: PatchField): 'index' | 'detail' {
   return (INDEX_FIELDS as string[]).includes(field) ? 'index' : 'detail';
 }
@@ -207,6 +211,9 @@ function applyFeedbackPatch(entry: IndexEntry, patch: FieldPatch): MergeResult {
 
 // Apply an index field patch to a freshly-parsed index doc (mutating it). Disk wins on conflict.
 export function applyPatch(doc: IndexDoc, patch: FieldPatch): MergeResult {
+  // An unknown field has no on-disk value to compare, so the base test below would call it a
+  // conflict every time (the t-5831 incident) — refuse it honestly instead.
+  if (!(INDEX_FIELDS as string[]).includes(patch.field)) return { status: 'unsupported' };
   const entry = doc.entries.find((e) => e.id === patch.taskId);
   if (!entry) return { status: 'notfound' };
   if (patch.field === 'feedbackAdd' || patch.field === 'feedbackItem') return applyFeedbackPatch(entry, patch);
@@ -234,10 +241,63 @@ export function applyPatch(doc: IndexDoc, patch: FieldPatch): MergeResult {
 
 // Apply a detail field patch to a freshly-parsed task detail (mutating it). Disk wins on conflict.
 export function applyDetailPatch(detail: TaskDetail, patch: FieldPatch): DetailMergeResult {
+  if (!(DETAIL_FIELDS as string[]).includes(patch.field)) return { status: 'unsupported' };
   const current = currentDetailFieldValue(detail, patch.field as DetailField);
   if (current !== patch.base && current !== patch.value) {
     return { status: 'conflict' };
   }
   setDetailFieldValue(detail, patch.field as DetailField, patch.value);
   return { status: 'applied' };
+}
+
+// ---- refusal toast (t-5831) ----
+// Human label for a patch field: what the toast names — never the internal patch kind
+// (`feedbackAdd`, `feedbackItem`, `answers`), which means nothing to the human reading it.
+export function fieldLabel(field: string): string {
+  switch (field) {
+    case 'title':
+      return 'title';
+    case 'model':
+      return 'worker model';
+    case 'groomer':
+      return 'groomer';
+    case 'answer':
+    case 'answers':
+      return 'answer';
+    case 'feedbackAdd':
+    case 'feedbackItem':
+      return 'feedback';
+    case 'description':
+    case 'problem':
+    case 'goals':
+      return field;
+    default:
+      return ''; // a field this build does not know — the text simply says "your edit"
+  }
+}
+
+// The fields whose refused text the board gives back in an editor (media/board.js `rescueTarget`
+// for answers/feedback; a conflicted `answers` flush keeps its rows held). Titles and the story
+// sections are a follow-up story, so their toast must not promise it.
+const RESCUED_FIELDS = ['answer', 'answers', 'feedbackAdd', 'feedbackItem'];
+
+// The warning toast for a field patch the host did not apply, built from the outcome status and a
+// human field label. `undefined` = nothing to say (applied, or a no-op).
+//   conflict    — disk changed under the edit (disk wins, non-negotiable 4);
+//   unsupported — the board and the extension host run different builds;
+//   notfound    — the task is gone.
+export function refusalToast(status: string, field: string): string | undefined {
+  const label = fieldLabel(field);
+  const edit = label ? `your ${label} edit` : 'your edit';
+  const kept = RESCUED_FIELDS.includes(field) ? ' Your text was kept on the card — save it again.' : '';
+  switch (status) {
+    case 'conflict':
+      return `Task changed on disk — ${edit} was not applied.${kept}`;
+    case 'unsupported':
+      return `The board and the extension are out of step — ${edit} was not applied. Reload the window (Developer: Reload Window).${kept}`;
+    case 'notfound':
+      return 'That task no longer exists on disk — the board was refreshed.';
+    default:
+      return undefined;
+  }
 }

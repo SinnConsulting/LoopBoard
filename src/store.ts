@@ -15,7 +15,7 @@ import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
 import { stripAttachmentLink, unreferencedAttachments } from './attachments';
 
-export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error'; message?: string };
+export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error' | 'unsupported'; message?: string };
 export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string; feedback?: string[] };
 export type DraftOutcome = SaveOutcome & { id?: string };
 
@@ -498,6 +498,8 @@ export class Store {
         if (result.status !== 'applied') {
           // A same-field disk-wins conflict silently drops a human edit — an especially important line.
           if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${fb ?? patch.field} -> ${patch.value}`);
+          // A field this build does not know (t-5831) — a webview/host build mismatch, not a conflict.
+          if (result.status === 'unsupported') this.debugLog('info', 'unsupported', `${patch.taskId} ${patch.field} -> ${patch.value}`);
           return { status: result.status };
         }
         await this.atomicWrite(this.todoUri, serializeTodo(doc));
@@ -523,6 +525,8 @@ export class Store {
       const result = applyDetailPatch(detail, patch);
       if (result.status !== 'applied') {
         if (result.status === 'conflict') this.debugLog('info', 'conflict', `${patch.taskId} ${patch.field} -> ${patch.value}`);
+        // patchTarget routes every unrecognised field here, so this is the usual unsupported path.
+        if (result.status === 'unsupported') this.debugLog('info', 'unsupported', `${patch.taskId} ${patch.field} -> ${patch.value}`);
         return { status: result.status };
       }
       await this.ensureTasksDir();

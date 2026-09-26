@@ -330,6 +330,17 @@ textarea { resize: vertical; }
 .qa-item.is-held.is-answered .qa-rail { background: var(--vscode-editorWarning-foreground, #cca700); }
 .qa-held-tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 5px; border-radius: 3px; white-space: nowrap; align-self: center; color: var(--vscode-editorWarning-foreground, #cca700); border: 1px solid var(--vscode-editorWarning-foreground, #cca700); }
 .qa-held-tag[hidden] { display: none !important; }
+/* Rescued answers (t-5831): held answers whose question a re-groom rewrote or removed. A block of
+   their own under the rows — dashed warning rail, the old question dimmed, then the text and one
+   "use on question N" link per current question. */
+.qa-rescued { display: flex; flex-direction: column; border-top: 1px solid var(--vscode-panel-border, #454545); }
+.qa-rescued-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 3px dashed var(--vscode-editorWarning-foreground, #cca700); }
+.qa-rescued-item + .qa-rescued-item { border-top: 1px solid var(--vscode-panel-border, #454545); }
+.qa-rescued-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qa-rescued-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-editorWarning-foreground, #cca700); }
+.qa-rescued-q { font-size: 12px; line-height: 1.5; word-break: break-word; color: var(--vscode-descriptionForeground, #9d9d9d); font-style: italic; }
+.qa-rescued-text { font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+.qa-rescued-uses { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 
 .qa-suggest { display: flex; flex-direction: column; gap: 4px; }
 .qa-suggest-label {

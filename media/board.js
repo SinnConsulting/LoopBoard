@@ -125,6 +125,13 @@
   // being written, keyed by task id then question index. Persisted in the setState blob; see the
   // held-answer helpers below saveState().
   let heldAnswers = saved.heldAnswers && typeof saved.heldAnswers === 'object' ? saved.heldAnswers : {};
+  // Refused text given back (t-5831), in the same blob so it survives the forced refresh, a panel
+  // hide and a webview reload. `rescuedAnswers[taskId]` = `[{ q, text }]`: held answers whose
+  // question a re-groom rewrote or removed, shown on the card until used or dismissed (New/Feedback
+  // only). `rescuedFeedback[taskId]` = the refused feedback patch `{ field, value, base, itemIndex }`
+  // whose text reopens in the card's composer until it is saved again or Escaped.
+  let rescuedAnswers = saved.rescuedAnswers && typeof saved.rescuedAnswers === 'object' ? saved.rescuedAnswers : {};
+  let rescuedFeedback = saved.rescuedFeedback && typeof saved.rescuedFeedback === 'object' ? saved.rescuedFeedback : {};
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
   // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
@@ -169,6 +176,13 @@
   // must be replaced by what disk holds without waiting for a click-out. Every other toast leaves
   // the deferral alone (it would wipe a field the user is mid-editing).
   let forceNextBoard = false;
+  // Patch round trip (t-5831): every patch goes out through sendPatch with a request id and waits
+  // here until the host's `patchResult` names its outcome. A refused one (conflict / unsupported)
+  // moves to `refusedPatches`, which the next applied board turns into editor rescues.
+  const patchTag = Math.random().toString(36).slice(2, 8); // ids from an earlier webview never match
+  let patchSeq = 1;
+  const pendingPatches = {};
+  let refusedPatches = [];
   let pendingRender = false; // an async/external repaint deferred while a field is focused
   // Global "gate in flight" guard (t-a9d5): swallows a second gate click (Approve/Accept/Demote)
   // on ANY card between a click and the confirming board message, so a click landing on a
@@ -210,11 +224,11 @@
   }
 
   function getUi(id) {
-    if (!ui[id]) ui[id] = {};
+    if (!ui[id]) ui[id] = { taskId: id }; // taskId: lets a helper handed only `u` reach per-task state
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers });
+    vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
   }
 
   // ---- single-line index values (t-c4d1) ----
@@ -258,39 +272,134 @@
     delete heldAnswers[taskId];
     saveState();
   }
-  // Drop held answers that no longer describe reality. Called on every incoming board: an answer
-  // is kept only while its task still exists, is still New/Feedback, its question still has the
-  // SAME text, and the answer ON DISK still differs from what is held. That last test is what
-  // makes the three outcomes work out: a LANDED answer now equals disk and prunes itself; a
-  // CONFLICTED flush left disk untouched, so the value stays held and re-savable; and an edit to
-  // a question that was ALREADY answered on disk also stays held (an earlier `!q.answered` test
-  // deleted exactly that case, silently losing the edit — t-5e6d review). A held answer whose
-  // question was rewritten or removed by a re-groom is dropped with a toast, since keeping it
-  // would attach it to a different question.
+  // Sort one task's held answers against its incoming questions (t-5831). Pure; its one outside
+  // reference is `canonAnswer` (t-c4d1), which test/refusal-rescue.test.js lifts into the same vm:
+  //   keep    — same question text, and the disk answer still differs from what is held (a
+  //             CONFLICTED flush left disk untouched, so it stays re-savable; an edit to a question
+  //             already answered on disk stays too — t-5e6d review);
+  //   landed  — the disk answer now equals the CANONICAL held text (the flush succeeded). Disk only
+  //             ever holds the folded, trimmed form, so a raw compare kept a landed answer amber
+  //             forever — including a raw value held in a setState blob from before t-c4d1;
+  //   rescued — the question text changed or the question is gone (a re-groom). This test comes
+  //             first, so the canonical compare only ever runs for the same question.
+  function splitHeldAnswers(held, questions) {
+    const out = { keep: [], landed: [], rescued: [] };
+    for (const i of Object.keys(held)) {
+      const q = questions[i];
+      if (!q || q.text !== held[i].q) out.rescued.push(i);
+      else if (q.answer === canonAnswer(held[i].text)) out.landed.push(i);
+      else out.keep.push(i);
+    }
+    return out;
+  }
+  function openQuestionTask(incoming, taskId) {
+    return ['new', 'feedback'].reduce((found, key) =>
+      found || (incoming.phases[key] || []).find((x) => x.id === taskId), null);
+  }
+  // Reconcile held answers with every incoming board. Held answers live only while their task is
+  // still New/Feedback. A LANDED answer prunes itself silently. A RESCUED one — its question was
+  // rewritten or removed — would attach to a different question if kept held, and deleting it lost
+  // the human's text (the t-5e6d behaviour), so it moves into `rescuedAnswers` with the question
+  // text it was written for, and the card shows it until the human uses or dismisses it (t-5831).
   function pruneHeldAnswers(incoming) {
-    const stale = [];
+    const moved = [];
     for (const taskId of Object.keys(heldAnswers)) {
-      const t = ['new', 'feedback'].reduce((found, key) =>
-        found || (incoming.phases[key] || []).find((x) => x.id === taskId), null);
+      const t = openQuestionTask(incoming, taskId);
       const held = heldAnswers[taskId];
       if (!t) { delete heldAnswers[taskId]; continue; } // gone, promoted, accepted — nothing to say
-      for (const i of Object.keys(held)) {
-        const q = t.questions[i];
-        // Landed = disk equals the CANONICAL held text (t-c4d1): disk only ever holds the folded,
-        // trimmed form, so a raw compare kept a landed answer amber forever — including a raw
-        // value held in a setState blob from before this rule.
-        if (q && q.text === held[i].q && q.answer !== canonAnswer(held[i].text)) continue;
-        // Only a question that CHANGED is worth telling the human about; one that simply landed
-        // on disk (the flush succeeded) is the normal path and says nothing.
-        if (!q || q.text !== held[i].q) stale.push(t.title);
+      const split = splitHeldAnswers(held, t.questions);
+      for (const i of split.rescued) {
+        if (String(held[i].text || '').trim()) {
+          if (!rescuedAnswers[taskId]) rescuedAnswers[taskId] = [];
+          rescuedAnswers[taskId].push({ q: held[i].q, text: held[i].text });
+          moved.push(t.title);
+        }
         delete held[i];
       }
+      for (const i of split.landed) delete held[i];
       if (Object.keys(held).length === 0) delete heldAnswers[taskId];
     }
-    saveState();
-    for (const title of [...new Set(stale)]) {
-      pushToast('info', 'Held answers for “' + title + '” were dropped — its questions changed.');
+    for (const taskId of Object.keys(rescuedAnswers)) {
+      if (!openQuestionTask(incoming, taskId) || !rescuedAnswers[taskId].length) delete rescuedAnswers[taskId];
     }
+    saveState();
+    for (const title of [...new Set(moved)]) {
+      pushToast('info', 'Held answers for “' + title + '” were kept on the card — its questions changed.');
+    }
+  }
+  function dropRescuedAnswer(taskId, k) {
+    const list = rescuedAnswers[taskId];
+    if (!list) return;
+    list.splice(k, 1);
+    if (!list.length) delete rescuedAnswers[taskId];
+    saveState();
+  }
+
+  // ---- refused-patch rescue (t-5831) ----
+  // Where a refused patch's text reopens. Pure and self-contained (lifted into a vm by
+  // test/refusal-rescue.test.js). `items` is the task's feedback list AS DISK NOW HAS IT.
+  //   feedbackAdd  -> the add composer;
+  //   feedbackItem -> that item's edit composer while the item still exists (by index, else by its
+  //                   text), otherwise the add composer, so the next Save is a pure append;
+  //   answer       -> that row reopens with the refused value (blank for a retraction);
+  //   anything else (answers, titles, sections) -> null: a conflicted `answers` flush is still
+  //                   held on its rows, and the other editors are a follow-up story.
+  function rescueTarget(patch, items) {
+    const value = String(patch.value || '');
+    if (patch.field === 'feedbackAdd' || patch.field === 'feedbackItem') {
+      if (!value.trim()) return null; // a delete — nothing typed to give back
+      if (patch.field === 'feedbackItem') {
+        const list = items || [];
+        const at = list[patch.itemIndex] === patch.base ? patch.itemIndex : list.indexOf(patch.base);
+        if (at >= 0) return { kind: 'feedback', edit: at, base: patch.base, text: value };
+      }
+      return { kind: 'feedback', edit: -1, base: '', text: value };
+    }
+    if (patch.field === 'answer' && typeof patch.questionIndex === 'number') {
+      return { kind: 'answer', index: patch.questionIndex, text: value };
+    }
+    return null;
+  }
+  function dropRescuedFeedback(taskId) {
+    if (!rescuedFeedback[taskId]) return;
+    delete rescuedFeedback[taskId];
+    saveState();
+  }
+  // Typing into a rescued composer keeps the persisted copy current, so a reload restores what the
+  // human has typed since, not the text as first refused.
+  function keepRescuedFeedback(taskId, value) {
+    if (!rescuedFeedback[taskId]) return;
+    rescuedFeedback[taskId].value = value;
+    saveState();
+  }
+  // Runs on the board that follows a refusal (applyBoard), so every decision is taken against
+  // what disk now holds — the pre-refresh board still carries the wrong local echo.
+  function applyRescues(incoming) {
+    const queue = refusedPatches;
+    refusedPatches = [];
+    for (const patch of queue) {
+      let t = null;
+      for (const key in incoming.phases) t = t || (incoming.phases[key] || []).find((x) => x.id === patch.taskId) || null;
+      if (!t) continue;
+      const target = rescueTarget(patch, t.feedback);
+      if (!target) continue;
+      if (target.kind === 'feedback') {
+        rescuedFeedback[t.id] = { field: patch.field, value: patch.value, base: patch.base, itemIndex: patch.itemIndex };
+      } else {
+        const u = getUi(t.id);
+        if (!u.answerDrafts) u.answerDrafts = {};
+        if (!u.qaEditOpen) u.qaEditOpen = {};
+        u.answerDrafts[target.index] = target.text;
+        u.qaEditOpen[target.index] = true;
+      }
+    }
+    // A rescued composer outlives nothing but its task (Done has no feedback surface).
+    for (const taskId of Object.keys(rescuedFeedback)) {
+      let live = false;
+      for (const key in incoming.phases) if (key !== 'done' && (incoming.phases[key] || []).some((x) => x.id === taskId)) live = true;
+      if (!live) delete rescuedFeedback[taskId];
+    }
+    saveState();
   }
 
   // ---- collapse/expand (per phase tab — the current `phase` is the implicit key) ----
@@ -478,9 +587,14 @@
   function normGroomerValue(v, leadOpt) { return v === GROOMER_HOLD_OPT ? GROOMER_HOLD : normModelValue(v, leadOpt); }
 
   // ---- field patch helper ----
-  function sendPatch(taskId, field, value, base, questionIndex) {
+  // The ONE place a `patch` message is posted (t-5831): each carries a request id, which the host
+  // echoes in a `patchResult` with the outcome, so a refusal can name exactly which edit failed.
+  function sendPatch(taskId, field, value, base, questionIndex, itemIndex) {
     if (value === base) return; // no-op
-    post({ type: 'patch', patch: { taskId, field, value, base, questionIndex } });
+    const reqId = patchTag + ':' + patchSeq++;
+    const patch = { taskId, field, value, base, questionIndex, itemIndex };
+    pendingPatches[reqId] = patch;
+    post({ type: 'patch', reqId, patch });
   }
 
   // Optimistic local echo (t-ff54): a patch is fire-and-forget, so the repaint that follows a
@@ -1597,7 +1711,8 @@
       }
 
       // questions: Feedback always; New too, when the groomer left open decisions
-      if (variant === 'feedback' || (variant === 'new' && t.questions && t.questions.length)) card.append(renderQuestions(t));
+      // Rescued answers (t-5831) keep the panel on a New card even when a re-groom left no questions.
+      if (variant === 'feedback' || (variant === 'new' && ((t.questions && t.questions.length) || rescuedAnswers[t.id]))) card.append(renderQuestions(t));
 
       // review: the Delivered block
       const reviewEl = variant === 'review' ? renderReview(t) : null;
@@ -1957,12 +2072,15 @@
       // drops them once they land, which is what leaves them intact (and re-savable) if the flush
       // comes back a disk-wins conflict. When there is nothing to write, though, no board message
       // follows, so nothing would ever prune them and the row would wear its `held` tag forever.
-      if (value !== base) post({ type: 'patch', patch: { taskId: t.id, field: 'answers', value, base } });
+      if (value !== base) sendPatch(t.id, 'answers', value, base);
       else clearHeldFor(t.id);
+      // The rows this flush writes (value differs from disk), taken before the echo below.
+      const written = t.questions.map((q, j) => values[j] !== q.answer);
       t.questions.forEach((q, j) => { q.answer = values[j]; q.answered = values[j].trim().length > 0; });
+      // Reset editor state only for the rows written (t-5831): another row's unsaved draft or open
+      // editor is the human's work in progress, not part of this save.
       const u2 = getUi(t.id);
-      u2.answerDrafts = {};
-      u2.qaEditOpen = {};
+      written.forEach((w, j) => { if (w) { delete u2.answerDrafts[j]; delete u2.qaEditOpen[j]; } });
       render();
     };
 
@@ -1992,6 +2110,8 @@
         : 'Type your answer — the worker resumes when every question is answered.' });
       ta.value = u.answerDrafts[i] != null ? u.answerDrafts[i] : answerAt(i);
       autoGrow(ta);
+      // "use on question N" of a rescued answer (t-5831) asks for this row's focus once.
+      if (u.qaFocus === i) { u.qaFocus = undefined; requestAnimationFrame(() => ta.focus()); }
 
       const summaryText = h('span', { class: 'qa-answer-text' }, answerAt(i));
       // A held row says so: it looks saved (collapsed summary) but is not on disk yet, and
@@ -2149,10 +2269,48 @@
         h('span', { class: 'qa-hint single-line-hint' }, SINGLE_LINE_HINT), saveBtn));
       refreshAnswerAttachments(answerAt(i));
       body.append(summary, editor, attachWrap);
-      setCollapsed(isGiven(i));
+      // An answered row stays open across a repaint while its editor is open — a rescued retraction
+      // or a "use on question N" (t-5831) opens it this way.
+      setCollapsed(isGiven(i) && !u.qaEditOpen[i]);
       list.append(item);
     });
+    if (!qFolded) {
+      const rescued = renderRescuedAnswers(t, u);
+      if (rescued) list.append(rescued);
+    }
     return panel;
+  }
+
+  // Rescued answers (t-5831): held answers whose question a re-groom rewrote or removed. They sit
+  // in the Open questions panel as their own block — the question they were written for, marked as
+  // changed, then the text — until the human moves one onto a current question or dismisses it.
+  // Nothing here reaches the host: "use on question N" only seeds, opens and focuses that row, and
+  // the human saves it the normal way.
+  function renderRescuedAnswers(t, u) {
+    const entries = rescuedAnswers[t.id];
+    if (!entries || !entries.length) return null;
+    const wrap = h('div', { class: 'qa-rescued' });
+    entries.forEach((r, k) => {
+      const uses = t.questions.map((q, n) => makeGateButton({ class: 'qa-link-btn', type: 'button', title: 'Put this answer into question ' + (n + 1) + ' to edit and save' }, () => {
+        u.answerDrafts[n] = r.text;
+        u.qaEditOpen[n] = true;
+        u.qaFocus = n;
+        dropRescuedAnswer(t.id, k);
+        render();
+      }, 'use on question ' + (n + 1)));
+      const dismiss = makeGateButton({ class: 'icon-btn', type: 'button', title: 'Dismiss this answer', 'aria-label': 'Dismiss this answer', style: { width: '20px', height: '20px' } },
+        () => { dropRescuedAnswer(t.id, k); render(); }, icon(SVG.x));
+      const qText = h('div', { class: 'qa-rescued-q', html: mdToHtml(r.q) });
+      qText.querySelectorAll('a[data-mdlink]').forEach((a) => {
+        a.addEventListener('click', (e) => { e.preventDefault(); post({ type: 'openLink', url: a.getAttribute('data-mdlink') }); });
+      });
+      wrap.append(h('div', { class: 'qa-rescued-item' },
+        h('div', { class: 'qa-rescued-head' }, h('span', { class: 'qa-rescued-label' }, 'Written for a question that has changed'), dismiss),
+        qText,
+        h('div', { class: 'qa-rescued-text' }, r.text),
+        uses.length ? h('div', { class: 'qa-rescued-uses' }, uses) : null));
+    });
+    return wrap;
   }
 
   function renderReview(t) {
@@ -2209,7 +2367,7 @@
       if (at >= 0) list.splice.apply(list, [at, 1].concat(lines));
       t.feedback = list;
     }
-    post({ type: 'patch', patch: { taskId: t.id, field, value, base, itemIndex: at >= 0 ? at : itemIndex } });
+    sendPatch(t.id, field, value, base, undefined, at >= 0 ? at : itemIndex);
   }
 
   // Open the card's one composer (edit = item index, or -1 to add). A composer already open with
@@ -2222,6 +2380,8 @@
       render();
       return;
     }
+    // Replacing the card's composer abandons a rescued text the human already emptied (t-5831).
+    if (u.taskId) dropRescuedFeedback(u.taskId);
     u.feedbackOpen = true;
     u.feedbackEdit = edit;
     u.feedbackBase = text;
@@ -2247,6 +2407,7 @@
       clearActiveEditor(composer);
       const val = ta.value.trim();
       if (!val) return; // Save stays disabled on an empty draft — `delete` is the explicit way to clear
+      dropRescuedFeedback(t.id); // saved again — if this save is refused too, its reply rescues it afresh (t-5831)
       if (isEdit) commitFeedbackPatch(t, 'feedbackItem', val, u.feedbackBase, u.feedbackEdit);
       else commitFeedbackPatch(t, 'feedbackAdd', val, '');
       closeFeedbackComposer(u);
@@ -2257,10 +2418,10 @@
       disabled: (u.feedbackDraft || '').trim().length === 0,
       title: 'Save (Cmd/Ctrl+S)', onclick: commitFeedback,
     }, 'Save');
-    ta.addEventListener('input', () => { u.feedbackDraft = ta.value; autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
+    ta.addEventListener('input', () => { u.feedbackDraft = ta.value; keepRescuedFeedback(t.id, ta.value); autoGrow(ta); saveBtn.disabled = ta.value.trim().length === 0; });
     ta.addEventListener('keydown', (e) => {
       // Escape closes the composer without committing: the draft is dropped, saved items stay.
-      if (e.key === 'Escape') { exitFieldEdit(() => closeFeedbackComposer(u), composer); return; }
+      if (e.key === 'Escape') { dropRescuedFeedback(t.id); exitFieldEdit(() => closeFeedbackComposer(u), composer); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
     // Register when it gains focus (t-471a): the empty-draft no-op commit leaves the composer open,
@@ -2272,6 +2433,7 @@
       const live = document.querySelector('[data-task="' + t.id + '"] textarea[data-field="feedback"]') || ta;
       insertLinkAtCursor(live, '[' + filename + '](' + path + ')');
       u.feedbackDraft = live.value;
+      keepRescuedFeedback(t.id, live.value);
       autoGrow(live);
       const liveSave = live.parentNode && live.parentNode.querySelector('.field-save-btn');
       if (liveSave) liveSave.disabled = live.value.trim().length === 0;
@@ -2321,6 +2483,15 @@
   function renderFeedback(t) {
     const u = getUi(t.id);
     const items = t.feedback || [];
+    // A refused save's text reopens here (t-5831): on the refresh that follows the refusal and again
+    // after a reload, decided against the items as they are now. A composer already open wins.
+    const rescued = rescuedFeedback[t.id] && !u.feedbackOpen ? rescueTarget(rescuedFeedback[t.id], items) : null;
+    if (rescued) {
+      u.feedbackOpen = true;
+      u.feedbackEdit = rescued.edit;
+      u.feedbackBase = rescued.base;
+      u.feedbackDraft = rescued.text;
+    }
     const wrap = h('div', { class: 'feedback-wrap' });
     // An open EDIT composer sits in its item's row: that index while the line there still reads as
     // the item's text, else the first line equal to it (the loop removed an earlier item).
@@ -2384,6 +2555,15 @@
       if (msg.taskId) { getUi(msg.taskId).conflict = true; setTimeout(() => { getUi(msg.taskId).conflict = false; scheduleRender(); }, 3000); }
       const action = msg.taskId ? { label: 'Review', onClick: () => { revealTask(msg.taskId); } } : null;
       pushToast(msg.level, msg.text, action, msg.icon);
+    } else if (msg.type === 'patchResult') {
+      // Posted for every patch, before the refresh that carries disk's answer. A refused one is
+      // queued for applyRescues, and that refresh must land even mid-edit: the local echo is wrong.
+      const patch = pendingPatches[msg.reqId];
+      delete pendingPatches[msg.reqId];
+      if (patch && (msg.status === 'conflict' || msg.status === 'unsupported')) {
+        refusedPatches.push(patch);
+        forceNextBoard = true;
+      }
     } else if (msg.type === 'reveal') {
       revealTask(msg.taskId, msg.phase, msg.composer, msg.search);
     } else if (msg.type === 'attachStaged' || msg.type === 'attachRemoved') {
@@ -2406,8 +2586,10 @@
     // otherwise the stale snapshot gets flushed on the next focusout and clobbers newer state.
     pendingBoard = null;
     // Reconcile held answers against what the tracker now says (t-5e6d): landed ones are dropped,
-    // ones whose question changed underneath are dropped with a toast, the rest survive.
+    // ones whose question changed underneath move to the card's rescued answers (t-5831), the rest
+    // survive. Then give any refused feedback/answer text back in its editor.
     pruneHeldAnswers(incoming);
+    applyRescues(incoming);
     pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
     lastSyncTs = Date.now();
