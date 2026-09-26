@@ -53,8 +53,10 @@ export interface WhatsNewDecision {
   record: boolean;
   // The release-notes link — set only for an upgrade, shown or not.
   url?: string;
-  // The `whats-new` debug line's detail, minus the controller's own outcome ("opened tab").
-  reason: string;
+  // The running version, and the situation in words (`upgrade 3.25.0 → 3.26.0`) — the start of the
+  // `whats-new` debug line, which describeWhatsNew completes with the outcome.
+  current: string;
+  what: string;
 }
 
 // `lastSeen` is whatever globalState holds (undefined on a first install); `current` is the running
@@ -62,30 +64,42 @@ export interface WhatsNewDecision {
 // setting back on later never replays an update the user already went through.
 export function decideWhatsNew(lastSeen: unknown, current: string, settingOn: boolean): WhatsNewDecision {
   if (lastSeen === undefined) {
-    return { kind: 'first-install', show: false, record: true, reason: `first install — recorded ${current}` };
+    return { kind: 'first-install', show: false, record: true, current, what: 'first install' };
   }
   if (lastSeen === current) {
-    return { kind: 'same', show: false, record: false, reason: `same version ${current}` };
+    return { kind: 'same', show: false, record: false, current, what: `same version ${current}` };
   }
   const from = parseVersion(lastSeen);
   const to = parseVersion(current);
   if (!from || !to) {
     return {
-      kind: 'unparseable', show: false, record: true,
-      reason: `unparseable version (last seen ${JSON.stringify(lastSeen)}, running ${JSON.stringify(current)}) — recorded ${current}, not shown`,
+      kind: 'unparseable', show: false, record: true, current,
+      what: `unparseable version (last seen ${JSON.stringify(lastSeen)}, running ${JSON.stringify(current)})`,
     };
   }
   const order = compareVersions(to, from);
   if (order === 0) {
     // Numerically equal but spelled differently (e.g. surrounding whitespace in a stored value).
-    return { kind: 'same', show: false, record: false, reason: `same version ${current}` };
+    return { kind: 'same', show: false, record: false, current, what: `same version ${current}` };
   }
   if (order < 0) {
-    return { kind: 'downgrade', show: false, record: true, reason: `downgrade ${lastSeen} → ${current} — recorded, not shown` };
+    return { kind: 'downgrade', show: false, record: true, current, what: `downgrade ${lastSeen} → ${current}` };
   }
   const url = releaseNotesUrl(String(lastSeen), current);
-  if (!settingOn) {
-    return { kind: 'upgrade', show: false, record: true, url, reason: `upgrade ${lastSeen} → ${current} — setting off, not shown` };
+  return { kind: 'upgrade', show: settingOn, record: true, url, current, what: `upgrade ${lastSeen} → ${current}` };
+}
+
+// The ONE `whats-new` debug line for an activation, once the controller has acted on the decision:
+// recorded (or not) and the tab opened (or not). `recordError` is set when the globalState write
+// failed — then the line says so instead of claiming "recorded", and a shown tab will show again on
+// the next load (a fail-open, named as one).
+export function describeWhatsNew(d: WhatsNewDecision, recordError?: string): string {
+  if (!d.record) return d.what;
+  const shown = d.show ? `opened tab (${d.url})` : d.kind === 'upgrade' ? 'setting off, not shown' : 'not shown';
+  if (recordError !== undefined) {
+    const again = d.show ? ', so it opens again on the next load' : '';
+    return `${d.what} — ${shown}; could not record ${d.current} (${recordError})${again}`;
   }
-  return { kind: 'upgrade', show: true, record: true, url, reason: `upgrade ${lastSeen} → ${current}` };
+  if (d.kind === 'first-install') return `${d.what} — recorded ${d.current}`;
+  return `${d.what} — ${shown}; recorded ${d.current}`;
 }

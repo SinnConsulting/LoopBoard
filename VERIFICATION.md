@@ -102,9 +102,11 @@ questions, an HTML-comment template) and `index-unknown.md`:
   without showing; versions compare numerically (`3.10.0` > `3.9.0`).
 - `releaseNotesUrl`: the tag page for a one-version step (`3.25.0→3.25.1`, `3.25.3→3.26.0`,
   `3.26.2→4.0.0`), the releases list for a skip (`3.22.0→3.26.0`, `3.25.0→3.25.2`, …).
+- `describeWhatsNew`: exactly one `whats-new` line per activation; a failed globalState write says
+  `could not record …` and never "recorded".
 - No network: nothing in `src/` calls `fetch`, the shared CSP keeps `default-src 'none'` with no
   connect/frame source, and `media/whatsnew.css` holds no colour outside `var(--vscode-*)`. The live
-  tab is item 56 (untested).
+  tab is item 58 (untested).
 
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
@@ -1433,28 +1435,39 @@ and likewise cannot be verified headless.
       (30 s) and no warning appears when its time would have come.
     - **Schedule cancelled:** arm a repeating `restart` from the ♻ right-click popover, then let the
       idle stop fire → `restart-cancel <slot> (idle stop)` and no restart afterwards.
-56. **What's New tab after an update (t-f070) — UNTESTED in the live webview:** the decision and
-    the link are unit-tested in `test/whatsnew.test.js` (first install, same version, upgrade on/off,
-    downgrade, unparseable, `3.10.0` > `3.9.0`, tag page vs releases list, no `fetch` in `src/`, the
-    shared CSP, theme-variable-only CSS); the tab, the globalState write, the tick and the browser
-    hand-off are host/webview only. With `loopBoard.debug` = `info`, using installed `.vsix` builds
-    (or F5 after editing `package.json`'s `version`), in a window with a LoopBoard workspace:
-    - **Opens once:** install an older `.vsix` (e.g. `3.25.0`), reload, then install a newer one
-      (`3.26.0`) and reload → a **What's New in LoopBoard** tab opens showing `Updated to 3.26.0`
-      and `3.25.0 → 3.26.0`; `debug.log` has `whats-new upgrade 3.25.0 → 3.26.0 — opened tab
-      (https://github.com/SinnConsulting/LoopBoard/releases/tag/v3.26.0)`. Reload again → no tab,
-      `whats-new same version 3.26.0`.
+58. **What's New tab after an update (t-f070) — UNTESTED in the live webview:** numbered 58 because
+    open PRs claim items 53, 56 and 57. The decision, the link and the `whats-new` line are
+    unit-tested in `test/whatsnew.test.js` (first install, same version, upgrade on/off, downgrade,
+    unparseable, `3.10.0` > `3.9.0`, tag page vs releases list, a failed record, no `fetch` in
+    `src/`, the shared CSP, theme-variable-only CSS); the tab, the globalState write, the tick and
+    the browser hand-off are host/webview only.
+    **Both builds must contain t-f070.** A build without it (every release up to 3.26.0) never
+    records a last-seen version, so updating FROM one reads as a first install and opens nothing —
+    an old `.vsix` followed by a new one proves nothing. Use this branch's code at two versions:
+    F5, editing `package.json`'s `version` and restarting the debug session between runs (never
+    commit the edit), or two `.vsix` files built with `make package` from this branch at those two
+    versions. The steps use `3.24.1` → `3.25.0` because both tag pages already exist on GitHub. Run
+    with `loopBoard.debug` = `info` in a window with a LoopBoard workspace:
+    - **Fresh install:** the first run of a t-f070 build on a profile (a new VS Code profile if this
+      one already ran it) at `3.24.1` → nothing opens, `whats-new first install — recorded 3.24.1`.
+    - **Opens once:** switch to `3.25.0` → a **What's New in LoopBoard** tab opens showing
+      `Updated to 3.25.0` and `3.24.1 → 3.25.0`; `debug.log` has `whats-new upgrade 3.24.1 → 3.25.0
+      — opened tab (https://github.com/SinnConsulting/LoopBoard/releases/tag/v3.25.0); recorded
+      3.25.0`. Reload the window → no tab, `whats-new same version 3.25.0`.
     - **Themed:** switch between a light, a dark and a high-contrast theme with the tab open → every
       colour follows the theme; the page reads as the settings page's sibling (card, primary button,
       footer tick), not a bare link.
-    - **Link:** click **Open the release notes** → the browser opens the tag's release page;
-      `whats-new-link <url>` at info. Skipping versions (`3.22.0` → `3.26.0`) instead shows **Open all
-      release notes** and opens `https://github.com/SinnConsulting/LoopBoard/releases`.
+    - **Link:** click **Open the release notes** → the browser opens the v3.25.0 release page;
+      `whats-new-link https://…/releases/tag/v3.25.0 — opened` at info.
+    - **Skipped versions:** set the version back to `3.22.0` (logs `whats-new downgrade 3.25.0 →
+      3.22.0 — not shown; recorded 3.22.0`, nothing opens), then to `3.26.0` → the tab reads
+      `3.22.0 → 3.26.0`, the lead says releases were skipped, the button reads **Open all release
+      notes** and opens `https://github.com/SinnConsulting/LoopBoard/releases`.
+    - **Settings link:** the footer's **LoopBoard settings** link opens (or reveals) the LoopBoard
+      settings page.
     - **Tick:** tick **Don't show this again after future updates** → `loopBoard.showWhatsNew` is
       `false` in the USER `settings.json` (Global) and the settings page's switch is off;
       `whats-new-optout ticked — …` at info. Untick → the key is removed again.
-    - **Setting off:** with the setting off, upgrade again → nothing opens, `whats-new upgrade … —
-      setting off, not shown`. Turning it back on afterwards does not replay that update.
-    - **Fresh install:** on a profile that never ran LoopBoard (no stored version) → nothing opens,
-      `whats-new first install — recorded <version>`. A downgrade → nothing opens, `whats-new
-      downgrade … — recorded, not shown`.
+    - **Setting off:** with the setting off, raise the version once more (e.g. `3.26.1`) → nothing
+      opens, `whats-new upgrade 3.26.0 → 3.26.1 — setting off, not shown; recorded 3.26.1`. Turning
+      the setting back on and reloading does not replay that update (`same version 3.26.1`).

@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  RELEASES_URL, parseVersion, compareVersions, isOneStep, releaseNotesUrl, decideWhatsNew,
+  RELEASES_URL, parseVersion, compareVersions, isOneStep, releaseNotesUrl, decideWhatsNew, describeWhatsNew,
 } = require('../out-test/whatsnew.js');
 
 const root = path.resolve(__dirname, '..');
@@ -22,7 +22,7 @@ test('first install: nothing shown, the running version recorded', () => {
     assert.equal(d.kind, 'first-install');
     assert.equal(d.show, false);
     assert.equal(d.record, true);
-    assert.match(d.reason, /first install — recorded 3\.26\.0/);
+    assert.equal(describeWhatsNew(d), 'first install — recorded 3.26.0');
   }
 });
 
@@ -41,7 +41,7 @@ test('upgrade with the setting on: shown and recorded', () => {
   assert.equal(d.show, true);
   assert.equal(d.record, true);
   assert.equal(d.url, TAG('3.26.0'));
-  assert.match(d.reason, /upgrade 3\.25\.0 → 3\.26\.0/);
+  assert.equal(describeWhatsNew(d), `upgrade 3.25.0 → 3.26.0 — opened tab (${TAG('3.26.0')}); recorded 3.26.0`);
 });
 
 test('upgrade with the setting off: not shown, still recorded so a later opt-in never replays it', () => {
@@ -49,7 +49,26 @@ test('upgrade with the setting off: not shown, still recorded so a later opt-in 
   assert.equal(d.kind, 'upgrade');
   assert.equal(d.show, false);
   assert.equal(d.record, true);
-  assert.match(d.reason, /setting off, not shown/);
+  assert.equal(describeWhatsNew(d), 'upgrade 3.25.0 → 3.26.0 — setting off, not shown; recorded 3.26.0');
+});
+
+test('the whats-new line: one line per activation, and a failed record is named, never "recorded"', () => {
+  assert.equal(describeWhatsNew(decideWhatsNew('3.26.0', '3.26.0', true)), 'same version 3.26.0');
+  assert.equal(describeWhatsNew(decideWhatsNew('3.26.0', '3.25.1', true)), 'downgrade 3.26.0 → 3.25.1 — not shown; recorded 3.25.1');
+  assert.match(describeWhatsNew(decideWhatsNew('junk', '3.26.0', true)), /^unparseable version \(last seen "junk", running "3\.26\.0"\) — not shown; recorded 3\.26\.0$/);
+
+  const err = 'disk full';
+  const cases = [
+    [decideWhatsNew(undefined, '3.26.0', true), 'first install — not shown; could not record 3.26.0 (disk full)'],
+    [decideWhatsNew('3.25.0', '3.26.0', true), `upgrade 3.25.0 → 3.26.0 — opened tab (${TAG('3.26.0')}); could not record 3.26.0 (disk full), so it opens again on the next load`],
+    [decideWhatsNew('3.25.0', '3.26.0', false), 'upgrade 3.25.0 → 3.26.0 — setting off, not shown; could not record 3.26.0 (disk full)'],
+    [decideWhatsNew('3.26.0', '3.25.1', true), 'downgrade 3.26.0 → 3.25.1 — not shown; could not record 3.25.1 (disk full)'],
+  ];
+  for (const [d, line] of cases) {
+    const out = describeWhatsNew(d, err);
+    assert.equal(out, line);
+    assert.ok(!/\brecorded\b/.test(out), `a failed write must not claim "recorded": ${out}`);
+  }
 });
 
 test('downgrade: not shown, recorded', () => {

@@ -32,7 +32,7 @@ import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge,
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
 import { ContextAction, describeContext, describeThreshold, isStaleSession, sanitizeContextAction, sanitizeContextPercent, shouldClearTrip, shouldTrip } from './context';
 import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
-import { decideWhatsNew, RELEASES_URL } from './whatsnew';
+import { decideWhatsNew, describeWhatsNew, RELEASES_URL } from './whatsnew';
 import { WhatsNewPanel } from './whatsnewpanel';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
@@ -1724,18 +1724,22 @@ export class Controller {
     const lastSeen = this.globalState.get<unknown>(WHATS_NEW_LAST_SEEN_KEY);
     const settingOn = vscode.workspace.getConfiguration('loopBoard').get<boolean>('showWhatsNew', true);
     const decision = decideWhatsNew(lastSeen, current, settingOn);
+    // A failed write is carried into the ONE line below (describeWhatsNew), never logged beside a
+    // line that still claims "recorded".
+    let recordError: string | undefined;
     if (decision.record) {
       try {
         await this.globalState.update(WHATS_NEW_LAST_SEEN_KEY, current);
       } catch (err) {
-        log(`could not record ${current} — ${err instanceof Error ? err.message : String(err)}`);
+        recordError = err instanceof Error ? err.message : String(err);
       }
     }
-    if (!decision.show || !decision.url) return log(decision.reason);
-    this.whatsNew = { previous: String(lastSeen), current, url: decision.url };
-    log(`${decision.reason} — opened tab (${decision.url})`);
-    const panel = WhatsNewPanel.show(this.extensionUri);
-    panel.onMessage((msg) => void this.onWhatsNewMessage(msg));
+    if (decision.show && decision.url) {
+      this.whatsNew = { previous: String(lastSeen), current, url: decision.url };
+      const panel = WhatsNewPanel.show(this.extensionUri);
+      panel.onMessage((msg) => void this.onWhatsNewMessage(msg));
+    }
+    log(describeWhatsNew(decision, recordError));
   }
 
   private async onWhatsNewMessage(msg: any): Promise<void> {
@@ -1754,8 +1758,13 @@ export class Controller {
       }
       case 'whatsNewOpen': {
         if (!info) return;
-        this.store.debugLog('info', 'whats-new-link', info.url);
-        void vscode.env.openExternal(vscode.Uri.parse(info.url));
+        // One line with the outcome: openExternal resolves false when no handler took the URL (as
+        // the board's openLink surfaces), and a rejection is a failure, not an open.
+        const link = (outcome: string) => this.store.debugLog('info', 'whats-new-link', `${info.url} — ${outcome}`);
+        void vscode.env.openExternal(vscode.Uri.parse(info.url)).then(
+          (opened) => link(opened ? 'opened' : 'not opened (no handler took it)'),
+          (err) => link(`failed — ${err instanceof Error ? err.message : String(err)}`)
+        );
         return;
       }
       case 'whatsNewOptOut': {
