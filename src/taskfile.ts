@@ -8,7 +8,9 @@
 // nor their bullet shape, so a Goals section written as prose still round-trips; "short and
 // factual" / "a bullet list" is LOOP.md rule text, not a grammar. Unknown headings/keys
 // (including a legacy `## Feedback` section — feedback now lives in the index, not migrated) are
-// preserved verbatim and flagged. Fixpoint: serializeTaskFile(parseTaskFile(x)) is idempotent.
+// preserved verbatim and flagged. Inside Problem, Description and Goals an unknown `## ` line is
+// story text and stays in place; only a known heading ends those three (t-c4d1, not fence-aware).
+// Fixpoint: serializeTaskFile(parseTaskFile(x)) is idempotent.
 
 import { TaskDetail } from './model';
 
@@ -43,6 +45,31 @@ function trimBlankEdges(lines: string[]): string[] {
   return out;
 }
 
+// The six headings the writer emits, and the three free-markdown story sections among them.
+const KNOWN_SECTIONS = ['meta', 'problem', 'description', 'goals', 'worklog', 'delivered'];
+const STORY_SECTIONS = ['problem', 'description', 'goals'];
+
+// `## Goals `, `##  goals` → `goals`: case-insensitive, surrounding spaces ignored.
+function headingName(line: string): string {
+  return line.replace(/^##\s+/, '').trim().toLowerCase();
+}
+
+// The New Story composer's copy for a fresh draft's ## Description (t-c4d1). The draft title is the
+// text flattened to one line; a text with more than one line is also kept here verbatim, so a
+// pasted list or paragraph break survives. Pending-attachment placeholders
+// (`[name](loopboard-pending:N)`, only ever rewritten in the title) and `.loopboard/cache/` links
+// (they stay in the title, and a second copy would draw a second chip) are stripped; blank edge
+// lines are trimmed, inner blank lines and indentation stay. Returns undefined — no copy — when
+// what is left is a single line (the title already says it) or nothing at all.
+export function draftDescription(text: string): string | undefined {
+  const stripped = String(text)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]*\[[^\]\n]*\]\(loopboard-pending:[^)\s]*\)/g, '')
+    .replace(/[ \t]*\[[^\]\n]*\]\(\.loopboard\/cache\/[^)\s]*\)/g, '');
+  const lines = trimBlankEdges(stripped.split('\n'));
+  return lines.length > 1 ? lines.join('\n') : undefined;
+}
+
 export function parseTaskFile(text: string): TaskDetail {
   const detail = emptyDetail(text);
   const lines = text.split('\n');
@@ -54,10 +81,13 @@ export function parseTaskFile(text: string): TaskDetail {
 
   while (i < lines.length) {
     const heading = lines[i];
-    const name = heading.replace(/^##\s+/, '').trim().toLowerCase();
+    const name = headingName(heading);
     const body: string[] = [];
+    // The three story sections are free markdown (t-c4d1): a `## ` line inside them is story text,
+    // and only one of the six known headings ends them. Every other section ends at any `## `.
+    const story = STORY_SECTIONS.includes(name);
     i++;
-    while (i < lines.length && !/^##\s+/.test(lines[i])) {
+    while (i < lines.length && !(/^##\s+/.test(lines[i]) && (!story || KNOWN_SECTIONS.includes(headingName(lines[i]))))) {
       body.push(lines[i]);
       i++;
     }

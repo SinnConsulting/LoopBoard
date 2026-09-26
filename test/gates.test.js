@@ -98,3 +98,26 @@ test('promoteIndexIfReady: refuses (entry unchanged, conflict) unless still read
   assert.deepEqual(ready, expected, 'same result as promoteIndex');
   assert.equal(ready.phase, 'backlog');
 });
+
+// t-39e2 x t-c4d1 (merge): the auto-promote guard reads the entry the parser hands it, so a value the
+// single-line fold or the comment-opener rule keeps in the entry must still hold the arm.
+test('promoteIndexIfReady: a feedback: item or answer containing <!-- still refuses, and a folded multi-line DRAFT title stays a DRAFT', () => {
+  const { promoteIndexIfReady } = require('../out-test/gates.js');
+  const { applyPatch } = require('../out-test/merge.js');
+  const { serializeTodo } = require('../out-test/writer.js');
+  const index = (body) => ['# TODO', '', '## Tasks', '', ...body, '', '- [ ] Later', '  - id: t-9', '  - phase: new', ''].join('\n');
+  const fb = parseTodo(index(['- [ ] Story', '  - id: t-2', '  - phase: new', '  - feedback: keep the <!-- marker']))
+    .entries.find((e) => e.id === 't-2');
+  assert.deepEqual(fb.feedback, ['keep the <!-- marker']);
+  assert.equal(promoteIndexIfReady(fb), 'conflict', 'feedback with the opener still holds');
+  const qa = parseTodo(index(['- [ ] Story', '  - id: t-2', '  - phase: new', '  - question: Q?', '    - answer: use <!-- this']))
+    .entries.find((e) => e.id === 't-2');
+  assert.equal(qa.questions.length, 1);
+  assert.equal(promoteIndexIfReady(qa), 'conflict', 'an unfolded answer with the opener still holds');
+  const doc = parseTodo(readFix('index-full.md'));
+  const draft = doc.entries.find((e) => e.id === 't-aa02');
+  assert.equal(applyPatch(doc, { taskId: 't-aa02', field: 'title', value: 'DRAFT:\n- [ ] phantom', base: draft.title }).status, 'applied');
+  const back = parseTodo(serializeTodo(doc)).entries.find((e) => e.id === 't-aa02');
+  assert.equal(back.isDraft, true);
+  assert.equal(promoteIndexIfReady(back), 'conflict', 'a folded DRAFT is still held');
+});
