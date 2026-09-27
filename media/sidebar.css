@@ -183,3 +183,45 @@ body {
 .btn-sm.primary { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #ffffff); }
 .btn-sm.secondary { background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #cccccc); }
 .btn-sm:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+
+/* ---- show some love (t-b6fa) ---- */
+/* The thank-you card above the links block. Its three links stack in ONE column and their labels
+   may wrap, so none clips at VS Code's 170 px minimum sidebar width. Theme variables only. */
+.love-card {
+  margin: 0 8px 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-widget-border, #454545); border-radius: 6px;
+}
+.love-head { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; font-weight: 600; line-height: 1.35; }
+.love-heart { flex-shrink: 0; font-size: 14px; margin-top: 1px; color: var(--vscode-charts-red, #f14c4c); }
+.love-title { min-width: 0; overflow-wrap: anywhere; }
+.love-text { font-size: 12px; line-height: 1.4; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.love-links { display: flex; flex-direction: column; gap: 4px; }
+.love-link {
+  width: 100%; min-height: 28px; display: flex; align-items: center; gap: 6px; padding: 4px 8px; text-align: left;
+  font: inherit; font-size: 12px; line-height: 1.3; border: none; border-radius: 4px; cursor: pointer;
+  background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #cccccc);
+}
+.love-link:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground, #45494e)); }
+.love-link:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+.love-link .codicon { flex-shrink: 0; font-size: 14px; }
+.love-link-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.love-link .love-ext { font-size: 11px; opacity: 0.7; }
+.love-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; font-size: 12px; }
+.love-foot-btn { color: var(--vscode-descriptionForeground, #9d9d9d); }
+@media (max-width: 200px) { .love-card { margin-left: 4px; margin-right: 4px; padding: 8px; } .love-link { padding: 4px 6px; } }
+/* The one-shot burst: appended to <body>, outside #root, at the card's heart (sidebar.js). */
+.love-burst { position: fixed; width: 0; height: 0; pointer-events: none; z-index: 20; }
+.love-bit {
+  position: absolute; left: -7px; top: -7px; font-size: 14px; opacity: 0;
+  animation: love-burst 1100ms ease-out 1 both;
+}
+.love-bit-0 { color: var(--vscode-charts-red, #f14c4c); }
+.love-bit-1 { color: var(--vscode-charts-yellow, #cca700); }
+.love-bit-2 { color: var(--vscode-charts-purple, #b180d7); }
+@keyframes love-burst {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx, 0), var(--dy, -40px)) scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) { .love-burst, .love-bit { animation: none !important; display: none; } }

@@ -397,6 +397,9 @@
     }
 
     sb.append(h('div', { class: 'spacer' }));
+    // Show some love (t-b6fa): the thank-you card, directly above the links block.
+    const burst = takeLoveBurst(board.love);
+    if (board.love) sb.append(loveCard(board.love));
     // What's new? | Settings | Help — one line (t-f070 review). sidebar.css drops Help (and the bar
     // before it) first when the sidebar is too narrow for all three.
     sb.append(h('div', { class: 'open-wrap' },
@@ -409,6 +412,80 @@
       board.todoMissing ? null : h('button', { class: 'btn-primary', type: 'button', onclick: () => vscode.postMessage({ type: 'reveal', phase: 'new', composer: true }) }, 'New Story')));
     paint(root, sb);
     setupMarquees();
+    if (burst) playLoveBurst();
+  }
+
+  // ---- show some love (t-b6fa) ----
+  // The card posts a choice KEY only; the host maps it to its own URL (never `openLink`, never a URL
+  // from here). `love` = { count, final, onDemand } from the host.
+  function loveCard(love) {
+    const choose = (choice) => () => vscode.postMessage({ type: 'love', choice: choice });
+    const link = (choice, name, label) => h('button', { class: 'love-link', type: 'button', onclick: choose(choice) },
+      h('span', { class: 'codicon codicon-' + name, 'aria-hidden': 'true' }),
+      h('span', { class: 'love-link-label' }, label),
+      h('span', { class: 'codicon codicon-link-external love-ext', 'aria-hidden': 'true' }));
+    const foot = (choice, label) => h('button', { class: 'sb-link love-foot-btn', type: 'button', onclick: choose(choice) }, label);
+    const counted = love.count > 0;
+    const headline = counted
+      ? "You've shipped " + love.count + (love.count === 1 ? ' task' : ' tasks') + ' with LoopBoard.'
+      : 'Thanks for using LoopBoard!';
+    const text = (counted ? 'Thank you! ' : '') + 'If it saves you time, a little love helps other people find it.';
+    // First card: Maybe later · No thanks. Final card (after one snooze): No thanks only. On demand: Close.
+    const footer = love.onDemand ? [foot('close', 'Close')]
+      : love.final ? [foot('nothanks', 'No thanks')]
+      : [foot('later', 'Maybe later'), h('span', { class: 'sb-sep', 'aria-hidden': 'true' }, '·'), foot('nothanks', 'No thanks')];
+    return h('div', { class: 'love-card', role: 'region', 'aria-label': 'Show some love' },
+      h('div', { class: 'love-head' },
+        h('span', { class: 'codicon codicon-heart-filled love-heart', 'aria-hidden': 'true' }),
+        h('span', { class: 'love-title' }, headline)),
+      h('div', { class: 'love-text' }, text),
+      h('div', { class: 'love-links' },
+        link('github', 'github', 'Star on GitHub'),
+        link('marketplace', 'star-full', 'Rate on the Marketplace'),
+        link('reddit', 'comment-discussion', 'Say hi on r/LoopBoard')),
+      h('div', { class: 'love-foot' }, footer));
+  }
+
+  // The burst's ONE-SHOT flag: which showing ('first' | 'final' | 'ondemand') already played it. The
+  // card's buttons are wired, so paint() rebuilds them on every repaint (and the count is in the
+  // markup), so the burst is never tied to the card's own nodes: it plays when a showing starts and
+  // never again for that showing — not on a repaint, not on a count change. Kept in the webview state
+  // too, so the sidebar being hidden and re-shown does not replay it. No card resets it.
+  let loveBurstFor = (vscode.getState() || {}).loveBurstFor || null;
+  function takeLoveBurst(love) {
+    const key = love ? (love.onDemand ? 'ondemand' : love.final ? 'final' : 'first') : null;
+    if (key === loveBurstFor) return false;
+    loveBurstFor = key;
+    vscode.setState(Object.assign({}, vscode.getState() || {}, { loveBurstFor: key }));
+    return key !== null;
+  }
+
+  // Hearts, stars and sparkles flying out of the card's heart, once. Appended to <body>, OUTSIDE
+  // #root, so paint() never touches (and so never replays or cuts short) it; it removes itself. The
+  // `prefers-reduced-motion: reduce` rule in sidebar.css turns it off entirely.
+  const LOVE_BURST = [
+    ['heart-filled', -34, -30], ['sparkle', 30, -36], ['star-full', 42, -6], ['heart-filled', 20, -48],
+    ['sparkle', -46, -8], ['star-full', -18, -52], ['heart-filled', 4, -40],
+  ];
+  const LOVE_BURST_MS = 1600;
+  function playLoveBurst() {
+    requestAnimationFrame(() => {
+      const heart = document.querySelector('.love-card .love-heart');
+      if (!heart) return;
+      const r = heart.getBoundingClientRect();
+      const box = h('div', { class: 'love-burst', 'aria-hidden': 'true' });
+      box.style.left = (r.left + r.width / 2) + 'px';
+      box.style.top = (r.top + r.height / 2) + 'px';
+      LOVE_BURST.forEach(([name, dx, dy], i) => {
+        const bit = h('span', { class: 'codicon codicon-' + name + ' love-bit love-bit-' + (i % 3) });
+        bit.style.setProperty('--dx', dx + 'px');
+        bit.style.setProperty('--dy', dy + 'px');
+        bit.style.animationDelay = (i * 60) + 'ms';
+        box.append(bit);
+      });
+      document.body.append(box);
+      setTimeout(() => box.remove(), LOVE_BURST_MS);
+    });
   }
 
   // Swap `node` into `root` without replacing any live element whose markup is unchanged. A wired

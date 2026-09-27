@@ -35,6 +35,10 @@ import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
 import { currentReleaseUrl, decideWhatsNew, describeWhatsNew, describeWhatsNewOnDemand, RELEASES_URL, WhatsNewSource } from './whatsnew';
 import { WhatsNewPanel } from './whatsnewpanel';
 import { describeRevealTiming, RevealTiming, revealTiming } from './reveal';
+import {
+  decideLove, describeLove, describeLoveChoice, describeLoveLink, describeLoveOpen, loveCardOf, loveCount,
+  loveView, parseLoveState, planLoveChoice, serializeLoveState,
+} from './love';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -72,6 +76,10 @@ const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
 // The extension version the What's New check last saw (t-f070). globalState, not workspaceState:
 // "I have seen this version" is per user profile and shared by every window.
 const WHATS_NEW_LAST_SEEN_KEY = 'loopboard.whatsNew.lastSeenVersion';
+// Show some love (t-b6fa): tasks accepted on the board, and the card's state (fresh / snoozed until a
+// count / ended). globalState, per profile — never `.loopboard/`, which a cloned repo shares.
+const LOVE_COUNT_KEY = 'loopboard.love.accepted';
+const LOVE_STATE_KEY = 'loopboard.love.state';
 // DEAD KEY, kept only to be deleted. An earlier build of the migration panel could not remove
 // `loopBoard.delegateWork.review` (it is unreadable behind its scalar parent) and instead asked the
 // user to confirm they had dealt with it by hand, remembering that here. The removal turned out to
@@ -178,6 +186,8 @@ export class Controller {
   // What the open What's New tab shows (t-f070): set when the activation check or an on-demand open
   // (no `previous`) opens it. The link the tab opens is THIS url, never one the webview sends back.
   private whatsNew: { previous?: string; current?: string; url: string } | undefined;
+  // The `loopBoard.showLove` command's card (t-b6fa). SESSION-ONLY: Close or a link drops it.
+  private loveOnDemand = false;
 
   constructor(
     private extensionUri: vscode.Uri,
@@ -316,6 +326,11 @@ export class Controller {
     const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel, new Set(this.autoPromoteArms.keys()));
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
+    web.love = loveView(
+      loveCount(this.globalState.get<unknown>(LOVE_COUNT_KEY)),
+      parseLoveState(this.globalState.get<unknown>(LOVE_STATE_KEY)),
+      this.loveOnDemand
+    );
     web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
     web.sidebarMarquee = cfg.sidebarMarquee;
     return web;
@@ -1325,6 +1340,9 @@ export class Controller {
       case 'whatsNew':
         // The sidebar's "What's new?" link (t-f070 review).
         return this.showWhatsNew('sidebar');
+      case 'love':
+        // The sidebar's "Show some love" card (t-b6fa): a choice KEY only, never a URL.
+        return this.onLoveChoice(msg.choice);
       case 'openNativeSettings':
         // The escape hatch t-set1's gear used to be. Settings search and JSON editing are NOT
         // reproduced on LoopBoard's own page — this covers both.
@@ -1823,6 +1841,59 @@ export class Controller {
     }
   }
 
+  // ---- Show some love (t-b6fa) ----
+
+  // One applied board accept: count it, then log what the card will do at that count. The card itself
+  // appears through the refresh onGate runs next (buildWebBoard reads the same two keys).
+  private async countLoveAccept(): Promise<void> {
+    const count = loveCount(this.globalState.get<unknown>(LOVE_COUNT_KEY)) + 1;
+    let countError: string | undefined;
+    try {
+      await this.globalState.update(LOVE_COUNT_KEY, count);
+    } catch (err) {
+      countError = err instanceof Error ? err.message : String(err);
+    }
+    const decision = decideLove(count, parseLoveState(this.globalState.get<unknown>(LOVE_STATE_KEY)));
+    this.store.debugLog('info', 'love', describeLove(count, decision, countError));
+  }
+
+  // The `loopBoard.showLove` command. Neither reads nor writes the counter or the state, so it can
+  // neither use up nor replay the automatic card: it only raises the session flag and reveals the view.
+  showLove(): void {
+    this.loveOnDemand = true;
+    this.store.debugLog('info', 'love-open', describeLoveOpen());
+    void vscode.commands.executeCommand(`${SidebarProvider.viewId}.focus`);
+    void (this.lastBoard ? this.postBoard() : this.refresh('love-open'));
+  }
+
+  // A choice on the card. The pure planLoveChoice decides everything from the key and the card showing;
+  // this writes the state (automatic card only), drops the session flag, opens the host's own URL and logs.
+  private async onLoveChoice(choice: unknown): Promise<void> {
+    const count = loveCount(this.globalState.get<unknown>(LOVE_COUNT_KEY));
+    const state = parseLoveState(this.globalState.get<unknown>(LOVE_STATE_KEY));
+    const plan = planLoveChoice(loveCardOf(count, state, this.loveOnDemand), state, choice, count);
+    let writeError: string | undefined;
+    if (plan.write) {
+      try {
+        await this.globalState.update(LOVE_STATE_KEY, serializeLoveState(plan.write));
+      } catch (err) {
+        writeError = err instanceof Error ? err.message : String(err);
+      }
+    }
+    if (plan.hide) this.loveOnDemand = false;
+    this.store.debugLog('info', 'love-choice', describeLoveChoice(plan, writeError));
+    const url = plan.url;
+    if (url) {
+      const link = (outcome: { opened: boolean } | { error: string }) =>
+        this.store.debugLog('info', 'love-link', describeLoveLink(url, outcome));
+      void vscode.env.openExternal(vscode.Uri.parse(url)).then(
+        (opened) => link({ opened }),
+        (err) => link({ error: err instanceof Error ? err.message : String(err) })
+      );
+    }
+    if (plan.write || plan.hide) await this.postBoard();
+  }
+
   // Scaffold a fresh `.loopboard/` workspace (TODO.md + LOOP.md + tasks/). Wired to both the
   // board's empty-state button (`createFiles` message) and the `loopboard.init` command. When
   // `.loopboard/` already has files, offer the same sync/migrate flow as the explicit button
@@ -1900,8 +1971,10 @@ export class Controller {
       // optimistically faded on click (board.js:473) — unlike confirmDelete, which never fades.
     } else if (action === 'accept') {
       const r = await this.store.acceptToDone(taskId, today());
-      if (r.status === 'applied') this.toast('success', 'Accepted — archived to DONE.md', undefined, 'check');
-      else this.toast('warning', 'Could not accept — the task was not found on disk.');
+      if (r.status === 'applied') {
+        this.toast('success', 'Accepted — archived to DONE.md', undefined, 'check');
+        await this.countLoveAccept();
+      } else this.toast('warning', 'Could not accept — the task was not found on disk.');
     } else if (action === 'demote') {
       const r = await this.store.demote(taskId, today());
       if (r.status === 'conflict') this.toast('warning', 'Task is no longer in Backlog — the board was refreshed.', taskId);
