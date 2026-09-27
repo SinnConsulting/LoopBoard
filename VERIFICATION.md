@@ -108,6 +108,13 @@ questions, an HTML-comment template) and `index-unknown.md`:
   connect/frame source, and `media/whatsnew.css` holds no colour outside `var(--vscode-*)`. The live
   tab is item 58 (untested).
 
+### Sidebar reveal timing — `test/reveal.test.js` (t-7440)
+- `revealTiming`: a new panel and an existing hidden panel defer the reveal to the webview's
+  `ready`; only an existing visible panel posts it now. `describeRevealTiming` gives the verbose
+  `board-reveal` line (`posted now` / `deferred to ready` + reason). The controller's routing and
+  `BoardPanel.show` reading `panel.visible` before `reveal()` are pinned over the source text; the
+  live first click is item 62 (untested).
+
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
   `.loopboard/LOOP.md`, is a single apostrophe-free line < 300 chars.
@@ -1530,3 +1537,15 @@ and likewise cannot be verified headless.
       and saves nothing.
     - **Save**, **Save All**, **⌘S** and **Enter** (answer, DRAFT) still write, and **Escape**
       still discards.
+
+62. **Sidebar New Story opens the composer on the first click (t-7440) — UNTESTED in the live
+    webview:** the post-now/defer decision and the controller's routing are pinned by
+    `test/reveal.test.js`; whether the rebuilt webview receives the reveal is webview-only. Set
+    `loopBoard.debug` to `verbose` and keep `.loopboard/debug.log` open.
+    - With the board (a) closed, (b) open but hidden behind another editor tab, and (c) open and
+      visible, ONE click on the sidebar's **New Story** opens the board on the New tab with the
+      composer open and its textarea focused. The log shows `board-reveal` with
+      `deferred to ready (new panel)`, `deferred to ready (hidden panel)` and
+      `posted now (visible panel)` respectively.
+    - In (b), a sidebar phase row (e.g. Review) also lands the board on that tab on the first
+      click.

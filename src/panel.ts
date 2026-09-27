@@ -39,13 +39,16 @@ export class BoardPanel {
 
   // `created` is true only when a fresh panel was constructed — its webview script hasn't loaded
   // yet, so callers must NOT post into it immediately (wait for the webview's `ready` message).
-  static show(extensionUri: vscode.Uri): { panel: BoardPanel; created: boolean } {
+  // `wasVisible` is read BEFORE `reveal()` (t-7440): a hidden panel's webview is rebuilt by the
+  // reveal (`retainContextWhenHidden: false`), so it is not live either.
+  static show(extensionUri: vscode.Uri): { panel: BoardPanel; created: boolean; wasVisible: boolean } {
     if (BoardPanel.current) {
+      const wasVisible = BoardPanel.current.panel.visible;
       BoardPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      return { panel: BoardPanel.current, created: false };
+      return { panel: BoardPanel.current, created: false, wasVisible };
     }
     BoardPanel.current = new BoardPanel(extensionUri);
-    return { panel: BoardPanel.current, created: true };
+    return { panel: BoardPanel.current, created: true, wasVisible: false };
   }
 
   onMessage(handler: (msg: InboundMessage) => void): void {

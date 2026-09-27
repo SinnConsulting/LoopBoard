@@ -34,6 +34,7 @@ import { ContextAction, describeContext, describeThreshold, isStaleSession, sani
 import { AutoPromoteArm, createArm, evaluateArm } from './autopromote';
 import { currentReleaseUrl, decideWhatsNew, describeWhatsNew, describeWhatsNewOnDemand, RELEASES_URL, WhatsNewSource } from './whatsnew';
 import { WhatsNewPanel } from './whatsnewpanel';
+import { describeRevealTiming, RevealTiming, revealTiming } from './reveal';
 
 // How often each running loop's transcript is re-measured (t-2b89). A stat() short-circuits every
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
@@ -350,12 +351,13 @@ export class Controller {
     this.sidebar.setBadge(web.badge);
   }
 
-  // Returns true if a fresh panel was created (its webview isn't ready to receive posts yet).
-  openBoard(): boolean {
-    const { panel, created } = BoardPanel.show(this.extensionUri);
+  // Returns whether a message can be posted into the board right away (t-7440): not for a fresh
+  // panel, and not for a hidden one whose webview the reveal is rebuilding.
+  openBoard(): RevealTiming {
+    const { panel, created, wasVisible } = BoardPanel.show(this.extensionUri);
     panel.onMessage((msg) => this.handleMessage(msg));
     // The webview sends 'ready' once loaded; that handler posts the board (and flushes any reveal).
-    return created;
+    return revealTiming(created, wasVisible);
   }
 
   private flushReveal(): void {
@@ -1349,11 +1351,16 @@ export class Controller {
         // present string INCLUDING '' installs a view (an empty view suppresses the typed filter so
         // an attention row's tab shows exactly the count it advertises). Never coerce '' away.
         this.pendingReveal = { taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer, search: msg.search };
-        // Flush inline only if the panel already existed (its webview is live). If openBoard just
-        // created the panel, the webview's message listener isn't attached yet — posting now would
-        // drop the reveal and the board would open on the default tab (the first-click bug). Leave
-        // pendingReveal for the webview's `ready` handler, which flushes it after the board is sent.
-        if (!this.openBoard()) this.flushReveal();
+        // Flush inline only if the panel was already visible (its webview is live). A new panel,
+        // or a hidden one (t-7440: `retainContextWhenHidden: false`, so the reveal rebuilds its
+        // webview), has no message listener yet — posting now would drop the reveal and the board
+        // would open on its saved tab (the first-click bug). Leave pendingReveal for the webview's
+        // `ready` handler, which flushes it after the board is sent.
+        {
+          const timing = this.openBoard();
+          this.store.debugLog('verbose', 'board-reveal', describeRevealTiming(timing));
+          if (timing.postNow) this.flushReveal();
+        }
         return;
     }
   }
