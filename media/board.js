@@ -669,6 +669,8 @@
     const activeField = captureActiveField();
     // A toast button that currently HOLDS its toast open is blurred by the wipe too (t-7905).
     const activeToastBtn = captureActiveToastBtn();
+    // The renderers below re-register every editor still open (t-e347).
+    cleanCloses = [];
     root.textContent = '';
     if (!board) {
       root.append(h('div', { class: 'pane-inner muted' }, 'Loading…'));
@@ -774,17 +776,64 @@
   // captureActiveField() finds nothing to recapture.
   //
   // Where there is a Save button there is no auto-save (t-4877, reverses t-471a's click-outside
-  // commit): an open editor closes ONLY through Save, Cmd/Ctrl+S, Enter (single-line answer and
-  // DRAFT) or this Escape exit. A click outside it, a click into another editor, or folding its
-  // section does nothing — the editor stays open with its text (on the transient `ui` map) and an
-  // enabled Save, and several editors may be open at once. `container` (the editor being closed)
-  // is no longer read now the registry that used it is gone; every Escape exit still passes it,
-  // which test/board-review-feedback.test.js pins for the feedback composer.
+  // commit): an open editor saves ONLY through Save, Cmd/Ctrl+S or Enter (single-line answer and
+  // DRAFT), and Escape discards. A click outside an EDITED editor, a click into another editor, or
+  // folding its section does nothing — the editor stays open with its text (on the transient `ui`
+  // map) and an enabled Save, and several editors may be open at once. A click outside a CLEAN
+  // editor closes it without saving (t-e347, below). `container` (the editor being closed) is not
+  // read here; every Escape exit still passes it, which test/board-review-feedback.test.js pins for
+  // the feedback composer.
   function exitFieldEdit(clearFn, container) {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     clearFn();
     render();
   }
+
+  // ---- a click outside closes a CLEAN editor (t-e347; amends t-4877, still never saves) ----
+  // Each of the five card editors with a Save button registers here while it is open: its
+  // container, its own clean test (the very expression that keeps its Save disabled; the feedback
+  // composer's is openFeedbackComposer's "may be replaced without loss" test), a `close` that clears
+  // its editing flag and draft exactly as its Escape does, and a `swap` that puts its view back in
+  // place of the editor. One document-level capture-phase pointerdown closes every open editor that
+  // is clean and does not hold the target; an edited one is left alone (t-4877: open, text kept,
+  // Save enabled). Nothing here commits or posts. render() empties the registry before the
+  // renderers re-register, and an entry whose container is detached (a card repaint, or its own
+  // swap) is dropped. An answer row stays registered: it opens and closes in place, so its clean
+  // test also asks whether it is an answered row that is open.
+  //
+  // The state clears AT pointerdown, so the clicked element's own handler (a gate acts on
+  // pointerdown) already sees the editor closed, and a handler that repaints the board paints it
+  // closed. The DOM swap waits for the gesture to end — the next pointerup, then one task, i.e.
+  // after the click — so an editor shrinking above the target cannot shift it out from under the
+  // pointer mid-gesture (the click would then go to their common ancestor and be lost). A swap whose
+  // container a repaint already detached is skipped. Each swap replaces only its own editor's
+  // container, which by construction does not hold the target, so focus or an open dropdown there
+  // survives — the feedback composer alone swaps its card's feedback block (its edit composer
+  // stands in for an item row), a block that holds no other field. Tab and window switches close
+  // nothing: no blur/focusout hook anywhere.
+  let cleanCloses = [];
+  let cleanSwaps = [];
+  function registerCleanClose(container, isClean, close, swap) {
+    cleanCloses.push({ container, isClean, close, swap });
+  }
+  function runCleanSwaps() {
+    const swaps = cleanSwaps;
+    cleanSwaps = [];
+    swaps.forEach((ed) => { if (ed.container.isConnected) ed.swap(); });
+  }
+  document.addEventListener('pointerdown', (e) => {
+    cleanCloses = cleanCloses.filter((ed) => ed.container.isConnected);
+    const closing = cleanCloses.filter((ed) => !ed.container.contains(e.target) && ed.isClean());
+    if (!closing.length) return;
+    // Release focus from a closed editor (as its Escape does): a press that moves no focus — a
+    // scrollbar, a gate button's preventDefault — must not leave keys typing into it until the swap.
+    const active = document.activeElement;
+    if (active && active.blur && closing.some((ed) => ed.container.contains(active))) active.blur();
+    closing.forEach((ed) => ed.close());
+    // One armed gesture end at a time; a pointerup lost outside the webview runs on the next one.
+    if (!cleanSwaps.length) window.addEventListener('pointerup', () => setTimeout(runCleanSwaps, 0), { capture: true, once: true });
+    cleanSwaps = cleanSwaps.concat(closing.filter((ed) => cleanSwaps.indexOf(ed) < 0));
+  }, true);
 
   function renderSearchBar(shownCount, totalCount) {
     const input = h('input', {
@@ -1121,6 +1170,8 @@
     const u = getUi(t.id);
     const isCollapsedCard = isCollapsed(t.id);
     let textEl;
+    const draftView = () => h('button', { class: 'draft-text draft-text-btn', type: 'button', title: 'Click to edit',
+      onclick: () => { u.editingDraft = true; u.draftText = t.title; u.draftNeedsFocus = true; render(); } }, t.title);
     if (u.editingDraft) {
       const ta = h('textarea', { class: 'field draft-edit', rows: '2', 'aria-label': 'Edit draft text' });
       ta.value = u.draftText != null ? u.draftText : t.title;
@@ -1161,9 +1212,13 @@
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.draftNeedsFocus) { u.draftNeedsFocus = false; requestAnimationFrame(() => ta.focus()); }
+      // A click outside an UNCHANGED draft text closes it, saving nothing (t-e347); an edited one stays.
+      const draftEditor = textEl;
+      registerCleanClose(draftEditor, () => canonAnswer(ta.value) === t.title,
+        () => { u.editingDraft = false; u.draftText = null; },
+        () => draftEditor.replaceWith(draftView()));
     } else {
-      textEl = h('button', { class: 'draft-text draft-text-btn', type: 'button', title: 'Click to edit',
-        onclick: () => { u.editingDraft = true; u.draftText = t.title; u.draftNeedsFocus = true; render(); } }, t.title);
+      textEl = draftView();
     }
     // "Groom with" selector: which model expands this draft into a story (absent = default).
     const groomDefOpt = groomerDefaultOpt();
@@ -1530,6 +1585,7 @@
     head.append(h('span', { class: 'codicon codicon-project card-type-icon' }));
 
     const titleWrap = h('div', { class: 'card-title-wrap' });
+    const titleView = () => h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; u.titleNeedsFocus = true; render(); } }, t.title);
     if (u.editingTitle) {
       const input = h('input', { class: 'card-title-input', type: 'text', 'aria-label': 'Title', 'data-field': 'title' });
       input.value = u.titleDraft != null ? u.titleDraft : t.title;
@@ -1550,13 +1606,18 @@
         if (e.key === 'Escape') { exitFieldEdit(() => { u.editingTitle = false; u.titleDraft = null; }, titleWrap); return; }
         if (isSaveShortcut(e)) { e.preventDefault(); commitTitle(); }
       });
-      titleWrap.append(h('div', { class: 'field-row' }, input, saveBtn));
+      const titleRow = h('div', { class: 'field-row' }, input, saveBtn);
+      titleWrap.append(titleRow);
       // No click-outside commit (t-4877): only Save and ⌘S save; Escape discards. So the editor can
       // stay open across repaints, and focusing it on every render would pull focus back from
       // wherever the human clicked — one-shot, like the DRAFT and section editors.
       if (u.titleNeedsFocus) { u.titleNeedsFocus = false; requestAnimationFrame(() => input.focus()); }
+      // A click outside an UNCHANGED title closes it, saving nothing (t-e347); an edited one stays.
+      registerCleanClose(titleRow, () => input.value.trim() === t.title,
+        () => { u.editingTitle = false; u.titleDraft = null; },
+        () => titleWrap.replaceChildren(titleView()));
     } else {
-      titleWrap.append(h('button', { class: 'card-title', type: 'button', onclick: () => { u.editingTitle = true; u.titleDraft = t.title; u.titleNeedsFocus = true; render(); } }, t.title));
+      titleWrap.append(titleView());
     }
     head.append(titleWrap);
 
@@ -1960,6 +2021,11 @@
       // One-shot: only grab focus when the editor first opens — refocusing on every render
       // re-selects the card after the user already clicked outside (t-att1 feedback).
       if (u.sectionNeedsFocus[field]) { u.sectionNeedsFocus[field] = false; requestAnimationFrame(() => ta.focus()); }
+      // A click outside an UNCHANGED section closes it, saving nothing (t-e347); an edited one stays.
+      // Its container is the whole section, so the chevron fold (t-4877) never counts as outside.
+      registerCleanClose(wrap, () => ta.value === current(),
+        () => { u.sectionEditing[field] = false; u.sectionDrafts[field] = null; },
+        () => wrap.replaceWith(renderDetailSection(t, section)));
     } else {
       const open = () => { u.sectionEditing[field] = true; u.sectionNeedsFocus[field] = true; render(); };
       const has = !!current().trim();
@@ -2284,6 +2350,12 @@
       // An answered row stays open across a repaint while its editor is open — a rescued retraction
       // or a "use on question N" (t-5831) opens it this way.
       setCollapsed(isGiven(i) && !u.qaEditOpen[i]);
+      // A click outside an ANSWERED row's open, UNCHANGED editor collapses it to its summary, saving
+      // nothing (t-e347); an edited one stays open. An unanswered row's textarea IS its view, so it
+      // never closes. The row opens and closes in place, so it stays registered while it is shown.
+      registerCleanClose(item, () => isGiven(i) && u.qaEditOpen[i] && ta.value === answerAt(i),
+        () => { delete u.answerDrafts[i]; u.qaEditOpen[i] = false; },
+        () => setCollapsed(true));
       list.append(item);
     });
     if (!qFolded) {
@@ -2431,7 +2503,7 @@
       if (e.key === 'Escape') { dropRescuedFeedback(t.id); exitFieldEdit(() => closeFeedbackComposer(u), composer); return; }
       if (isSaveShortcut(e)) { e.preventDefault(); commitFeedback(); }
     });
-    // No click-outside commit (t-4877): a click elsewhere keeps the composer open with its text.
+    // No click-outside commit (t-4877): a click elsewhere keeps an edited composer open with its text.
     // Paste, drop and ＋ Attach STAGE the link into the draft without committing — only Save/⌘S
     // saves. The reply may land after a repaint, so the link goes into the live textarea.
     const stage = wireFieldAttach(ta, t.id, 'feedback', undefined, (path, filename) => {
@@ -2457,6 +2529,12 @@
         // Enter stays a newline here (t-c4d1): a saved item is an instruction a loop may act on at
         // once, so Enter must not save half a thought — but the item is saved as ONE line.
         h('span', { class: 'qa-hint single-line-hint' }, 'line breaks become spaces')));
+    // A click outside an UNCHANGED composer closes it, saving nothing (t-e347); an edited one stays.
+    // Unchanged is openFeedbackComposer's test for replacing a composer without loss: the trimmed
+    // draft is empty, or equals the item's text on an edit composer ('' on an add composer).
+    registerCleanClose(composer, () => !(u.feedbackDraft || '').trim() || (u.feedbackDraft || '').trim() === (u.feedbackEdit >= 0 ? u.feedbackBase : ''),
+      () => { dropRescuedFeedback(t.id); closeFeedbackComposer(u); },
+      () => { const fw = composer.closest('.feedback-wrap'); if (fw) fw.replaceWith(renderFeedback(t)); });
     return composer;
   }
 
