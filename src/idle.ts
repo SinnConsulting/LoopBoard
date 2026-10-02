@@ -65,7 +65,7 @@ export function markWarned(state: IdleState, now: number): IdleState {
   return { ...state, warnedAt: now };
 }
 
-// The human clicked `Keep running`: the clock starts over from now and the warning is gone.
+// The human kept the loop running (the warning's `Cancel`, t-f350): the clock starts over from now and the warning is gone.
 export function keepRunning(_state: IdleState, now: number): IdleState {
   return { idleSince: now, warnedAt: undefined };
 }
@@ -103,10 +103,10 @@ export function decideIdleWarn(state: IdleState, ctx: IdleFireContext): IdleWarn
 
 export type IdleStopDecision = 'stop' | 'hold' | 'superseded';
 
-// The stop is due — the 30 s ran out, or the human clicked `Stop now`. `warnedAt` is the stamp of
-// the warning that asked; a slot whose state no longer carries it was reset in the meantime (♻, ■,
-// ▶, the terminal closed, the feature turned off, or a busy observation), and a late click on that
-// old popup must never stop the session that replaced it. Busy at fire time holds, never forces.
+// The stop is due — the 30 s ran out. `warnedAt` is the stamp of the warning that asked; a slot
+// whose state no longer carries it was reset in the meantime (♻, ■, ▶, the terminal closed, the
+// feature turned off, or a busy observation), and a stale timer for that old warning must never
+// stop the session that replaced it. Busy at fire time holds, never forces.
 export function decideIdleStop(state: IdleState | undefined, warnedAt: number, ctx: IdleFireContext): IdleStopDecision {
   if (!state || state.warnedAt !== warnedAt) return 'superseded';
   if (!ctx.enabled || !ctx.running) return 'superseded';

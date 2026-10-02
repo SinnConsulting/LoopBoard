@@ -177,3 +177,57 @@ test('the idle-stop line names the fail-open, and the feature off leaves no stat
   assert.match(controller, /const idle = cfg\.idleStopEnabled && l\.running \?/);
   assert.match(controller.slice(controller.indexOf('  dispose(): void {'), controller.indexOf('  private config()')), /clearIdleTimer/);
 });
+
+// t-f350: the warning is a progress notification — the one kind VSCode lets an extension close —
+// and it closes itself on every outcome, so it never outlives what it describes.
+test('the idle warning is a cancellable progress notification, never a warning message', () => {
+  const body = methodBody('showIdleWarning');
+  assert.match(body, /vscode\.window\.withProgress\(\{ location: vscode\.ProgressLocation\.Notification, title, cancellable: true \}/);
+  assert.ok(!body.includes('showWarningMessage'), 'showIdleWarning must not call showWarningMessage');
+  assert.ok(!controller.includes("'Stop now'"), '`Stop now` is dropped: ■ on the row does the same');
+  assert.ok(!controller.includes("'stop-now'") && !controller.includes('-> dismissed`'), 'no stop-now / dismissed outcome is left');
+  // The progress task returns the promise whose resolver the warning entry keeps.
+  assert.match(body, /const closed = new Promise<void>\(\(resolve\) => \{ close = resolve; \}\);/);
+  assert.match(body, /this\.idleWarnings\.set\(model, warning\)/);
+  assert.match(body, /return closed;\n    \}\);/);
+});
+
+test('settleIdleWarning closes the open popup on every outcome: clears the countdown, calls the resolver', () => {
+  const body = methodBody('settleIdleWarning');
+  assert.match(body, /this\.idleWarnings\.delete\(model\);/);
+  assert.match(body, /if \(warning\.countdown !== undefined\) clearInterval\(warning\.countdown\);/);
+  assert.match(body, /warning\.close\(\);/);
+  assert.ok(!/answered/.test(body), 'no outcome skips the close or the log');
+  // Every outcome goes through it: superseded (■, ♻, spawn, busy, disabled, not running), the
+  // timeout stop, and keep.
+  assert.match(methodBody('resetIdleClock'), /this\.settleIdleWarning\(model, 'superseded'\)/);
+  assert.match(methodBody('onIdleStopDue'), /this\.settleIdleWarning\(model, 'timeout'\)/);
+  assert.match(methodBody('onIdleKeep'), /this\.settleIdleWarning\(model, 'keep'\)/);
+  assert.ok(!/idleWarnings\.delete/.test(methodBody('onIdleKeep')), 'keep closes the popup through settleIdleWarning, not a bare delete');
+  // settleIdleWarning is the only place an entry leaves idleWarnings.
+  assert.equal([...controller.matchAll(/this\.idleWarnings\.delete\(/g)].length, 1);
+});
+
+test('the warning counts down through progress.report with describeIdle, once a second', () => {
+  const body = methodBody('showIdleWarning');
+  assert.match(body, /progress\.report\(\{ message: describeIdle\(warned, minutes, Date\.now\(\)\) \}\)/);
+  assert.match(body, /warning\.countdown = setInterval\(report, 1000\);/);
+  // A warning settled before its task ran starts no countdown.
+  assert.ok(body.indexOf('if (this.idleWarnings.get(model) !== warning) return closed;') < body.indexOf('setInterval('));
+});
+
+test('Cancel = Keep running, through the stamp check: a late or stale cancel does nothing', () => {
+  assert.match(methodBody('showIdleWarning'), /token\.onCancellationRequested\(\(\) => this\.onIdleKeep\(model, stamp\)\)/);
+  const keep = methodBody('onIdleKeep');
+  const check = keep.indexOf('if (!warning || warning.stamp !== stamp) return;');
+  assert.ok(check > 0, keep);
+  for (const step of ["this.settleIdleWarning(model, 'keep')", 'keepRunning(', 'this.armIdleTimer(']) {
+    assert.ok(keep.indexOf(step) > check, `${step} must come after the stamp check`);
+  }
+});
+
+test('dispose() settles every open idle warning and still clears the idle timers', () => {
+  const body = controller.slice(controller.indexOf('  dispose(): void {'), controller.indexOf('  private config()'));
+  assert.match(body, /for \(const model of \[\.\.\.this\.idleTimers\.keys\(\)\]\) this\.clearIdleTimer\(model\);/);
+  assert.match(body, /for \(const model of \[\.\.\.this\.idleWarnings\.keys\(\)\]\) this\.settleIdleWarning\(model, 'superseded'\);/);
+});

@@ -150,14 +150,15 @@ export class Controller {
   // Idle stop (t-2dd4) — session-only, like everything above. `idleStates` holds a slot's clock
   // only while it runs (feature on, loop running, slot out of `busyModels`); `idleTimers` is that
   // slot's ONE timer — the warning while the clock runs, the stop while the warning is up.
-  // `idleWarnings` is the open popup, keyed by the `warnedAt` stamp it was shown for: a popup can
-  // resolve long after its warning was superseded (VSCode cannot close a notification), and a late
-  // click must never act on the session that replaced it. `answered` = its choice was already
-  // logged (a dismissal still stops at 30 s). `idleLabels` is what the rows last showed, so the
-  // poll repaints a countdown that moved and nothing else.
+  // `idleWarnings` is the open popup, keyed by the `warnedAt` stamp it was shown for (t-f350): a
+  // progress notification, the one kind VSCode lets an extension close — `close` settles its task
+  // and `countdown` is the 1 s interval that reports `stopping in Ns`. `settleIdleWarning` runs
+  // both on every outcome, so the popup never outlives what it describes; a late cancel is still
+  // ignored by stamp. `idleLabels` is what the rows last showed, so the poll repaints a countdown
+  // that moved and nothing else.
   private idleStates = new Map<Model, IdleState>();
   private idleTimers = new Map<Model, ReturnType<typeof setTimeout>>();
-  private idleWarnings = new Map<Model, { stamp: number; answered: boolean }>();
+  private idleWarnings = new Map<Model, { stamp: number; close: () => void; countdown: ReturnType<typeof setInterval> | undefined }>();
   private idleLabels = new Map<Model, string>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
@@ -249,6 +250,8 @@ export class Controller {
     if (this.contextTimer !== undefined) clearInterval(this.contextTimer);
     for (const model of [...this.restartTimers.keys()]) this.clearRestartTimer(model);
     for (const model of [...this.idleTimers.keys()]) this.clearIdleTimer(model);
+    // Close every open idle warning too, so no progress task is left pending (t-f350).
+    for (const model of [...this.idleWarnings.keys()]) this.settleIdleWarning(model, 'superseded');
     for (const id of [...this.autoPromoteTimers.keys()]) this.clearAutoPromoteTimer(id);
   }
 
@@ -957,20 +960,24 @@ export class Controller {
 
   // Drops a slot's clock, timer and open warning. Spawn, recycle, ■, a terminal that closed, the
   // feature turned off, a slot that turned busy: whatever the reason, a popup still on screen for
-  // this slot is now stale, and its choice is recorded as `superseded` here — a late click on it is
-  // ignored by stamp.
+  // this slot is now stale, so it is closed and its outcome recorded as `superseded` here — a late
+  // cancel on it is ignored by stamp.
   private resetIdleClock(model: Model, reason: string): void {
     this.clearIdleTimer(model);
     this.settleIdleWarning(model, 'superseded');
     if (this.idleStates.delete(model)) this.store.debugLog('verbose', 'idle-reset', `${model} (${reason})`);
   }
 
-  // Closes the books on an open warning: logs its outcome once (unless a dismissal already did).
+  // Closes the books on an open warning — every outcome (`timeout`, `keep`, `superseded`) comes
+  // through here: stops the countdown, closes the popup (settles its progress task) and logs the
+  // outcome once.
   private settleIdleWarning(model: Model, outcome: string): void {
     const warning = this.idleWarnings.get(model);
     if (!warning) return;
     this.idleWarnings.delete(model);
-    if (!warning.answered) this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> ${outcome}`);
+    if (warning.countdown !== undefined) clearInterval(warning.countdown);
+    warning.close();
+    this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> ${outcome}`);
   }
 
   // Everything a fire-time decision re-reads. Configuration is read NOW, not remembered: a change
@@ -1019,49 +1026,54 @@ export class Controller {
     this.showIdleWarning(model, state, ctx.minutes);
   }
 
-  // Non-modal, never steals focus. The 30 s deadline is our own timer racing the popup's promise:
-  // VSCode tucks an unclicked notification into the bell WITHOUT resolving it.
+  // Non-modal, never steals focus (t-f350). A progress notification rather than a warning message:
+  // it is the only notification VSCode lets an extension close, and it closes when its task
+  // settles — which `settleIdleWarning` does on every outcome. Its one button is the built-in
+  // cancel, labelled `Cancel` (not settable), so the title says Cancel keeps the loop running. The
+  // 30 s deadline is our own timer, not the notification's.
   private showIdleWarning(model: Model, state: IdleState, minutes: number): void {
     const stamp = Date.now();
-    this.idleStates.set(model, markWarned(state, stamp));
-    this.idleWarnings.set(model, { stamp, answered: false });
+    const warned = markWarned(state, stamp);
+    this.idleStates.set(model, warned);
+    let close!: () => void;
+    const closed = new Promise<void>((resolve) => { close = resolve; });
+    const warning = { stamp, close, countdown: undefined as ReturnType<typeof setInterval> | undefined };
+    this.idleWarnings.set(model, warning);
     this.store.debugLog('info', 'idle-warn', `${model} idle ${minutes}m — no task in progress, ${this.describeAgents(model, false)}; stopping in ${IDLE_WARN_MS / 1000}s unless kept running`);
     this.clearIdleTimer(model);
     this.idleTimers.set(model, setTimeout(() => {
       this.idleTimers.delete(model);
-      this.onIdleStopDue(model, stamp, 'timeout');
+      this.onIdleStopDue(model, stamp);
     }, IDLE_WARN_MS));
-    const message = `LoopBoard: the ${model} loop has been idle for ${minutes} min — stopping in ${IDLE_WARN_MS / 1000} s.`;
-    this.store.debugLog('info', 'popup', `warning — ${message}`);
-    void vscode.window.showWarningMessage(message, 'Keep running', 'Stop now').then((choice) => this.onIdleChoice(model, stamp, choice));
+    const title = `LoopBoard: the ${model} loop has been idle for ${minutes} min. Cancel keeps it running.`;
+    this.store.debugLog('info', 'popup', `warning — ${title}`);
+    void vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, (progress, token) => {
+      // Settled before the task ran: `closed` is already resolved, and no countdown is started.
+      if (this.idleWarnings.get(model) !== warning) return closed;
+      const report = () => progress.report({ message: describeIdle(warned, minutes, Date.now()) });
+      report();
+      warning.countdown = setInterval(report, 1000);
+      token.onCancellationRequested(() => this.onIdleKeep(model, stamp));
+      return closed;
+    });
     void this.postBoard();
   }
 
-  private onIdleChoice(model: Model, stamp: number, choice: string | undefined): void {
+  // `Cancel` on the warning = Keep running: the clock starts over. Superseded, stopped or already
+  // kept (stamp gone or replaced): a late or stale cancel does nothing.
+  private onIdleKeep(model: Model, stamp: number): void {
     const warning = this.idleWarnings.get(model);
-    // Superseded (already logged as such) or already answered: a late click does nothing.
-    if (!warning || warning.stamp !== stamp || warning.answered) return;
-    if (choice === 'Stop now') {
-      this.onIdleStopDue(model, stamp, 'stop-now');
-      return;
-    }
-    if (choice === 'Keep running') {
-      this.idleWarnings.delete(model);
-      this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> keep`);
-      const state = keepRunning(this.idleStates.get(model) ?? resetIdle(), Date.now());
-      this.idleStates.set(model, state);
-      this.store.debugLog('verbose', 'idle-start', `${model} — kept running, clock restarted`);
-      this.armIdleTimer(model, state, this.config().idleStopMinutes);
-      void this.postBoard();
-      return;
-    }
-    // Closed without a choice: the stop still goes ahead at 30 s.
-    warning.answered = true;
-    this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> dismissed`);
+    if (!warning || warning.stamp !== stamp) return;
+    this.settleIdleWarning(model, 'keep');
+    const state = keepRunning(this.idleStates.get(model) ?? resetIdle(), Date.now());
+    this.idleStates.set(model, state);
+    this.store.debugLog('verbose', 'idle-start', `${model} — kept running, clock restarted`);
+    this.armIdleTimer(model, state, this.config().idleStopMinutes);
+    void this.postBoard();
   }
 
-  // The stop is due: the 30 s ran out (`timeout`) or the human clicked `Stop now`.
-  private onIdleStopDue(model: Model, stamp: number, choice: 'timeout' | 'stop-now'): void {
+  // The stop is due: the 30 s ran out (`timeout`, the only outcome that stops).
+  private onIdleStopDue(model: Model, stamp: number): void {
     const warning = this.idleWarnings.get(model);
     if (!warning || warning.stamp !== stamp) return;
     const state = this.idleStates.get(model);
@@ -1079,7 +1091,7 @@ export class Controller {
       return;
     }
     this.clearIdleTimer(model);
-    this.settleIdleWarning(model, choice);
+    this.settleIdleWarning(model, 'timeout');
     this.store.debugLog('info', 'idle-stop', `${model} ${describeIdleStop(state ?? resetIdle(), ctx.now, this.agentsUnreadable.has(model))}`);
     this.stopLoop(model, 'idle stop', `idle stop — ${this.describeAgents(model, true)}`);
   }
