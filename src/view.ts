@@ -82,6 +82,10 @@ export interface LoopStatus {
 export interface WebBoard {
   todoMissing?: boolean; // set by the controller; offers the scaffold button in the UI
   helpUrl?: string; // set by the controller; sidebar Help button target
+  // Set by the controller (t-b6fa): the sidebar's "Show some love" card, or null for none. `final` =
+  // the one re-show after "Maybe later" (no second "Maybe later"); `onDemand` = the command's card;
+  // `loved` = a link was clicked on the automatic card, which stays with only Close until dismissed.
+  love?: { count: number; final: boolean; onDemand: boolean; loved: boolean } | null;
   maxAttachmentSizeMB?: number; // set by the controller; lets the composer reject an oversized
   // attachment at attach time instead of only at Save Draft (t-5f50)
   sidebarMarquee?: boolean; // set by the controller; opts the sidebar's long labels into scrolling (t-9a29)

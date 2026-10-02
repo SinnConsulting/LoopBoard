@@ -122,7 +122,7 @@ questions, an HTML-comment template) and `index-unknown.md`:
   every phase tab's `collapsedDefault` and `collapsed` overrides and leaves `sections` alone; an
   unchanged one touches nothing. `appliedCardsCollapsed` rides in the `saveState` blob; the host
   plumbing (`config()`, `buildWebBoard`, `WebBoard`) is pinned over the source text, the manifest
-  key in `test/manifest-settings.test.js`. The live board is item 63 (untested).
+  key in `test/manifest-settings.test.js`. The live board is item 64 (untested).
 
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
@@ -1579,8 +1579,49 @@ and likewise cannot be verified headless.
       `posted now (visible panel)` respectively.
     - In (b), a sidebar phase row (e.g. Review) also lands the board on that tab on the first
       click.
+63. **Show some love: the sidebar's thank-you card (t-b6fa) — UNTESTED in the live webview:** the
+    decision (first at 10, "Maybe later" once at +25, links keep the card, never again after a
+    dismissal), the three host
+    URLs, the key-only messages and buttons of the card (evaluated from `media/sidebar.js`), the
+    one-shot burst flag, the counting on an applied accept, the command's no-state path, the debug
+    lines and the theme-variable-only / reduced-motion CSS are unit-tested in `test/love.test.js`;
+    the rendered card, the burst, the globalState writes and the browser hand-off are host/webview
+    only. Use a fresh VS Code profile (the counter and state are per profile, in globalState) with
+    `loopBoard.debug` = `info`, and a workspace with at least 12 Review tasks to accept.
+    - **Not yet:** accept tasks one by one with the board's **Accept** button → no card; each accept
+      logs `love accept counted (N) — N/10, not yet`.
+    - **10th accept:** the card appears directly above the `What's new? | Settings | Help` line,
+      without taking focus from the board, headed `You've shipped 10 tasks with LoopBoard.`, with
+      **Star on GitHub**, **Rate on the Marketplace**, **Say hi on r/LoopBoard** stacked and
+      **Maybe later · No thanks** below; `love … 10/10 reached — first card shown`.
+    - **Burst once:** hearts, stars and sparkles fly out of the card's heart ONCE. Wait for a 30 s
+      context poll, accept another task (the headline turns to 11) and reload the window → the card
+      is still there, the burst never replays.
+    - **Reduced motion:** with the OS "reduce motion" setting on (or
+      `workbench.reduceMotion` = `on`), a new showing plays no burst.
+    - **Themes and width:** light, dark and high-contrast themes → every colour follows the theme.
+      Drag the sidebar to its 170 px minimum → the three buttons stay stacked, no label is clipped
+      (long ones wrap).
+    - **Maybe later:** click it at count C → the card goes; `love-choice later on the first card —
+      snoozed until C+25`. Accepts up to C+24 log `snoozed until C+25` and show nothing; the C+25th
+      shows the card again with the burst and only **No thanks** below (no Maybe later).
+    - **Final choice:** click **No thanks** on that card → it goes for good; later accepts log
+      `ended, not shown`. (A link there keeps it, as below, with the card still final.)
+    - **Links:** on a fresh profile's first card, each button opens in the browser: the GitHub repo,
+      the Marketplace page's rating/review section, `r/LoopBoard`; `love-link <url> — opened`. The
+      card STAYS after every link click (the first logs `… on the first card — love shown; card
+      stays until dismissed`, the others `love already shown`), no burst replays, and its footer
+      becomes a single **Close**; reload the window → still there. Click **Close** → it goes for
+      good (`close on the first card — ended (love already shown)`); later accepts log `ended, not
+      shown`.
+    - **On demand:** **LoopBoard: Show Some Love** reveals the LoopBoard sidebar with the card and a
+      **Close** button, the burst plays once; `love-open on demand (command) — card shown; counter
+      and state untouched`. A link opens and keeps the card (`… on the on-demand card — card stays;
+      counter and state untouched`); only Close hides it with `… on the on-demand card — hidden;
+      counter and state untouched`. Run it before any accept → `Thanks for using LoopBoard!`, no
+      count. The command changes neither the count nor whether the automatic card still comes.
 
-63. **Cards start collapsed (t-c8fd) — UNTESTED in the live webview:** the fallback and the
+64. **Cards start collapsed (t-c8fd) — UNTESTED in the live webview:** the fallback and the
     change-reset rule are pinned by `test/board-cards-start.test.js`; what the board shows is
     webview-only.
     - Turn `loopBoard.cardsStartCollapsed` on. In a tab you never pressed Collapse all / Expand all

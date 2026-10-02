@@ -258,6 +258,9 @@ Commands:
 - **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
 - **LoopBoard: What's New** — open the release notes for the version you're running, like
   **What's new?** in the sidebar.
+- **LoopBoard: Show Some Love** — show the sidebar's thank-you card with links to star LoopBoard on
+  GitHub, rate it on the Marketplace or say hi on r/LoopBoard. The card also appears once by itself
+  after your 10th accepted task.
 
 Loop terminal closes the moment it starts? Check `claude --version`: older CLIs reject the `--name`
 flag, and VS Code can't show why. Loop terminals close with the window; ▶ brings them back, since

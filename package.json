@@ -72,6 +72,10 @@
       {
         "command": "loopBoard.whatsNew",
         "title": "LoopBoard: What's New"
+      },
+      {
+        "command": "loopBoard.showLove",
+        "title": "LoopBoard: Show Some Love"
       }
     ],
     "configuration": [
