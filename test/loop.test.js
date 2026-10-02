@@ -306,11 +306,69 @@ test('template: one feedback rule, no note: grammar and no Rule 16 (t-ae10)', ()
   assert.match(tpl, /optional `model:`\/`groomer:`\/`feedback:`/, 'drafts may carry feedback');
   const rule13 = tpl.slice(tpl.indexOf('\n13. '), tpl.indexOf('\n14. '));
   assert.match(rule13, /On Review → move to In Progress/, 'Review reopens');
-  assert.match(rule13, /Backlog\/In Progress\/Feedback → apply in place \(no\s+phase move\)/, 'other phases apply in place');
+  // Re-pinned by t-92d7: code-touching feedback on Backlog/Feedback now takes an In Progress
+  // round trip, so the three-phase in-place clause is gone (pinned in the t-92d7 case below).
+  assert.match(rule13, /In Progress, or feedback touching no code on\s+Backlog\/Feedback → apply in place \(no phase move\)/, 'In Progress and code-free feedback apply in place');
   assert.match(rule13, /New\/DRAFT → the groomer's \(Rule 14\)/);
   const rule14 = tpl.slice(tpl.indexOf('\n14. '), tpl.indexOf('\n15. '));
   assert.match(rule14, /A New\/DRAFT `feedback:` →\s+the groomer folds it into the story/);
   const fence = automationFence(tpl);
-  assert.match(fence, /\(6\) Apply in place, with no phase move, and then delete any `feedback:` sub-bullet/);
+  // Re-pinned by t-92d7 (see the t-92d7 case below for the round trip itself).
+  assert.match(fence, /\(6\) For each `feedback:` sub-bullet on the index entry of a Backlog, In Progress or Feedback task/);
   assert.doesNotMatch(fence, /`note:`/, 'the Automation steps name no note');
+});
+
+test('template: code-touching feedback on Backlog/Feedback runs through In Progress, then returns (t-92d7)', () => {
+  const tpl = readMedia('template-loop.md');
+  const rule2 = tpl.slice(tpl.indexOf('\n2. '), tpl.indexOf('\n3. '));
+  const rule11 = tpl.slice(tpl.indexOf('\n11. '), tpl.indexOf('\n12. '));
+  const rule13 = tpl.slice(tpl.indexOf('\n13. '), tpl.indexOf('\n14. '));
+  const flat = (s) => s.replace(/\s+/g, ' ');
+  const r13 = flat(rule13);
+
+  // The old one-clause in-place path for all three phases is gone.
+  assert.doesNotMatch(r13, /Backlog\/In Progress\/Feedback → apply in place \(no phase move\)/, 'old three-phase clause gone');
+
+  // Code-touching feedback on a Backlog AND a Feedback task takes the round trip, in order.
+  assert.match(r13, /Code-touching feedback \(edits code, a branch, a commit or a PR — Rule 11's list\) on a Backlog or Feedback task = ROUND TRIP/, 'both phases named');
+  const order = [
+    'set `phase: inprogress` FIRST',
+    'apply it',
+    'commit and push to its `task/**` branch',
+    'delete the `feedback:` line',
+    'then return the task to its previous phase LAST',
+  ].map((s) => r13.indexOf(s));
+  order.forEach((i) => assert.ok(i > 0, 'round-trip step present'));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'inprogress FIRST → apply → push → delete → previous phase LAST');
+
+  // A Feedback task keeps its questions, and the round trip runs even while they are unanswered.
+  assert.match(r13, /A Feedback task keeps its `question:`\/`answer:` pairs untouched and takes the round trip even while they are unanswered/);
+
+  // Feedback touching no code keeps the in-place path with no phase move.
+  assert.match(r13, /feedback touching no code on Backlog\/Feedback → apply in place \(no phase move\), append `<today>` to `## Worklog`, delete it/);
+
+  // started: is left untouched (Rule 13 and the Rule 11 exemption).
+  assert.match(r13, /`phase: inprogress` FIRST \(`started:` untouched — not a claim, not a resume\)/);
+  assert.match(flat(rule11), /A feedback round trip \(Rule 13\) moves the phase only: no `started:`/);
+
+  // A Backlog round trip's later claim continues on the branch it pushed.
+  assert.match(r13, /A Backlog round trip branches off latest `main`, names the branch in `## Worklog`; the later claim continues on that `task\/\*\*` branch, never a second one/);
+
+  // Rule 2 blocks the round trip while another task is In Progress.
+  assert.match(flat(rule2), /no loop starts a Backlog task, resumes a Review\/Feedback task or runs a feedback round trip \(Rule 13\)/);
+  assert.match(r13, /ROUND TRIP, gated by Rule 2/);
+
+  // In Progress still applies in place; Review still reopens through In Progress, Review LAST.
+  assert.match(r13, /In Progress, or feedback touching no code on Backlog\/Feedback → apply in place/);
+  assert.match(r13, /On Review → move to In Progress, address, update `## Delivered`, remove the `feedback:` sub-bullet\(s\), commit and push, and return to Review LAST/);
+
+  // Automation step (6) pins the same round trip, gated on Rule 2, previous phase LAST after the push.
+  const fence = automationFence(tpl);
+  const step6 = fence.slice(fence.indexOf('(6) '), fence.indexOf('(7) '));
+  assert.doesNotMatch(fence, /\(6\) Apply in place, with no phase move/, 'old step (6) wording gone');
+  assert.match(step6, /on an In Progress task, or when it touches no code, apply it in place with no phase move, then delete it/);
+  assert.match(step6, /code-touching feedback on a Backlog or Feedback task takes the ROUND TRIP only if nothing else is In Progress \(Rule 2\), else leave it for a later pass/);
+  assert.match(step6, /set `phase: inprogress` FIRST \(leave `started:` untouched\), apply it, commit and push to its `task\/\*\*` branch, delete the `feedback:` sub-bullet, and ONLY after that push, as the LAST action, return the task to its previous phase/);
+  assert.match(step6, /a Feedback task keeps its questions, answered or not/);
+  assert.ok(!step6.includes("'"), 'step (6) stays apostrophe-free (the fence rides as single-quoted argv)');
 });
