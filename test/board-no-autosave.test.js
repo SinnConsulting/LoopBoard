@@ -3,6 +3,9 @@
 // commit and t-aee3's commit-on-collapse). media/board.js is a webview asset the Docker suite never
 // loads, so — like test/board-patch-echo.test.js — the wiring is pinned as SOURCE-TEXT invariants.
 // The live behaviour (click elsewhere, fold, refocus) is VERIFICATION.md item 61, UNTESTED.
+// t-e347 amends two assertions here (owner-approved): one document-level capture-phase pointerdown
+// is admitted, and each editor gains one clean-close range; its own pins live in
+// test/board-clean-close.test.js.
 //
 // The five card editors with a Save button: the title (renderCard's commitTitle), the DRAFT text
 // (renderDraft's commitDraft — not the New-story composer's own commitDraft), the three story
@@ -50,9 +53,13 @@ test('no click-outside path saves: the registry is gone and no commit rides a bl
   assert.doesNotMatch(src, /\bsetActiveEditor\b|\bclearActiveEditor\b|\bactiveEditor\b/, 'the t-471a registry is gone');
   const docListeners = src.split('\n').filter((l) => /\bdocument\.addEventListener\(/.test(l));
   assert.ok(docListeners.length > 0, 'the guard is looking at real listeners');
-  for (const l of docListeners) {
-    assert.doesNotMatch(l, /'(pointerdown|mousedown|click|pointerup)'/, 'no document-level outside-click listener: ' + l.trim());
-  }
+  // t-e347 (owner-approved amendment): exactly ONE document-level outside-click listener — the
+  // capture-phase pointerdown that closes a CLEAN editor — and it commits nothing.
+  const outside = docListeners.filter((l) => /'(pointerdown|mousedown|click|pointerup)'/.test(l)).map((l) => l.trim());
+  assert.deepEqual(outside, ["document.addEventListener('pointerdown', (e) => {"], 'one document-level outside-click listener');
+  const pointerdown = block(src, "document.addEventListener('pointerdown'");
+  assert.match(src.slice(pointerdown.end), /^, true\);/, 'it listens in the capture phase');
+  assert.doesNotMatch(pointerdown.text, /commit|sendPatch|stageRow|maybeFlush|flushAnswers/, 'it commits nothing');
   // The one document focusout listener only flushes a deferred board; it commits nothing.
   const focusout = block(src, "document.addEventListener('focusout'").text;
   assert.doesNotMatch(focusout, /commit|sendPatch|stageRow|maybeFlush/);
@@ -130,7 +137,7 @@ test('the Problem/Description/Goals chevron folds without saving and keeps the u
   assert.match(section, /disabled: ta\.value === current\(\),/);
 });
 
-test('a click outside leaves every editor open: drafts and editing flags clear only in commit or Escape', () => {
+test('a click outside leaves every edited editor open: drafts and editing flags clear only in commit, Escape or the clean close', () => {
   // Every line anywhere in media/board.js that CLEARS `name` must sit inside one of `allowed`.
   const clears = (name) => {
     const re = new RegExp('\\b' + name + '(\\[[^\\]]*\\])? = (null|false|\'\'|undefined)(?!\\w)|delete [\\w.]*\\b' + name + '\\[');
@@ -159,29 +166,43 @@ test('a click outside leaves every editor open: drafts and editing flags clear o
     return r;
   };
   const commitOf = (marker, fnName) => range(marker, src.indexOf('function ' + fnName + '('));
+  // t-e347 (owner-approved amendment): exactly one clean-close range per editor — its
+  // registerCleanClose call (clean test + close), inside that editor's own renderer.
+  const cleanCloseOf = (fnName, container) => {
+    const f = range('function ' + fnName + '(');
+    const r = range('registerCleanClose(' + container + ',', f.start);
+    assert.ok(r.end <= f.end, fnName + ': its clean close is its own');
+    return r;
+  };
 
   check(['titleDraft', 'editingTitle'],
-    [commitOf('const commitTitle = () => {', 'renderCard'), escBranch('const commitTitle = () => {', 'renderCard', 'u.titleDraft = null')], 'title');
+    [commitOf('const commitTitle = () => {', 'renderCard'), escBranch('const commitTitle = () => {', 'renderCard', 'u.titleDraft = null'),
+      cleanCloseOf('renderCard', 'titleRow')], 'title');
   check(['draftText', 'editingDraft'],
-    [commitOf('const commitDraft = () => {', 'renderDraft'), escBranch('const commitDraft = () => {', 'renderDraft', 'u.draftText = null')], 'DRAFT');
+    [commitOf('const commitDraft = () => {', 'renderDraft'), escBranch('const commitDraft = () => {', 'renderDraft', 'u.draftText = null'),
+      cleanCloseOf('renderDraft', 'draftEditor')], 'DRAFT');
   check(['sectionDrafts', 'sectionEditing'],
     [commitOf('const commitSection = () => {', 'renderDetailSection'),
-      escBranch('const commitSection = () => {', 'renderDetailSection', 'u.sectionDrafts[field] = null')], 'section');
+      escBranch('const commitSection = () => {', 'renderDetailSection', 'u.sectionDrafts[field] = null'),
+      cleanCloseOf('renderDetailSection', 'wrap')], 'section');
   // Answers: the row commit (stageRow) and the set write it leads to (flushAnswers, reached only via
   // maybeFlush — i.e. a Save, Save All, ⌘S, Enter, Accept, chip × or attach), plus Escape.
   check(['answerDrafts', 'qaEditOpen'],
     [commitOf('const stageRow = () => {', 'renderQuestions'), commitOf('const flushAnswers = (raw) => {', 'renderQuestions'),
-      escBranch('const stageRow = () => {', 'renderQuestions', 'delete u.answerDrafts[i]')], 'answer');
+      escBranch('const stageRow = () => {', 'renderQuestions', 'delete u.answerDrafts[i]'),
+      cleanCloseOf('renderQuestions', 'item')], 'answer');
   assert.deepEqual(uses(fn('renderQuestions'), 'flushAnswers'), ['if (values.every((v) => v.trim().length > 0)) flushAnswers(values);']);
   // The row's own edit/cancel link toggles its editor; that explicit click is the only other writer.
   const toggles = src.split('\n').filter((l) => /qaEditOpen\[i\] = !/.test(l)).map((l) => l.trim());
   assert.deepEqual(toggles, ["editBtn.addEventListener('click', () => { u.qaEditOpen[i] = !u.qaEditOpen[i]; setCollapsed(!u.qaEditOpen[i]); });"]);
-  // Feedback: cleared only by closeFeedbackComposer, which only its commit and its Escape call.
+  // Feedback: cleared only by closeFeedbackComposer, which only its commit, its Escape and its clean
+  // close call.
   check(['feedbackDraft', 'feedbackOpen'], [range('function closeFeedbackComposer(')], 'feedback');
   const closers = src.split('\n').filter((l) => /closeFeedbackComposer\(u\)/.test(l) && !/function closeFeedbackComposer/.test(l));
-  assert.equal(closers.length, 2, 'closeFeedbackComposer has exactly two callers');
+  assert.equal(closers.length, 3, 'closeFeedbackComposer has exactly three callers');
   const fbRanges = [commitOf('const commitFeedback = () => {', 'renderFeedbackComposer'),
-    escBranch('const commitFeedback = () => {', 'renderFeedbackComposer', 'closeFeedbackComposer(u)')];
+    escBranch('const commitFeedback = () => {', 'renderFeedbackComposer', 'closeFeedbackComposer(u)'),
+    cleanCloseOf('renderFeedbackComposer', 'composer')];
   let at = 0;
   for (const l of src.split('\n')) {
     if (/closeFeedbackComposer\(u\)/.test(l) && !/function closeFeedbackComposer/.test(l)) {

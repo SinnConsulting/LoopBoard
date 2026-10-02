@@ -1051,7 +1051,7 @@ and likewise cannot be verified headless.
       **Cmd/Ctrl+S** commit, and a click OUTSIDE the card saves nothing (t-4877); **ESC** cancels
       in ONE press and releases focus. Collapsing an open editor with the chevron saves nothing
       and keeps the text for the unfold (nothing typed is lost). Opening a second section leaves
-      the first open, unsaved, with its text.
+      an EDITED first section open, unsaved, with its text (an unchanged one closes, t-e347).
     - Problem and Goals have **no ＋ Attach button** and no field-scoped attach wiring, so nothing
       is ever inserted into THEIR text. Dropping/pasting a file while one of them is open is not
       blocked, though: the event bubbles to the pre-existing whole-card handler
@@ -1558,9 +1558,9 @@ and likewise cannot be verified headless.
     the task's `tasks/<id>.md` open beside the board.
     - Type into an answer, a Description, a title, a DRAFT text and a feedback composer, without
       saving. After each, click elsewhere on the board (empty space, another card) and then into
-      another editor → nothing reaches `TODO.md` or `tasks/<id>.md`. Every editor stays open with
-      its text and an enabled **Save**, and focus stays where the click landed (the title editor
-      does not pull it back).
+      another editor → nothing reaches `TODO.md` or `tasks/<id>.md`. Every EDITED editor stays open
+      with its text and an enabled **Save**, and focus stays where the click landed (the title
+      editor does not pull it back). An unchanged editor closes instead (t-e347, item 65).
     - Fold a Description with unsaved text → nothing is written. Unfold it → the editor is back
       with the text and an enabled **Save**.
     - With a dirty feedback composer, ＋ Feedback or another row's **edit** refocuses the composer
@@ -1634,3 +1634,23 @@ and likewise cannot be verified headless.
     - Turn the setting off: every tab, including the hand-set one, resets to expanded, and any
       per-card chevron state is gone. Section folds you opened stay open. Turn it back on: every
       tab resets to collapsed.
+
+65. **A click outside closes an unchanged editor; an edited one stays open (t-e347; amends item
+    61's t-4877 rule only for unchanged editors) — UNTESTED in the live webview:** each editor's
+    registration, its clean test, the no-commit close paths and the one capture-phase
+    `pointerdown` listener are pinned by `test/board-clean-close.test.js` (the registry and
+    listener also run for real in a vm), and t-4877's guards by `test/board-no-autosave.test.js`;
+    clicks, focus and the deferred view swap are webview-only, so this checklist is their only
+    acceptance path. Keep `TODO.md` and the task's `tasks/<id>.md` open beside the board.
+    - Open a title, a DRAFT text, a Description, an answered row's **edit** and a feedback
+      composer (add, and edit on an existing item) without typing, then click elsewhere on the
+      board → each returns to its view state (the answer to its summary), and nothing reaches
+      `TODO.md` or `tasks/<id>.md`.
+    - Type into each, then click elsewhere → each stays open with its text and an enabled
+      **Save**, as in item 61.
+    - Type and then undo back to the saved text, then click elsewhere → it closes.
+    - An unanswered answer row is unchanged by a click outside.
+    - Tab out of a clean editor, or switch to another window → it stays open.
+    - The closing click still lands: with a clean DRAFT open, one click on another card's
+      Description opens that editor; one click into another field focuses it; one click on a
+      button fires it.
