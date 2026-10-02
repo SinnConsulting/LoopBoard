@@ -391,6 +391,14 @@
             "loopBoardApplies": "live",
             "markdownDescription": "Scroll long In Progress task titles and subagent labels in the sidebar back and forth so the whole text passes by. Off (default) holds them still and truncates them with `…` instead; hover a row for the full text. The OS-level reduced-motion setting is honoured either way."
           },
+          "loopBoard.cardsStartCollapsed": {
+            "type": "boolean",
+            "scope": "application",
+            "order": 40,
+            "default": false,
+            "loopBoardApplies": "live",
+            "markdownDescription": "Start board cards collapsed in every phase tab (New, Backlog, In Progress, Feedback, Review). Off (default) starts them expanded. A tab you set with **Collapse all** / **Expand all** keeps its state until this setting changes; changing it resets every tab to the new value. Story sections stay folded either way."
+          },
           "loopBoard.debug": {
             "type": "string",
             "scope": "application",
@@ -404,7 +412,7 @@
               "Key lifecycle events only: activation, promote/accept/demote gates, loop spawn/recycle/stop, same-field disk-wins conflicts.",
               "Everything, including every field patch/save, attachment, template scaffold/heal/sync, config read, and webview message dispatch."
             ],
-            "order": 40,
+            "order": 50,
             "default": "off",
             "loopBoardApplies": "live",
             "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
@@ -412,7 +420,7 @@
           "loopBoard.showWhatsNew": {
             "type": "boolean",
             "scope": "application",
-            "order": 50,
+            "order": 60,
             "default": true,
             "loopBoardApplies": "live",
             "markdownDescription": "After LoopBoard updates, open a **What's New** tab once, on the first window load with a LoopBoard workspace. It names the version you updated to and links to its release notes on GitHub (the releases list when you skipped versions); LoopBoard fetches nothing. A first install or a downgrade opens nothing. The tab's **Don't show this again** tick turns this setting off."

@@ -379,7 +379,7 @@ test('every key the code reads is still declared in the manifest', () => {
     'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel',
     'loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee',
-    'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew',
+    'loopBoard.cardsStartCollapsed', 'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
     'loopBoard.delegateWork', 'loopBoard.delegateReview', 'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     'loopBoard.models.opus.enabled', 'loopBoard.models.opus.model',
@@ -405,6 +405,18 @@ test('the sidebar marquee is an opt-in live boolean in Board & Workspace, off by
   // was placed next to became loopBoard.autoSyncTemplates in t-4dce).
   const keys = Object.entries(board.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
   assert.equal(keys.indexOf('loopBoard.sidebarMarquee'), keys.indexOf('loopBoard.autoSyncTemplates') + 1);
+});
+
+test('the card start state is a live boolean in Board & Workspace, expanded by default (t-c8fd)', () => {
+  const board = sections.find((s) => s.title === 'LoopBoard: Board & Workspace');
+  const prop = board.properties['loopBoard.cardsStartCollapsed'];
+  assert.ok(prop, 'loopBoard.cardsStartCollapsed must be declared in Board & Workspace');
+  assert.equal(prop.type, 'boolean');
+  assert.equal(prop.default, false, 'cards start expanded unless the human opts in');
+  assert.equal(prop.scope, 'application');
+  assert.equal(prop.loopBoardApplies, 'live');
+  // The host reads it with the same fallback the manifest declares.
+  assert.match(fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8'), /get<boolean>\('cardsStartCollapsed', false\)/);
 });
 
 test('template auto-sync is a live boolean in Board & Workspace, on by default (t-4dce)', () => {

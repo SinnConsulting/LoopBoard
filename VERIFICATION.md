@@ -115,6 +115,15 @@ questions, an HTML-comment template) and `index-unknown.md`:
   `BoardPanel.show` reading `panel.visible` before `reveal()` are pinned over the source text; the
   live first click is item 62 (untested).
 
+### Cards start collapsed — `test/board-cards-start.test.js` (t-c8fd)
+- `phaseDefaultCollapsed` (lifted from `media/board.js` into a vm) falls back to the board's
+  `cardsStartCollapsed` only for a tab with no saved `collapsedDefault`; `isSectionCollapsed` reads
+  neither. `applyCardsStartSetting`: the first board only records the value; a changed value resets
+  every phase tab's `collapsedDefault` and `collapsed` overrides and leaves `sections` alone; an
+  unchanged one touches nothing. `appliedCardsCollapsed` rides in the `saveState` blob; the host
+  plumbing (`config()`, `buildWebBoard`, `WebBoard`) is pinned over the source text, the manifest
+  key in `test/manifest-settings.test.js`. The live board is item 63 (untested).
+
 ### Loop command — `test/loop.test.js`
 - `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
   `.loopboard/LOOP.md`, is a single apostrophe-free line < 300 chars.
@@ -1570,3 +1579,15 @@ and likewise cannot be verified headless.
       `posted now (visible panel)` respectively.
     - In (b), a sidebar phase row (e.g. Review) also lands the board on that tab on the first
       click.
+
+63. **Cards start collapsed (t-c8fd) — UNTESTED in the live webview:** the fallback and the
+    change-reset rule are pinned by `test/board-cards-start.test.js`; what the board shows is
+    webview-only.
+    - Turn `loopBoard.cardsStartCollapsed` on. In a tab you never pressed Collapse all / Expand all
+      in, every card shows collapsed.
+    - **Expand all** / **Collapse all** and the per-card chevron still work there, and survive a
+      reload. Expanding a card shows its Problem / Description / Goals and Open questions folded.
+    - Set one tab by hand (e.g. Expand all on Backlog), leave the setting unchanged and reload:
+      that tab keeps its hand-set state.
+    - Turn the setting off: every tab, including the hand-set one, resets to expanded, and any
+      per-card chevron state is gone. Section folds you opened stay open.

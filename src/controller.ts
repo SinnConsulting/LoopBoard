@@ -269,6 +269,7 @@ export class Controller {
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       autoSyncTemplates: c.get<boolean>('autoSyncTemplates', true),
       sidebarMarquee: c.get<boolean>('sidebarMarquee', false),
+      cardsStartCollapsed: c.get<boolean>('cardsStartCollapsed', false),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
       // 35 is the default; 0 = the context threshold is off entirely (the indicator still renders).
       contextPercent: sanitizeContextPercent(c.get<number>('contextLimit.percent', 35)),
@@ -321,6 +322,7 @@ export class Controller {
     web.helpUrl = HELP_URL;
     web.maxAttachmentSizeMB = cfg.maxAttachmentSizeMB;
     web.sidebarMarquee = cfg.sidebarMarquee;
+    web.cardsStartCollapsed = cfg.cardsStartCollapsed;
     return web;
   }
 
