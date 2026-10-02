@@ -134,6 +134,10 @@
   let rescuedFeedback = saved.rescuedFeedback && typeof saved.rescuedFeedback === 'object' ? saved.rescuedFeedback : {};
   let collapsedDefault = migrateCollapsedDefault(saved);
   let collapsed = migrateCollapsed(saved);
+  // The `loopBoard.cardsStartCollapsed` value last applied (t-c8fd), kept in the same blob so a
+  // board message can tell a settings CHANGE from an ordinary load. `null` = nothing applied yet
+  // (first load, or an upgrade from before the setting): the first board only records it.
+  let appliedCardsCollapsed = typeof saved.appliedCardsCollapsed === 'boolean' ? saved.appliedCardsCollapsed : null;
   // Per-SECTION collapse overrides (t-aee3), same per-tab shape as `collapsed` one level deeper:
   // `sections[phaseKey][taskId] = { problem?, description?, goals?, questions?, delivered?: boolean }`
   // — `delivered` is the read-only Delivered fold on a Review card, and under `sections.done` the
@@ -230,7 +234,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
+    vscode.setState({ phase, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
   }
 
   // ---- single-line index values (t-c4d1) ----
@@ -405,8 +409,30 @@
   }
 
   // ---- collapse/expand (per phase tab — the current `phase` is the implicit key) ----
+  // A tab with no saved Collapse all / Expand all falls back to the `loopBoard.cardsStartCollapsed`
+  // setting the host puts on the board (t-c8fd); collapsed unless it is explicitly off, so an
+  // absent value agrees with the manifest default (true).
   function phaseDefaultCollapsed() {
-    return !!collapsedDefault[phase];
+    if (Object.prototype.hasOwnProperty.call(collapsedDefault, phase)) return !!collapsedDefault[phase];
+    return !(board && board.cardsStartCollapsed === false);
+  }
+  // Called on every applied board (t-c8fd). A setting that differs from the last applied value
+  // resets every phase tab as if Collapse all / Expand all were pressed in each: the tab default
+  // becomes the new value and its per-card overrides are wiped. `sections` is left alone, like
+  // setPhaseCollapsed. Nothing applied yet → only record the value, so tab state survives an
+  // upgrade. Returns whether anything changed, so the caller persists it.
+  function applyCardsStartSetting(value) {
+    const v = value !== false; // absent = the default, collapsed
+    if (appliedCardsCollapsed === v) return false;
+    const first = appliedCardsCollapsed === null;
+    appliedCardsCollapsed = v;
+    if (!first) {
+      for (const p of PHASE_META) {
+        collapsedDefault[p.key] = v;
+        collapsed[p.key] = {};
+      }
+    }
+    return true;
   }
   function phaseOverrides() {
     if (!collapsed[phase]) collapsed[phase] = {};
@@ -2571,6 +2597,7 @@
     applyRescues(incoming);
     pendingRender = false; // a full render happens below, covering any deferred async repaint
     board = incoming;
+    if (applyCardsStartSetting(incoming.cardsStartCollapsed)) saveState();
     lastSyncTs = Date.now();
     // The confirming board message is the signal that the pending gate action resolved (moved,
     // was refused, or a confirm modal was cancelled) — release the global guard and un-grey every
