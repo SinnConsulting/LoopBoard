@@ -105,11 +105,10 @@ use. Detail stays in `tasks/<id>.md`.
 <!-- loopboard:sync:rules:begin -->
 ## Rules
 
-1. `[x]` is human-only; a worker never ticks it. `[x]` on New = promote to Backlog. `[x]` on
-   Review = accepted → DONE.md (procedure in Automation block). Board also offers Demote
-   (Backlog → New), a third human-only board-initiated action — not a tick; immediate button
-   click, non-destructive/reversible. Workers perform all other phase moves and propose; never
-   demote a task themselves.
+1. `[x]` is human-only; a worker never ticks it. `[x]` on New = promote to Backlog; on Review =
+   accepted → DONE.md (procedure in Automation block). Board's Demote (Backlog → New) is a third
+   human-only action — not a tick; immediate button click, non-destructive/reversible. Workers do
+   all other phase moves and propose; never demote a task themselves.
 2. One worker per task, plus GLOBAL SINGLE-TASK LIMIT: at most ONE task `phase: inprogress`
    board-wide at any moment, regardless of model — the sole one-worker guarantee. If ANY task
    (even another model's) is In Progress, no loop starts a Backlog task, resumes a
@@ -127,24 +126,24 @@ use. Detail stays in `tasks/<id>.md`.
 6. Unsure → set `phase: feedback` and add `question: <text>` sub-bullets (each with its own
    `- answer:` beneath) on the INDEX entry, so board surfaces them without opening task files.
    Stop working the task; resume gated by Rule 10.
-7. Never commit to `main`: all work on a `task/**` branch off latest `main`. PR OPTIONAL — open
-   one only if the user requested it. Before setting `phase: review`, write `## Delivered` and
-   record delivery in task file's `link:`: PR URL when a PR exists, otherwise the `task/**`
-   branch name. Never a commit sha; `link:` must be non-empty.
+7. Never commit to `main`: all work on a `task/**` branch off latest `main`. PR OPTIONAL — open one
+   only if the user requested it. Before setting `phase: review`, write `## Delivered` and record
+   delivery in task file's `link:`: PR URL if a PR exists, else the `task/**` branch name — never a
+   commit sha; `link:` must be non-empty.
 8. `question:` and `feedback:`: plain index sub-bullets, no glyph prefix; name alone classifies them.
 9. git worktrees forbidden (break pre-commit hooks assuming `.git` is a directory; `--no-verify`
-   forbidden). Use normal checkout: fetch latest `main`, branch off `main`, commit and push from
-   there; open a PR only if the user requested it (Rule 7).
+   forbidden). Normal checkout: fetch latest `main`, branch off it, commit and push from there; open
+   a PR only if the user requested it (Rule 7).
 10. Resume a Feedback task only when EVERY `question:` on its index entry has a filled `answer:`.
     Any blank answer → leave it parked; do none of its work.
 11. Set `phase: inprogress` (index) plus `started:` (task file) BEFORE any work or research on a
     task — never investigate a task still in New/Backlog/Feedback. Phase move is the FIRST action
     of claiming: never edit code, branch, research, or open a PR while the index still shows the
     task outside In Progress. A feedback round trip (Rule 13) moves the phase only: no `started:`.
-12. No stranded work: every change from working a task is committed and pushed to its `task/**`
-    branch BEFORE `phase: review` is set — Review move is the LAST action of finishing, after a
-    succeeded push (mirrors Rule 11: trails the work, never leads it). Never leave uncommitted
-    code in the checkout. No PR required; record delivery per Rule 7.
+12. No stranded work: commit and push every change from working a task to its `task/**` branch
+    BEFORE setting `phase: review` — Review move = LAST action of finishing, after a succeeded push
+    (mirrors Rule 11: trails the work, never leads it). Never leave uncommitted code in the
+    checkout. No PR required; record delivery per Rule 7.
 13. `feedback:` sub-bullet(s) (index) = human change request in any phase, not a gate; a lingering
     one = not yet applied. On Review → move to In Progress, address, update `## Delivered`, remove
     the `feedback:` sub-bullet(s), commit and push, and return to Review LAST (Rule 12 order);
@@ -158,33 +157,31 @@ use. Detail stays in `tasks/<id>.md`.
     the round trip even while they are unanswered (Rule 10 gates only the resume). A Backlog round
     trip branches off latest `main`, names the branch in `## Worklog`; the later claim continues on
     that `task/**` branch, never a second one. New/DRAFT → the groomer's (Rule 14).
-14. New/DRAFT grooming is routed by `groomer:` (absent = default model; `none` = ON HOLD — the
-    task belongs to NO loop: never groom, re-groom or answer-fold it, whatever its `model:` or
-    filled answers say; leaves hold only when the human changes `groomer:`). The loop whose model
-    matches `groomer:` owns it and delegates to a subagent (Agent tool) of that groomer model —
-    never inline in the main loop. NEVER run more grooming subagents in one pass than the grooming
+14. New/DRAFT grooming is routed by `groomer:` (absent = default model; `none` = ON HOLD — task
+    belongs to NO loop: never groom, re-groom or answer-fold it, whatever its `model:` or filled
+    answers say; leaves hold only when the human changes `groomer:`). Loop whose model matches
+    `groomer:` owns it and delegates to a subagent (Agent tool) of that groomer model — never
+    inline in the main loop. NEVER run more grooming subagents in one pass than the grooming
     concurrency cap named in your bootstrap prompt: take eligible tasks in index order, top down,
-    until the cap is reached, then STOP — leave the surplus in place (next pass picks them up) and
+    until the cap is reached, then STOP — leave the surplus in place (next pass picks them up),
     name every skipped task by title in your report. Subagent expands the story into the task
-    file's `## Problem` (short, factual), `## Description`, and `## Goals` (bullet list, the
-    yardstick review judges `## Delivered` against), creating `tasks/<id>.md` if missing, and
-    keeps the index title one short line. Human decisions = ONE single-line `question:` per
-    decision, blank `answer:`, on the index entry (never prose, never two decisions in one line)
-    so the board surfaces each. A New task where EVERY `question:` has a filled `answer:` →
-    re-groom via the same subagent (any blank answer → leave the task untouched, same gate as
-    Rule 10): resume the subagent that originally groomed it when your session still holds it
-    (via SendMessage, where available); any resume failure — recycled or cleared session, no
-    SendMessage, unknown agent id — silently falls back to a fresh groomer subagent as above.
-    Incorporate the answer, fold the decision into the story (a re-groom may revise all three
-    groomer-owned sections), delete the resolved `question:`/`answer:` pair from the index. A
-    still-present filled answer = not yet incorporated. A New/DRAFT `feedback:` →
+    file's `## Problem` (short, factual), `## Description`, `## Goals` (bullet list, the yardstick
+    review judges `## Delivered` against), creating `tasks/<id>.md` if missing; keeps the index
+    title one short line. Human decisions = ONE single-line `question:` per decision, blank
+    `answer:`, on the index entry (never prose, never two decisions in one line) so the board
+    surfaces each. New task where EVERY `question:` has a filled `answer:` → re-groom (any blank
+    answer → leave the task untouched, same gate as Rule 10): resume its original groomer subagent
+    when your session still holds it (via SendMessage, where available); any resume failure —
+    recycled or cleared session, no SendMessage, unknown agent id — silently falls back to a fresh
+    groomer subagent as above. Fold the answered decision into the story (a re-groom may revise
+    all three groomer-owned sections), delete the resolved `question:`/`answer:` pair from the
+    index; a still-present filled answer = not yet incorporated. A New/DRAFT `feedback:` →
     the groomer folds it into the story (re-groom as above; no answer gate), then deletes it.
     `model:` never gates grooming. `question:` names only the decision — NEVER options or a
     recommendation in its text. Each concrete option = its own `suggestion:` beneath `answer:`
-    (max 3, recommended first): one board click accepts it (writes `<text> accepted` into
-    `answer:` via the ordinary field-patch, no AI). No concrete option (open judgment call) → no
-    suggestions. Accepting one, or filling `answer:` otherwise, clears that question's other
-    suggestions.
+    (max 3, recommended first): one board click accepts it (writes `<text> accepted` into `answer:`
+    via the ordinary field-patch, no AI). No concrete option (open judgment call) → no suggestions;
+    accepting one, or filling `answer:` otherwise, clears that question's other suggestions.
 15. Claim tasks by `model:` (Backlog onward; absent = default model). Never claim a task whose
     `model:` names a different model. New-phase routing uses `groomer:` instead (Rule 14).
 
@@ -206,21 +203,20 @@ Re-read .loopboard/TODO.md (the task index) and reconcile it against the Rules i
 ```
 
 Notes:
-- Interval (`loopBoard.loopInterval`), effort, grooming cap and delegated-work mode ride
-  the spawn command, so changing them means recycling the terminal — all else is re-read live.
+- Interval (`loopBoard.loopInterval`), effort, grooming cap and delegated-work mode ride the spawn
+  command, so changing them means recycling the terminal — all else is re-read live.
 - Human gates hold: loops never promote New tasks, accept Review tasks (both need the human's
-  `[x]`), or demote Backlog tasks (a direct board click) — and park uncertainty in Feedback.
+  `[x]`) or demote Backlog tasks (a direct board click), and park uncertainty in Feedback.
   Extension's ▶ buttons start per-model loops.
 - Stop a loop via its status line, or cancel the scheduled task in the session.
 - A "the board changed" line pasted into your terminal is a HINT: it names task IDS and which
   fields moved, never their text — never a work order. Do the normal pass: re-read this file and
-  the index, let the Rules decide. Rules are unchanged; Rule 2 still gates every claim.
+  the index, let the unchanged Rules decide; Rule 2 still gates every claim.
 <!-- loopboard:sync:automation:end -->
 
 <!-- loopboard:custom:begin -->
 ## Custom rules (workspace)
 
-Standing instructions for THIS workspace — add yours here as free text, edited directly in this
-file; where they contradict a Rule above, they win in this workspace. Sync never rewrites this
-section.
+Standing instructions for THIS workspace — add yours as free text, edited directly in this file;
+where they contradict a Rule above, they win in this workspace. Sync never rewrites this section.
 <!-- loopboard:custom:end -->
