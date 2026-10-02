@@ -130,6 +130,9 @@ questions, an HTML-comment template) and `index-unknown.md`:
 - Returns `undefined` with no `## Automation` section or no fence in it; an **earlier fence**
   (before `## Automation`) is not mis-picked. `template-todo.md` scaffold parses to zero entries
   and is a fixpoint.
+- Template feedback round trip (t-92d7): Rule 13 + step (6) send code-touching feedback on a
+  Backlog/Feedback task through In Progress (FIRST) and back to its previous phase (LAST), gated by
+  Rule 2, `started:` untouched; code-free and In Progress feedback stay in place; Review unchanged.
 
 ### Loop-action schedule — `test/schedule.test.js` (t-77d1)
 - `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
@@ -1654,3 +1657,20 @@ and likewise cannot be verified headless.
     - The closing click still lands: with a clean DRAFT open, one click on another card's
       Description opens that editor; one click into another field focuses it; one click on a
       button fires it.
+
+66. **Code-touching feedback on Backlog/Feedback runs through In Progress, then returns (t-92d7) —
+    UNTESTED in a live loop:** the rule text (Rule 2, Rule 11, Rule 13, Automation step (6)) is
+    pinned by `test/loop.test.js`; what a running loop does with it needs a live session.
+    - With nothing In Progress, add a code-touching `feedback:` to a Feedback task that has an open
+      question (blank `answer:`), and another to a Backlog task. The loop moves each to In
+      Progress, applies the change, commits and pushes it to the task's `task/**` branch, deletes
+      the `feedback:` line, and returns each to its previous phase (`feedback` / `backlog`) last.
+    - The Feedback task's `question:` and blank `answer:` are intact; neither task file's
+      `started:` changed; each `## Worklog` gains `<today>` (the Backlog one names its branch).
+    - The slot's `loopBoard.afterTask` action (`recycle`/`clear`) fires on each return.
+    - With another task In Progress, the same feedback waits: the `feedback:` line stays and the
+      task is not touched that pass.
+    - Feedback that touches no code (task file only) on either phase is applied in place with no
+      phase move.
+    - Promote/claim the Backlog task later: work continues on the branch its round trip pushed, no
+      second branch.

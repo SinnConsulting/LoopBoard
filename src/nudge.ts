@@ -64,7 +64,8 @@ export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model:
 
   const model = entry.model ?? defaults.worker;
   // Feedback outranks the phase-specific reasons in every phase: it is an explicit human
-  // instruction (Rule 13 — Review reopens, any other phase applies it in place).
+  // instruction (Rule 13 — Review reopens; code-touching feedback on Backlog/Feedback takes an
+  // In Progress round trip; anything else applies it in place).
   if (entry.feedback.length > 0) return { model, reason: 'feedback' };
   if (entry.phase === 'backlog') return { model, reason: 'backlog' };
   if (entry.phase === 'feedback') {
@@ -195,8 +196,9 @@ export function computeNudges(
   const before = new Map(prev.map((e) => [e.id, e]));
   // Rule 2's GLOBAL SINGLE-TASK LIMIT: while any task is In Progress board-wide, no loop may claim
   // a Backlog task, so a "claim this" nudge would be an instruction to do nothing. Grooming and
-  // feedback still route — feedback outside Review is applied in place, and a Review reopen is
-  // gated by Rule 2 on the loop's side anyway.
+  // feedback still route — feedback that touches no code (or sits on an In Progress task) is
+  // applied in place, and a Review reopen or a Backlog/Feedback code round trip is gated by Rule 2
+  // on the loop's side anyway; only the loop can tell code-touching feedback from the rest.
   const busy = next.some((e) => e.phase === 'inprogress');
   const routes = new Map<Model, NudgeItem[]>();
 
