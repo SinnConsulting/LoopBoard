@@ -410,10 +410,11 @@
 
   // ---- collapse/expand (per phase tab — the current `phase` is the implicit key) ----
   // A tab with no saved Collapse all / Expand all falls back to the `loopBoard.cardsStartCollapsed`
-  // setting the host puts on the board (t-c8fd); expanded when it is off or absent.
+  // setting the host puts on the board (t-c8fd); collapsed unless it is explicitly off, so an
+  // absent value agrees with the manifest default (true).
   function phaseDefaultCollapsed() {
     if (Object.prototype.hasOwnProperty.call(collapsedDefault, phase)) return !!collapsedDefault[phase];
-    return !!(board && board.cardsStartCollapsed);
+    return !(board && board.cardsStartCollapsed === false);
   }
   // Called on every applied board (t-c8fd). A setting that differs from the last applied value
   // resets every phase tab as if Collapse all / Expand all were pressed in each: the tab default
@@ -421,7 +422,7 @@
   // setPhaseCollapsed. Nothing applied yet → only record the value, so tab state survives an
   // upgrade. Returns whether anything changed, so the caller persists it.
   function applyCardsStartSetting(value) {
-    const v = !!value;
+    const v = value !== false; // absent = the default, collapsed
     if (appliedCardsCollapsed === v) return false;
     const first = appliedCardsCollapsed === null;
     appliedCardsCollapsed = v;

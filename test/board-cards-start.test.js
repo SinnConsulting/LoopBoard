@@ -51,8 +51,10 @@ test('a tab with no saved Collapse all / Expand all falls back to the board-supp
   assert.equal(ctx.phaseDefaultCollapsed(), true);
   ctx.board = { cardsStartCollapsed: false };
   assert.equal(ctx.phaseDefaultCollapsed(), false);
-  ctx.board = {}; // absent (older host) = expanded
-  assert.equal(ctx.phaseDefaultCollapsed(), false);
+  ctx.board = {}; // absent (older host) = the default, collapsed
+  assert.equal(ctx.phaseDefaultCollapsed(), true);
+  ctx.board = null; // no board yet = the default, collapsed
+  assert.equal(ctx.phaseDefaultCollapsed(), true);
   // An explicit tab value wins over the setting, both ways.
   ctx.collapsedDefault = { backlog: false };
   ctx.board = { cardsStartCollapsed: true };
@@ -106,6 +108,15 @@ test('a changed setting resets every phase tab; sections are untouched', () => {
   for (const p of PHASES) assert.equal(ctx.collapsedDefault[p], false);
 });
 
+test('an absent setting counts as the default, collapsed', () => {
+  const ctx = sandbox({ appliedCardsCollapsed: true, collapsedDefault: { backlog: false } });
+  assert.equal(ctx.applyCardsStartSetting(undefined), false, 'absent = collapsed = unchanged');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.collapsedDefault)), { backlog: false });
+  const fresh = sandbox({});
+  assert.equal(fresh.applyCardsStartSetting(undefined), true);
+  assert.equal(fresh.appliedCardsCollapsed, true);
+});
+
 test('an unchanged setting leaves hand-set tabs alone', () => {
   const ctx = sandbox({
     appliedCardsCollapsed: true,
@@ -126,7 +137,7 @@ test('the last-applied value is persisted and restored through the setState blob
 });
 
 test('the setting reaches the webview payload', () => {
-  assert.match(controller, /cardsStartCollapsed: c\.get<boolean>\('cardsStartCollapsed', false\)/);
+  assert.match(controller, /cardsStartCollapsed: c\.get<boolean>\('cardsStartCollapsed', true\)/);
   const start = controller.indexOf('private async buildWebBoard(');
   assert.ok(start >= 0, 'expected buildWebBoard in src/controller.ts');
   const build = controller.slice(start, controller.indexOf('\n  }\n', start));

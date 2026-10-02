@@ -399,9 +399,9 @@
             "type": "boolean",
             "scope": "application",
             "order": 40,
-            "default": false,
+            "default": true,
             "loopBoardApplies": "live",
-            "markdownDescription": "Start board cards collapsed in every phase tab (New, Backlog, In Progress, Feedback, Review). Off (default) starts them expanded. A tab you set with **Collapse all** / **Expand all** keeps its state until this setting changes; changing it resets every tab to the new value. Story sections stay folded either way."
+            "markdownDescription": "Start board cards collapsed in every phase tab (New, Backlog, In Progress, Feedback, Review). On (default) starts them collapsed; off starts them expanded. A tab you set with **Collapse all** / **Expand all** keeps its state until this setting changes; changing it resets every tab to the new value. Story sections stay folded either way."
           },
           "loopBoard.debug": {
             "type": "string",

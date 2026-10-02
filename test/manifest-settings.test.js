@@ -407,16 +407,16 @@ test('the sidebar marquee is an opt-in live boolean in Board & Workspace, off by
   assert.equal(keys.indexOf('loopBoard.sidebarMarquee'), keys.indexOf('loopBoard.autoSyncTemplates') + 1);
 });
 
-test('the card start state is a live boolean in Board & Workspace, expanded by default (t-c8fd)', () => {
+test('the card start state is a live boolean in Board & Workspace, collapsed by default (t-c8fd)', () => {
   const board = sections.find((s) => s.title === 'LoopBoard: Board & Workspace');
   const prop = board.properties['loopBoard.cardsStartCollapsed'];
   assert.ok(prop, 'loopBoard.cardsStartCollapsed must be declared in Board & Workspace');
   assert.equal(prop.type, 'boolean');
-  assert.equal(prop.default, false, 'cards start expanded unless the human opts in');
+  assert.equal(prop.default, true, 'cards start collapsed unless the human opts out');
   assert.equal(prop.scope, 'application');
   assert.equal(prop.loopBoardApplies, 'live');
   // The host reads it with the same fallback the manifest declares.
-  assert.match(fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8'), /get<boolean>\('cardsStartCollapsed', false\)/);
+  assert.match(fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8'), /get<boolean>\('cardsStartCollapsed', true\)/);
 });
 
 test('template auto-sync is a live boolean in Board & Workspace, on by default (t-4dce)', () => {
