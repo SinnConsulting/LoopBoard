@@ -77,7 +77,7 @@ const GETTING_STARTED_DISMISSED_KEY = 'loopboard.gettingStarted.dismissed';
 // "I have seen this version" is per user profile and shared by every window.
 const WHATS_NEW_LAST_SEEN_KEY = 'loopboard.whatsNew.lastSeenVersion';
 // Show some love (t-b6fa): tasks accepted on the board, and the card's state (fresh / snoozed until a
-// count / ended). globalState, per profile — never `.loopboard/`, which a cloned repo shares.
+// count / loved, still showing / ended). globalState, per profile — never `.loopboard/`, which a cloned repo shares.
 const LOVE_COUNT_KEY = 'loopboard.love.accepted';
 const LOVE_STATE_KEY = 'loopboard.love.state';
 // DEAD KEY, kept only to be deleted. An earlier build of the migration panel could not remove
@@ -187,7 +187,7 @@ export class Controller {
   // What the open What's New tab shows (t-f070): set when the activation check or an on-demand open
   // (no `previous`) opens it. The link the tab opens is THIS url, never one the webview sends back.
   private whatsNew: { previous?: string; current?: string; url: string } | undefined;
-  // The `loopBoard.showLove` command's card (t-b6fa). SESSION-ONLY: Close or a link drops it.
+  // The `loopBoard.showLove` command's card (t-b6fa). SESSION-ONLY: only Close drops it (a link keeps it).
   private loveOnDemand = false;
 
   constructor(

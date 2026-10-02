@@ -417,7 +417,7 @@
 
   // ---- show some love (t-b6fa) ----
   // The card posts a choice KEY only; the host maps it to its own URL (never `openLink`, never a URL
-  // from here). `love` = { count, final, onDemand } from the host.
+  // from here). `love` = { count, final, onDemand, loved } from the host.
   function loveCard(love) {
     const choose = (choice) => () => vscode.postMessage({ type: 'love', choice: choice });
     const link = (choice, name, label) => h('button', { class: 'love-link', type: 'button', onclick: choose(choice) },
@@ -430,8 +430,9 @@
       ? "You've shipped " + love.count + (love.count === 1 ? ' task' : ' tasks') + ' with LoopBoard.'
       : 'Thanks for using LoopBoard!';
     const text = (counted ? 'Thank you! ' : '') + 'If it saves you time, a little love helps other people find it.';
-    // First card: Maybe later · No thanks. Final card (after one snooze): No thanks only. On demand: Close.
-    const footer = love.onDemand ? [foot('close', 'Close')]
+    // First card: Maybe later · No thanks. Final card (after one snooze): No thanks only. On demand, or
+    // once a link was clicked (links never hide the card): Close.
+    const footer = love.onDemand || love.loved ? [foot('close', 'Close')]
       : love.final ? [foot('nothanks', 'No thanks')]
       : [foot('later', 'Maybe later'), h('span', { class: 'sb-sep', 'aria-hidden': 'true' }, '·'), foot('nothanks', 'No thanks')];
     return h('div', { class: 'love-card', role: 'region', 'aria-label': 'Show some love' },

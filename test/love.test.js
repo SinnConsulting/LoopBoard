@@ -46,12 +46,42 @@ test('the first card shows at the 10th accept, at no count from 0 to 9, and stay
   }
 });
 
-test('No thanks and each of the three links end it: never shown again at any later count', () => {
-  for (const choice of ['nothanks', ...LINKS]) {
+test('No thanks ends it: never shown again at any later count', () => {
+  for (const at of [10, 11, 37]) {
+    const next = choose(FRESH, 'nothanks', at);
+    assert.deepEqual(next, { kind: 'ended' }, `nothanks at ${at}`);
+    for (let c = at; c <= at + 500; c++) assert.equal(decideLove(c, next).show, false, `nothanks at ${at}, count ${c}`);
+  }
+});
+
+test('a link opens but keeps the card (love recorded); the dismissal after it ends it for good', () => {
+  for (const link of LINKS) {
     for (const at of [10, 11, 37]) {
-      const next = choose(FRESH, choice, at);
-      assert.deepEqual(next, { kind: 'ended' }, `${choice} at ${at}`);
-      for (let c = at; c <= at + 500; c++) assert.equal(decideLove(c, next).show, false, `${choice} at ${at}, count ${c}`);
+      const plan = planLoveChoice('first', FRESH, link, at);
+      assert.equal(plan.url, loveLinkUrl(link));
+      assert.equal(plan.hide, false, `${link} must not hide the card`);
+      const loved = choose(FRESH, link, at);
+      assert.deepEqual(loved, { kind: 'loved', final: false }, `${link} at ${at}`);
+      // The card stays — same first card (no burst replay), across counts and the other links.
+      for (let c = at; c <= at + 100; c++) {
+        const d = decideLove(c, loved);
+        assert.equal(d.show, true, `${link} at ${at}, count ${c}`);
+        assert.equal(d.kind, 'first');
+        assert.equal(d.final, false);
+      }
+      for (const other of LINKS) {
+        const again = planLoveChoice('first', loved, other, at);
+        assert.equal(again.write, undefined, 'a second link writes nothing new');
+        assert.equal(again.hide, false);
+        assert.equal(again.url, loveLinkUrl(other));
+      }
+      // Close (the loved card's only footer button) — or a stale later/nothanks — ends it for good.
+      for (const dismiss of ['close', 'later', 'nothanks']) {
+        const next = choose(loved, dismiss, at);
+        assert.deepEqual(next, { kind: 'ended' }, `${dismiss} after ${link}`);
+        assert.equal(planLoveChoice('first', loved, dismiss, at).hide, true);
+        for (let c = at; c <= at + 500; c++) assert.equal(decideLove(c, next).show, false, `${dismiss} after ${link}, count ${c}`);
+      }
     }
   }
 });
@@ -68,21 +98,36 @@ test('Maybe later at C snoozes until C + 25: hidden at C + 24, final at C + 25, 
     assert.equal(final.kind, 'final');
     // Keeps showing (final) until a choice is recorded.
     assert.equal(decideLove(C + 60, snoozed).final, true);
-    // Any choice on the final card — "later" included — ends it for good.
-    for (const choice of ['later', 'nothanks', ...LINKS]) {
+    // Any dismissal on the final card — "later" included — ends it for good.
+    for (const choice of ['later', 'nothanks']) {
       const next = choose(snoozed, choice, C + 25);
       assert.deepEqual(next, { kind: 'ended' }, choice);
       for (let c = C + 25; c <= C + 600; c++) assert.equal(decideLove(c, next).show, false, `${choice}, count ${c}`);
+    }
+    // A link keeps the final card (still final); the dismissal after it ends it for good.
+    for (const link of LINKS) {
+      const loved = choose(snoozed, link, C + 25);
+      assert.deepEqual(loved, { kind: 'loved', final: true }, link);
+      const d = decideLove(C + 30, loved);
+      assert.equal(d.show, true);
+      assert.equal(d.final, true);
+      const next = choose(loved, 'close', C + 30);
+      assert.deepEqual(next, { kind: 'ended' }, `close after ${link}`);
+      for (let c = C + 30; c <= C + 600; c++) assert.equal(decideLove(c, next).show, false, `close after ${link}, count ${c}`);
     }
   }
   assert.deepEqual(applyLoveChoice({ kind: 'snoozed', until: 35 }, 'later', 35), { kind: 'ended' });
 });
 
 test('the view: the final card is marked final (so the sidebar offers no Maybe later), the automatic card wins over on demand', () => {
-  assert.deepEqual(loveView(35, { kind: 'snoozed', until: 35 }, false), { count: 35, final: true, onDemand: false });
-  assert.deepEqual(loveView(10, FRESH, true), { count: 10, final: false, onDemand: false });
-  assert.deepEqual(loveView(3, FRESH, true), { count: 3, final: false, onDemand: true });
-  assert.deepEqual(loveView(0, { kind: 'ended' }, true), { count: 0, final: false, onDemand: true });
+  assert.deepEqual(loveView(35, { kind: 'snoozed', until: 35 }, false), { count: 35, final: true, onDemand: false, loved: false });
+  assert.deepEqual(loveView(10, FRESH, true), { count: 10, final: false, onDemand: false, loved: false });
+  assert.deepEqual(loveView(3, FRESH, true), { count: 3, final: false, onDemand: true, loved: false });
+  assert.deepEqual(loveView(0, { kind: 'ended' }, true), { count: 0, final: false, onDemand: true, loved: false });
+  assert.deepEqual(loveView(12, { kind: 'loved', final: false }, false), { count: 12, final: false, onDemand: false, loved: true });
+  assert.deepEqual(loveView(40, { kind: 'loved', final: true }, true), { count: 40, final: true, onDemand: false, loved: true });
+  assert.equal(loveCardOf(12, { kind: 'loved', final: false }, false), 'first');
+  assert.equal(loveCardOf(40, { kind: 'loved', final: true }, false), 'final');
   assert.equal(loveView(3, FRESH, false), null);
   assert.equal(loveView(50, { kind: 'ended' }, false), null);
   assert.equal(loveCardOf(20, { kind: 'snoozed', until: 35 }, false), 'none');
@@ -92,18 +137,20 @@ test('the view: the final card is marked final (so the sidebar offers no Maybe l
 test('stored values: a bad counter reads 0, an unknown state shape reads fresh, fresh is stored as nothing', () => {
   for (const bad of [undefined, null, -1, 1.5, '12', NaN, Infinity, {}]) assert.equal(loveCount(bad), 0, String(bad));
   assert.equal(loveCount(42), 42);
-  for (const bad of [undefined, null, 'ended', 5, {}, { kind: 'snoozed' }, { kind: 'snoozed', until: '35' }, { kind: 'snoozed', until: -1 }, { kind: 'x' }]) {
+  for (const bad of [undefined, null, 'ended', 5, {}, { kind: 'snoozed' }, { kind: 'snoozed', until: '35' }, { kind: 'snoozed', until: -1 }, { kind: 'x' }, { kind: 'loved' }, { kind: 'loved', final: 'yes' }]) {
     assert.deepEqual(parseLoveState(bad), FRESH, JSON.stringify(bad));
   }
   assert.deepEqual(parseLoveState({ kind: 'ended' }), { kind: 'ended' });
   assert.deepEqual(parseLoveState({ kind: 'snoozed', until: 35 }), { kind: 'snoozed', until: 35 });
+  assert.deepEqual(parseLoveState({ kind: 'loved', final: true }), { kind: 'loved', final: true });
+  assert.deepEqual(serializeLoveState({ kind: 'loved', final: false }), { kind: 'loved', final: false });
   assert.equal(serializeLoveState(FRESH), undefined);
   assert.deepEqual(serializeLoveState({ kind: 'snoozed', until: 35 }), { kind: 'snoozed', until: 35 });
 });
 
 // ---- choices on each card ----
 
-test('the on-demand card (and a stale click with no card) writes no state; Close and links only hide it', () => {
+test('the on-demand card (and a stale click with no card) writes no state; only Close hides it, links keep it', () => {
   for (const state of [FRESH, { kind: 'snoozed', until: 40 }, { kind: 'ended' }]) {
     for (const card of ['ondemand', 'none']) {
       for (const choice of ['close', ...LINKS, 'later', 'nothanks']) {
@@ -111,7 +158,10 @@ test('the on-demand card (and a stale click with no card) writes no state; Close
         assert.equal(plan.write, undefined, `${card} ${choice}`);
       }
       assert.equal(planLoveChoice(card, state, 'close', 5).hide, true);
-      for (const k of LINKS) assert.equal(planLoveChoice(card, state, k, 5).url, loveLinkUrl(k));
+      for (const k of LINKS) {
+        assert.equal(planLoveChoice(card, state, k, 5).url, loveLinkUrl(k));
+        assert.equal(planLoveChoice(card, state, k, 5).hide, false, `${card} ${k} must not hide the card`);
+      }
     }
   }
   // Close is not a button on the automatic card: it neither writes nor hides.
@@ -177,6 +227,9 @@ test('the card posts only a choice key — never a URL — and does not use open
     [{ count: 10, final: false, onDemand: false }, ['github', 'marketplace', 'reddit', 'later', 'nothanks'], ['Star on GitHub', 'Rate on the Marketplace', 'Say hi on r/LoopBoard', 'Maybe later', 'No thanks']],
     [{ count: 35, final: true, onDemand: false }, ['github', 'marketplace', 'reddit', 'nothanks'], ['Star on GitHub', 'Rate on the Marketplace', 'Say hi on r/LoopBoard', 'No thanks']],
     [{ count: 0, final: false, onDemand: true }, ['github', 'marketplace', 'reddit', 'close'], ['Star on GitHub', 'Rate on the Marketplace', 'Say hi on r/LoopBoard', 'Close']],
+    // After a link on the automatic card (first or final), the card stays with only Close.
+    [{ count: 12, final: false, onDemand: false, loved: true }, ['github', 'marketplace', 'reddit', 'close'], ['Star on GitHub', 'Rate on the Marketplace', 'Say hi on r/LoopBoard', 'Close']],
+    [{ count: 36, final: true, onDemand: false, loved: true }, ['github', 'marketplace', 'reddit', 'close'], ['Star on GitHub', 'Rate on the Marketplace', 'Say hi on r/LoopBoard', 'Close']],
   ];
   for (const [love, choices, labels] of cases) {
     const { card, posted } = renderCard(love);
@@ -253,6 +306,8 @@ test('the love line gives the reason for every branch, holds not taken included'
   assert.equal(describeLove(35, decideLove(35, S(35))), 'accept counted (35) — snoozed until 35, reached — final card shown');
   assert.equal(describeLove(40, decideLove(40, S(35))), 'accept counted (40) — snoozed until 35, passed — final card still showing (no choice yet)');
   assert.equal(describeLove(80, decideLove(80, { kind: 'ended' })), 'accept counted (80) — ended, not shown');
+  assert.equal(describeLove(14, decideLove(14, { kind: 'loved', final: false })), 'accept counted (14) — link opened — first card still showing until dismissed');
+  assert.equal(describeLove(41, decideLove(41, { kind: 'loved', final: true })), 'accept counted (41) — link opened — final card still showing until dismissed');
   assert.equal(describeLove(3, decideLove(3, FRESH), 'disk full'), 'could not record count 3 (disk full) — 3/10, not yet');
 });
 
@@ -261,12 +316,15 @@ test('the love-open, love-choice and love-link lines', () => {
   const line = (card, state, choice, count, err) => describeLoveChoice(planLoveChoice(card, state, choice, count), err);
   assert.equal(line('first', FRESH, 'later', 12), 'later on the first card — snoozed until 37');
   assert.equal(line('first', FRESH, 'nothanks', 10), 'nothanks on the first card — ended');
-  assert.equal(line('first', FRESH, 'github', 10), 'github on the first card — ended');
+  assert.equal(line('first', FRESH, 'github', 10), 'github on the first card — love shown; card stays until dismissed');
+  assert.equal(line('first', { kind: 'loved', final: false }, 'reddit', 10), 'reddit on the first card — love already shown; card stays until dismissed');
+  assert.equal(line('first', { kind: 'loved', final: false }, 'close', 10), 'close on the first card — ended (love already shown)');
   assert.equal(line('final', { kind: 'snoozed', until: 35 }, 'later', 35), 'later on the final card — ended (no second snooze)');
-  assert.equal(line('final', { kind: 'snoozed', until: 35 }, 'reddit', 36), 'reddit on the final card — ended');
+  assert.equal(line('final', { kind: 'snoozed', until: 35 }, 'reddit', 36), 'reddit on the final card — love shown; card stays until dismissed');
+  assert.equal(line('final', { kind: 'loved', final: true }, 'close', 36), 'close on the final card — ended (love already shown)');
   assert.equal(line('first', FRESH, 'close', 10), 'close on the first card — not offered there, ignored');
   assert.equal(line('ondemand', FRESH, 'close', 3), 'close on the on-demand card — hidden; counter and state untouched');
-  assert.equal(line('ondemand', FRESH, 'marketplace', 3), 'marketplace on the on-demand card — hidden; counter and state untouched');
+  assert.equal(line('ondemand', FRESH, 'marketplace', 3), 'marketplace on the on-demand card — card stays; counter and state untouched');
   assert.equal(line('ondemand', FRESH, 'later', 3), 'later on the on-demand card — not offered there, ignored');
   assert.equal(line('none', FRESH, 'github', 3), 'github with no card showing — nothing to hide; counter and state untouched');
   assert.equal(line('first', FRESH, 'bogus', 10), 'unknown choice "bogus" on the first card — ignored, nothing opened');
