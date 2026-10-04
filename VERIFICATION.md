@@ -74,6 +74,15 @@ questions, an HTML-comment template) and `index-unknown.md`:
   is out of New, a DRAFT, has any question (blank or answered-unfolded) or feedback; otherwise the
   same result as `promoteIndex`.
 
+### Drag reorder — `test/reorder.test.js`, `test/board-reorder.test.js` (t-81a0)
+- `moveEntry`: before a same-phase anchor / after the last entry of the phase (`null`), other phases
+  keep their order; `unsupported` outside New/Backlog, `conflict` when the entry or anchor left the
+  phase, `notfound`, `noop` — all three refusals leave `doc.entries` untouched; fixpoint after a move
+  on the HTML-comment fixture with entry lines byte-identical.
+- Webview, lifted into a vm: `reorderAnchor` (card id, `null` for the end, nothing on the own slot);
+  attach handlers ignore the reorder drag type and reorder handlers ignore a files-only drag; a
+  second drop while one is in flight posts nothing.
+
 ### View — `test/view.test.js`
 - `computeBadge` = new (incl DRAFTs) + unanswered-feedback + review; dependency marked met when
   its id is in `done: IndexEntry[]`; `hasDetailFile` flows through; `feedback` is the
@@ -1674,3 +1683,20 @@ and likewise cannot be verified headless.
       phase move.
     - Promote/claim the Backlog task later: work continues on the branch its round trip pushed, no
       second branch.
+
+67. **Drag reorder in New and Backlog (t-81a0) — UNTESTED in the live webview:** the index move is
+    pinned by `test/reorder.test.js` and the drop anchor, the drag-type separation and the in-flight
+    guard by `test/board-reorder.test.js`; the drag itself is webview-only. Keep `TODO.md` open
+    beside the board and set `loopBoard.debug` to `info`.
+    - In New, then in Backlog, drag a card by its handle above another card, and another to below
+      the last card: an insertion line shows the slot, the card lands there after the refresh (not
+      before), and `TODO.md` shows the entry moved with its own lines unchanged. Dropping a card on
+      its own slot changes nothing.
+    - In Progress, Feedback, Review and Done show no handle; nor does New or Backlog while the
+      search box (or a sidebar custom view) filters the tab, or while the tab holds one card.
+    - Dropping an image file on a card (and into a Description editor) still attaches it; dragging a
+      card over another card never shows the dashed attach outline.
+    - Start a drag, have a loop (or a hand edit) move that task out of the phase, then drop: the
+      "Task is no longer in <tab>" toast shows and `TODO.md` is unchanged.
+    - `.loopboard/debug.log` shows `reorder-request` and `reorder` (`applied`, `noop`, `conflict (…)`)
+      lines at `info`.

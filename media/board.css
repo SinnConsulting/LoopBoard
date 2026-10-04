@@ -140,6 +140,16 @@ textarea { resize: vertical; }
 .card.conflict { outline: 2px solid var(--vscode-inputValidation-warningBorder, #cca700); outline-offset: -1px; }
 .card.draft { border: 1px dashed var(--vscode-widget-border, #454545); border-left: 1px dashed var(--vscode-widget-border, #454545); }
 .card.drag-over { outline: 2px dashed var(--vscode-focusBorder, #007fd4); outline-offset: -1px; }
+.card.dragging { opacity: 0.5; }
+/* Reorder insertion line (t-81a0), drawn in the 12px gap between cards so it shifts no layout. */
+.card.drop-before::after, .card.drop-after::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px; pointer-events: none;
+  background: var(--vscode-focusBorder, #007fd4);
+}
+.card.drop-before::after { top: -8px; }
+.card.drop-after::after { bottom: -8px; }
+.drag-handle { cursor: grab; flex-shrink: 0; margin-top: 3px; font-size: 14px; opacity: 0.6; }
+.drag-handle:hover { opacity: 1; }
 /* Gate-in-flight feedback (t-a9d5): instant, unmistakable "clicked" state for Approve/Accept/
    Demote — greys the card and blocks further clicks on it until the confirming board refresh
    arrives (see applyBoard's acting-flag clear). */

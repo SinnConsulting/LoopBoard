@@ -10,7 +10,7 @@ import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone } from './writer';
 import { parseTaskFile, serializeTaskFile, draftDescription } from './taskfile';
 import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
-import { promoteIndex, promoteIndexIfReady, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry } from './gates';
+import { promoteIndex, promoteIndexIfReady, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry, moveEntry, MoveOutcome } from './gates';
 import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
 import { stripAttachmentLink, unreferencedAttachments } from './attachments';
@@ -18,6 +18,7 @@ import { stripAttachmentLink, unreferencedAttachments } from './attachments';
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error' | 'unsupported'; message?: string };
 export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string; feedback?: string[] };
 export type DraftOutcome = SaveOutcome & { id?: string };
+export type ReorderOutcome = { status: MoveOutcome };
 
 // Opt-in debug trace level (loopBoard.debug). `off` = the sink is never touched.
 export type DebugLevel = 'off' | 'info' | 'verbose';
@@ -591,6 +592,23 @@ export class Store {
     await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
     this.debugLog('info', 'demote', `${entry.id} -> new`);
     return { status: 'applied' };
+  }
+
+  // Reorder (t-81a0): move one index entry within TODO.md — the loops' pick order. Unlike demote it
+  // takes the write lock; it writes TODO.md only (no task file, no worklog line).
+  async reorder(taskId: string, phase: string, beforeId: string | null): Promise<ReorderOutcome> {
+    return this.writeLock.run(async () => {
+      const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
+      const status = moveEntry(doc, taskId, phase, beforeId);
+      if (status === 'applied') await this.atomicWrite(this.todoUri, serializeTodo(doc));
+      let detail: string = status;
+      if (status === 'conflict') {
+        const onDisk = (id: string) => doc.entries.find((e) => e.id === id)?.phase ?? 'missing';
+        detail = `conflict (${taskId} is ${onDisk(taskId)}${beforeId === null ? '' : `, ${beforeId} is ${onDisk(beforeId)}`})`;
+      }
+      this.debugLog('info', 'reorder', `${taskId} before ${beforeId ?? 'end'} in ${phase} -> ${detail}`);
+      return { status };
+    });
   }
 
   // Accept a Review task: (1) set completed: in the task file; (2) prepend to DONE.md; (3) remove

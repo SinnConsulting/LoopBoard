@@ -395,8 +395,10 @@ in `docs/showcase/studio/scenes/`.
 
 - **Markdown is the source of truth.** The board is a live view of `.loopboard/`, never a second
   database.
-- **Three human actions:** promote, accept, demote — the **Promote**, **Approve** and **Demote**
-  buttons. Everything else is a field the loops read on their next pass.
+- **Four human actions:** promote, accept, demote, reorder — the **Promote**, **Approve** and
+  **Demote** buttons, and dragging a New or Backlog card by its handle. `TODO.md` order is the
+  loops' pick order: they take the top task and never reorder. Everything else is a field the
+  loops read on their next pass.
 - **Zero runtime dependencies.** Vanilla HTML/CSS/JS webviews with a CSP nonce on every script.
 - **Native VS Code only.** A webview, an activity-bar view and plain terminals. No hooks, no files
   outside `.loopboard/`. Uninstall it and only `.loopboard/` remains.

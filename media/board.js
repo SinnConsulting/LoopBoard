@@ -49,6 +49,23 @@
       onclick: () => { if (firedByPointer) { firedByPointer = false; return; } commit(); },
     })].concat(children));
   }
+  // Drag reorder (t-81a0). The drag carries its own dataTransfer type, so the attach handlers can
+  // ignore a card drag and the reorder handlers ignore a file drag — a card dropped on a card never
+  // stages an attachment.
+  const REORDER_TYPE = 'application/x-loopboard-task';
+  function isReorderDrag(dt) {
+    return !!dt && Array.from(dt.types || []).indexOf(REORDER_TYPE) >= 0;
+  }
+  // `ids` and `mids` (vertical centres) are the rendered cards, top down. Returns the id to post as
+  // `beforeId`, `null` for the end of the tab, or `undefined` for the dragged card's own slot (no
+  // message — the order would not change).
+  function reorderAnchor(ids, mids, draggedId, y) {
+    let slot = 0;
+    while (slot < mids.length && y > mids[slot]) slot++;
+    const own = ids.indexOf(draggedId);
+    if (own < 0 || slot === own || slot === own + 1) return undefined;
+    return slot < ids.length ? ids[slot] : null;
+  }
   const SVG = {
     check: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8.5l3.2 3.2L13 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     robot: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1.5"/><path d="M8 5V3" stroke-linecap="round"/><line x1="6" y1="8.5" x2="6" y2="9.5" stroke-linecap="round"/><line x1="10" y1="8.5" x2="10" y2="9.5" stroke-linecap="round"/></svg>',
@@ -195,6 +212,8 @@
   // different card that reflowed into the same screen position during the ~1s round-trip never
   // fires a second, wrong-card gate action. Cleared in applyBoard when the confirming board lands.
   let gateInFlight = false;
+  // The card being dragged by its handle ({ taskId, phase } as rendered), or null.
+  let reorderDrag = null;
   // Local in-tab search (Cmd/Ctrl+F while the board webview is focused): filters ONLY the current
   // tab's cards by id/title/problem/description/goals — no cross-phase search, no next/prev nav
   // (filter-only).
@@ -955,6 +974,7 @@
         if (full.length === 0) inner.append(h('div', { class: 'muted-11' }, 'Nothing here.'));
         else if (list.length === 0) inner.append(h('div', { class: 'muted-11' }, 'No matches in this tab for “' + effectiveQuery().trim() + '”.'));
         for (const t of list) cards.append(t.isDraft ? renderDraft(t) : renderCard(t));
+        if (reorderableTab(phase)) wireReorderDrop(cards);
         inner.append(cards);
       }
     }
@@ -1267,6 +1287,7 @@
     const card = h('div', { class: cls, 'data-task': t.id },
       t._flash ? h('div', { class: 'flash-overlay flash' }) : null,
       h('div', { class: 'card-head' },
+        dragHandle(t),
         h('button', {
           class: 'icon-btn collapse-toggle', type: 'button',
           'aria-expanded': isCollapsedCard ? 'false' : 'true',
@@ -1383,10 +1404,75 @@
     el.focus();
     if (restore.start != null) { try { el.setSelectionRange(restore.start, restore.end); } catch (e) { /* detached */ } }
   }
+  // New and Backlog only (owner decision): the two tabs whose order a loop reads. Off under any
+  // search — with cards hidden in between, "before the card below" would be ambiguous.
+  function reorderableTab(key) {
+    return (key === 'new' || key === 'backlog') && !effectiveQuery().trim()
+      && !!board && (board.phases[key] || []).length > 1;
+  }
+  // The handle, not the card, is draggable: a draggable ancestor breaks text selection in the
+  // card's textareas and inputs.
+  function dragHandle(t) {
+    if (!reorderableTab(t.phase)) return null;
+    return h('span', {
+      class: 'drag-handle codicon codicon-gripper', draggable: 'true', role: 'img',
+      title: 'Drag to reorder — the loops take this tab top down', 'aria-label': 'Drag to reorder',
+      ondragstart: (e) => {
+        const card = e.currentTarget.closest('.card');
+        reorderDrag = { taskId: t.id, phase: t.phase };
+        e.dataTransfer.setData(REORDER_TYPE, t.id);
+        e.dataTransfer.effectAllowed = 'move';
+        if (card) { e.dataTransfer.setDragImage(card, 12, 12); card.classList.add('dragging'); }
+      },
+      ondragend: (e) => {
+        reorderDrag = null;
+        const card = e.currentTarget.closest('.card');
+        if (card) card.classList.remove('dragging');
+        showDropLine(document, undefined);
+      },
+    });
+  }
+  function showDropLine(root, anchor) {
+    for (const c of root.querySelectorAll('.drop-before, .drop-after')) c.classList.remove('drop-before', 'drop-after');
+    if (anchor === undefined || root === document) return;
+    const cards = Array.from(root.children).filter((c) => c.dataset && c.dataset.task);
+    const target = anchor === null ? cards[cards.length - 1] : cards.find((c) => c.dataset.task === anchor);
+    if (target) target.classList.add(anchor === null ? 'drop-after' : 'drop-before');
+  }
+  // No optimistic move (non-negotiable 5): the drop only posts; the card lands where the refreshed
+  // board says. A second drop during the round trip is swallowed by the gate guard.
+  function wireReorderDrop(list) {
+    const anchorAt = (y) => {
+      const cards = Array.from(list.children).filter((c) => c.dataset && c.dataset.task);
+      const mids = cards.map((c) => { const r = c.getBoundingClientRect(); return r.top + r.height / 2; });
+      return reorderAnchor(cards.map((c) => c.dataset.task), mids, reorderDrag.taskId, y);
+    };
+    list.addEventListener('dragover', (e) => {
+      if (!reorderDrag || !isReorderDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      showDropLine(list, anchorAt(e.clientY));
+    });
+    list.addEventListener('dragleave', (e) => {
+      if (!list.contains(e.relatedTarget)) showDropLine(list, undefined);
+    });
+    list.addEventListener('drop', (e) => {
+      if (!reorderDrag || !isReorderDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      showDropLine(list, undefined);
+      const beforeId = anchorAt(e.clientY);
+      const drag = reorderDrag;
+      reorderDrag = null;
+      if (beforeId === undefined || gateInFlight) return;
+      gateInFlight = true;
+      post({ type: 'reorder', taskId: drag.taskId, phase: drag.phase, beforeId });
+    });
+  }
   function wireAttachDropAndPaste(card, taskId) {
-    card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragover', (e) => { if (isReorderDrag(e.dataTransfer)) return; e.preventDefault(); card.classList.add('drag-over'); });
     card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
     card.addEventListener('drop', (e) => {
+      if (isReorderDrag(e.dataTransfer)) return;
       e.preventDefault();
       card.classList.remove('drag-over');
       const files = e.dataTransfer && e.dataTransfer.files;
@@ -1450,6 +1536,7 @@
       });
     };
     el.addEventListener('drop', (e) => {
+      if (isReorderDrag(e.dataTransfer)) return;
       const files = e.dataTransfer && e.dataTransfer.files;
       if (files && files.length) { e.preventDefault(); e.stopPropagation(); stage(files[0]); }
     });
@@ -1574,6 +1661,8 @@
     // head: collapse toggle, title, model select
     const head = h('div', { class: 'card-head' });
 
+    const grip = dragHandle(t);
+    if (grip) head.append(grip);
     head.append(h('button', {
       class: 'icon-btn collapse-toggle', type: 'button',
       'aria-expanded': isCollapsedCard ? 'false' : 'true',

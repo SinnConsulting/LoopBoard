@@ -1203,6 +1203,8 @@ export class Controller {
         return this.onPatch(msg.patch as FieldPatch, msg.reqId);
       case 'gate':
         return this.onGate(msg.taskId, msg.action);
+      case 'reorder':
+        return this.onReorder(String(msg.taskId ?? ''), String(msg.phase ?? ''), msg.beforeId == null ? null : String(msg.beforeId));
       case 'armPromote':
         return this.onArmPromote(String(msg.taskId ?? ''));
       case 'disarmPromote':
@@ -2003,6 +2005,17 @@ export class Controller {
       const r = await this.store.deleteDone(taskId);
       if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     }
+    return this.refresh();
+  }
+
+  // Drag reorder (t-81a0), the fourth human board action: immediate, no modal, no optimistic move —
+  // the card lands where the refreshed board says. The store refuses any phase but New/Backlog.
+  private async onReorder(taskId: string, phase: string, beforeId: string | null): Promise<void> {
+    this.store.debugLog('info', 'reorder-request', `${taskId} before ${beforeId ?? 'end'} in ${phase}`);
+    const r = await this.store.reorder(taskId, phase, beforeId);
+    const tab = phase === 'new' ? 'New' : 'Backlog';
+    if (r.status === 'conflict') this.toast('warning', `Task is no longer in ${tab} — the board was refreshed.`, taskId);
+    else if (r.status === 'notfound') this.toast('warning', 'That task no longer exists on disk — the board was refreshed.', taskId);
     return this.refresh();
   }
 
