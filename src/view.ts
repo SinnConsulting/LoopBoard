@@ -1,6 +1,6 @@
 // Board -> lean webview payload, plus attention/badge computation. No vscode imports
 // (takes primitives) so it stays easy to reason about.
-import { Board, DoneEntry, Task, Phase, Model, GroomerValue } from './model';
+import { Board, DoneEntry, Task, Phase, Model, GroomerValue, TagEntry, normalizeTag } from './model';
 
 export interface WebTask {
   id: string;
@@ -17,6 +17,7 @@ export interface WebTask {
   worklog: string[];
   links: string[];
   dependsOn: { id: string; met: boolean }[];
+  tags: string[]; // normalized tag names (t-0b10); [] when none, Done entries included
   // The three story sections of the task file (t-2191), always strings ('' when the section is
   // absent) so the board can render an "add one" affordance without a null check.
   problem: string;
@@ -79,6 +80,32 @@ export interface LoopStatus {
   idle?: { label: string; stopping: boolean } | null;
 }
 
+// One catalogue tag (t-0b10): a tag in the registry or in use. `open` counts index tasks of any
+// phase (drafts included), `done` counts DONE.md tasks — every one, not just the 50 the Done tab shows.
+export interface WebTag {
+  name: string;
+  color: string | null; // a TagColor, or null = neutral chip
+  open: number;
+  done: number;
+}
+
+// One row of the tag overview: the task's other tags, its unanswered-question count and the model
+// that owns it (the default worker model when it names none).
+export interface WebTagRow {
+  id: string;
+  isDraft: boolean;
+  title: string;
+  tags: string[];
+  unanswered: number;
+  model: Model;
+}
+
+export interface WebTagOverview {
+  total: number;
+  done: number;
+  phases: Record<Phase, WebTagRow[]>;
+}
+
 export interface WebBoard {
   todoMissing?: boolean; // set by the controller; offers the scaffold button in the UI
   helpUrl?: string; // set by the controller; sidebar Help button target
@@ -96,6 +123,12 @@ export interface WebBoard {
   defaultGroomerModel: Model; // grooms tasks with no groomer:; labels the draft Groom-with default
   models: Model[]; // enabled model slot ids, for the board/composer/draft model selects
   phases: Record<Phase, WebTask[]>;
+  // Tag catalogue (t-0b10): registry tags plus every tag in use, sorted. `tagsInUse` is the sorted
+  // names some active or Done task carries — empty keeps the sidebar's Tags entry hidden even with
+  // a non-empty registry. `tagOverviews` has one entry per tag in use.
+  tags: WebTag[];
+  tagsInUse: string[];
+  tagOverviews: Record<string, WebTagOverview>;
   loops: LoopStatus[];
   badge: BadgeInfo;
   concurrency: ConcurrencyStatus;
@@ -143,6 +176,7 @@ function taskToWeb(t: Task, doneIds: Set<string>, armed: ReadonlySet<string>): W
     worklog: t.worklog,
     links: t.links,
     dependsOn: t.dependsOn.map((id) => ({ id, met: doneIds.has(id) })),
+    tags: t.tags ?? [],
     problem: t.problem ?? '',
     description: t.description ?? '',
     goals: t.goals ?? '',
@@ -170,6 +204,7 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     worklog: [],
     links: [],
     dependsOn: [],
+    tags: e.tags ?? [],
     problem: e.problem ?? '',
     description: e.description ?? '',
     goals: e.goals ?? '',
@@ -179,6 +214,62 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     unparsedLines: e.unknownLines.length ? e.unknownLines.map((l) => l.replace(/^\s*- ?/, '').trim()) : null,
     autoPromote: false,
   };
+}
+
+const PIPELINE: Phase[] = ['new', 'backlog', 'inprogress', 'feedback', 'review', 'done'];
+
+function tagsOf(t: { tags?: string[] }): string[] {
+  return t.tags ?? [];
+}
+
+// Sorted names of the tags some active or Done task carries.
+export function tagsInUse(board: Board): string[] {
+  const set = new Set<string>();
+  for (const t of board.tasks) for (const g of tagsOf(t)) set.add(g);
+  for (const e of board.done) for (const g of tagsOf(e)) set.add(g);
+  return [...set].sort();
+}
+
+// Registry tags plus every tag in use, sorted, each with its color and its open/Done counts.
+export function tagCatalogue(board: Board, registry: TagEntry[] = board.tagRegistry ?? []): WebTag[] {
+  const names = new Set<string>([...registry.map((e) => e.name), ...tagsInUse(board)]);
+  return [...names].sort().map((name) => ({
+    name,
+    color: registry.find((e) => e.name === name)?.color ?? null,
+    open: board.tasks.filter((t) => tagsOf(t).includes(name)).length,
+    done: board.done.filter((e) => tagsOf(e).includes(name)).length,
+  }));
+}
+
+// The tagged task ids per phase, in pipeline order, for one tag across the whole board (a draft is
+// a New task; every DONE.md entry is Done). An unused tag yields total 0 and empty phases.
+export function tagOverview(board: Board, tag: string): { tag: string; total: number; done: number; phases: Record<Phase, string[]> } {
+  const name = normalizeTag(tag);
+  const phases: Record<Phase, string[]> = { new: [], backlog: [], inprogress: [], feedback: [], review: [], done: [] };
+  for (const t of board.tasks) if (tagsOf(t).includes(name)) phases[t.phase].push(t.id);
+  for (const e of board.done) if (tagsOf(e).includes(name)) phases.done.push(e.id);
+  const total = PIPELINE.reduce((n, p) => n + phases[p].length, 0);
+  return { tag: name, total, done: phases.done.length, phases };
+}
+
+function overviewRows(board: Board, tag: string, defaultModel: Model): WebTagOverview {
+  const o = tagOverview(board, tag);
+  const rows: Record<Phase, WebTagRow[]> = { new: [], backlog: [], inprogress: [], feedback: [], review: [], done: [] };
+  for (const p of PIPELINE) {
+    for (const id of o.phases[p]) {
+      const t = p === 'done' ? board.done.find((e) => e.id === id) : board.tasks.find((x) => x.id === id);
+      if (!t) continue;
+      rows[p].push({
+        id,
+        isDraft: t.isDraft,
+        title: t.title,
+        tags: tagsOf(t).filter((g) => g !== o.tag),
+        unanswered: t.questions.filter((q) => q.answer.trim().length === 0).length,
+        model: t.model ?? defaultModel,
+      });
+    }
+  }
+  return { total: o.total, done: o.done, phases: rows };
 }
 
 export function computeBadge(board: Board): BadgeInfo {
@@ -248,12 +339,19 @@ export function toWebviewBoard(
   }
   phases.done = board.done.slice(0, 50).map((e) => doneEntryToWeb(e, doneIds));
 
+  const inUse = tagsInUse(board);
+  const tagOverviews: Record<string, WebTagOverview> = {};
+  for (const tag of inUse) tagOverviews[tag] = overviewRows(board, tag, defaultWorkerModel);
+
   return {
     workspaceName,
     defaultWorkerModel,
     defaultGroomerModel,
     models,
     phases,
+    tags: tagCatalogue(board),
+    tagsInUse: inUse,
+    tagOverviews,
     loops,
     badge: computeBadge(board),
     concurrency: computeConcurrency(board, defaultWorkerModel),

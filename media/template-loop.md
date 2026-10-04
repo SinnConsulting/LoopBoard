@@ -76,6 +76,7 @@ questions and `feedback:` sub-bullets — never duplicate here.
 - completed: YYYY-MM-DD
 - link: <url or task/** branch name>[, <…>]
 - depends on: t-xxxx[, t-yyyy]
+- tags: <tag>[, <tag>]
 
 ## Problem
 <groomer-owned, a worker NEVER edits it; 2-4 factual sentences: why this task exists, no design>
@@ -182,6 +183,10 @@ use. Detail stays in `tasks/<id>.md`.
     (max 3, recommended first): one board click accepts it (writes `<text> accepted` into `answer:`
     via the ordinary field-patch, no AI). No concrete option (open judgment call) → no suggestions;
     accepting one, or filling `answer:` otherwise, clears that question's other suggestions.
+    Tags: write `- tags:` in `## Meta` — pick from the catalogue (`.loopboard/tags.md` + tags in
+    use), coin a new name only when none fits; a DRAFT's leading `#word` becomes tag `word`, out
+    of the title. Append a coined tag as a bare `- <name>` line to `.loopboard/tags.md` (create
+    it with a `# Tags` heading when absent); never edit or remove an existing line there.
 15. Claim tasks by `model:` (Backlog onward; absent = default model). Never claim a task whose
     `model:` names a different model. New-phase routing uses `groomer:` instead (Rule 14).
 

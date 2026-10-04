@@ -3,6 +3,7 @@
 //   <workspace>/.loopboard/TODO.md          slim task index (grammar v5)
 //   <workspace>/.loopboard/DONE.md          accepted index, newest first (lazy)
 //   <workspace>/.loopboard/LOOP.md          rules + loop worker instructions
+//   <workspace>/.loopboard/tags.md          tag colors (lazy, t-0b10; a missing file reads as empty)
 //   <workspace>/.loopboard/tasks/<id>.md    per-task detail
 import * as vscode from 'vscode';
 import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
@@ -14,6 +15,7 @@ import { promoteIndex, promoteIndexIfReady, promoteDetail, demoteIndex, demoteDe
 import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
 import { stripAttachmentLink, unreferencedAttachments } from './attachments';
+import { parseRegistry, serializeRegistry, registryEntries, registryUnparsedCount, applyTagColor } from './tags';
 
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error' | 'unsupported'; message?: string };
 export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string; feedback?: string[] };
@@ -55,7 +57,7 @@ function sanitizeAttachmentFilename(name: string): string {
 }
 
 function emptyDetail(): TaskDetail {
-  return { worklog: [], links: [], dependsOn: [], unknownLines: [], raw: '' };
+  return { worklog: [], links: [], dependsOn: [], tags: [], unknownLines: [], raw: '' };
 }
 
 export class Store {
@@ -63,6 +65,7 @@ export class Store {
   private todoUri: vscode.Uri;
   private doneUri: vscode.Uri;
   private loopUri: vscode.Uri;
+  private tagsUri: vscode.Uri;
   private tasksDir: vscode.Uri;
   private cacheDir: vscode.Uri;
   private debugLogUri: vscode.Uri;
@@ -92,6 +95,7 @@ export class Store {
     this.todoUri = vscode.Uri.joinPath(this.loopboardUri, 'TODO.md');
     this.doneUri = vscode.Uri.joinPath(this.loopboardUri, 'DONE.md');
     this.loopUri = vscode.Uri.joinPath(this.loopboardUri, 'LOOP.md');
+    this.tagsUri = vscode.Uri.joinPath(this.loopboardUri, 'tags.md');
     this.tasksDir = vscode.Uri.joinPath(this.loopboardUri, 'tasks');
     this.cacheDir = vscode.Uri.joinPath(this.loopboardUri, 'cache');
     this.debugLogUri = vscode.Uri.joinPath(this.loopboardUri, 'debug.log');
@@ -242,8 +246,12 @@ export class Store {
         description: detail.description,
         goals: detail.goals,
         delivered: detail.delivered,
+        tags: detail.tags,
       });
     }
+    const registry = parseRegistry((await this.readFile(this.tagsUri)) ?? '');
+    const tagRegistry = registryEntries(registry);
+    this.debugLog('verbose', 'tags-read', `${tagRegistry.length} tag(s), ${registryUnparsedCount(registry)} unparsed line(s)`);
     // Once per session: prune cache dirs whose task exists in neither index nor DONE (a task
     // removed outside the board strands its attachments — cleanup otherwise only fires on
     // acceptance or board-side delete). Skipped when TODO.md is missing: an empty index then
@@ -253,7 +261,7 @@ export class Store {
       const liveIds = new Set<string>([...doc.entries.map((e) => e.id), ...doneEntries.map((e) => e.id)]);
       void this.pruneOrphanedCacheDirs(liveIds);
     }
-    return { preamble: doc.preamble, tasks, done };
+    return { preamble: doc.preamble, tasks, done, tagRegistry };
   }
 
   private prunedOrphans = false;
@@ -535,6 +543,23 @@ export class Store {
       // nudge, whose fingerprint covers the task file's text.
       await this.atomicWrite(this.taskUri(entry.id), serializeTaskFile(detail, entry.title, entry.id));
       this.debugLog('verbose', 'patch', `${patch.taskId} ${patch.field} -> applied = ${patch.value}`);
+      return { status: 'applied' };
+    });
+  }
+
+  // Set ONE tag's color in `.loopboard/tags.md` (t-0b10): re-read, change that tag's line, write the
+  // whole file atomically. The file is created on the first write; a color whose on-disk value is
+  // neither the board's base nor the requested one is a same-field conflict (disk wins).
+  async setTagColor(tag: string, color: string, base: string): Promise<SaveOutcome> {
+    return this.writeLock.run(async () => {
+      const reg = parseRegistry((await this.readFile(this.tagsUri)) ?? '');
+      const result = applyTagColor(reg, tag, color, base);
+      if (result.status !== 'applied') {
+        this.debugLog('info', result.status, `tags.md ${tag} -> ${color}`);
+        return { status: result.status };
+      }
+      await this.atomicWrite(this.tagsUri, serializeRegistry(result.registry));
+      this.debugLog('verbose', 'tags-color', `${tag}: ${result.before || 'none'} → ${color || 'none'}`);
       return { status: 'applied' };
     });
   }

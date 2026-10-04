@@ -264,3 +264,86 @@ test('autoPromote flags exactly the armed task ids, DRAFTs included', () => {
   const plain = toWebviewBoard(board, 'ws', 'opus', []);
   assert.equal(Object.values(plain.phases).flat().some((t) => t.autoPromote), false);
 });
+
+// ---- tags (t-0b10) ----
+const { tagsInUse, tagCatalogue, tagOverview } = require('../out-test/view.js');
+
+function doneEntry(over) {
+  return Object.assign({ id: 't-d', title: 'D', phase: 'done', checked: true, isDraft: false, questions: [], unknownLines: [], raw: '', tags: [] }, over);
+}
+
+const tagBoard = () => ({
+  preamble: '',
+  tagRegistry: [{ name: 'bug', color: 'red' }, { name: 'docs' }, { name: 'unused', color: 'blue' }],
+  tasks: [
+    task({ id: 't-1', phase: 'new', isDraft: true, tags: ['bug'] }),
+    task({ id: 't-2', phase: 'backlog', tags: ['feature', 'bug'], model: 'sonnet' }),
+    task({ id: 't-3', phase: 'feedback', tags: ['bug'], questions: [{ text: 'q', answer: '' }, { text: 'r', answer: 'x' }] }),
+    task({ id: 't-4', phase: 'review', tags: [] }),
+  ],
+  done: [doneEntry({ id: 't-5', tags: ['bug', 'docs'] }), doneEntry({ id: 't-6', tags: ['feature'] })],
+});
+
+test('WebTask.tags is filled for active tasks and for Done entries', () => {
+  const web = toWebviewBoard(tagBoard(), 'ws', 'opus', []);
+  assert.deepEqual(web.phases.new[0].tags, ['bug']);
+  assert.deepEqual(web.phases.backlog[0].tags, ['feature', 'bug']);
+  assert.deepEqual(web.phases.review[0].tags, []);
+  assert.deepEqual(web.phases.done.map((t) => t.tags), [['bug', 'docs'], ['feature']]);
+});
+
+test('the payload carries the catalogue: registry plus tags in use, sorted, with color, open and Done counts', () => {
+  const web = toWebviewBoard(tagBoard(), 'ws', 'opus', []);
+  assert.deepEqual(web.tags, [
+    { name: 'bug', color: 'red', open: 3, done: 1 },
+    { name: 'docs', color: null, open: 0, done: 1 },
+    { name: 'feature', color: null, open: 1, done: 1 },
+    { name: 'unused', color: 'blue', open: 0, done: 0 },
+  ]);
+  assert.deepEqual(tagCatalogue(tagBoard()), web.tags);
+  assert.deepEqual(web.tagsInUse, ['bug', 'docs', 'feature'], 'a registry-only tag is not in use');
+});
+
+test('the Done count covers every DONE.md entry, not only the 50 the Done tab shows', () => {
+  const board = tagBoard();
+  board.done = Array.from({ length: 60 }, (_, i) => doneEntry({ id: `t-x${i}`, tags: ['bug'] }));
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.equal(web.phases.done.length, 50);
+  assert.equal(web.tags.find((t) => t.name === 'bug').done, 60);
+  assert.equal(web.tagOverviews.bug.phases.done.length, 60);
+});
+
+test('tagOverview: total, done and the tagged ids per phase in pipeline order (draft = New, Done entries = Done)', () => {
+  const o = tagOverview(tagBoard(), 'bug');
+  assert.deepEqual(Object.keys(o.phases), ['new', 'backlog', 'inprogress', 'feedback', 'review', 'done']);
+  assert.deepEqual(o.phases, { new: ['t-1'], backlog: ['t-2'], inprogress: [], feedback: ['t-3'], review: [], done: ['t-5'] });
+  assert.equal(o.total, 4);
+  assert.equal(o.done, 1);
+  assert.equal(tagOverview(tagBoard(), ' BUG ').total, 4, 'the name is normalized');
+  const none = tagOverview(tagBoard(), 'nobody');
+  assert.equal(none.total, 0);
+  assert.equal(none.done, 0);
+  assert.deepEqual(Object.values(none.phases), [[], [], [], [], [], []]);
+});
+
+test('the overview rows carry the other tags, unanswered count and the owning model', () => {
+  const web = toWebviewBoard(tagBoard(), 'ws', 'opus', []);
+  const ov = web.tagOverviews.bug;
+  assert.equal(ov.total, 4);
+  assert.equal(ov.done, 1);
+  assert.deepEqual(ov.phases.backlog, [{ id: 't-2', isDraft: false, title: 'T', tags: ['feature'], unanswered: 0, model: 'sonnet' }]);
+  assert.equal(ov.phases.new[0].isDraft, true);
+  assert.equal(ov.phases.new[0].model, 'opus', 'no model: falls back to the default worker model');
+  assert.equal(ov.phases.feedback[0].unanswered, 1);
+  assert.deepEqual(ov.phases.done[0].tags, ['docs']);
+  assert.equal(web.tagOverviews.unused, undefined, 'only tags in use have an overview');
+});
+
+test('tagsInUse is empty when no task carries a tag, even with a non-empty registry', () => {
+  const board = { preamble: '', tasks: [task({ id: 't-1' })], done: [doneEntry({ id: 't-2' })], tagRegistry: [{ name: 'bug', color: 'red' }] };
+  assert.deepEqual(tagsInUse(board), []);
+  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  assert.deepEqual(web.tagsInUse, []);
+  assert.deepEqual(web.tagOverviews, {});
+  assert.deepEqual(web.tags, [{ name: 'bug', color: 'red', open: 0, done: 0 }]);
+});
