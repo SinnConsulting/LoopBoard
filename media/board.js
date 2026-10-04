@@ -96,6 +96,13 @@
   const saved = vscode.getState() || {};
   let board = null;
   let phase = saved.phase || 'new';
+  // Tag overview (t-0b10): a closable `# <tag>` tab after the phase tabs, persisted like `phase`.
+  // `overviewTag` = the tab exists (null = none); `overviewSelected` = it is the open view;
+  // `lastTag` = what the sidebar's Tags entry reopens; `tagGroups[phaseKey]` = that group is folded.
+  let overviewTag = typeof saved.overviewTag === 'string' ? saved.overviewTag : null;
+  let overviewSelected = !!saved.overviewSelected && overviewTag !== null;
+  let lastTag = typeof saved.lastTag === 'string' ? saved.lastTag : '';
+  let tagGroups = saved.tagGroups && typeof saved.tagGroups === 'object' ? saved.tagGroups : {};
   // Composer draft is persisted in vscode state (same blob as `phase`) so it survives the webview
   // being hidden/recreated on tab/window switch (retainContextWhenHidden is false) — see t-ntx1.
   let composerOpen = !!saved.composerOpen;
@@ -234,7 +241,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
+    vscode.setState({ phase, overviewTag, overviewSelected, lastTag, tagGroups, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
   }
 
   // ---- single-line index values (t-c4d1) ----
@@ -535,19 +542,23 @@
   // is a reserved token (t-3d42) that keeps only tasks whose `isDraft` is falsy — used by the
   // sidebar's "N proposals to approve" attention row so its tab shows exactly the groomed New
   // stories the row counts.
-  function matchesQuery(t) {
-    const raw = effectiveQuery().trim().toLowerCase();
+  // `tag:<name>` (t-0b10) keeps tasks carrying that tag (exact, case-insensitive); it ANDs with the
+  // other tokens and filters the current tab only, like every token here.
+  function taskMatches(t, query) {
+    const raw = String(query).trim().toLowerCase();
     if (!raw) return true;
     const tokens = raw.split(/\s+/);
     const unanswered = tokens.includes('is:unanswered');
     const draft = tokens.includes('is:draft');
     const proposal = tokens.includes('is:proposal');
     const taskToken = tokens.find((tok) => tok.startsWith('task:'));
-    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== 'is:draft' && tok !== 'is:proposal' && tok !== taskToken).join(' ');
+    const tagToken = tokens.find((tok) => tok.startsWith('tag:'));
+    const q = tokens.filter((tok) => tok !== 'is:unanswered' && tok !== 'is:draft' && tok !== 'is:proposal' && tok !== taskToken && tok !== tagToken).join(' ');
     if (unanswered && !(t.questions || []).some((qq) => !qq.answered)) return false;
     if (draft && !t.isDraft) return false;
     if (proposal && t.isDraft) return false;
     if (taskToken && (t.id || '').toLowerCase() !== taskToken.slice('task:'.length)) return false;
+    if (tagToken && !(t.tags || []).some((g) => g.toLowerCase() === tagToken.slice('tag:'.length))) return false;
     if (!q) return true;
     return (t.id || '').toLowerCase().includes(q)
       || (t.title || '').toLowerCase().includes(q)
@@ -557,6 +568,7 @@
       || (t.description || '').toLowerCase().includes(q)
       || (t.goals || '').toLowerCase().includes(q);
   }
+  function matchesQuery(t) { return taskMatches(t, effectiveQuery()); }
   function filterList(list) {
     return effectiveQuery().trim() ? list.filter(matchesQuery) : list;
   }
@@ -888,7 +900,7 @@
 
     const tabs = h('div', { class: 'tabs' });
     for (const meta of PHASE_META) {
-      const selected = phase === meta.key && !composerOpen;
+      const selected = phase === meta.key && !composerOpen && !overviewSelected;
       const count = (board.phases[meta.key] || []).length;
       const tab = h('button', {
         class: 'tab' + (selected ? ' selected' : '') + (meta.key === 'done' ? ' done-tab' : ''),
@@ -897,7 +909,7 @@
         // t-3d42, as amended by t-1cdb: phase navigation (this tab strip, sidebar PHASES rows)
         // drops the custom VIEW only — a row's query never leaks into the tab you navigate to,
         // but the human's own typed filter survives every tab click and re-surfaces underneath.
-        onclick: () => { phase = meta.key; composerOpen = false; clearView(); saveState(); render(); },
+        onclick: () => { phase = meta.key; composerOpen = false; overviewSelected = false; clearView(); saveState(); render(); },
       });
       tab.append(h('span', { class: 'codicon codicon-split-horizontal tab-icon' }));
       tab.append(h('span', { class: 'tab-label' }, meta.label));
@@ -907,6 +919,18 @@
       }
       tab.append(h('span', { class: 'phase-count' }, String(count)));
       tabs.append(tab);
+    }
+    if (overviewTag !== null) {
+      const selected = overviewSelected && !composerOpen;
+      tabs.append(h('span', { class: 'tab tag-tab' + (selected ? ' selected' : '') },
+        h('button', {
+          class: 'tag-tab-btn', type: 'button', 'aria-current': selected ? 'true' : 'false',
+          onclick: () => openTagOverview(overviewTag),
+        }, '# ' + overviewTag),
+        h('button', {
+          class: 'icon-btn tag-tab-close', type: 'button', 'aria-label': 'Close tag overview', title: 'Close tag overview',
+          onclick: closeTagOverview,
+        }, icon(SVG.x))));
     }
     bar.append(tabs);
 
@@ -926,7 +950,7 @@
     // text the user typed before switching phase tabs and clicking New Story again — see t-ntx1.
     // composerNeedsFocus stays set so the textarea auto-focuses on open (t-att1), letting an
     // immediate paste land on it.
-    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
+    bar.append(h('button', { class: 'btn-primary tb-new', type: 'button', onclick: () => { composerOpen = true; overviewSelected = false; composerNeedsFocus = true; resetSearch(); saveState(); render(); } },
       'New Story'));
     return bar;
   }
@@ -941,6 +965,8 @@
         'Initialize LoopBoard workspace'));
     } else if (composerOpen) {
       inner.append(renderComposer());
+    } else if (overviewSelected && overviewTag !== null) {
+      inner.append(renderTagOverview());
     } else {
       const meta = PHASE_META.find((m) => m.key === phase);
       inner.append(h('div', { class: 'pane-title' }, meta.label));
@@ -1118,6 +1144,7 @@
         icon(SVG.checkGreen),
         h('span', { class: 'done-title' }, t.title.replace(/^\[x\]\s*/, '')),
         idChip(t.id),
+        tagNodes(t, false),
         h('span', { class: 'chip mono', style: { background: 'none', opacity: 1, padding: 0 } }, t.completed || ''));
       if (t.links && t.links.length) row.append(linkAnchor(t.links[0]));
       if (hasDetail) {
@@ -1142,6 +1169,238 @@
       }
     }
     wrap.append(h('div', { class: 'muted-11', style: { padding: '12px 0' } }, 'Showing last 50'));
+    return wrap;
+  }
+
+  // ---- tags (t-0b10) ----
+  // The name rule is the host's `normalizeTag` (src/model.ts): test/board-tags.test.js lifts this
+  // function into a vm and checks the two agree. A comma or colon cannot be part of a name.
+  function normTag(name) {
+    return String(name).trim().toLowerCase().replace(/[\s,:]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+  const TAG_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
+  function tagColor(name) {
+    const entry = ((board && board.tags) || []).find((g) => g.name === name);
+    return entry && entry.color ? entry.color : null;
+  }
+  function tagColorClass(color) { return color ? 'tagc-' + color : 'tagc-none'; }
+
+  // Tag edits are a `tags` field patch on the task file: the value is the Meta list, comma-joined.
+  // The echo goes into the live task object first (as commitPatch does for strings).
+  function commitTags(t, next) {
+    const base = (t.tags || []).join(', ');
+    const value = next.join(', ');
+    if (value === base) return;
+    t.tags = next;
+    sendPatch(t.id, 'tags', value, base);
+  }
+  function setTagColorLocal(name, color) {
+    const entry = ((board && board.tags) || []).find((g) => g.name === name);
+    const base = entry && entry.color ? entry.color : '';
+    if (color === base) return;
+    if (entry) entry.color = color || null;
+    else board.tags.push({ name, color: color || null, open: 0, done: 0 });
+    post({ type: 'setTagColor', tag: name, color, base });
+  }
+
+  function tagPalette(t, name) {
+    const u = getUi(t.id);
+    const current = tagColor(name) || '';
+    const pop = h('div', { class: 'tag-palette', role: 'menu', 'aria-label': 'Color of ' + name });
+    for (const c of TAG_COLORS.concat([''])) {
+      pop.append(h('button', {
+        class: 'tag-swatch ' + tagColorClass(c || null) + (c === current ? ' sel' : ''), type: 'button',
+        role: 'menuitemradio', 'aria-checked': c === current ? 'true' : 'false',
+        title: c || 'no color', 'aria-label': c || 'no color',
+        onclick: (e) => { e.stopPropagation(); u.tagPalette = null; setTagColorLocal(name, c); render(); },
+      }));
+    }
+    return pop;
+  }
+
+  // One tag chip: the dot opens the color palette (editable chips only), the name opens that tag's
+  // overview, × removes it from this task. A Done task's chips are read-only: name only.
+  function tagChip(t, name, editable) {
+    const u = getUi(t.id);
+    const wrap = h('span', { class: 'tagchip ' + tagColorClass(tagColor(name)), 'data-tag': name });
+    if (editable) {
+      wrap.append(h('button', {
+        class: 'tagchip-dot', type: 'button', title: 'Set the color of ' + name, 'aria-label': 'Set the color of ' + name,
+        'aria-haspopup': 'menu', 'aria-expanded': u.tagPalette === name ? 'true' : 'false',
+        onclick: (e) => { e.stopPropagation(); u.tagPalette = u.tagPalette === name ? null : name; repaintCard(t); },
+      }));
+    } else {
+      wrap.append(h('span', { class: 'tagchip-dot static' }));
+    }
+    wrap.append(h('button', {
+      class: 'tagchip-name', type: 'button', title: 'Open the ' + name + ' overview', 'aria-label': 'Open the ' + name + ' overview',
+      onclick: (e) => { e.stopPropagation(); openTagOverview(name); },
+    }, name));
+    if (editable) {
+      wrap.append(h('button', {
+        class: 'tagchip-x', type: 'button', title: 'Remove ' + name, 'aria-label': 'Remove tag ' + name,
+        onclick: (e) => { e.stopPropagation(); commitTags(t, (t.tags || []).filter((g) => g !== name)); repaintCard(t); },
+      }, icon(SVG.x)));
+      if (u.tagPalette === name) {
+        const pop = tagPalette(t, name);
+        wrap.append(pop);
+        registerCleanClose(wrap, () => true, () => { u.tagPalette = null; }, () => pop.remove());
+      }
+    }
+    return wrap;
+  }
+
+  // The "＋ tag" control: a button that becomes an input offering the catalogue (a <datalist>) and
+  // accepting a new name. Enter adds, Escape cancels, a click outside an empty input closes it.
+  function tagAdder(t) {
+    const u = getUi(t.id);
+    const button = () => h('button', {
+      class: 'tagchip tagc-none tag-add', type: 'button', title: 'Add a tag', 'aria-label': 'Add a tag',
+      onclick: (e) => { e.stopPropagation(); u.tagAdding = true; u.tagNeedsFocus = true; repaintCard(t); },
+    }, '＋ tag');
+    if (!u.tagAdding) return button();
+    const listId = 'tag-options-' + t.id;
+    const input = h('input', {
+      class: 'tag-input', type: 'text', list: listId, maxlength: '40', placeholder: 'tag name…',
+      'aria-label': 'Add a tag', 'data-field': 'tagadd',
+    });
+    input.value = u.tagDraft || '';
+    const have = t.tags || [];
+    const options = h('datalist', { id: listId },
+      ((board && board.tags) || []).filter((g) => !have.includes(g.name)).map((g) => h('option', { value: g.name })));
+    const commit = () => {
+      const name = normTag(input.value);
+      u.tagAdding = false;
+      u.tagDraft = null;
+      if (name) commitTags(t, have.includes(name) ? have : have.concat([name]));
+      repaintCard(t);
+    };
+    input.addEventListener('input', () => { u.tagDraft = input.value; });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { exitFieldEdit(() => { u.tagAdding = false; u.tagDraft = null; }, wrap); return; }
+      if (e.key === 'Enter') { if (e.isComposing) return; e.preventDefault(); commit(); }
+    });
+    const wrap = h('span', { class: 'tagchip tagc-none tag-adding' }, input, options);
+    if (u.tagNeedsFocus) { u.tagNeedsFocus = false; requestAnimationFrame(() => input.focus()); }
+    registerCleanClose(wrap, () => !input.value.trim(),
+      () => { u.tagAdding = false; u.tagDraft = null; },
+      () => wrap.replaceWith(button()));
+    return wrap;
+  }
+
+  // The tag chips of one task. `editable` = an active (non-Done) card or draft.
+  function tagNodes(t, editable) {
+    const nodes = (t.tags || []).map((name) => tagChip(t, name, editable));
+    // The add control stays out of a collapsed card's way unless it is already open.
+    if (editable && (!isCollapsed(t.id) || getUi(t.id).tagAdding)) nodes.push(tagAdder(t));
+    return nodes;
+  }
+
+  // ---- tag overview (t-0b10): one tag across every phase ----
+  const TAG_PHASE_COLOR = {
+    new: 'var(--vscode-charts-purple, #b180d7)', backlog: 'var(--vscode-descriptionForeground, #8b8b8b)',
+    inprogress: 'var(--vscode-charts-blue, #3794ff)', feedback: 'var(--vscode-charts-orange, #d18616)',
+    review: 'var(--vscode-charts-yellow, #cca700)', done: 'var(--vscode-charts-green, #89d185)',
+  };
+  function openTagOverview(tag) {
+    if (!board) return;
+    const inUse = board.tagsInUse || [];
+    // '' = the sidebar entry: reopen the last-chosen tag, else the first one in use.
+    const name = normTag(tag || '') || (inUse.includes(lastTag) ? lastTag : (inUse[0] || ''));
+    if (!name) return;
+    overviewTag = name;
+    lastTag = name;
+    overviewSelected = true;
+    composerOpen = false;
+    clearView();
+    saveState();
+    render();
+  }
+  function closeTagOverview() {
+    overviewTag = null;
+    overviewSelected = false;
+    saveState();
+    render();
+  }
+
+  function renderTagOverview() {
+    const tag = overviewTag;
+    const wrap = h('div', { class: 'tag-ov' });
+    const pill = (name, big) => h('span', { class: 'tagpill ' + tagColorClass(tagColor(name)) + (big ? ' big' : '') }, name);
+    wrap.append(h('div', { class: 'pane-title tag-ov-head' }, 'Tag overview', pill(tag, true)));
+    wrap.append(h('div', { class: 'pane-explainer' }, 'Every task carrying this tag, across all phases'));
+
+    const inUse = (board.tags || []).filter((g) => (board.tagsInUse || []).includes(g.name));
+    const picker = h('div', { class: 'tag-picker' });
+    for (const g of inUse) {
+      const total = g.open + g.done;
+      const pct = total ? Math.round(100 * g.done / total) : 0;
+      picker.append(h('button', {
+        class: 'tag-pick ' + tagColorClass(g.color) + (g.name === tag ? ' on' : ''), type: 'button',
+        title: g.open + ' open · ' + g.done + ' done', 'aria-pressed': g.name === tag ? 'true' : 'false',
+        onclick: () => openTagOverview(g.name),
+      }, h('span', { class: 'tag-swatch-dot' }), g.name,
+      h('span', { class: 'tag-mini' }, h('i', { style: { width: pct + '%' } })),
+      h('span', { class: 'tag-pick-count' }, g.done + '/' + total)));
+    }
+    wrap.append(picker);
+
+    const ov = (board.tagOverviews || {})[tag];
+    if (!ov || !ov.total) {
+      wrap.append(h('div', { class: 'muted-11' }, 'No task carries “' + tag + '” right now.'));
+      return wrap;
+    }
+    const pct = Math.round(100 * ov.done / ov.total);
+    const bar = h('div', { class: 'tag-bar' });
+    const legend = h('div', { class: 'tag-legend' });
+    for (const p of PHASE_META) {
+      const n = (ov.phases[p.key] || []).length;
+      if (n) bar.append(h('span', { title: p.label + ': ' + n, style: { width: (100 * n / ov.total) + '%', background: TAG_PHASE_COLOR[p.key] } }));
+      legend.append(h('button', {
+        class: 'tag-legend-item', type: 'button', title: 'Jump to the ' + p.label + ' group', disabled: n ? null : true,
+        onclick: () => {
+          tagGroups[p.key] = false;
+          saveState();
+          render();
+          const el = document.getElementById('tag-group-' + p.key);
+          if (el) el.scrollIntoView({ block: 'start' });
+        },
+      }, h('i', { style: { background: TAG_PHASE_COLOR[p.key] } }), p.label, h('b', {}, String(n))));
+    }
+    wrap.append(h('div', { class: 'tag-progress' },
+      h('div', { class: 'tag-nums' },
+        h('span', { class: 'tag-pct' }, pct + '%'),
+        h('span', { class: 'muted-11' }, ov.done + ' of ' + ov.total + ' tasks done · ' + (ov.total - ov.done) + ' open')),
+      bar, legend));
+
+    for (const p of PHASE_META) {
+      const rows = ov.phases[p.key] || [];
+      if (!rows.length) continue;
+      const folded = !!tagGroups[p.key];
+      const group = h('div', { class: 'tag-group', id: 'tag-group-' + p.key });
+      group.append(h('button', {
+        class: 'tag-ghead', type: 'button', 'aria-expanded': folded ? 'false' : 'true',
+        onclick: () => { tagGroups[p.key] = !folded; saveState(); render(); },
+      }, h('span', { class: 'tag-caret' }, folded ? '▸' : '▾'),
+      h('span', { class: 'tag-status', style: { background: TAG_PHASE_COLOR[p.key] } }, p.label),
+      h('span', { class: 'muted-11' }, String(rows.length))));
+      if (!folded) {
+        for (const r of rows) {
+          group.append(h('button', {
+            class: 'tag-row', type: 'button', title: 'Open ' + r.id + ' on the ' + p.label + ' tab',
+            onclick: () => revealTask(r.id, p.key, false, 'task:' + r.id),
+          },
+          h('span', { class: 'tag-ring', style: { borderColor: TAG_PHASE_COLOR[p.key], background: p.key === 'done' ? TAG_PHASE_COLOR[p.key] : 'none' } }),
+          h('span', { class: 'chip mono' }, r.id),
+          r.isDraft ? h('span', { class: 'draft-badge' }, 'Draft') : null,
+          h('span', { class: 'tag-row-title' }, r.title.replace(/^\[x\]\s*/, '')),
+          (r.tags || []).map((g) => pill(g)),
+          r.unanswered ? h('span', { class: 'qa-pending' }, r.unanswered + ' unanswered') : null,
+          h('span', { class: 'chip tag-row-model' }, r.model)));
+        }
+      }
+      wrap.append(group);
+    }
     return wrap;
   }
 
@@ -1283,6 +1542,8 @@
             h('span', { class: 'muted-11' }, t.groomer === GROOMER_HOLD
               ? 'on hold — pick a groomer to have the loop structure this into a story'
               : 'the loop will structure this into a story')),
+          // Tags (t-0b10): the same chips an ordinary card carries, shown collapsed too.
+          h('div', { class: 'chips draft-tags' }, tagNodes(t, true)),
           // Selects sit directly under the badge row, above the draft text (t-720f) — the same
           // head → selects → body order an ordinary card already uses in renderCard. The explicit
           // marginBottom is load-bearing: the draft text has no top margin of its own and used to
@@ -1848,6 +2109,7 @@
     if (qChip) chips.append(qChip);
     const hold = holdBadge(t);
     if (hold) chips.append(hold);
+    chips.append(...tagNodes(t, true));
     if (t.added) chips.append(h('span', { class: 'chip mono' }, 'added ' + t.added));
     if (t.started) chips.append(h('span', { class: 'chip mono' }, 'started ' + t.started));
     if (t.worklog && t.worklog.length) {
@@ -2648,7 +2910,8 @@
         forceNextBoard = true;
       }
     } else if (msg.type === 'reveal') {
-      revealTask(msg.taskId, msg.phase, msg.composer, msg.search);
+      if (typeof msg.tag === 'string') openTagOverview(msg.tag);
+      else revealTask(msg.taskId, msg.phase, msg.composer, msg.search);
     } else if (msg.type === 'attachStaged' || msg.type === 'attachRemoved') {
       // Reply to an attach (field-scoped wireFieldAttach, or whole-card attachFile) or to the
       // attachments area's × (detach) — resolved outside the normal board repaint so it works
@@ -2706,6 +2969,7 @@
     if (!board) return;
     if (openComposer) {
       phase = targetPhase || 'new';
+      overviewSelected = false;
       composerOpen = true;
       composerText = '';
       composerGroomer = '';
@@ -2723,6 +2987,7 @@
     if (found) {
       phase = found;
       composerOpen = false;
+      overviewSelected = false;
       if (search != null) {
         // An explicit search installs the custom VIEW's query (sidebar attention row, depends-on
         // chip) on top of whatever the human typed, which is left untouched underneath. Note the

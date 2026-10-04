@@ -17,6 +17,7 @@ import {
 import { buildModelGrid, gridPatch } from './settingsgrid';
 import { MigrationPlan, SettingValues, actionWrites, buildMigrationPlan, scanKeys } from './settingsmigrate';
 import { FieldPatch, refusalToast } from './merge';
+import { tagColorToast } from './tags';
 import { BuildStamp, WEBVIEW_ASSETS, describeStamp, stampsDiffer } from './buildstamp';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
@@ -112,7 +113,7 @@ export function readDefaultModel(c: vscode.WorkspaceConfiguration, key: string):
 
 export class Controller {
   private lastBoard: Board | undefined;
-  private pendingReveal: { taskId?: string; phase?: string; composer?: boolean; search?: string } | undefined;
+  private pendingReveal: { taskId?: string; phase?: string; composer?: boolean; search?: string; tag?: string } | undefined;
   // Scheduled loop restarts (t-77d1). SESSION-ONLY BY DESIGN: nothing here is persisted to
   // globalState, workspaceState or `.loopboard/`. The terminals themselves die with the window, so
   // a schedule outliving its terminal would be meaningless — a reload clears every schedule.
@@ -1201,6 +1202,8 @@ export class Controller {
         return;
       case 'patch':
         return this.onPatch(msg.patch as FieldPatch, msg.reqId);
+      case 'setTagColor':
+        return this.onTagColor(String(msg.tag ?? ''), String(msg.color ?? ''), String(msg.base ?? ''));
       case 'gate':
         return this.onGate(msg.taskId, msg.action);
       case 'armPromote':
@@ -1382,7 +1385,8 @@ export class Controller {
         // "plain phase navigation — drop the custom view, keep the human's typed filter", while a
         // present string INCLUDING '' installs a view (an empty view suppresses the typed filter so
         // an attention row's tab shows exactly the count it advertises). Never coerce '' away.
-        this.pendingReveal = { taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer, search: msg.search };
+        // `tag` (t-0b10) asks the board to open its tag overview: a string, '' = the last-chosen tag.
+        this.pendingReveal = { taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer, search: msg.search, tag: typeof msg.tag === 'string' ? msg.tag : undefined };
         // Flush inline only if the panel was already visible (its webview is live). A new panel,
         // or a hidden one (t-7440: `retainContextWhenHidden: false`, so the reveal rebuilds its
         // webview), has no message listener yet — posting now would drop the reveal and the board
@@ -1967,6 +1971,14 @@ export class Controller {
     this.store.debugLog('verbose', 'patch-result', `${patch.taskId} ${patch.field} #${reqId ?? '-'} -> ${outcome.status}`);
     BoardPanel.current?.post({ type: 'patchResult', reqId, status: outcome.status, taskId: patch.taskId });
     return this.refresh();
+  }
+
+  // A tag's color is a registry edit (t-0b10), not a task patch: it has no task id and no reqId.
+  private async onTagColor(tag: string, color: string, base: string): Promise<void> {
+    const outcome = await this.store.setTagColor(tag, color, base);
+    const text = tagColorToast(outcome.status);
+    if (text) this.toast('warning', text, undefined, undefined, outcome.status === 'conflict' ? 'sameFieldConflict' : undefined);
+    return this.refresh('tag-color');
   }
 
   private async onGate(taskId: string, action: string): Promise<void> {

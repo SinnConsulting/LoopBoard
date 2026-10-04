@@ -238,3 +238,29 @@ test('[H11] a relocated-damage file (cut fence, stray blocks after Delivered) ro
   for (const h of ['## Part A: the parser', '## Acceptance criteria', '## Why']) assert.ok(d.unknownLines.includes(h), h);
   assert.deepEqual(d.unknownLines.filter((l) => l.trim()).slice(-2), ['fence body line', '```']);
 });
+
+// ---- tags (t-0b10) ----
+test('tags: `- tags:` in Meta parses, serializes after depends on, and round-trips as a text fixpoint', () => {
+  const src = '# T (t-1)\n\n## Meta\n- added: 2026-10-04\n- link: https://x.test/pr/1\n- depends on: t-9c2e\n- tags: bug, ui\n\n## Description\n\nBody.\n';
+  const d = parseTaskFile(src);
+  assert.deepEqual(d.tags, ['bug', 'ui']);
+  assert.equal(d.unknownLines.length, 0, '`tags` is a known Meta key, never an unparsed line');
+  const out = serializeTaskFile(d, 'T', 't-1');
+  assert.equal(out, src);
+  assert.equal(serializeTaskFile(parseTaskFile(out), 'T', 't-1'), out, 'fixpoint');
+  const meta = out.split('\n').filter((l) => l.startsWith('- '));
+  assert.deepEqual(meta.map((l) => l.split(':')[0]), ['- added', '- link', '- depends on', '- tags']);
+});
+
+test('tags: names are normalized on parse and the Meta line is written canonically', () => {
+  const d = parseTaskFile('# T (t-1)\n\n## Meta\n- tags: Bug,  Two Words , bug,\n');
+  assert.deepEqual(d.tags, ['bug', 'two-words']);
+  assert.match(serializeTaskFile(d, 'T', 't-1'), /- tags: bug, two-words\n/);
+});
+
+test('tags: a file without the key parses to no tags and serializes without a `tags:` line', () => {
+  const d = parseTaskFile(readFix('taskfile-full.md'));
+  assert.deepEqual(d.tags, []);
+  assert.doesNotMatch(serializeTaskFile(d, 'T', 't-1'), /tags:/);
+  assert.deepEqual(parseTaskFile('').tags, []);
+});

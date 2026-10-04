@@ -336,7 +336,8 @@ them into your workspace's `.claude/agents/`, then add the rule to your custom s
    - Re-grooming resumes the agent that groomed the task when the session still holds it.
    - Review stays a separate agent on the worker's model, briefed with the task's `## Goals`.
    - In `WORK` mode the agents never write `.loopboard/`; in `GROOM` mode they write only the
-     task file and their own index entry (Rule 14).
+     task file, their own index entry and, to coin a tag, one bare `- <name>` line appended to
+     `.loopboard/tags.md` (Rule 14).
 ```
 
 Without the rule, delegation works as before: the loop's own subagents, at the loop's `--effort`.

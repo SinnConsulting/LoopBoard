@@ -207,6 +207,7 @@ export interface TaskDetail {
   worklog: string[];
   links: string[];
   dependsOn: string[];
+  tags: string[]; // normalized (tags.ts), `- tags:` in Meta, [] when none (t-0b10)
   // Groomer-owned bookends around the story (t-2191): `problem` is why the task exists (short and
   // factual), `goals` is what "done" means (a bullet list the reviewer judges `delivered` against).
   // Both free markdown like `description`, both optional — existing task files simply have neither.
@@ -232,10 +233,37 @@ export interface IndexDoc {
 
 // DONE.md entries, each carrying its task file's problem/description/goals/delivered for the
 // Done-tab card expansion (t-628b, t-2191) — everything else about a done task stays index-only.
-export type DoneEntry = IndexEntry & Pick<TaskDetail, 'problem' | 'description' | 'goals' | 'delivered'>;
+export type DoneEntry = IndexEntry & Pick<TaskDetail, 'problem' | 'description' | 'goals' | 'delivered' | 'tags'>;
 
 export interface Board {
   preamble: string; // index preamble (round-tripped verbatim)
   tasks: Task[]; // all active (non-done) tasks, in file order
   done: DoneEntry[]; // from DONE.md + tasks/<id>.md, read-only, newest first
+  tagRegistry?: TagEntry[]; // `.loopboard/tags.md` (t-0b10): the tags that carry a color; absent = none
+}
+
+// ---- tags (t-0b10) ----
+// The name rule and entry shape live here because merge.ts may import only this module; the
+// `.loopboard/tags.md` registry parser/writer is `tags.ts`.
+export const TAG_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+
+export interface TagEntry {
+  name: string;
+  color?: TagColor;
+}
+
+// Trimmed, lower-cased, inner whitespace -> `-`. A comma would split the Meta list and a colon the
+// registry line, so neither can be part of a name.
+export function normalizeTag(name: string): string {
+  return String(name).trim().toLowerCase().replace(/[\s,:]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+export function normalizeTags(names: string[]): string[] {
+  const out: string[] = [];
+  for (const n of names) {
+    const tag = normalizeTag(n);
+    if (tag && !out.includes(tag)) out.push(tag);
+  }
+  return out;
 }

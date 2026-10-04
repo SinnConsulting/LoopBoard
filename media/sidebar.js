@@ -230,6 +230,19 @@
       }
       sb.append(counts);
 
+      // Tags (t-0b10): ONE entry, only while some active or Done task carries a tag — no row,
+      // swatch, count or highlight per tag. The tag itself is chosen inside the board's overview.
+      const inUse = board.tagsInUse || [];
+      if (inUse.length) {
+        const tags = h('div', { class: 'sb-section' });
+        tags.append(h('div', { class: 'sb-label' }, 'Tags'));
+        tags.append(h('button', {
+          class: 'sb-row click', type: 'button', title: 'Open the tag overview',
+          onclick: () => vscode.postMessage({ type: 'reveal', tag: '' }),
+        }, h('span', { class: 'label' }, 'Tag overview'), h('span', { class: 'count' }, inUse.length + (inUse.length === 1 ? ' tag' : ' tags'))));
+        sb.append(tags);
+      }
+
       sb.append(h('div', { class: 'divider' }));
       const loops = h('div', { class: 'sb-section' });
       loops.append(h('div', { class: 'sb-label' }, 'Loops'));

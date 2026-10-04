@@ -17,8 +17,10 @@ Turn a New task or DRAFT into a story a worker can pick up cold. Follow
 Rules 4 and 14, and its Custom Rules. Copy the indentation of questions and
 suggestions from an entry that already has some.
 
-- **Write only two things:** `.loopboard/tasks/<id>.md` and your own task's
-  entry in `.loopboard/TODO.md`. Other loops edit `TODO.md` at the same time,
+- **Write only three things:** `.loopboard/tasks/<id>.md`, your own task's
+  entry in `.loopboard/TODO.md`, and, only when you coin a tag, one bare
+  `- <name>` line appended to `.loopboard/tags.md` (never edit or remove an
+  existing line there). Other loops edit `TODO.md` at the same time,
   so touch no other entry, never reorder it and never rewrite the file whole.
   No code edits, no git writes, never switch the checkout. A DRAFT gains
   `phase: new`.
