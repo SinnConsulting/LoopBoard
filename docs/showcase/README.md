@@ -238,6 +238,20 @@ settings are grouped below.
       </ul>
     </td>
   </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>Drag to reorder</b><br>
+      <sub>Decide which story a loop takes next.</sub><br>
+      <a href="gifs/12-reorder.gif"><img src="gifs/12-reorder.gif" width="100%" alt="A Backlog card is dragged by its grip above the card a loop would claim first; an insertion line marks the slot, and after the drop TODO.md is rewritten and the card lands at the top" /></a>
+    </td>
+    <td width="67%" valign="top">
+      <ul>
+        <li>Drag a <b>New</b> or <b>Backlog</b> card by its grip to move it. Loops groom New and claim Backlog <b>top down</b>, so the order is the queue.</li>
+        <li>A line marks where the card will land. On drop, LoopBoard moves the entry in <code>TODO.md</code> and the card lands after the refresh.</li>
+        <li>No grip while a search filters the tab or the tab holds one card.</li>
+      </ul>
+    </td>
+  </tr>
 </table>
 
 ---

@@ -225,6 +225,12 @@ class Host {
       case 'disarmPromote':
         this.autoPromote.delete(msg.taskId);
         return this.refresh();
+      // Drag reorder (controller.onReorder → store.reorder): one moveEntry on the index, no toast.
+      case 'reorder': {
+        const doc = parseTodo(this.read('TODO.md') || '');
+        if (gates.moveEntry(doc, msg.taskId, msg.phase, msg.beforeId) === 'applied') this.write('TODO.md', serializeTodo(doc));
+        return this.refresh();
+      }
       case 'createDraft':
         this.createDraft(msg.text, msg.groomer || this.setting('defaultGroomerModel', 'opus'), msg.model || this.setting('defaultWorkerModel', 'sonnet'));
         await this.toast('info', 'Draft saved — the loop will groom it into a story.');
