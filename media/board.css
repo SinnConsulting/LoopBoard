@@ -148,7 +148,7 @@ textarea { resize: vertical; }
 }
 .card.drop-before::after { top: -8px; }
 .card.drop-after::after { bottom: -8px; }
-.drag-handle { cursor: grab; flex-shrink: 0; margin-top: 3px; font-size: 14px; opacity: 0.6; }
+.drag-handle { cursor: grab; flex-shrink: 0; font-size: 14px; opacity: 0.6; }
 .drag-handle:hover { opacity: 1; }
 /* Gate-in-flight feedback (t-a9d5): instant, unmistakable "clicked" state for Approve/Accept/
    Demote — greys the card and blocks further clicks on it until the confirming board refresh
@@ -160,16 +160,18 @@ textarea { resize: vertical; }
 }
 
 .card-head { display: flex; align-items: flex-start; gap: 10px; }
-.card-type-icon { font-size: 14px; margin-top: 3px; flex-shrink: 0; opacity: 0.85; }
+.card-type-icon { font-size: 14px; flex-shrink: 0; opacity: 0.85; }
+/* One 24px first line (the chevron button's height) for every leading head icon, the title and
+   the draft's badge row, so grip, chevron, type icon and chips share one vertical center (t-81a0). */
+.card-head > .drag-handle, .card-head > .card-type-icon, .card-head > .head-icon {
+  height: 24px; display: inline-flex; align-items: center;
+}
+.card-head .card-title { min-height: 24px; }
 .tab-icon { font-size: 14px; }
 .link .codicon, .chip .codicon, .amber-block .codicon,
 .toast .codicon {
   font-size: 13px; flex-shrink: 0;
 }
-.collapse-toggle { margin-top: 2px; }
-/* The 2px above aligns the chevron with the card title's first line; the two section headers
-   (t-aee3) are centered flex rows, where it just knocks the chevron off-center. */
-.desc-head .collapse-toggle, .qa-head-left .collapse-toggle { margin-top: 0; }
 .collapse-toggle svg { transition: transform 120ms ease; }
 .collapse-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .card.collapsed .chips { margin-bottom: 0; }
@@ -442,7 +444,7 @@ textarea { resize: vertical; }
   color: var(--vscode-inputValidation-warningBorder, #cca700); border: 1px solid var(--vscode-inputValidation-warningBorder, #cca700);
   border-radius: 4px; padding: 1px 6px;
 }
-.draft-head-row { margin-bottom: 8px; }
+.draft-head-row { margin-bottom: 8px; min-height: 24px; }
 .draft-text { font-size: 13px; line-height: 1.6; text-align: left; color: var(--vscode-foreground, #cccccc); }
 .draft-text-btn { display: block; width: 100%; background: none; border: none; padding: 0; cursor: text; font-family: inherit; }
 .draft-text-btn:hover { color: var(--vscode-foreground, #cccccc); }

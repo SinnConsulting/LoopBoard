@@ -1295,7 +1295,7 @@
           title: isCollapsedCard ? 'Expand draft' : 'Collapse draft',
           onclick: () => toggleCollapse(t.id),
         }, icon(SVG.chevron)),
-        icon(SVG.robot, 'muted'),
+        icon(SVG.robot, 'muted head-icon'),
         h('div', { style: { flex: '1' } },
           h('div', { class: 'draft-head-row', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
             h('span', { class: 'draft-badge' }, 'Draft'),

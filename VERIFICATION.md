@@ -1700,3 +1700,7 @@ and likewise cannot be verified headless.
       "Task is no longer in <tab>" toast shows and `TODO.md` is unchanged.
     - `.loopboard/debug.log` shows `reorder-request` and `reorder` (`applied`, `noop`, `conflict (…)`)
       lines at `info`.
+    - Header alignment (CSS only): on a DRAFT card and on an ordinary New/Backlog card, the grip,
+      the chevron and the robot/type icon share one vertical center with each other and with the
+      DRAFT / id / ON HOLD chips (draft) or the title's first line (card); the same holds with the
+      handle absent (one-card tab, In Progress) and on a collapsed card.
