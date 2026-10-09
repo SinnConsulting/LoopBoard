@@ -1,7 +1,7 @@
 // Pure gate transforms (New -> Backlog promote, Review -> Done accept). No vscode imports.
 // The two human gates now span two files; gates.ts stays pure by mutating the in-memory index
 // entry / task detail objects it is handed, and store.ts orchestrates the per-file writes.
-import { IndexEntry, TaskDetail } from './model';
+import { IndexDoc, IndexEntry, Phase, TaskDetail } from './model';
 import { readyToAutoPromote } from './autopromote';
 
 function addWorklog(detail: TaskDetail, day: string): void {
@@ -42,6 +42,44 @@ export function demoteIndex(entry: IndexEntry): void {
 export function demoteDetail(detail: TaskDetail, today: string): void {
   detail.promoted = undefined;
   addWorklog(detail, today);
+}
+
+// Reorder (t-81a0, the fourth human board action): move one entry within the index so it lands
+// directly before `beforeId`, or after the last entry of its phase when `beforeId` is null. Only
+// New and Backlog are reorderable — the two tabs whose order a loop reads (grooming takes New top
+// down, a worker claims the top Backlog task). `phase` is the tab the board rendered: if the entry
+// or the anchor has since left it on disk (a missing anchor included), it is a `conflict` and
+// `doc.entries` stays untouched. Only the same-phase order is visible, so a move that leaves it
+// unchanged is a `noop`, never a write; entries of other phases keep their relative order.
+export type MoveOutcome = 'applied' | 'noop' | 'conflict' | 'notfound' | 'unsupported';
+export const REORDERABLE_PHASES: readonly Phase[] = ['new', 'backlog'];
+
+export function moveEntry(doc: IndexDoc, taskId: string, phase: string, beforeId: string | null): MoveOutcome {
+  if (!(REORDERABLE_PHASES as readonly string[]).includes(phase)) return 'unsupported';
+  const moved = doc.entries.find((e) => e.id === taskId);
+  if (!moved) return 'notfound';
+  if (moved.phase !== phase) return 'conflict';
+  if (beforeId !== null) {
+    const anchor = doc.entries.find((e) => e.id === beforeId);
+    if (!anchor || anchor.phase !== phase) return 'conflict';
+    if (anchor === moved) return 'noop';
+  }
+
+  const rest = doc.entries.filter((e) => e !== moved);
+  let at: number;
+  if (beforeId !== null) {
+    at = rest.findIndex((e) => e.id === beforeId);
+  } else {
+    let last = -1;
+    rest.forEach((e, i) => { if (e.phase === phase) last = i; });
+    at = last + 1;
+  }
+  const next = [...rest.slice(0, at), moved, ...rest.slice(at)];
+  const samePhase = (list: IndexEntry[]) => list.filter((e) => e.phase === phase);
+  const before = samePhase(doc.entries);
+  if (samePhase(next).every((e, i) => e === before[i])) return 'noop';
+  doc.entries.splice(0, doc.entries.length, ...next);
+  return 'applied';
 }
 
 // Accept (tick on Review) — detail side: record completed: and log the day.

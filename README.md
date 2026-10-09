@@ -240,6 +240,20 @@ settings are grouped below.
       </ul>
     </td>
   </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>Drag to reorder</b><br>
+      <sub>Decide which story a loop takes next.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/12-reorder.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/12-reorder.gif" width="100%" alt="A Backlog card is dragged by its grip above the card a loop would claim first; an insertion line marks the slot, and after the drop TODO.md is rewritten and the card lands at the top" /></a>
+    </td>
+    <td width="67%" valign="top">
+      <ul>
+        <li>Drag a <b>New</b> or <b>Backlog</b> card by its grip to move it. Loops groom New and claim Backlog <b>top down</b>, so the order is the queue.</li>
+        <li>A line marks where the card will land. On drop, LoopBoard moves the entry in <code>TODO.md</code> and the card lands after the refresh.</li>
+        <li>No grip while a search filters the tab or the tab holds one card.</li>
+      </ul>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -395,8 +409,10 @@ in `docs/showcase/studio/scenes/`.
 
 - **Markdown is the source of truth.** The board is a live view of `.loopboard/`, never a second
   database.
-- **Three human actions:** promote, accept, demote — the **Promote**, **Approve** and **Demote**
-  buttons. Everything else is a field the loops read on their next pass.
+- **Four human actions:** promote, accept, demote, reorder — the **Promote**, **Approve** and
+  **Demote** buttons, and dragging a New or Backlog card by its handle. `TODO.md` order is the
+  loops' pick order: they take the top task and never reorder. Everything else is a field the
+  loops read on their next pass.
 - **Zero runtime dependencies.** Vanilla HTML/CSS/JS webviews with a CSP nonce on every script.
 - **Native VS Code only.** A webview, an activity-bar view and plain terminals. No hooks, no files
   outside `.loopboard/`. Uninstall it and only `.loopboard/` remains.

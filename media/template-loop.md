@@ -106,9 +106,10 @@ use. Detail stays in `tasks/<id>.md`.
 ## Rules
 
 1. `[x]` is human-only; a worker never ticks it. `[x]` on New = promote to Backlog; on Review =
-   accepted → DONE.md (procedure in Automation block). Board's Demote (Backlog → New) is a third
-   human-only action — not a tick; immediate button click, non-destructive/reversible. Workers do
-   all other phase moves and propose; never demote a task themselves.
+   accepted → DONE.md (procedure in Automation block). Board's Demote (Backlog → New) and drag
+   reorder (moves an entry within TODO.md) are the third and fourth human-only actions — not
+   ticks; immediate, non-destructive/reversible. Index order is the human's priority = pick order
+   (top down). Workers do all other phase moves and propose; never demote or reorder themselves.
 2. One worker per task, plus GLOBAL SINGLE-TASK LIMIT: at most ONE task `phase: inprogress`
    board-wide at any moment, regardless of model — the sole one-worker guarantee. If ANY task
    (even another model's) is In Progress, no loop starts a Backlog task, resumes a
