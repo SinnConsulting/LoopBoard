@@ -173,18 +173,18 @@ Newest-first `## Tasks` of `- [x] <Title>` entries, sub-bullets only `id:`, `mod
 16. Subagents are board-blind; the loop is the board's ONLY writer. No subagent (groomer,
     implementer, reviewer, helper) reads or writes anything under `.loopboard/`, so concurrent
     groomers never race on `TODO.md`; the loop puts what one needs (story, Goals, answers,
-    `feedback:`) in its brief. A GROOM subagent returns its report: title, `## Problem`,
-    `## Description`, `## Goals`, and every human decision with its concrete options (max 3,
-    recommended first) and the reason for the recommendation. Before returning, it also writes that
-    report to `/tmp/loopboard/<workspace>/<id>/groom.md` (`<workspace>` = workspace folder name).
-    The loop then does every board write itself: the task file (with the `<today>` Worklog line),
-    then the index entry (title, `phase: new` on a DRAFT, `question:` with a blank `answer:`, its
-    `suggestion:` lines), and deleting folded `question:`/`answer:` pairs and folded `feedback:`.
-    Every pass, before spawning any groomer: a New task or DRAFT whose `groom.md` is newer than its
-    `tasks/<id>.md` (or that has no task file) holds a report that came back but was never written:
-    apply it as above, note "recovered" in its Worklog, and do not re-groom it. Each `suggestion:`
-    reads as the complete answer on its own: what the human gets, with its number and consequence,
-    and no option letter.
+    `feedback:`, other index titles with phase) in its brief. A GROOM subagent returns its report:
+    title, `## Problem`, `## Description`, `## Goals`, and every human decision with its concrete
+    options (max 3, recommended first) and the reason for the recommendation. Before returning, it
+    also writes that report to `/tmp/loopboard/<workspace>/<id>/groom.md` (`<workspace>` = workspace
+    folder name). The loop then does every board write itself: the task file (with the `<today>`
+    Worklog line), then the index entry (title, `phase: new` on a DRAFT, `question:` with a blank
+    `answer:`, its `suggestion:` lines), and deleting folded `question:`/`answer:` pairs and folded
+    `feedback:`. Every pass, before spawning any groomer: a New task or DRAFT whose `groom.md` is
+    newer than its `tasks/<id>.md` (or that has no task file) holds a report that came back but was
+    never written: apply it as above, note "recovered" in its Worklog, and do not re-groom it. Each
+    `suggestion:` reads as the complete answer on its own: what the human gets, with its number and
+    consequence, and no option letter.
 
 **Subagents** (Rule 14, DELEGATED-WORK MODE; Claude Code 2.1.292+). EVERY Agent-tool spawn MUST pass
 `model` and `effort`. Never `subagent_type: fork` (ignores `effort`); never effort `max` (loop

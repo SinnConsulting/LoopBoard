@@ -149,7 +149,8 @@ test('template Rule 16: subagents are board-blind, the loop is the ONLY writer',
   assert.match(r, /^ 16\. Subagents are board-blind; the loop is the board's ONLY writer\./);
   assert.match(r, /No subagent \(groomer, implementer, reviewer, helper\) reads or writes anything under `\.loopboard\/`/);
   assert.match(r, /concurrent groomers never race on `TODO\.md`/);
-  assert.match(r, /the loop puts what one needs \(story, Goals, answers, `feedback:`\) in its brief/);
+  // A board-blind groomer still names overlapping tasks (Rule 14), so its brief lists the other titles.
+  assert.match(r, /the loop puts what one needs \(story, Goals, answers, `feedback:`, other index titles with phase\) in its brief/);
   assert.match(r, /The loop then does every board write itself: the task file \(with the `<today>` Worklog line\), then the index entry \(title, `phase: new` on a DRAFT, `question:` with a blank `answer:`, its `suggestion:` lines\), and deleting folded `question:`\/`answer:` pairs and folded `feedback:`/);
 });
 
