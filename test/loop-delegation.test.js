@@ -50,7 +50,7 @@ test('template: Haiku never grooms, implements or reviews', () => {
   const r = subagentsRule();
   assert.match(r, /Haiku NEVER grooms, implements or reviews/);
   assert.match(r, /task models are never `haiku`/);
-  assert.match(r, /helper never writes `\.loopboard\/`, commits, pushes or branches/);
+  assert.match(r, /helper never commits, pushes or branches/);
 });
 
 test('template: the four effort signals, each with its defining phrase', () => {
@@ -95,12 +95,13 @@ test('template: the GROOM/WORK limits of the old agent bodies appear once, and e
   const tpl = read('media/template-loop.md');
   const all = flat(tpl);
   const count = (re) => (all.match(re) || []).length;
-  assert.equal(count(/It writes only `tasks\/<id>\.md` and its own index entry/g), 1, 'GROOM write-list once');
+  assert.doesNotMatch(all, /its own index entry/, 'the GROOM write-list left with Rule 16 (subagents are board-blind)');
+  assert.match(all, /grounds claims in latest `main` with file:line/);
   assert.equal(count(/names overlapping tasks by full title/g), 1);
-  assert.equal(count(/returns the title, key facts and every question filed/g), 1, 'GROOM return report once');
+  assert.equal(count(/A GROOM subagent returns its report: title, `## Problem`, `## Description`, `## Goals`, and every human decision with its concrete options \(max 3, recommended first\) and the reason for the recommendation/g), 1, 'GROOM return report once');
   assert.equal(count(/commits only its own files by explicit path/g), 1, 'WORK staging once');
   assert.equal(count(/a per-goal account, deviations and anything unverified/g), 1, 'WORK return report once');
-  assert.equal(count(/Neither the implementer nor the review subagent writes any `\.loopboard\/` file/g), 1, 'WORK writes nothing under .loopboard/');
+  assert.equal(count(/Neither the implementer nor the review subagent reads or writes any `\.loopboard\/` file \(Rule 16\)/g), 1, 'WORK neither reads nor writes .loopboard/');
   assert.doesNotMatch(all, /Interval \(`loopBoard\.loopInterval`\), effort,/, 'the old "effort rides the spawn command" note is gone');
   assert.match(all, /your own `--effort`, grooming cap and delegated-work mode ride the spawn command/);
 });
@@ -130,4 +131,47 @@ test('package.json: no slot effort description claims every subagent runs at the
     assert.doesNotMatch(d, /same effort|every subagent/i, `${key} still says subagents share the loop effort`);
     assert.match(d, /subagents get their effort per spawn/, `${key} names per-spawn effort`);
   }
+});
+
+// t-716f review feedback: Rule 16 makes every subagent board-blind and the loop the board's only
+// writer, with a /tmp report the loop recovers from when a groom came back but was never written.
+function rule16() {
+  const tpl = read('media/template-loop.md');
+  const start = tpl.indexOf('\n16. ');
+  assert.ok(start !== -1, 'Rule 16 is in the template');
+  const rules = tpl.slice(tpl.indexOf('<!-- loopboard:sync:rules:begin -->'), tpl.indexOf('<!-- loopboard:sync:rules:end -->'));
+  assert.ok(rules.includes('\n16. '), 'inside the sync-marked rules section');
+  return flat(tpl.slice(start, tpl.indexOf('\n**Subagents**', start)));
+}
+
+test('template Rule 16: subagents are board-blind, the loop is the ONLY writer', () => {
+  const r = rule16();
+  assert.match(r, /^ 16\. Subagents are board-blind; the loop is the board's ONLY writer\./);
+  assert.match(r, /No subagent \(groomer, implementer, reviewer, helper\) reads or writes anything under `\.loopboard\/`/);
+  assert.match(r, /concurrent groomers never race on `TODO\.md`/);
+  assert.match(r, /the loop puts what one needs \(story, Goals, answers, `feedback:`\) in its brief/);
+  assert.match(r, /The loop then does every board write itself: the task file \(with the `<today>` Worklog line\), then the index entry \(title, `phase: new` on a DRAFT, `question:` with a blank `answer:`, its `suggestion:` lines\), and deleting folded `question:`\/`answer:` pairs and folded `feedback:`/);
+});
+
+test('template Rule 16: the groom report lands in /tmp, and an unwritten one is recovered, not re-groomed', () => {
+  const r = rule16();
+  assert.match(r, /Before returning, it also writes that report to `\/tmp\/loopboard\/<workspace>\/<id>\/groom\.md`/);
+  assert.match(r, /Every pass, before spawning any groomer: a New task or DRAFT whose `groom\.md` is newer than its `tasks\/<id>\.md` \(or that has no task file\)/);
+  assert.match(r, /apply it as above, note "recovered" in its Worklog, and do not re-groom it/);
+});
+
+test('template Rule 16: each suggestion reads as a complete answer, no option letter', () => {
+  assert.match(rule16(), /Each `suggestion:` reads as the complete answer on its own: what the human gets, with its number and consequence, and no option letter/);
+});
+
+test('template: Rule 14 and the Automation fence route grooming writes through the loop (Rule 16)', () => {
+  const tpl = read('media/template-loop.md');
+  const rule14 = flat(tpl.slice(tpl.indexOf('\n14. '), tpl.indexOf('\n15. ')));
+  assert.doesNotMatch(rule14, /Subagent expands the story into/, 'the subagent no longer writes the task file');
+  assert.match(rule14, /returns it all \(Rule 16\); the loop writes it/);
+  assert.match(rule14, /then the loop deletes it/);
+  const tail = tpl.slice(tpl.indexOf('## Automation'));
+  const fence = tail.slice(tail.indexOf('```') + 3, tail.indexOf('```', tail.indexOf('```') + 3));
+  assert.match(fence, /board-blind: you write its returned report to the board yourself, and first apply any recovered groom\.md, Rule 16/);
+  assert.match(fence, /review the PR against the ## Goals you put in its brief/);
 });

@@ -298,11 +298,16 @@ test('revealStep: the row that last revealed toggles the panel; any other row sh
   assert.equal(revealStep(undefined, 'opus'), 'show', 'nothing revealed -> show');
 });
 
-test('template: one feedback rule, no note: grammar and no Rule 16 (t-ae10)', () => {
+test('template: one feedback rule, no note: grammar and no `note:` Rule 16 (t-ae10)', () => {
   const tpl = readMedia('template-loop.md');
   assert.doesNotMatch(tpl, /^\s*- note: </m, 'no note: grammar line');
-  assert.doesNotMatch(tpl, /^16\. /m, 'Rule 16 is gone');
-  assert.doesNotMatch(tpl, /Rule 16/, 'nothing still points at it');
+  // t-716f re-used the number at the owner's request: Rule 16 is now the board-blind subagent rule
+  // (pinned in test/loop-delegation.test.js). The old `note:` Rule 16 stays gone, and nothing
+  // follows it.
+  const rule16 = tpl.slice(tpl.indexOf('\n16. '), tpl.indexOf('\n**Subagents**'));
+  assert.match(rule16, /^\n16\. Subagents are board-blind/, 'Rule 16 is only the board-blind rule');
+  assert.doesNotMatch(rule16, /note:/, 'the old note: Rule 16 is gone');
+  assert.doesNotMatch(tpl, /^17\. /m, 'no Rule 17');
   assert.match(tpl, /- feedback: <text> +\(repeatable, single line; any phase incl\. drafts;/);
   assert.match(tpl, /legacy `note:` = `feedback:`/);
   assert.match(tpl, /optional `model:`\/`groomer:`\/`feedback:`/, 'drafts may carry feedback');

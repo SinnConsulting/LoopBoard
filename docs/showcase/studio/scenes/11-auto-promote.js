@@ -54,7 +54,7 @@ module.exports = {
     await rec.hold(1200);
     await rec.spotlight(null);
 
-    // What the groomer writes on its re-groom (LOOP.md Rule 14): the answer is folded into the
+    // What the loop writes from a re-groom (LOOP.md Rules 14, 16): the answer is folded into the
     // story and the question pair deleted.
     await rec.caption('3', 'The groomer folds the answer in — <b>nothing left open</b>');
     host.editIndex(ID, (e) => { e.questions = []; });

@@ -23,12 +23,14 @@
 // 228 -> 245 (t-716f, decisions/docs.md): the per-spawn model/effort delegation rule (the
 // template's **Subagents** block) still overflowed by exactly 17 lines after a
 // template-loop-compress pass over the whole file; owner-approved, raised by that overflow only.
+// 245 -> 257 (t-716f review feedback, decisions/docs.md): Rule 16 (board-blind subagents, the loop
+// as the board's only writer) still overflowed by exactly 12 lines after a second compress pass.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MAX_LINES = 245;
+const MAX_LINES = 257;
 
 test('media/template-loop.md stays within its line budget', () => {
   const text = fs.readFileSync(path.join(process.cwd(), 'media', 'template-loop.md'), 'utf8');

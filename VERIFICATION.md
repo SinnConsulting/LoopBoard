@@ -155,6 +155,11 @@ questions, an HTML-comment template) and `index-unknown.md`:
 - README.md and `docs/showcase/README.md` name the 2.1.292 minimum and carry no loop-agent
   reference; no slot `.effort` description in `package.json` claims subagents share the loop
   effort. Whether loops really agree on a level is manual (item 68, untested).
+- Rule 16 (board-blind subagents): the rule sits in the rules sync markers; its key phrases (ONLY
+  writer, no subagent reads or writes `.loopboard/`, the GROOM report fields, the
+  `/tmp/loopboard/<workspace>/<id>/groom.md` path, the newer-than recovery with "recovered", the
+  complete-answer `suggestion:`) and the Rule 14 / Automation-fence hand-offs are pinned; what a
+  live loop does with them is item 69 (untested).
 
 ### Loop-action schedule — `test/schedule.test.js` (t-77d1)
 - `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
@@ -1731,3 +1736,19 @@ and likewise cannot be verified headless.
       the S/N/D/U rubric, on one `low`, one `medium` and one `high` delegation: each matches.
     - Spawn an `xhigh` subagent on each slot model (Opus, Sonnet, Fable): its JSONL shows
       `"effort": "xhigh"`, not a silent fallback.
+
+69. **Board-blind subagents, the loop as the only board writer (t-716f Rule 16) — UNTESTED in a
+    live loop:** the wording is pinned by `test/loop-delegation.test.js`; the behaviour needs a
+    running loop.
+    - Give a loop two DRAFTs with a grooming cap of 2: both grooming subagents' transcripts show no
+      Read/Edit/Write of any `.loopboard/` path; each writes `/tmp/loopboard/<workspace>/<id>/groom.md`
+      before returning; the LOOP then writes each `tasks/<id>.md` (with a `<today>` Worklog line)
+      and afterwards the index entry (title, `phase: new`, `question:` + blank `answer:` +
+      `suggestion:` lines). Neither entry is lost or garbled in `TODO.md`.
+    - Every `suggestion:` reads as a complete answer (what the human gets, number, consequence),
+      with no `A`/`B`/`C` option letter.
+    - Recovery: interrupt a loop (■) after a groomer returned but before the loop wrote the board
+      (or hand-place a `groom.md` newer than the task file of a New task); on the next pass the
+      loop applies it, notes "recovered" in its Worklog and spawns no groomer for that task.
+    - With `loopBoard.delegateWork` on: the implementer and review subagents read no `.loopboard/`
+      file; the review brief carries the task's `## Goals`.
