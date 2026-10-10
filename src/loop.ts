@@ -39,7 +39,8 @@ export function sanitizeLoopInterval(s: string): string {
 // `/clear` starts a NEW session id in the same process — the name survives, the id does not.
 //
 // `effort` (t-cffc) is the slot's `loopBoard.models.<slot>.effort`, passed as `--effort <level>`
-// on EVERY spawn — the loop session's reasoning effort; subagents it spawns run at the same level.
+// on EVERY spawn — the loop session's reasoning effort only; each subagent gets its effort per
+// spawn from the LOOP.md rubric (t-716f).
 // Spliced unquoted, so it is validated against EFFORT_LEVELS here (invalid/absent -> 'medium'),
 // the same hardening as permissionMode — a raw config value never reaches the shell line.
 export function buildClaudeBase(permissionMode: string, modelString: string, sessionName?: string, effort?: string): string {

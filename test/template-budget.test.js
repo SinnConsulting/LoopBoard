@@ -19,12 +19,16 @@
 //
 // Raising it is a decision, not a formality. Compress first (the skill), and only raise the
 // budget if the file legitimately needs to be longer after that pass.
+//
+// 228 -> 245 (t-716f, decisions/docs.md): the per-spawn model/effort delegation rule (the
+// template's **Subagents** block) still overflowed by exactly 17 lines after a
+// template-loop-compress pass over the whole file; owner-approved, raised by that overflow only.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MAX_LINES = 228;
+const MAX_LINES = 245;
 
 test('media/template-loop.md stays within its line budget', () => {
   const text = fs.readFileSync(path.join(process.cwd(), 'media', 'template-loop.md'), 'utf8');

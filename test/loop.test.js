@@ -213,10 +213,12 @@ test('the template states the cap behaviour without embedding a number', () => {
   assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
 });
 
-// t-cffc: the Agent tool has no per-call effort, so LOOP.md must not tell the loop to pick or cap a
-// subagent's effort — every subagent runs at its loop's `--effort` session level. Nor may it
-// introduce per-agent-type effort (agent definitions / `--agents` JSON), which was dropped.
-test('the template no longer tells the loop to choose or cap a subagent effort', () => {
+// t-cffc: LOOP.md must not cap a subagent's effort from the bootstrap prompt, nor introduce
+// per-agent-type effort (agent definitions / `--agents` JSON). t-716f amends t-cffc: the Agent tool
+// now takes a per-spawn effort (Claude Code 2.1.292+) and the template's Subagents rule picks it,
+// `xhigh` included — so `xhigh` left this list; the rubric itself is pinned in
+// test/loop-delegation.test.js.
+test('the template caps no subagent effort and names no agent definition', () => {
   const tpl = readMedia('template-loop.md');
   const rule14 = tpl.slice(tpl.indexOf('\n14. '), tpl.indexOf('\n15. '));
   const fence = automationFence(tpl);
@@ -224,7 +226,7 @@ test('the template no longer tells the loop to choose or cap a subagent effort',
   for (const [name, text] of [['whole template', tpl], ['Rule 14', rule14], ['DELEGATED-WORK MODE', delegated]]) {
     assert.ok(text.length > 0, `${name} found`);
     assert.doesNotMatch(text, /ceiling/i, `${name}: no effort ceiling`);
-    assert.doesNotMatch(text, /reasoning effort|effort chosen|xhigh|max only/i, `${name}: no per-subagent effort pick`);
+    assert.doesNotMatch(text, /reasoning effort|effort chosen|max only/i, `${name}: no ceiling-style effort pick`);
   }
   assert.doesNotMatch(tpl, /--agents|\.claude\/agents|agent type/i, 'no per-agent-type effort wording');
 });

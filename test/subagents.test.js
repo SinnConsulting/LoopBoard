@@ -346,6 +346,14 @@ test('describeAgent renders `agentType · description` plus a duration', () => {
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y' }, NOW).duration, '');
 });
 
+test('describeAgent drops the `general-purpose` prefix when there is a description (t-716f)', () => {
+  // LOOP.md spawns every groomer/implementer/reviewer as `general-purpose` with an
+  // `<effort>-<task id>: <headline>` title, so the type would only repeat on every row.
+  assert.strictEqual(describeAgent({ id: 'a', agentType: 'general-purpose', description: 'high-t-4589: Swing sheet', startedAt: NOW - MINUTE }, NOW).label, 'high-t-4589: Swing sheet');
+  // Any other type keeps it — a read-only Haiku helper is `Explore`.
+  assert.strictEqual(describeAgent({ id: 'a', agentType: 'Explore', description: 'haiku-t-4589: Find old paths', startedAt: NOW - MINUTE }, NOW).label, 'Explore · haiku-t-4589: Find old paths');
+});
+
 // ---- lifecycle edges + the agent side of a restart (t-aglg) ----
 
 function row(id, over) {
