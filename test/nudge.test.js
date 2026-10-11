@@ -201,9 +201,9 @@ test('changes are grouped per loop, and each change reaches exactly one loop', (
 
 // ---- the New/DRAFT detail-only carve-out (t-6cbf) ----
 
-// The grooming subagent writes tasks/<id>.md FIRST and replaces the `- [ ] DRAFT:` line after, so
-// between its two writes the board would nudge "is a draft to groom" into the very loop that is
-// grooming it — one wholly empty pass per groomed draft.
+// The loop writes a groom's tasks/<id>.md FIRST and replaces the `- [ ] DRAFT:` line after (Rule
+// 16), so between its two writes the board would nudge "is a draft to groom" into the very loop
+// that is grooming it — one wholly empty pass per groomed draft.
 test('a DRAFT whose change is confined to the task file nudges nobody (t-6cbf)', () => {
   const before = entry({ isDraft: true, groomer: 'fable', raw: '- [ ] DRAFT: t-1 — do a thing' });
   const next = { ...before, problem: 'why', goals: '- done when', detailRaw: '# t\n\n## Problem\n\nwhy\n' };

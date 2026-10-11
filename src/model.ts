@@ -39,7 +39,8 @@ export function isValidModelString(s: string): boolean {
 }
 
 // Reasoning effort a slot's loop session is started with, passed as `claude --effort <level>`
-// (t-cffc, buildClaudeBase); every subagent the loop spawns runs at that same session effort.
+// (t-cffc, buildClaudeBase). It governs the loop session only: each subagent gets its effort per
+// spawn from the LOOP.md rubric (t-716f).
 // Same five levels as the CLI's `--effort`. Order matters (Faster -> Smarter).
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORT_LEVELS)[number];

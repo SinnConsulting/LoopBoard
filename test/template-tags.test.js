@@ -20,6 +20,6 @@ test('Rule 14 tells the groomer how to assign tags', () => {
   assert.ok(rule.includes('pick from the catalogue (`.loopboard/tags.md` + tags in use)'));
   assert.ok(rule.includes('coin a new name only when none fits'));
   assert.ok(rule.includes("a DRAFT's leading `#word` becomes tag `word`, out of the title"));
-  assert.ok(rule.includes('Append a coined tag as a bare `- <name>` line to `.loopboard/tags.md`'));
-  assert.ok(rule.includes('never edit or remove an existing line there'));
+  assert.ok(rule.includes('the loop appends it as a bare `- <name>` line to `.loopboard/tags.md`'));
+  assert.ok(rule.includes('never editing or removing an existing line there'));
 });
