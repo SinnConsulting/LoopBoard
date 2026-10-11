@@ -1773,11 +1773,12 @@ and likewise cannot be verified headless.
     beside the board.
     - Tag chips on cards: add `bug` to a Backlog card, a New card and a DRAFT. A chip shows on each,
       also while the card is collapsed (the `＋ tag` control shows only while expanded).
-    - Placement: the tag chips and `＋ tag` render as ONE right-aligned group at the END of the
-      chips row (after `added`/`started`/active days/links/dependencies and an unparsed-lines
-      chip), not between the id chip and the info chips — on expanded and collapsed cards, drafts
-      and Done rows (read-only there, before the chevron/delete buttons). On a narrow card the
-      group wraps onto its own line and stays right-aligned.
+    - Placement: the tag chips and `＋ tag` come LAST in the chips row, directly after the last
+      machine chip (`added`/`started`/active days/links/dependencies, an unparsed-lines chip) with
+      the normal chip gap — not pushed to the right edge, not between the id chip and the info
+      chips — on expanded and collapsed cards and drafts (left-aligned there); Done rows show them
+      read-only directly after the completed date/link, before the chevron/delete buttons. On a
+      narrow card they wrap like any other chip, left-aligned.
     - Adding: **＋ tag** opens an input; typing offers the catalogue (existing tags not already on
       the card) and a name outside it is accepted too. Enter adds, Escape cancels, a click outside
       an empty input closes it. Names fold to lower case and `-` (`Two Words` → `two-words`).

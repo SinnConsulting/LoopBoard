@@ -1309,8 +1309,8 @@
     return wrap;
   }
 
-  // The tag chips of one task as ONE group, right-aligned at the end of its row so the editable
-  // tags read apart from the read-only info chips. `editable` = an active (non-Done) card or draft.
+  // The tag chips of one task as ONE group, placed after every machine chip of its row (human tags
+  // last). `editable` = an active (non-Done) card or draft.
   function tagNodes(t, editable) {
     const nodes = (t.tags || []).map((name) => tagChip(t, name, editable));
     // The add control stays out of a collapsed card's way unless it is already open.

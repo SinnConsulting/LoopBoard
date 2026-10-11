@@ -83,7 +83,9 @@ test('tag chips: name opens the overview, dot sets the color, x removes; Done ch
   const chips = code(extractFunction('renderChips'));
   assert.match(chips, /const tags = tagNodes\(t, true\);\s*if \(tags\) chips\.append\(tags\);\s*return chips;/, 'every active card, collapsed too, as the LAST group of the row');
   const nodes = code(extractFunction('tagNodes'));
-  assert.match(nodes, /h\('span', \{ class: 'tag-cluster' \}, nodes\)/, 'one right-aligned group');
+  assert.match(nodes, /h\('span', \{ class: 'tag-cluster' \}, nodes\)/, 'one group of human tags');
+  const css = fs.readFileSync(path.join(media, 'board.css'), 'utf8');
+  assert.match(css, /^\.tag-cluster \{ display: contents; \}$/m, 'tags flow inline after the machine chips: no right-edge push, normal wrap');
   assert.match(code(extractFunction('renderCard')), /chipRow\.insertBefore\(btn, chipRow\.querySelector\('\.tag-cluster'\)\)/, 'the unparsed chip stays left of the tags');
   assert.match(code(extractFunction('renderDraft')), /tagNodes\(t, true\)/, 'drafts too');
 });
