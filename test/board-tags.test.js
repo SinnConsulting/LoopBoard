@@ -79,7 +79,12 @@ test('tag chips: name opens the overview, dot sets the color, x removes; Done ch
   assert.match(code(chip), /if \(editable\) \{/);
   const done = extractFunction('renderDone');
   assert.match(code(done), /tagNodes\(t, false\)/, 'Done rows draw read-only chips');
-  assert.match(code(extractFunction('renderChips')), /chips\.append\(\.\.\.tagNodes\(t, true\)\)/, 'every active card, collapsed too');
+  assert.ok(code(done).indexOf('tagNodes(t, false)') > code(done).indexOf('t.completed'), 'Done: tags after the info chips');
+  const chips = code(extractFunction('renderChips'));
+  assert.match(chips, /const tags = tagNodes\(t, true\);\s*if \(tags\) chips\.append\(tags\);\s*return chips;/, 'every active card, collapsed too, as the LAST group of the row');
+  const nodes = code(extractFunction('tagNodes'));
+  assert.match(nodes, /h\('span', \{ class: 'tag-cluster' \}, nodes\)/, 'one right-aligned group');
+  assert.match(code(extractFunction('renderCard')), /chipRow\.insertBefore\(btn, chipRow\.querySelector\('\.tag-cluster'\)\)/, 'the unparsed chip stays left of the tags');
   assert.match(code(extractFunction('renderDraft')), /tagNodes\(t, true\)/, 'drafts too');
 });
 

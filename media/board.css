@@ -523,6 +523,8 @@ textarea { resize: vertical; }
   font: inherit; font-size: 11px; padding: 0 8px; width: 120px;
 }
 .draft-tags { margin-top: 6px; }
+.tag-cluster { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; min-width: 0; }
+.done-row-item .tag-cluster { flex-wrap: nowrap; }
 .tag-palette {
   position: absolute; top: 24px; left: 0; z-index: 20; display: flex; gap: 6px; padding: 8px; width: max-content;
   background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vscode-widget-border, #454545);

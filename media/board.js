@@ -1164,9 +1164,10 @@
         icon(SVG.checkGreen),
         h('span', { class: 'done-title' }, t.title.replace(/^\[x\]\s*/, '')),
         idChip(t.id),
-        tagNodes(t, false),
         h('span', { class: 'chip mono', style: { background: 'none', opacity: 1, padding: 0 } }, t.completed || ''));
       if (t.links && t.links.length) row.append(linkAnchor(t.links[0]));
+      const doneTags = tagNodes(t, false);
+      if (doneTags) row.append(doneTags);
       if (hasDetail) {
         row.append(h('button', {
           class: 'icon-btn done-chevron' + (u.doneOpen ? ' open' : ''), type: 'button',
@@ -1308,12 +1309,13 @@
     return wrap;
   }
 
-  // The tag chips of one task. `editable` = an active (non-Done) card or draft.
+  // The tag chips of one task as ONE group, right-aligned at the end of its row so the editable
+  // tags read apart from the read-only info chips. `editable` = an active (non-Done) card or draft.
   function tagNodes(t, editable) {
     const nodes = (t.tags || []).map((name) => tagChip(t, name, editable));
     // The add control stays out of a collapsed card's way unless it is already open.
     if (editable && (!isCollapsed(t.id) || getUi(t.id).tagAdding)) nodes.push(tagAdder(t));
-    return nodes;
+    return nodes.length ? h('span', { class: 'tag-cluster' }, nodes) : null;
   }
 
   // ---- tag overview (t-0b10): one tag across every phase ----
@@ -2098,7 +2100,7 @@
         const btn = h('button', { class: 'chip button', type: 'button', onclick: () => { u.unparsedOpen = !u.unparsedOpen; render(); } },
           t.unparsedLines.length + ' unparsed line' + (t.unparsedLines.length === 1 ? '' : 's'), icon(SVG.chevron));
         const chipRow = card.querySelector('.chips');
-        chipRow.append(btn);
+        chipRow.insertBefore(btn, chipRow.querySelector('.tag-cluster'));
         if (u.unparsedOpen) {
           card.append(h('div', { class: 'unparsed-box' },
             h('div', { class: 'unparsed-text' }, t.unparsedLines.join('\n')),
@@ -2198,7 +2200,6 @@
     if (qChip) chips.append(qChip);
     const hold = holdBadge(t);
     if (hold) chips.append(hold);
-    chips.append(...tagNodes(t, true));
     if (t.added) chips.append(h('span', { class: 'chip mono' }, 'added ' + t.added));
     if (t.started) chips.append(h('span', { class: 'chip mono' }, 'started ' + t.started));
     if (t.worklog && t.worklog.length) {
@@ -2225,6 +2226,8 @@
         },
       }, 'depends on ' + dep.id + ' ', h('span', { class: 'codicon codicon-' + (dep.met ? 'check' : 'warning') })));
     }
+    const tags = tagNodes(t, true);
+    if (tags) chips.append(tags);
     return chips;
   }
 
