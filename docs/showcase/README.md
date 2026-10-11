@@ -258,7 +258,7 @@ settings are grouped below.
 
 ## Get started
 
-1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.0+**.
+1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.292+**.
 2. Run **LoopBoard: Initialize Workspace**.
 3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
    `echo '.loopboard/' >> .gitignore`
@@ -329,39 +329,18 @@ section.
   to `.loopboard/LOOP.md.bkp`.
 - **Custom wins.** Where a custom rule contradicts a built-in Rule, loops follow yours.
 
-### Optional: effort-based delegation
+---
 
-An extra rule, off unless you add it. It pairs with delegated work (`loopBoard.delegateWork`):
-instead of one generic subagent per task, the loop picks an agent by the effort the task needs.
-This repo ships three such agents in `.claude/agents/`: `loop-medium.md`, `loop-high.md` and
-`loop-xhigh.md`. Each one grooms (`GROOM`) or works (`WORK`) one task and names no model. Copy
-them into your workspace's `.claude/agents/`, then add the rule to your custom section:
+## Subagent model and effort
 
-```markdown
-2. Delegate to the project's loop agents (`.claude/agents/loop-*.md`), never to a generic one.
-   Three agents, one per effort: `loop-medium`, `loop-high`, `loop-xhigh`. None of them names a
-   model, so every spawn MUST pass `model`, taken from the task's `groomer:` (grooming) or
-   `model:` (work). The brief names the MODE (`GROOM` or `WORK`) and the task id.
-   - Effort, estimated per delegation: `loop-medium` for a small, well-specified task or draft;
-     `loop-high` when it spans several systems or amends a documented decision (when in doubt,
-     take high); `loop-xhigh` only when the story explicitly asks for deep reasoning.
-   - Re-grooming resumes the agent that groomed the task when the session still holds it.
-   - Review stays a separate agent on the worker's model, briefed with the task's `## Goals`.
-   - In `WORK` mode the agents never write `.loopboard/`; in `GROOM` mode they write only the
-     task file and their own index entry (Rule 14).
-```
+Every subagent a loop spawns — groomer, implementer, reviewer, helper — gets its `model` and
+`effort` per spawn, which needs **Claude Code 2.1.292+** (an older CLI most likely drops the effort
+silently). `LOOP.md`'s Subagents rule picks the effort from four signals in the story: subsystems,
+numbers to pin down, a reversed decision, an open approach. `medium` is the default, `high` or
+`xhigh` only when the story shows it, `low` only for exact, fully specified edits. The model stays
+the loop's own; only small mechanical helpers run on Haiku. A slot's `.effort` sets the loop
+session itself.
 
-Without the rule, delegation works as before: the loop's own subagents, at the loop's `--effort`.
-
-Why files, and what to know:
-
-- **Effort only comes from the agent file.** Claude Code silently ignores an effort passed when a
-  subagent is spawned and runs it at the loop's own effort; the `effort:` frontmatter is honoured.
-  Model is the opposite: passed per spawn it wins, and a file without `model:` silently inherits
-  the loop's model — hence the rule's "every spawn MUST pass `model`".
-- **Restart the loop after adding or editing an agent file** (♻). Agent files are read at session
-  start: a running loop answers a new one with `Agent type '…' not found` and keeps spawning the
-  old text of an edited one.
 - **Check effort in the transcript, never by asking.** A subagent asked for its effort makes one
   up; the `"effort"` field in its JSONL under `~/.claude/projects/` is the truth.
 

@@ -143,6 +143,24 @@ questions, an HTML-comment template) and `index-unknown.md`:
   Backlog/Feedback task through In Progress (FIRST) and back to its previous phase (LAST), gated by
   Rule 2, `started:` untouched; code-free and In Progress feedback stay in place; Review unchanged.
 
+### Loop delegation — `test/loop-delegation.test.js` (t-716f)
+- No `.claude/agents/loop-*.md` ships. The template's `**Subagents**` block (inside the `rules` sync
+  markers) says every spawn passes `model` and `effort` as `general-purpose` on Claude Code
+  2.1.292+, `medium` by default, never `fork`/`max`, review at the implementer's final effort, the
+  `effort: <level> (<signals>)` brief line, the `<effort>-<task id>:` / `haiku-<task id>:` titles,
+  the S/N/D/U signals with their defining phrases, the `high`/`xhigh`/`low` rows and the
+  unclear-is-absent tie-break, and the four Haiku-helper conditions (doubt keeps the task model;
+  Haiku never grooms, implements or reviews). The GROOM/WORK limits appear once; the Notes no
+  longer say effort rides the spawn command for subagents.
+- README.md and `docs/showcase/README.md` name the 2.1.292 minimum and carry no loop-agent
+  reference; no slot `.effort` description in `package.json` claims subagents share the loop
+  effort. Whether loops really agree on a level is manual (item 68, untested).
+- Rule 16 (board-blind subagents): the rule sits in the rules sync markers; its key phrases (ONLY
+  writer, no subagent reads or writes `.loopboard/`, the GROOM report fields, the
+  `/tmp/loopboard/<workspace>/<id>/groom.md` path, the newer-than recovery with "recovered", the
+  complete-answer `suggestion:`) and the Rule 14 / Automation-fence hand-offs are pinned; what a
+  live loop does with them is item 69 (untested).
+
 ### Loop-action schedule — `test/schedule.test.js` (t-77d1)
 - `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
   payload value (the webview's `action` is never trusted).
@@ -203,6 +221,8 @@ one that never fires):
   unparseable/irrelevant transcript lines and an empty `subagents/` directory all degrade to no rows.
 - `describeAgent` renders `agentType · description` + a duration (`20s`/`1m`/`2h 5m`), drops the
   `· description` half when the meta has none, and renders no duration when the start is unknown.
+  A `general-purpose` agent WITH a description renders the description alone (t-716f — the LOOP.md
+  title already carries effort and task id); an `Explore` helper keeps its `Explore · ` prefix.
 - **Lifecycle edges (t-aglg):** `foldAgentEdges` reports a start, a departure (carrying the row as
   it was before it left, so its duration survives), nothing for an unchanged set, empty→empty or a
   reorder, gone-then-start for a resumed agent, and NOTHING for a failed read (`undefined`) over a
@@ -970,7 +990,8 @@ and likewise cannot be verified headless.
     **The section fills and empties:** start a loop and give it work that delegates (a grooming
     draft is the easy case — grooming never sets `phase: inprogress`, which is the whole point).
     Within one poll (30 s) an **Agents** section appears directly under **Loops**, hidden until
-    then: one row per live subagent, `<slot> · <agentType> · <description>` with a ticking duration,
+    then: one row per live subagent, `<slot> · <agentType> · <description>` (just
+    `<slot> · <description>` for a `general-purpose` agent with a description, t-716f) with a ticking duration,
     the long label held still and ending in `…` by default; with `loopBoard.sidebarMarquee` on
     (t-9a29, item 45) it marquee-scrolls with the same animation the In-Progress title uses (and
     stops under `prefers-reduced-motion`). Nested agents (`spawnDepth > 1`) appear as flat rows,
@@ -1193,10 +1214,8 @@ and likewise cannot be verified headless.
     (or the status line) in that interactive session shows `medium`. Set one slot's effort to `high`
     in the settings grid, ♻ it → its line now carries `--effort high` and the session shows `high`;
     the other slots are unchanged. With `loopBoard.debug` at `info`, each spawn's `loop-spawn` line
-    names `effort <level>`. **Interactive-REPL inheritance (confirmed for `claude -p` only):** let
-    the loop groom a New task, then open that grooming subagent's `subagents/*.jsonl` transcript
-    under `~/.claude/projects/<encoded cwd>/` → its assistant messages carry `"effort"` equal to the
-    loop's session level.
+    names `effort <level>`. Since t-716f the slot effort governs the loop session only — a subagent's
+    effort is the one its spawn passed (item 68), no longer the loop's session level.
 
 48. **One feedback input on every card (t-2622 → t-ae10) — UNTESTED in the live webview:** the
     structure of `renderFeedback` is pinned as source text by `test/board-review-feedback.test.js`;
@@ -1704,3 +1723,32 @@ and likewise cannot be verified headless.
       the chevron and the robot/type icon share one vertical center with each other and with the
       DRAFT / id / ON HOLD chips (draft) or the title's first line (card); the same holds with the
       handle absent (one-card tab, In Progress) and on a collapsed card.
+
+68. **Per-spawn subagent model and effort (t-716f) — UNTESTED in a live loop:** the template
+    wording is pinned by `test/loop-delegation.test.js`; no code picks an effort, so what a running
+    loop (Claude Code 2.1.292+) actually spawns needs a live session.
+    - After a loop delegation (a groom, and with `loopBoard.delegateWork` an implementer), open the
+      subagent's `subagents/*.jsonl` under `~/.claude/projects/<encoded cwd>/`: its assistant
+      messages carry the `"effort"` and the model the brief named, and its `description` reads
+      `<effort>-<task id>: <2-4 word headline>`. The sidebar Agents row shows that title without a
+      `general-purpose · ` prefix.
+    - Re-derive the brief's `effort: <level> (<signals>)` line by hand from the task file against
+      the S/N/D/U rubric, on one `low`, one `medium` and one `high` delegation: each matches.
+    - Spawn an `xhigh` subagent on each slot model (Opus, Sonnet, Fable): its JSONL shows
+      `"effort": "xhigh"`, not a silent fallback.
+
+69. **Board-blind subagents, the loop as the only board writer (t-716f Rule 16) — UNTESTED in a
+    live loop:** the wording is pinned by `test/loop-delegation.test.js`; the behaviour needs a
+    running loop.
+    - Give a loop two DRAFTs with a grooming cap of 2: both grooming subagents' transcripts show no
+      Read/Edit/Write of any `.loopboard/` path; each writes `/tmp/loopboard/<workspace>/<id>/groom.md`
+      before returning; the LOOP then writes each `tasks/<id>.md` (with a `<today>` Worklog line)
+      and afterwards the index entry (title, `phase: new`, `question:` + blank `answer:` +
+      `suggestion:` lines). Neither entry is lost or garbled in `TODO.md`.
+    - Every `suggestion:` reads as a complete answer (what the human gets, number, consequence),
+      with no `A`/`B`/`C` option letter.
+    - Recovery: interrupt a loop (■) after a groomer returned but before the loop wrote the board
+      (or hand-place a `groom.md` newer than the task file of a New task); on the next pass the
+      loop applies it, notes "recovered" in its Worklog and spawns no groomer for that task.
+    - With `loopBoard.delegateWork` on: the implementer and review subagents read no `.loopboard/`
+      file; the review brief carries the task's `## Goals`.

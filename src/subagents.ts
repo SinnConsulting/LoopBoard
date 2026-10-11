@@ -304,17 +304,21 @@ export function foldAgents(metas: readonly AgentEntry[], events: readonly Marker
 
 export interface AgentLabel {
   id: string;
-  label: string;    // `<agentType> · <description>`
+  label: string;    // `<agentType> · <description>`, or just the description for `general-purpose`
   duration: string; // how long it has been running, e.g. '2m'
 }
 
 // The sidebar row's text, and the wording the debug log names a held-back restart with. Kept here
 // (like describeSchedule/describeContext) so it is unit-tested and the webview stays a renderer.
-// Recomputed per repaint from `startedAt`, so the duration ticks between polls.
+// Recomputed per repaint from `startedAt`, so the duration ticks between polls. `general-purpose` is
+// the type every LOOP.md groomer/implementer/reviewer spawns as, and its title already carries the
+// effort and task id (t-716f), so the prefix is noise on every row.
 export function describeAgent(row: AgentRow, now: number): AgentLabel {
+  let label = row.agentType;
+  if (row.description) label = row.agentType === 'general-purpose' ? row.description : `${row.agentType} · ${row.description}`;
   return {
     id: row.id,
-    label: row.description ? `${row.agentType} · ${row.description}` : row.agentType,
+    label,
     duration: formatDuration(row.startedAt, now),
   };
 }

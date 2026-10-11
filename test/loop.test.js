@@ -213,10 +213,12 @@ test('the template states the cap behaviour without embedding a number', () => {
   assert.match(tpl, /skipped task by title|by title in your report/, 'names the over-cap report');
 });
 
-// t-cffc: the Agent tool has no per-call effort, so LOOP.md must not tell the loop to pick or cap a
-// subagent's effort — every subagent runs at its loop's `--effort` session level. Nor may it
-// introduce per-agent-type effort (agent definitions / `--agents` JSON), which was dropped.
-test('the template no longer tells the loop to choose or cap a subagent effort', () => {
+// t-cffc: LOOP.md must not cap a subagent's effort from the bootstrap prompt, nor introduce
+// per-agent-type effort (agent definitions / `--agents` JSON). t-716f amends t-cffc: the Agent tool
+// now takes a per-spawn effort (Claude Code 2.1.292+) and the template's Subagents rule picks it,
+// `xhigh` included — so `xhigh` left this list; the rubric itself is pinned in
+// test/loop-delegation.test.js.
+test('the template caps no subagent effort and names no agent definition', () => {
   const tpl = readMedia('template-loop.md');
   const rule14 = tpl.slice(tpl.indexOf('\n14. '), tpl.indexOf('\n15. '));
   const fence = automationFence(tpl);
@@ -224,7 +226,7 @@ test('the template no longer tells the loop to choose or cap a subagent effort',
   for (const [name, text] of [['whole template', tpl], ['Rule 14', rule14], ['DELEGATED-WORK MODE', delegated]]) {
     assert.ok(text.length > 0, `${name} found`);
     assert.doesNotMatch(text, /ceiling/i, `${name}: no effort ceiling`);
-    assert.doesNotMatch(text, /reasoning effort|effort chosen|xhigh|max only/i, `${name}: no per-subagent effort pick`);
+    assert.doesNotMatch(text, /reasoning effort|effort chosen|max only/i, `${name}: no ceiling-style effort pick`);
   }
   assert.doesNotMatch(tpl, /--agents|\.claude\/agents|agent type/i, 'no per-agent-type effort wording');
 });
@@ -296,11 +298,16 @@ test('revealStep: the row that last revealed toggles the panel; any other row sh
   assert.equal(revealStep(undefined, 'opus'), 'show', 'nothing revealed -> show');
 });
 
-test('template: one feedback rule, no note: grammar and no Rule 16 (t-ae10)', () => {
+test('template: one feedback rule, no note: grammar and no `note:` Rule 16 (t-ae10)', () => {
   const tpl = readMedia('template-loop.md');
   assert.doesNotMatch(tpl, /^\s*- note: </m, 'no note: grammar line');
-  assert.doesNotMatch(tpl, /^16\. /m, 'Rule 16 is gone');
-  assert.doesNotMatch(tpl, /Rule 16/, 'nothing still points at it');
+  // t-716f re-used the number at the owner's request: Rule 16 is now the board-blind subagent rule
+  // (pinned in test/loop-delegation.test.js). The old `note:` Rule 16 stays gone, and nothing
+  // follows it.
+  const rule16 = tpl.slice(tpl.indexOf('\n16. '), tpl.indexOf('\n**Subagents**'));
+  assert.match(rule16, /^\n16\. Subagents are board-blind/, 'Rule 16 is only the board-blind rule');
+  assert.doesNotMatch(rule16, /note:/, 'the old note: Rule 16 is gone');
+  assert.doesNotMatch(tpl, /^17\. /m, 'no Rule 17');
   assert.match(tpl, /- feedback: <text> +\(repeatable, single line; any phase incl\. drafts;/);
   assert.match(tpl, /legacy `note:` = `feedback:`/);
   assert.match(tpl, /optional `model:`\/`groomer:`\/`feedback:`/, 'drafts may carry feedback');
