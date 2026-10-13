@@ -33,6 +33,18 @@ test('README.md carries the showcase sentinels, and so does its source page', ()
   }
 });
 
+test('every showcase scene has its GIF recorded and shown in the showcase region', () => {
+  const page = fs.readFileSync(path.join(root, 'docs/showcase/README.md'), 'utf8');
+  const region = page.slice(page.indexOf(tool.SHOWCASE_BEGIN), page.indexOf(tool.SHOWCASE_END));
+  const scenes = fs.readdirSync(path.join(root, 'docs/showcase/studio/scenes')).filter((f) => f.endsWith('.js'));
+  assert.ok(scenes.includes('13-tags.js'), 'the story-tags scene (t-0b10) is missing');
+  for (const scene of scenes) {
+    const gif = scene.replace(/\.js$/, '.gif');
+    assert.ok(fs.existsSync(path.join(root, 'docs/showcase/gifs', gif)), `${gif} not recorded: make showcase SCENES="${gif.slice(0, 2)}"`);
+    assert.ok(region.includes(`<img src="gifs/${gif}"`), `${gif} is not shown on docs/showcase/README.md`);
+  }
+});
+
 test('the showcase region is exactly what the generator would copy from docs/showcase/README.md', () => {
   const problems = tool.check(root).filter((p) => p.startsWith('showcase region'));
   assert.deepEqual(problems, [], 'run `make readme`');
