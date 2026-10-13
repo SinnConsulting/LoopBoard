@@ -91,48 +91,56 @@ export interface MigrationRule {
   // What the stale values should make the target, and WHICH source decided it. `undefined` means
   // they carry nothing worth keeping, so every present source is merely removed.
   resolve(values: SettingValues): { from: string; value: unknown } | undefined;
+  // The sources can never carry a value, so a target set by hand is no conflict for them: they are
+  // removed either way (t-0e99's Sonnet/Fable slot keys).
+  inert?: boolean;
 }
 
 // One rule per orchestrator field (t-0e99). The orchestrator defaults to Opus, so the Opus slot's
-// value is the one that carries over; the Sonnet and Fable slot values carry nothing and are only
-// removed. `resolveOrchestrator` (src/model.ts) reads the same Opus key while the target is unset,
-// so migrating writes exactly the value already in force.
-const ORCHESTRATOR_RULES: MigrationRule[] = ORCHESTRATOR_FIELDS.map((field) => ({
-  target: orchestratorKey(field),
-  reason: 'deprecated' as const,
-  sources: LEGACY_SLOTS.map((slot) => slotFieldKey(slot, field)),
-  resolve: (values: SettingValues) => {
-    const from = slotFieldKey('opus', field);
-    const raw = values[from];
-    if (field === 'model') {
-      const value = typeof raw === 'string' ? raw.trim() : '';
-      return value && isValidModelString(value) ? { from, value } : undefined;
-    }
-    if (field === 'effort') return typeof raw === 'string' && isValidEffort(raw) ? { from, value: raw } : undefined;
-    return raw !== undefined && sanitizeGroomConcurrency(raw) === raw ? { from, value: raw } : undefined;
+// value is the one that carries over; `resolveOrchestrator` (src/model.ts) reads the same key while
+// the target is unset, so migrating writes exactly the value already in force. The Sonnet and Fable
+// slot values carry nothing: an inert rule per field only removes them.
+const ORCHESTRATOR_RULES: MigrationRule[] = ORCHESTRATOR_FIELDS.flatMap((field) => [
+  {
+    target: orchestratorKey(field),
+    reason: 'deprecated' as const,
+    sources: [slotFieldKey('opus', field)],
+    resolve: (values: SettingValues) => {
+      const from = slotFieldKey('opus', field);
+      const raw = values[from];
+      if (field === 'model') {
+        const value = typeof raw === 'string' ? raw.trim() : '';
+        return value && isValidModelString(value) ? { from, value } : undefined;
+      }
+      if (field === 'effort') return typeof raw === 'string' && isValidEffort(raw) ? { from, value: raw } : undefined;
+      return raw !== undefined && sanitizeGroomConcurrency(raw) === raw ? { from, value: raw } : undefined;
+    },
   },
-}));
+  {
+    target: orchestratorKey(field),
+    reason: 'deprecated' as const,
+    sources: LEGACY_SLOTS.filter((slot) => slot !== 'opus').map((slot) => slotFieldKey(slot, field)),
+    resolve: () => undefined,
+    inert: true,
+  },
+]);
 
 export const MIGRATIONS: MigrationRule[] = [
   ...ORCHESTRATOR_RULES,
   {
     // t-0e99: the review subagent's MODEL replaced the on/off switch. `true` meant "a review gates
     // the PR", whose successor is `auto` (the model that groomed the story judges its Goals);
-    // `false` carries nothing. The pre-rename child id is a source too: it is a child of the scalar
-    // `loopBoard.delegateWork`, so while that is set it can only be swept, never read.
-    // `resolveTaskDefaults` honours `delegateReview: true` the same way until this is applied.
+    // `false` carries nothing. ONLY `delegateReview` decides, exactly as `resolveTaskDefaults`
+    // reads it until this is applied: the pre-rename child id never took effect, so it is
+    // removal-only (carrying it would turn reviews on against an explicit `delegateReview: false`
+    // once that key is gone). It is a child of the scalar `loopBoard.delegateWork`, so while that
+    // is set it can only be swept, never read.
     target: DEFAULT_REVIEWER_KEY,
     reason: 'deprecated',
     sources: [DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY],
     shadowedBy: DELEGATE_WORK_KEY,
-    resolve: (values) => {
-      for (const key of [DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY]) {
-        const raw = values[key];
-        if (raw === undefined) continue;
-        return raw === true ? { from: key, value: AUTO } : undefined;
-      }
-      return undefined;
-    },
+    resolve: (values) =>
+      values[DELEGATE_REVIEW_KEY] === true ? { from: DELEGATE_REVIEW_KEY, value: AUTO } : undefined,
   },
   {
     // The deprecated boolean pair. The mapping is NOT restated here: `resolveAfterTask` is what
@@ -290,7 +298,8 @@ export function buildMigrationPlan(declared: string[], values: SettingValues): M
 
     // The destination was set by hand. Overwriting it would throw away a deliberate choice, and
     // picking a winner is a decision only the human can make — so the whole rule stands down.
-    if (values[rule.target] !== undefined) {
+    // An inert rule carries nothing, so there is no choice to protect: it falls through to removal.
+    if (values[rule.target] !== undefined && !rule.inert) {
       conflicts += present.length;
       for (const key of present) {
         actions.push({

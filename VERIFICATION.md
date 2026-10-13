@@ -212,15 +212,15 @@ questions, an HTML-comment template) and `index-unknown.md`:
   `restart`/`stop` only while running — so a restart armed for a since-stopped loop is swallowed
   rather than silently starting it.
 - `supportsForce` is false for `start` only; `armSchedule` coerces a start's `force` to false even
-  when asked for it, and `mayFire` lets a start fire while its own model is In Progress (there is
-  no worker to cut off) while a stop defers exactly like a restart.
+  when asked for it, and `mayFire` lets a start fire while its own loop is busy (there is no
+  worker to cut off) while a stop defers exactly like a restart.
 - `describeSchedule` names the scheduled action (`start in 60m`, `stop in 60m · force`,
   `stop waiting for task · every 15m`).
 - `parseMinutes` accepts a plain positive integer and rejects empty/`0`/negative/signed/decimal/
   unit-suffixed (`90m`, `2h`)/hex/exponent input, plus anything overflowing `setTimeout`'s
   signed-32-bit delay — so a value can never be silently reinterpreted or fire instantly.
-- `mayFire` defers only while the schedule's OWN model is In Progress (another model being busy is
-  irrelevant) and ignores In Progress entirely when `force` is on.
+- `mayFire` defers only while the schedule's OWN loop is busy (another loop being busy is
+  irrelevant) and ignores the busy set entirely when `force` is on (t-0e99: keyed by loop id).
 - `deferSchedule` is idempotent — at most one restart is ever pending per model, so a repeating
   schedule cannot stack deferred fires.
 - `afterFire` disarms a one-shot and re-arms a repeating schedule from the moment it ACTUALLY fired,
@@ -738,7 +738,9 @@ and likewise cannot be verified headless.
     the new draft carries both. Sidebar — right-click ▶/♻/■, click presets and toggle
     Repeat/Force → each reflects immediately.
 
-35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
+35. **Delegated-work mode rides the spawn prompt (t-e3c3):** SUPERSEDED by t-0e99 (item 71):
+    delegation is always on and no phrase rides the prompt; the steps below describe the removed
+    `loopBoard.delegateWork` / `loopBoard.delegateReview` settings. `buildLoopCommand` and the template
     clause are unit-tested; what only F5 can show is the real terminal line. With both delegation
     settings UNSET (their t-2047 defaults: delegate work on, review off), start a loop
     → the pasted `/loop` line reads `… running as model <slot> with a grooming concurrency cap of
@@ -770,7 +772,10 @@ and likewise cannot be verified headless.
     before this fix) is still resolved — its `loopboard-<slot>-<word>-<word>` name matches the same
     prefix, so its bar renders.
 
-37. **LoopBoard's own settings page (t-sgrp):** the manifest→form model, the grid's validation and
+37. **LoopBoard's own settings page (t-sgrp):** t-0e99 changed this page: the first section is
+    *Orchestrator & Models* and its grid is the Orchestrator block plus the Models table (item 71);
+    the delegation rows, the six-column slot grid and the `delegateWork.review` rename steps below
+    describe settings that no longer exist. The manifest→form model, the grid's validation and
     the manifest invariants are unit-tested (`test/settingsform.test.js`,
     `test/settingsgrid.test.js`, `test/manifest-settings.test.js`); what only F5 can show is the
     page itself, the config writes and the live listener.

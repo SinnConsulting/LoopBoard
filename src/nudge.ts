@@ -90,6 +90,21 @@ function detailOnlyGrooming(prev: Task, next: Task): boolean {
   return (next.isDraft || next.phase === 'new') && prev.raw === next.raw;
 }
 
+// The routing-key carve-out (t-0e99): on a New/DRAFT task, a change confined to the five routing
+// lines (`model:` to `reviewer:`) is the orchestrator writing its `auto` picks BEFORE it spawns the
+// groomer (LOOP.md Automation), or a human re-picking a model on a draft the orchestrator grooms
+// anyway. Neither is new grooming work, and nudging the first would paste "is a draft to groom"
+// into the loop that is about to groom it. Taking a task OFF hold (`groomer: none` -> anything)
+// is new work and still nudges.
+const ROUTING_LINE = /^\s+- (model|effort|groomer|groomer-effort|reviewer):/;
+function withoutRouting(raw: string): string {
+  return raw.split('\n').filter((l) => !ROUTING_LINE.test(l)).join('\n');
+}
+function routingOnlyGrooming(prev: Task, next: Task): boolean {
+  if (!(next.isDraft || next.phase === 'new') || prev.groomer === GROOMER_HOLD) return false;
+  return prev.detailRaw === next.detailRaw && withoutRouting(prev.raw) === withoutRouting(next.raw);
+}
+
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `${n} ${many}`);
 
 // What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
@@ -194,7 +209,7 @@ export function computeNudges(prev: Task[] | undefined, next: Task[], skipped?: 
     const reason = routeEntry(entry);
     if (!reason) continue;
     if (reason === 'backlog' && busy) continue;
-    if (was && detailOnlyGrooming(was, entry)) {
+    if (was && (detailOnlyGrooming(was, entry) || routingOnlyGrooming(was, entry))) {
       skipped?.push({ taskId: entry.id, reason, changes: describeChanges(was, entry) });
       continue;
     }

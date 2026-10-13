@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { ROOT } = require('../server');
 const { buildClaudeBase, buildLoopCommand } = require(path.join(ROOT, 'out-test', 'loop.js'));
+const { TASK_DEFAULTS } = require(path.join(ROOT, 'out-test', 'model.js'));
 const { NAMES } = require('./host');
 
 const LOOP_TEXT = fs.readFileSync(path.join(ROOT, 'media', 'template-loop.md'), 'utf8');
@@ -16,7 +17,7 @@ const SUFFIX = { opus: 'k3f9', sonnet: 'q7d2', fable: 'm1x8' };
 
 function spawnLine(model) {
   const base = buildClaudeBase('auto', model, `loopboard-${model}-${SUFFIX[model]}`, 'medium');
-  const cmd = buildLoopCommand(LOOP_TEXT, model, '5m', 3, false, true);
+  const cmd = buildLoopCommand(LOOP_TEXT, '5m', { groomConcurrency: 3, models: ['opus', 'sonnet', 'fable', 'haiku'], defaults: TASK_DEFAULTS });
   return { base, cmd, shell: `${base} '${cmd}'` };
 }
 

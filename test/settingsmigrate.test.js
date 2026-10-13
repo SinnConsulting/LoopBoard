@@ -67,12 +67,22 @@ test('delegateReview: false carries nothing and is only removed', () => {
   assert.deepEqual(plan.writes, [{ key: DELEGATE_REVIEW_KEY, value: undefined }]);
 });
 
-test('the pre-rename delegateWork.review id migrates the same way when it is readable', () => {
+test('the pre-rename delegateWork.review id never took effect, so it is removed and carries nothing', () => {
   const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: true });
   const action = byKey(plan, OLD_DELEGATE_REVIEW_KEY);
-  assert.equal(action.kind, 'migrate');
+  assert.equal(action.kind, 'remove');
   assert.equal(action.target, DEFAULT_REVIEWER_KEY);
-  assert.equal(action.targetValue, 'auto');
+  assert.deepEqual(plan.writes, [{ key: OLD_DELEGATE_REVIEW_KEY, value: undefined }]);
+});
+
+test('an explicit delegateReview: false is never turned into a review by the old child key', () => {
+  // Pass 1: delegateWork shadows the child, delegateReview: false is removed, nothing is written.
+  const first = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true, [DELEGATE_REVIEW_KEY]: false });
+  assert.ok(first.writes.every((w) => w.value === undefined), 'pass 1 writes no value');
+  // Pass 2: with delegateWork gone the stale child `true` is readable, and is only removed.
+  const second = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: true });
+  assert.ok(!second.writes.some((w) => w.key === DEFAULT_REVIEWER_KEY), 'no reviewer is written');
+  assert.equal(resolveTaskDefaults((k) => (k === 'delegateWork.review' ? true : undefined)).reviewer, 'none', 'and it was never in force');
 });
 
 test('the migrated reviewer IS what resolveTaskDefaults honours today', () => {
@@ -159,7 +169,7 @@ test('no blind removal is offered when the old key IS visible', () => {
   const plan = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: true });
   assert.equal(plan.sweeps, 0);
   assert.equal(plan.findings, 1);
-  assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'migrate');
+  assert.equal(byKey(plan, OLD_DELEGATE_REVIEW_KEY).kind, 'remove');
 });
 
 test('no blind removal is offered when nothing shadows the key', () => {
@@ -201,6 +211,14 @@ test('the Sonnet and Fable slot model/effort/groomConcurrency are only removed, 
   }
   assert.ok(plan.writes.every((w) => w.value === undefined), 'no orchestrator value is written from a non-Opus slot');
   assert.equal(plan.writes.length, 6);
+});
+
+test('a Sonnet/Fable slot key is a plain removal even when the orchestrator key is set by hand', () => {
+  const plan = buildMigrationPlan(DECLARED, { [slot('sonnet', 'effort')]: 'xhigh', 'loopBoard.orchestrator.effort': 'low' });
+  const action = byKey(plan, slot('sonnet', 'effort'));
+  assert.equal(action.kind, 'remove', 'it carries nothing, so there is no choice to protect');
+  assert.equal(plan.conflicts, 0);
+  assert.deepEqual(plan.writes, [{ key: slot('sonnet', 'effort'), value: undefined }], 'and a bulk apply removes it');
 });
 
 test('an invalid Opus slot value carries nothing, and a set orchestrator key makes it a conflict', () => {

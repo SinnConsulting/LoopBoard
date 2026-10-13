@@ -450,3 +450,29 @@ test('a long list is capped and summarised', () => {
   assert.ok(line.includes('and 4 more'), line);
   assert.ok(!line.includes('\n'));
 });
+
+// ---- t-0e99: the orchestrator writing its `auto` picks must not nudge itself ----
+
+test('a routing-only change on a New/DRAFT task nudges nobody: the pre-spawn pick write (t-0e99)', () => {
+  const before = entry({ isDraft: true, groomer: 'auto', groomerEffort: 'auto', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: auto\n  - groomer-effort: auto' });
+  const next = { ...before, groomer: 'opus', groomerEffort: 'high', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: opus\n  - groomer-effort: high' };
+  const skipped = [];
+  assert.deepStrictEqual(computeNudges([before], [next], skipped), []);
+  assert.deepStrictEqual(skipped.map((i) => [i.taskId, i.reason]), [[before.id, 'groom']]);
+  assert.deepStrictEqual(skipped[0].changes, ['groomer → opus', 'groomer-effort → high']);
+});
+
+test('taking a draft OFF hold still nudges, and a routing change plus real work still nudges', () => {
+  const held = entry({ isDraft: true, groomer: 'none', raw: '- [ ] DRAFT: x\n  - groomer: none' });
+  const released = { ...held, groomer: 'opus', raw: '- [ ] DRAFT: x\n  - groomer: opus' };
+  assert.deepStrictEqual(computeNudges([held], [released]).map((i) => i.reason), ['groom']);
+  const draft = entry({ isDraft: true, raw: '- [ ] DRAFT: x' });
+  const withFeedback = { ...draft, model: 'haiku', feedback: ['also this'], raw: '- [ ] DRAFT: x\n  - model: haiku\n  - feedback: also this' };
+  assert.deepStrictEqual(computeNudges([draft], [withFeedback]).map((i) => i.reason), ['feedback']);
+});
+
+test('the routing carve-out is New/DRAFT only: a Backlog re-pick still nudges the claim', () => {
+  const backlog = entry({ phase: 'backlog', model: 'sonnet', raw: '- [ ] B\n  - phase: backlog\n  - model: sonnet' });
+  const repicked = { ...backlog, model: 'haiku', raw: '- [ ] B\n  - phase: backlog\n  - model: haiku' };
+  assert.deepStrictEqual(computeNudges([backlog], [repicked]).map((i) => i.reason), ['backlog']);
+});

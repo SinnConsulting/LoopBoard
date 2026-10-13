@@ -103,12 +103,11 @@ function base64ToBytes(dataBase64: string): Uint8Array {
 // The value a user EXPLICITLY set for a `loopBoard.`-relative key, or undefined when unset. Built
 // on `inspect()` because `get()` cannot tell "unset" from "set to the default", and the read-both
 // fallbacks in src/model.ts (`resolveOrchestrator`, `resolveTaskDefaults`) hinge on exactly that.
-// Undeclared legacy keys read the same way: VSCode keeps unregistered user values.
+// USER (global) values only: the legacy keys are undeclared now, so VSCode no longer holds them to
+// `scope: application`, and a cloned repo's `.vscode/settings.json` must not steer the
+// orchestrator's `--model`, effort, cap or reviewer through them (t-sgrp).
 export function explicitLookup(c: vscode.WorkspaceConfiguration): SetLookup {
-  return (key: string) => {
-    const i = c.inspect<unknown>(key);
-    return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue;
-  };
+  return (key: string) => c.inspect<unknown>(key)?.globalValue;
 }
 
 export class Controller {
@@ -403,7 +402,7 @@ export class Controller {
     const skipped: NudgeItem[] = [];
     const items = computeNudges(prev?.tasks, next.tasks, skipped);
     for (const item of skipped) {
-      this.store.debugLog('verbose', 'nudge-skip', `${item.taskId}:${item.reason}: task-file-only change on a New/DRAFT task, no grooming work`);
+      this.store.debugLog('verbose', 'nudge-skip', `${item.taskId}:${item.reason}: task-file-only or routing-only change on a New/DRAFT task, no grooming work`);
     }
     if (items.length) {
       // De-duplicate on task id: a task edited twice while the loop was down is named once, with
@@ -421,6 +420,12 @@ export class Controller {
     if (!prev || this.config().afterTask !== 'recycle' || !inProgressEnded(prev.tasks, next.tasks)) return;
     const busy = this.busyLoops(next);
     for (const loop of LOOP_IDS) {
+      // `terminals.recycle` on a stopped loop is a plain START, and the edge is board-wide now (a
+      // hand edit or a leftover per-model loop can produce it), so a stopped loop is left alone.
+      if (!this.isRunning(loop)) {
+        this.store.debugLog('info', 'aftertask-skip', `${loop}: loop is not running, nothing to restart`);
+        continue;
+      }
       // The task is done but the session may not be (t-sbag): a subagent it spawned can still be
       // mid-edit, and recycling now kills it. Hold exactly like a deferred schedule does.
       if (busy.includes(loop)) {
@@ -444,6 +449,11 @@ export class Controller {
     if (!prev || this.config().afterTask !== 'clear' || !inProgressEnded(prev.tasks, next.tasks)) return;
     const busy = this.busyLoops(next);
     for (const loop of LOOP_IDS) {
+      // `clearSession` on a stopped loop does nothing; say so instead of logging a clear.
+      if (!this.isRunning(loop)) {
+        this.store.debugLog('info', 'aftertask-skip', `${loop}: loop is not running, nothing to clear`);
+        continue;
+      }
       // Same hold as auto-recycle (t-sbag): `/clear` throws away the context a live subagent's
       // parent session is still working in.
       if (busy.includes(loop)) {
@@ -454,6 +464,10 @@ export class Controller {
       this.clearContextTrip(loop, 'clear-session');
       this.terminals.clearSession(loop);
     }
+  }
+
+  private isRunning(loop: LoopId): boolean {
+    return this.terminals.status().some((l) => l.id === loop && l.running);
   }
 
   // ---- afterTask held by a live subagent (t-sbag) ----

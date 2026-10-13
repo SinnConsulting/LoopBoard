@@ -480,3 +480,13 @@ test("the What's New tab is a live boolean in Board & Workspace, on by default (
 test('the dropped sidebar pulse toggle is no longer declared anywhere (t-4dce)', () => {
   assert.ok(!entries().some((e) => e.key === 'loopBoard.pulseTemplateSync'), 'loopBoard.pulseTemplateSync must be gone');
 });
+
+test('the host reads explicitly-set values from USER settings only, never a workspace (t-0e99)', () => {
+  // The legacy slot keys and `delegateReview` are undeclared now, so VSCode no longer applies
+  // `scope: application` to them; the lookup itself must refuse a repo's `.vscode/settings.json`.
+  const src = fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8');
+  const start = src.indexOf('export function explicitLookup(');
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  assert.match(body, /\.inspect<unknown>\(key\)\?\.globalValue/);
+  assert.doesNotMatch(body, /workspaceValue|workspaceFolderValue/);
+});

@@ -24,6 +24,7 @@ const { toWebviewBoard } = req('view.js');
 const { buildSettingsForm, formKeys, findControl, toConfigPatch } = req('settingsform.js');
 const { buildModelGrid, gridPatch } = req('settingsgrid.js');
 const { describeContext, describeThreshold } = req('context.js');
+const { TASK_DEFAULTS, resolveOrchestrator } = req('model.js');
 const { computeNudges, formatNudge } = req('nudge.js');
 const { parseRegistry, serializeRegistry, registryEntries, applyTagColor } = req('tags.js');
 
@@ -114,6 +115,20 @@ class Host {
   setting(key, dflt) {
     return key in this.settings ? this.settings[key] : dflt;
   }
+  // The five per-task defaults (t-0e99) as the controller resolves them.
+  defaults() {
+    return {
+      ...TASK_DEFAULTS,
+      worker: this.setting('defaultWorkerModel', TASK_DEFAULTS.worker),
+      groomer: this.setting('defaultGroomerModel', TASK_DEFAULTS.groomer),
+    };
+  }
+  // The settings grid as the controller builds it (t-0e99): orchestrator block + models table.
+  grid() {
+    const set = (k) => this.settings[k];
+    const raw = set('orchestrator.model') ?? '';
+    return buildModelGrid(this.modelsCfg(), { raw, resolved: resolveOrchestrator(set) }, this.defaults());
+  }
   modelsCfg() {
     const cfg = {};
     for (const id of LOOP_ORDER) {
@@ -146,9 +161,7 @@ class Host {
         agents: l.running ? l.agents : [],
       };
     });
-    const worker = this.setting('defaultWorkerModel', 'sonnet');
-    const groomer = this.setting('defaultGroomerModel', 'opus');
-    const web = toWebviewBoard(board, 'acme-api', worker, loops, enabled, groomer, this.autoPromote);
+    const web = toWebviewBoard(board, 'acme-api', this.defaults(), loops, enabled, this.autoPromote);
     web.todoMissing = this.todoMissing;
     web.helpUrl = 'https://github.com/SinnConsulting/LoopBoard#get-started';
     web.maxAttachmentSizeMB = 10;
@@ -166,9 +179,10 @@ class Host {
     // Steering nudges exactly as the controller computes them (computeNudges on the previous vs
     // the fresh board, formatNudge for the pasted line); scenes print them into loop terminals.
     const tasks = this.load().tasks;
-    for (const route of computeNudges(this.lastTasks, tasks, { worker: this.setting('defaultWorkerModel', 'sonnet'), groomer: this.setting('defaultGroomerModel', 'opus') })) {
-      this.nudges[route.model] = formatNudge(route.items);
-    }
+    // One target since t-0e99. The recorded scenes still draw per-model terminals until they are
+    // re-recorded (a follow-up), so the line is offered under those ids too.
+    const items = computeNudges(this.lastTasks, tasks);
+    if (items.length) for (const id of ['orchestrator', ...LOOP_ORDER]) this.nudges[id] = formatNudge(items);
     this.lastTasks = tasks;
     const web = this.webBoard();
     await this.post('board', { type: 'board', board: web });
@@ -194,7 +208,7 @@ class Host {
       const prop = sections.flatMap((s) => Object.entries(s.properties || {})).find(([k]) => k === key);
       values[key] = { defaultValue: prop ? prop[1].default : undefined, globalValue: short in this.settings ? this.settings[short] : undefined };
     }
-    const grid = buildModelGrid(this.modelsCfg(), this.setting('defaultWorkerModel', 'sonnet'), this.setting('defaultGroomerModel', 'opus'));
+    const grid = this.grid();
     await this.post('settings', { type: 'settings', form: buildSettingsForm(sections, values), grid, extensionId: 'SinnConsulting.loopboard-todo' });
   }
   applyConfigPatch(patch) {
@@ -253,8 +267,7 @@ class Host {
         return this.refresh();
       }
       case 'gridPatch': {
-        const grid = buildModelGrid(this.modelsCfg(), this.setting('defaultWorkerModel', 'sonnet'), this.setting('defaultGroomerModel', 'opus'));
-        const r = gridPatch(grid, msg.slot, msg.field, msg.value);
+        const r = gridPatch(this.grid(), msg.slot, msg.field, msg.value);
         if (r.ok) for (const p of r.patches) this.applyConfigPatch(p);
         await this.postSettings();
         return this.refresh();

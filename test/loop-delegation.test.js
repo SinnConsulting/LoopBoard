@@ -65,8 +65,8 @@ test('template: the auto table: Sonnet at the level for low/medium/high, Opus at
 
 test('template: a derived effort is raised one step on Haiku and is the only one re-spawned up', () => {
   const r = subagentsRule();
-  assert.match(r, /Derived effort \(rubric, or a review's implementer effort\): one step higher on Haiku \(max `xhigh`\)/);
-  assert.match(r, /on "bigger than briefed" re-spawned one level up \(max `xhigh`\), never pushed on\. A set effort is used as set/);
+  assert.match(r, /Derived effort \(an `auto` pick, a review's implementer effort\): one step higher on Haiku \(max `xhigh`\)/);
+  assert.match(r, /still derived at spawn, a subagent reporting "bigger than briefed" is re-spawned one level up \(max `xhigh`\), never pushed on/);
 });
 
 test('template: the four effort signals, each with its defining phrase', () => {

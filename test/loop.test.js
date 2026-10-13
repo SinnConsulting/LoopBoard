@@ -330,8 +330,11 @@ test('template: the legacy guard stands a per-model loop down, and the prompt ne
 
 test('template: grooming writes the auto picks onto the index, for grooming and for working', () => {
   const fence = automationFence(readMedia('template-loop.md'));
-  assert.match(fence, /when its groomer model or effort is `auto` \(set, or by default\), pick it by the Subagents `auto` table from the draft text, `feedback:` and answers and write the concrete values as `groomer:`\/`groomer-effort:` on its index entry BEFORE spawning/);
-  assert.match(fence, /when its worker model or effort is `auto`, brief the groomer to end its report with one line `work: <model> <effort> \(<signals>\)` picked by that table, and write it as concrete `model:`\/`effort:` together with the groomed story/);
+  assert.match(fence, /replace each of its groomer model and groomer effort that is `auto` \(set, or by default\) with its pick by the Subagents `auto` table from the draft text, `feedback:` and answers, written as `groomer:`\/`groomer-effort:` on its index entry BEFORE spawning, and leave a field that is not `auto` as set/);
+  assert.match(fence, /when its worker model or effort is `auto`, brief the groomer to end its report with one line `work: <model> <effort> \(<signals>\)` picked the same way/);
+  // Only the `auto` fields are replaced: an explicit model (Haiku or Fable included) survives.
+  assert.match(fence, /an explicit worker model keeps its model and only takes the effort, one step higher on Haiku\), and write only the worker fields that are `auto` as concrete `model:`\/`effort:` together with the groomed story/);
+  assert.match(fence, /a pick on the index then counts as set/);
   assert.match(fence, /a field set back to `auto` is picked again on the next re-groom/);
 });
 
