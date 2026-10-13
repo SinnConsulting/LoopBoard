@@ -14,6 +14,9 @@ const {
   currentFieldValue,
   normalizeModel,
   normalizeGroomer,
+  normalizeReviewer,
+  normalizeEffort,
+  fieldLabel,
 } = require('../out-test/merge.js');
 
 const FIX = path.join(process.cwd(), 'test', 'fixtures');
@@ -22,7 +25,7 @@ function readFix(name) {
 }
 
 test('patchTarget routes fields to the right file', () => {
-  for (const f of ['title', 'model', 'groomer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
+  for (const f of ['title', 'model', 'effort', 'groomer', 'groomerEffort', 'reviewer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
   for (const f of ['description', 'problem', 'goals']) assert.equal(patchTarget(f), 'detail', f);
 });
 
@@ -236,6 +239,55 @@ test('a groomer patch writes the on-hold sentinel, and clearing it takes the tas
 
   assert.equal(applyPatch(doc, { taskId: id, field: 'groomer', value: 'default (opus)', base: 'none' }).status, 'applied');
   assert.equal(doc.entries.find((e) => e.id === id).groomer, undefined);
+});
+
+// ---- t-0e99: per-role validation for the five routing fields ----
+
+test('each routing field accepts exactly its own role values; anything else clears it to the default', () => {
+  for (const m of ['opus', 'sonnet', 'fable', 'haiku', 'auto']) {
+    assert.equal(normalizeModel(m), m, m);
+    assert.equal(normalizeGroomer(m), m, m);
+    assert.equal(normalizeReviewer(m), m, m);
+  }
+  assert.equal(normalizeReviewer('none'), 'none', 'none = no review');
+  assert.equal(normalizeReviewer(' none '), 'none');
+  for (const e of ['low', 'medium', 'high', 'xhigh', 'auto']) assert.equal(normalizeEffort(e), e, e);
+  assert.equal(normalizeEffort('max'), undefined, 'max is never a per-task effort');
+  for (const bad of ['', 'default (auto)', 'default (none)', 'Opus', 'gpt']) {
+    assert.equal(normalizeModel(bad), undefined, bad);
+    assert.equal(normalizeGroomer(bad), undefined, bad);
+    assert.equal(normalizeReviewer(bad), undefined, bad);
+    assert.equal(normalizeEffort(bad), undefined, bad);
+  }
+});
+
+test('effort, groomerEffort and reviewer patch the index entry and write in the fixed order', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const id = 't-dd01';
+  const base = (f) => currentFieldValue(doc.entries.find((e) => e.id === id), f);
+  for (const [field, value] of [['reviewer', 'haiku'], ['groomerEffort', 'auto'], ['effort', 'xhigh'], ['groomer', 'auto'], ['model', 'haiku']]) {
+    assert.equal(applyPatch(doc, { taskId: id, field, value, base: base(field) }).status, 'applied', field);
+  }
+  const e = doc.entries.find((x) => x.id === id);
+  assert.deepEqual([e.model, e.effort, e.groomer, e.groomerEffort, e.reviewer], ['haiku', 'xhigh', 'auto', 'auto', 'haiku']);
+  const out = serializeTodo(doc);
+  assert.ok(out.includes('  - id: t-dd01\n  - phase: backlog\n  - model: haiku\n  - effort: xhigh\n  - groomer: auto\n  - groomer-effort: auto\n  - reviewer: haiku'), out);
+  assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint');
+});
+
+test('a routing patch with a stale base is the disk-wins conflict; the default label clears the field', () => {
+  const doc = parseTodo(readFix('index-routing.md'));
+  assert.equal(applyPatch(doc, { taskId: 't-r004', field: 'effort', value: 'low', base: 'medium' }).status, 'conflict');
+  assert.equal(applyPatch(doc, { taskId: 't-r004', field: 'reviewer', value: 'default (none)', base: 'sonnet' }).status, 'applied');
+  assert.equal(doc.entries.find((e) => e.id === 't-r004').reviewer, undefined);
+  assert.equal(applyPatch(doc, { taskId: 't-r004', field: 'groomerEffort', value: 'max', base: 'medium' }).status, 'applied');
+  assert.equal(doc.entries.find((e) => e.id === 't-r004').groomerEffort, undefined, 'an off-list effort clears, never writes max');
+});
+
+test('the refusal toast names the new fields in words', () => {
+  assert.equal(fieldLabel('effort'), 'worker effort');
+  assert.equal(fieldLabel('groomerEffort'), 'groomer effort');
+  assert.equal(fieldLabel('reviewer'), 'reviewer');
 });
 
 // ---- batched answer set (t-5e6d) ----

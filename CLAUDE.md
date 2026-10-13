@@ -18,9 +18,9 @@ Storage: everything under `.loopboard/` — `TODO.md` (slim task index, grammar 
 2. Zero runtime dependencies. devDependencies = exactly `typescript` + `@types/vscode`. No
    `@types/node`, no bundler, no frameworks; webview = vanilla HTML/CSS/JS.
 3. `.loopboard/` markdown = source of truth. Index (`TODO.md`, grammar v5) carries only
-   id/phase/model/groomer/questions/feedback per entry; every other field lives in `tasks/<id>.md`.
-   Parse tolerantly, write back canonical on every save, preserve unparseable lines verbatim
-   (flagged in UI). Grammar + task-file format documented in `LOOP.md`.
+   id/phase/model/effort/groomer/groomer-effort/reviewer/questions/feedback per entry; every other
+   field lives in `tasks/<id>.md`. Parse tolerantly, write back canonical on every save, preserve
+   unparseable lines verbatim (flagged in UI). Grammar + task-file format documented in `LOOP.md`.
 4. ALL markdown IO goes through `src/store.ts` — only module that knows `.loopboard/` paths; merge
    logic in exactly one place (`merge.ts`, `patchTarget` routes index vs detail). Saves are
    field-level patches on ONE file: re-read disk, re-parse, apply one field, serialize whole file,
@@ -85,8 +85,8 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   patching so an unchanged default never trips a false same-field conflict.
 - Index `## Tasks` heading + HTML-comment extras round-trip verbatim via `getTasksHeading` /
   `getTasksExtras`.
-- Terminals: plain VSCode terminals (`createTerminal`/`sendText`/`dispose`), one per model, named
-  `Claude <Model>`; output can never be read (claude TUI + VSCode API limit). Loop launches as ONE
+- Terminals: plain VSCode terminals (`createTerminal`/`sendText`/`dispose`), one per loop id (only
+  `orchestrator` ships), named `Claude Orchestrator`; output can never be read. Loop launches as ONE
   line: `claude --permission-mode <mode> --model <model> '/loop ...'` — the ~200-char bootstrap
   prompt (from `buildLoopCommand(store.loopText, …)`, points at `.loopboard/LOOP.md`'s
   `## Automation`; slices that section out first since LOOP.md has several earlier fences) rides as
@@ -98,23 +98,28 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   meaning (▶ `spawnLoop`, ♻ `recycleLoop`, ■ `stopLoop`); RIGHT-click (`contextmenu`, host menu
   suppressed) opens a popover scheduling that same action (preset minutes + `Custom…`, always
   MINUTES; `repeat`; `force` on restart/stop only — a start interrupts nothing, and `armSchedule`
-  forces it false). ONE schedule per model whatever armed it (`start`/`restart`/`stop` are
+  forces it false). ONE schedule per loop whatever armed it (`start`/`restart`/`stop` are
   contradictory), so arming replaces. Scheduling is available on all three buttons in ANY loop state
   — hence `aria-disabled` + `.off` instead of the real `disabled` attribute, which would fire no
   mouse events and take the right-click away with the left. `appliesTo` re-checks at fire time and
   SWALLOWS an action that no longer matches (a `restart` armed for a since-stopped loop does
   nothing, never a silent start); schedule still fires, so a one-shot disarms and a repeat keeps its
-  cadence. Schedule logic is pure (`src/schedule.ts`, unit-tested); controller owns the per-model
+  cadence. Schedule logic is pure (`src/schedule.ts`, unit-tested); controller owns the per-loop
   schedule map and its `setTimeout`s, SESSION-ONLY (nothing in `globalState`/`workspaceState`/
   `.loopboard/`, so a reload clears every schedule — matching terminals, which die with the window
   too). Force consent is a native modal taken ONCE at arm time (a scheduled action is unattended by
   definition); fire time is silent and only logged. With `force` off the timer defers while that
-  model is BUSY and waits indefinitely; busy = In-Progress owner ∪ slots with a live subagent
+  loop is BUSY and waits indefinitely; busy = any In-Progress task ∪ a live subagent (`busyLoops`)
   (t-sbag: pure `src/subagents.ts`, `contextreader.readSubagents`, 60-min transcript-mtime staleness
   cap; manual ♻ only warns in its tooltip; `force` and a scheduled start override it). The idle edge
   is `maybeAutoRecycle`'s, but a finishing subagent writes no `.loopboard/` — so the context poll
   re-runs the flushes too. A forced restart leaves the task `phase: inprogress` with no worker
   (Rule 2 → board-wide block) and kills live subagents — hence the modal's wording.
+- One Orchestrator loop (t-0e99): `LoopId` (`orchestrator`) keys terminal, `--name` and every
+  controller map; `Model` (`opus|sonnet|fable|haiku`) is only the task value. It never edits code:
+  every groom, implementation and review is a subagent on the task's resolved routing keys (absent =
+  the five defaults, which ride the bootstrap prompt). Old slot/delegate settings stay read-both
+  until migrated.
 - Workspace custom rules (t-4a04): a hand-owned `<!-- loopboard:custom:begin/end -->` free-text
   section in `.loopboard/LOOP.md` — NO setting, NO reconciler, NO config listener (the earlier
   `loopBoard.customRules` + per-line-marker machinery was removed after human rejection; do not

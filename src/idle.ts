@@ -1,15 +1,15 @@
 // Idle stop (t-2dd4) — pure logic only. NEVER import `vscode` or node typings here: this module is
 // compiled by tsconfig.test.json (`types: []`) into out-test/ and unit-tested.
 //
-// "Idle" is the controller's `busyModels` complement and nothing else (human decision, 2026-09-25):
-// a slot with no In-Progress task and no live Agent-tool subagent. The clock starts at the first
-// observation that finds the slot out of the busy set and is cleared by the first one that finds it
+// "Idle" is the controller's `busyLoops` complement and nothing else (human decision, 2026-09-25):
+// a loop while no task is In Progress and no live Agent-tool subagent is seen (t-0e99). The clock starts at the first
+// observation that finds the loop out of the busy set and is cleared by the first one that finds it
 // back in — a `/loop` tick or an unrelated board edit observes "still idle" and leaves it alone, so
 // the clock measures minutes without work, not minutes since the last write. The controller owns
-// the per-slot state map and its timers (session-only, like the restart schedules); everything
+// the per-loop state map and its timers (session-only, like the restart schedules); everything
 // about WHEN the warning and the stop are due, and what the row says, is decided here.
 
-import { Model } from './model';
+import { LoopId } from './model';
 import { MAX_MINUTES } from './schedule';
 
 // How long the warning popup stands before the stop goes ahead (decision 2).
@@ -19,7 +19,7 @@ export const IDLE_WARN_MS = 30000;
 export const DEFAULT_IDLE_MINUTES = 60;
 
 export interface IdleState {
-  // Epoch ms of the first observation that found the slot idle; undefined = no clock running.
+  // Epoch ms of the first observation that found the loop idle; undefined = no clock running.
   idleSince: number | undefined;
   // Epoch ms the 30 s warning went up; undefined = no warning open.
   warnedAt: number | undefined;
@@ -39,18 +39,18 @@ export function resetIdle(): IdleState {
   return { idleSince: undefined, warnedAt: undefined };
 }
 
-// One observation of one slot against the controller's `busyModels`. Busy clears everything (the
-// clock never runs while the slot is busy, and an open warning is superseded); idle starts the
+// One observation of one loop against the controller's `busyLoops`. Busy clears everything (the
+// clock never runs while the loop is busy, and an open warning is superseded); idle starts the
 // clock only if none is running; anything else returns the state unchanged.
-export function observeIdle(state: IdleState, model: Model, busy: readonly Model[], now: number): IdleState {
-  if (busy.includes(model)) {
+export function observeIdle(state: IdleState, loop: LoopId, busy: readonly LoopId[], now: number): IdleState {
+  if (busy.includes(loop)) {
     return state.idleSince === undefined && state.warnedAt === undefined ? state : resetIdle();
   }
   if (state.idleSince === undefined) return { idleSince: now, warnedAt: undefined };
   return state;
 }
 
-// When the warning is due: 30 s before the slot has been idle `minutes`. Undefined = no clock.
+// When the warning is due: 30 s before the loop has been idle `minutes`. Undefined = no clock.
 export function idleWarnAt(state: IdleState, minutes: number): number | undefined {
   return state.idleSince === undefined ? undefined : state.idleSince + minutes * 60000 - IDLE_WARN_MS;
 }
@@ -70,10 +70,10 @@ export function keepRunning(_state: IdleState, now: number): IdleState {
   return { idleSince: now, warnedAt: undefined };
 }
 
-// What the slot looks like at a timer's fire time, re-read by the controller then — never
+// What the loop looks like at a timer's fire time, re-read by the controller then, never
 // remembered from when the timer was armed. `enabled` is re-read from configuration because a
 // change made while the settings page is closed triggers no refresh (t-sgrp); `busy` is
-// `busyModels` on the last loaded board (false only when a board IS loaded).
+// `busyLoops` on the last loaded board (false only when a board IS loaded).
 export interface IdleFireContext {
   enabled: boolean;
   running: boolean;
@@ -88,7 +88,7 @@ export type IdleWarnDecision =
   | { act: 'rearm'; at: number }
   | { act: 'warn' };
 
-// The warning timer fired. Never forced: a slot that turned busy since the timer was armed holds
+// The warning timer fired. Never forced: a loop that turned busy since the timer was armed holds
 // (the clock restarts from the next idle edge), and a `minutes` raised since then re-arms instead
 // of warning early.
 export function decideIdleWarn(state: IdleState, ctx: IdleFireContext): IdleWarnDecision {
@@ -103,7 +103,7 @@ export function decideIdleWarn(state: IdleState, ctx: IdleFireContext): IdleWarn
 
 export type IdleStopDecision = 'stop' | 'hold' | 'superseded';
 
-// The stop is due — the 30 s ran out. `warnedAt` is the stamp of the warning that asked; a slot
+// The stop is due: the 30 s ran out. `warnedAt` is the stamp of the warning that asked; a loop
 // whose state no longer carries it was reset in the meantime (♻, ■, ▶, the terminal closed, the
 // feature turned off, or a busy observation), and a stale timer for that old warning must never
 // stop the session that replaced it. Busy at fire time holds, never forces.
@@ -125,7 +125,7 @@ export function describeIdle(state: IdleState, minutes: number, now: number): st
 
 // The `idle-stop` log line's basis (the debug-trace rule: an automatic action that went ahead says
 // why it was allowed to). An idle stop never fires while a subagent is SEEN live, so it names no
-// killed agents; what it can name is the fail-open — a slot whose last subagent read failed counted
+// killed agents; what it can name is the fail-open: a loop whose last subagent read failed counted
 // as having none, and a subagent that read could not see dies with the session.
 export function describeIdleStop(state: IdleState, now: number, subagentsUnreadable: boolean): string {
   const idle = state.idleSince === undefined ? 0 : Math.max(0, Math.floor((now - state.idleSince) / 60000));

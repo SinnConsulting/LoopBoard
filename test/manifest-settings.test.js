@@ -23,9 +23,13 @@ const entries = () => {
   return out;
 };
 
-// t-2047: the delegation pair graduated out of Beta into Agent Setup — same ids, so existing user
-// values carry over (decisions/tooling.md graduation rule).
-const GRADUATED_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateReview'];
+// t-2047 graduated the delegation pair out of Beta; t-0e99 removed both (delegation is always on,
+// and `loopBoard.defaultReviewerModel` replaced the review switch). The settings migration panel
+// is what still knows the old ids (src/settingsmigrate.ts).
+const REMOVED_KEYS = [
+  'loopBoard.delegateWork', 'loopBoard.delegateReview',
+  ...['opus', 'sonnet', 'fable'].flatMap((m) => ['model', 'effort', 'groomConcurrency'].map((f) => `loopBoard.models.${m}.${f}`)),
+];
 
 // WHEN a changed setting takes effect. `restart` = frozen into the spawn command, so a running loop
 // keeps what it was spawned with; `live` = read on demand. There is no third class: every
@@ -33,18 +37,19 @@ const GRADUATED_KEYS = ['loopBoard.delegateWork', 'loopBoard.delegateReview'];
 // activation and no setting needs a window reload.
 //
 // This list is the SPAWN-COMMAND reality, hand-kept against `src/loop.ts`: `buildClaudeBase`
-// (permissionMode, the resolved `--model` string, `--effort`) and `buildLoopCommand` (interval,
-// groomConcurrency, delegateWork, delegateReview) are the only places a setting is baked in.
+// (permissionMode, the orchestrator's `--model` and `--effort`) and `buildLoopCommand` (interval,
+// grooming cap, the enabled task models and the five per-task defaults, t-0e99) are the only
+// places a setting is baked in.
 // Adding a setting to package.json without classifying it — or classifying one this list does not
 // know — turns the suite red, which is the whole point: an absent marker on the settings page is
 // then information ("this one is live"), never an oversight.
 const RESTART_KEYS = [
   'loopBoard.permissionMode',
   'loopBoard.loopInterval',
-  'loopBoard.models.opus.model', 'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency',
-  'loopBoard.models.sonnet.model', 'loopBoard.models.sonnet.effort', 'loopBoard.models.sonnet.groomConcurrency',
-  'loopBoard.models.fable.model', 'loopBoard.models.fable.effort', 'loopBoard.models.fable.groomConcurrency',
-  'loopBoard.delegateWork', 'loopBoard.delegateReview',
+  'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
+  'loopBoard.defaultGroomerModel', 'loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerModel',
+  'loopBoard.defaultWorkerEffort', 'loopBoard.defaultReviewerModel',
+  'loopBoard.models.opus.enabled', 'loopBoard.models.sonnet.enabled', 'loopBoard.models.fable.enabled', 'loopBoard.models.haiku.enabled',
 ];
 // The one sentence every `restart` description ends with, so the NATIVE settings editor — which
 // cannot render the page's marker — states the same fact in the same words. Imported, not retyped:
@@ -55,7 +60,7 @@ test('the three sections are declared in the agreed order', () => {
   assert.deepEqual(
     sections.map((s) => s.title),
     [
-      'LoopBoard: Models & Slots',
+      'LoopBoard: Orchestrator & Models',
       'LoopBoard: Agent Setup',
       'LoopBoard: Board & Workspace',
     ]
@@ -116,43 +121,84 @@ test('no Beta section exists and no shipped key carries a Beta marker (t-2047)',
   }
 });
 
-test('the graduated delegation keys sit in Agent Setup right after nudgeLoops (t-2047)', () => {
-  const agent = sections.find((s) => s.title === 'LoopBoard: Agent Setup');
-  const keys = Object.entries(agent.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
-  const at = keys.indexOf('loopBoard.nudgeLoops');
-  assert.deepEqual(keys.slice(at, at + 3), ['loopBoard.nudgeLoops', ...GRADUATED_KEYS]);
-  for (const key of GRADUATED_KEYS) {
-    assert.equal(agent.properties[key].loopBoardApplies, 'restart', `${key} must stay a restart setting`);
-    assert.ok(agent.properties[key].order < 900, `${key} must sort before the deprecated pair`);
+test('the delegation pair and the per-slot loop keys are no longer declared (t-0e99)', () => {
+  const declared = new Set(entries().map((e) => e.key));
+  for (const key of REMOVED_KEYS) assert.ok(!declared.has(key), `${key} is still declared`);
+});
+
+test('t-0e99 declares the orchestrator, the five defaults and the Haiku toggle, enums widened', () => {
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  const models = ['opus', 'sonnet', 'fable', 'haiku'];
+  assert.equal(all['loopBoard.orchestrator.model'].type, 'string');
+  assert.equal(all['loopBoard.orchestrator.model'].default, 'opus');
+  assert.deepEqual(all['loopBoard.orchestrator.effort'].enum, ['low', 'medium', 'high', 'xhigh', 'max']);
+  assert.equal(all['loopBoard.orchestrator.effort'].default, 'medium');
+  assert.equal(all['loopBoard.orchestrator.groomConcurrency'].default, 3);
+  assert.equal(all['loopBoard.orchestrator.groomConcurrency'].minimum, 1);
+  assert.deepEqual(all['loopBoard.defaultGroomerModel'].enum, [...models, 'auto']);
+  assert.deepEqual(all['loopBoard.defaultWorkerModel'].enum, [...models, 'auto']);
+  assert.deepEqual(all['loopBoard.defaultReviewerModel'].enum, ['none', 'auto', ...models]);
+  for (const key of ['loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerEffort']) {
+    assert.deepEqual(all[key].enum, ['auto', 'low', 'medium', 'high', 'xhigh'], `${key}: no max per task`);
+  }
+  for (const m of models) assert.equal(all[`loopBoard.models.${m}.enabled`].default, true, m);
+  // Defaults keep today's behaviour: groomer Opus, worker Sonnet, no review, the rubric picks effort.
+  assert.equal(all['loopBoard.defaultGroomerModel'].default, 'opus');
+  assert.equal(all['loopBoard.defaultWorkerModel'].default, 'sonnet');
+  assert.equal(all['loopBoard.defaultReviewerModel'].default, 'none');
+  assert.equal(all['loopBoard.defaultGroomerEffort'].default, 'auto');
+  assert.equal(all['loopBoard.defaultWorkerEffort'].default, 'auto');
+  // Every one of them is application-scoped (asserted for all keys above) and lives in section 1.
+  const first = Object.keys(sections[0].properties);
+  for (const key of [...Object.keys(all).filter((k) => k.startsWith('loopBoard.orchestrator.')), 'loopBoard.models.haiku.enabled']) {
+    assert.ok(first.includes(key), `${key} must sit in ${sections[0].title}`);
   }
 });
 
-test('new defaults: context limit 35, delegate work on, delegate review off (t-2047)', () => {
+test('the shipped manifest defaults are exactly the host fallbacks in src/model.ts (t-0e99)', () => {
+  const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
+  const { TASK_DEFAULTS, ORCHESTRATOR_DEFAULTS } = require('../out-test/model.js');
+  assert.deepEqual(TASK_DEFAULTS, {
+    groomer: all['loopBoard.defaultGroomerModel'].default,
+    groomerEffort: all['loopBoard.defaultGroomerEffort'].default,
+    worker: all['loopBoard.defaultWorkerModel'].default,
+    workerEffort: all['loopBoard.defaultWorkerEffort'].default,
+    reviewer: all['loopBoard.defaultReviewerModel'].default,
+  });
+  assert.deepEqual(ORCHESTRATOR_DEFAULTS, {
+    model: all['loopBoard.orchestrator.model'].default,
+    effort: all['loopBoard.orchestrator.effort'].default,
+    groomConcurrency: all['loopBoard.orchestrator.groomConcurrency'].default,
+  });
+});
+
+test('new defaults: context limit 35 (t-2047), no review subagent by default (t-0e99)', () => {
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
   assert.equal(all['loopBoard.contextLimit.percent'].default, 35);
   assert.equal(all['loopBoard.contextLimit.action'].default, 'recycle');
-  assert.equal(all['loopBoard.delegateWork'].default, true);
-  assert.equal(all['loopBoard.delegateReview'].default, false);
+  assert.equal(all['loopBoard.defaultReviewerModel'].default, 'none');
   // Each description says which state is the default.
   assert.match(all['loopBoard.contextLimit.percent'].markdownDescription, /`35` \(default\)/);
-  assert.match(all['loopBoard.delegateWork'].markdownDescription, /^On \(default\):/);
-  assert.match(all['loopBoard.delegateReview'].markdownDescription, /Off \(default\):/);
-  assert.ok(!/On \(default\)/.test(all['loopBoard.delegateReview'].markdownDescription), 'delegateReview still claims On is the default');
-  assert.ok(!/Off \(default\)/.test(all['loopBoard.delegateWork'].markdownDescription), 'delegateWork still claims Off is the default');
+  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /`none` \(default\): no review subagent/);
+  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /Replaces `loopBoard\.delegateReview` \(`true` became `auto`\)/);
 });
 
-test('with every setting unset, a spawn ends "without review" and a loop trips at 35% (t-2047)', () => {
-  // What the host hands the pure modules when nothing is set: VSCode's c.get returns the manifest
-  // default, so feed exactly those through the real prompt builder and the real trip rule.
+test('with every setting unset, the spawn names the shipped defaults and a loop trips at 35%', () => {
+  // What the host hands the pure modules when nothing is set: the manifest defaults, fed through the
+  // real prompt builder and the real trip rule.
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
   const { buildLoopCommand } = require('../out-test/loop.js');
   const { sanitizeContextPercent, shouldTrip } = require('../out-test/context.js');
+  const { resolveTaskDefaults, resolveOrchestrator } = require('../out-test/model.js');
   const tpl = fs.readFileSync(path.join(root, 'media', 'template-loop.md'), 'utf8');
-  const cmd = buildLoopCommand(
-    tpl, 'opus', all['loopBoard.loopInterval'].default, 3,
-    all['loopBoard.delegateWork'].default, all['loopBoard.delegateReview'].default
-  );
-  assert.ok(cmd.endsWith(' Delegate work to subagents without review.'), cmd);
+  const unset = () => undefined;
+  const cmd = buildLoopCommand(tpl, all['loopBoard.loopInterval'].default, {
+    groomConcurrency: resolveOrchestrator(unset).groomConcurrency,
+    models: ['opus', 'sonnet', 'fable', 'haiku'],
+    defaults: resolveTaskDefaults(unset),
+  });
+  assert.ok(cmd.includes('Defaults: groomer opus effort auto, worker sonnet effort auto, reviewer none.'), cmd);
+  assert.ok(cmd.includes('grooming concurrency cap of 3'), cmd);
   const threshold = sanitizeContextPercent(all['loopBoard.contextLimit.percent'].default);
   assert.equal(threshold, 35);
   assert.equal(shouldTrip(35, threshold, 's1', undefined), true, 'trips at 35%');
@@ -166,9 +212,9 @@ test('with every setting unset, a spawn ends "without review" and a loop trips a
 test('every host c.get fallback for the t-2047 keys equals its manifest default', () => {
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
   const src = (f) => fs.readFileSync(path.join(root, 'src', f), 'utf8');
+  // t-0e99 removed the extension.ts delegate fallbacks; the orchestrator and per-task defaults
+  // are pinned against src/model.ts in the test above.
   const cases = [
-    ['extension.ts', 'delegateWork'],
-    ['extension.ts', 'delegateReview'],
     ['controller.ts', 'contextLimit.percent'],
   ];
   for (const [file, key] of cases) {
@@ -182,7 +228,7 @@ test('every host c.get fallback for the t-2047 keys equals its manifest default'
   }
 });
 
-test('the idle-stop pair ships in Agent Setup after delegateReview, off by default (t-2dd4)', () => {
+test('the idle-stop pair ships in Agent Setup after nudgeLoops, off by default (t-2dd4)', () => {
   const agent = sections.find((s) => s.title === 'LoopBoard: Agent Setup');
   const enabled = agent.properties['loopBoard.idleStop.enabled'];
   const minutes = agent.properties['loopBoard.idleStop.minutes'];
@@ -195,7 +241,8 @@ test('the idle-stop pair ships in Agent Setup after delegateReview, off by defau
   assert.equal(enabled.order, 90);
   assert.equal(minutes.order, 100);
   const keys = Object.entries(agent.properties).sort((a, b) => a[1].order - b[1].order).map(([k]) => k);
-  const at = keys.indexOf('loopBoard.delegateReview');
+  // t-0e99 removed the delegation pair that sat between them.
+  const at = keys.indexOf('loopBoard.nudgeLoops');
   assert.deepEqual(keys.slice(at + 1, at + 3), ['loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes']);
   for (const prop of [enabled, minutes]) {
     assert.equal(prop.loopBoardApplies, 'live');
@@ -263,20 +310,18 @@ test('a declared dependency names a real boolean setting', () => {
       `${key} depends on ${prop.loopBoardDependsOn}, which is not a boolean — only a toggle can gate a row`
     );
   }
-  // The one real dependency, asserted by name so a rename cannot quietly drop it: the review
-  // toggle is meaningless while delegation is off, and the page must keep greying it.
-  assert.equal(all['loopBoard.delegateReview'].loopBoardDependsOn, 'loopBoard.delegateWork');
+  // The one real dependency since t-0e99 removed the delegation pair, asserted by name so a rename
+  // cannot quietly drop it: the minutes are meaningless while the idle stop is off.
+  assert.equal(all['loopBoard.idleStop.minutes'].loopBoardDependsOn, 'loopBoard.idleStop.enabled');
+  assert.deepEqual(entries().filter((e) => e.prop.loopBoardDependsOn).map((e) => e.key), ['loopBoard.idleStop.minutes']);
 });
 
-test('the graduated keys keep their original ids — graduating must never rename a key', () => {
-  // Recorded in decisions/tooling.md: the SECTION carries the status, not the id. A move to
-  // `loopBoard.beta.*` would drop existing values silently now and force a second rename later.
-  // (`loopBoard.delegateWork.review` -> `loopBoard.delegateReview` is not a counter-example: that id
-  // was unusable, so there was no honoured value to drop — see the prefix test above.)
+test('a key the code still reads as a legacy fallback is never redeclared, so it cannot shadow its successor', () => {
+  // t-0e99: `resolveOrchestrator` / `resolveTaskDefaults` read the old slot keys and `delegateReview`
+  // until the migration is applied. Declaring them again would put them back on the settings page.
   const declared = new Set(entries().map((e) => e.key));
-  for (const key of GRADUATED_KEYS) {
-    assert.ok(!key.includes('.beta.'), `${key} must not live in a beta namespace`);
-    assert.ok(declared.has(key), `${key} must stay declared under its original id`);
+  for (const key of ['loopBoard.models.opus.model', 'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency', 'loopBoard.delegateReview']) {
+    assert.ok(!declared.has(key), `${key} must stay undeclared`);
   }
 });
 
@@ -341,33 +386,24 @@ test('every restart property ends with the one standard sentence, and no live on
   }
 });
 
-test('the model grid may speak for its slot keys: the classification it claims is the real one', () => {
-  // The grid replaces the generic rows for `loopBoard.models.*`, so ONE header note stands in for
-  // their markers. It reads "model · effort · groomers apply …" — that is only true while those
-  // three are `restart` and the slot toggle is `live`.
+test('the grid may speak for its keys: the classification it claims is the real one (t-0e99)', () => {
+  // The grid replaces the generic rows for the orchestrator, the defaults and the model toggles, so
+  // ONE header note stands in for their markers. It reads "orchestrator · models · defaults apply …",
+  // which is only true while every one of them is `restart` (all of them ride the spawn command).
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
-  for (const slot of ['opus', 'sonnet', 'fable']) {
-    for (const field of ['model', 'effort', 'groomConcurrency']) {
-      assert.equal(all[`loopBoard.models.${slot}.${field}`].loopBoardApplies, 'restart');
-    }
-    assert.equal(all[`loopBoard.models.${slot}.enabled`].loopBoardApplies, 'live');
-  }
-  for (const key of ['loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel']) {
-    assert.equal(all[key].loopBoardApplies, 'live', `${key} is a radio column the grid note does not cover`);
-  }
+  const { MODEL_GRID_KEYS } = require('../out-test/settingsform.js');
+  for (const key of MODEL_GRID_KEYS) assert.equal(all[key].loopBoardApplies, 'restart', key);
 });
 
-// t-cffc: the effort default is stated twice — the manifest (what the settings page and the native
+// t-cffc: the effort default is stated twice: the manifest (what the settings page and the native
 // editor show as the default) and the `'medium'` fallbacks in src/model.ts / src/loop.ts (what a
 // spawn actually passes to `--effort` when the key is unset). Pin both to the same level.
-test('every slot effort defaults to medium, matching the resolveModels / buildClaudeBase fallback', () => {
+test('the orchestrator effort defaults to medium, matching the resolveOrchestrator / buildClaudeBase fallback', () => {
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
-  const { resolveModels } = require('../out-test/model.js');
+  const { resolveOrchestrator } = require('../out-test/model.js');
   const { buildClaudeBase } = require('../out-test/loop.js');
-  for (const slot of ['opus', 'sonnet', 'fable']) {
-    assert.equal(all[`loopBoard.models.${slot}.effort`].default, 'medium', `${slot} effort default`);
-    assert.equal(resolveModels({}).find((m) => m.id === slot).effort, 'medium', `${slot} resolveModels fallback`);
-  }
+  assert.equal(all['loopBoard.orchestrator.effort'].default, 'medium');
+  assert.equal(resolveOrchestrator(() => undefined).effort, 'medium', 'resolveOrchestrator fallback');
   assert.ok(buildClaudeBase('auto', 'opus').includes(' --effort medium'), 'buildClaudeBase fallback');
 });
 
@@ -377,17 +413,15 @@ test('every key the code reads is still declared in the manifest', () => {
   const declared = new Set(entries().map((e) => e.key));
   for (const key of [
     'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
-    'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel',
+    'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
+    'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel', 'loopBoard.defaultWorkerEffort',
+    'loopBoard.defaultGroomerEffort', 'loopBoard.defaultReviewerModel',
     'loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee',
     'loopBoard.cardsStartCollapsed', 'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
-    'loopBoard.delegateWork', 'loopBoard.delegateReview', 'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
-    'loopBoard.models.opus.enabled', 'loopBoard.models.opus.model',
-    'loopBoard.models.opus.effort', 'loopBoard.models.opus.groomConcurrency',
-    'loopBoard.models.sonnet.enabled', 'loopBoard.models.sonnet.model',
-    'loopBoard.models.sonnet.effort', 'loopBoard.models.sonnet.groomConcurrency',
-    'loopBoard.models.fable.enabled', 'loopBoard.models.fable.model',
-    'loopBoard.models.fable.effort', 'loopBoard.models.fable.groomConcurrency',
+    'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
+    'loopBoard.models.opus.enabled', 'loopBoard.models.sonnet.enabled',
+    'loopBoard.models.fable.enabled', 'loopBoard.models.haiku.enabled',
   ]) {
     assert.ok(declared.has(key), `${key} is read by src/ but no longer declared`);
   }

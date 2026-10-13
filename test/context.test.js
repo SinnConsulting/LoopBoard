@@ -238,3 +238,22 @@ test('the stale guard is what protects a wiped hysteresis marker, not shouldTrip
   assert.equal(isStaleSession('s2', 's1'), false);
   assert.equal(shouldTrip(3, 35, 's2', undefined), false, 'fresh session, well under the threshold');
 });
+
+// ---- t-0e99: the one orchestrator loop ----
+
+test('the orchestrator spawns as loopboard-orchestrator-<suffix>, and only that name matches it', () => {
+  assert.equal(sessionName('orchestrator'), 'loopboard-orchestrator');
+  assert.equal(spawnSessionName('orchestrator', 'ab12'), 'loopboard-orchestrator-ab12');
+  const mine = { sessionId: 's1', cwd: CWD, name: 'loopboard-orchestrator-ab12', updatedAt: 0 };
+  assert.equal(matchesSlot(mine, CWD, 'orchestrator'), true);
+  // A per-model loop left over from before the update never reads as the orchestrator's session.
+  for (const legacy of ['loopboard-opus', 'loopboard-opus-1a2b', 'loopboard-sonnet-replicated-crab']) {
+    assert.equal(matchesSlot({ ...mine, name: legacy }, CWD, 'orchestrator'), false, legacy);
+  }
+});
+
+test('Haiku 5.5 carries the 1M window, by alias and by transcript id; older Haiku stays at 200k', () => {
+  assert.equal(windowSizeFor('haiku'), LARGE_WINDOW);
+  assert.equal(windowSizeFor('some-org-alias', 'claude-haiku-5-5'), LARGE_WINDOW);
+  assert.equal(windowSizeFor('haiku-4-5'), DEFAULT_WINDOW);
+});

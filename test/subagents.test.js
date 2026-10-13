@@ -278,7 +278,8 @@ test('scanMarkers skips unparseable and irrelevant lines without throwing', () =
 test('foldAgents keeps an agent with no finish marker', () => {
   const { rows, stale } = foldAgents([entry()], [], NOW);
   assert.deepStrictEqual(stale, []);
-  assert.deepStrictEqual(rows, [{ id: 'a111', agentType: 'general-purpose', description: 'Implement corpse whirl fix', startedAt: NOW - 2 * MINUTE }]);
+  // The row carries the spawn's model from its meta (t-0e99): the Agents section and the log name it.
+  assert.deepStrictEqual(rows, [{ id: 'a111', agentType: 'general-purpose', description: 'Implement corpse whirl fix', model: 'opus', startedAt: NOW - 2 * MINUTE }]);
 });
 
 test('foldAgents drops an agent the human stopped', () => {
@@ -335,9 +336,11 @@ test('an empty subagents directory folds to no rows', () => {
 // ---- rendering ----
 
 test('describeAgent renders `agentType · description` plus a duration', () => {
-  assert.deepStrictEqual(describeAgent({ id: 'a111', agentType: 'story-groom', description: 'Fold monster speed answers', startedAt: NOW - MINUTE }, NOW), {
-    id: 'a111', label: 'story-groom · Fold monster speed answers', duration: '1m',
+  assert.deepStrictEqual(describeAgent({ id: 'a111', agentType: 'story-groom', description: 'Fold monster speed answers', model: 'haiku', startedAt: NOW - MINUTE }, NOW), {
+    id: 'a111', label: 'story-groom · Fold monster speed answers', model: 'haiku', duration: '1m',
   });
+  // A row built without a model (an older meta) renders an empty model, never `undefined`.
+  assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW }, NOW).model, '');
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'general-purpose', description: '', startedAt: NOW - 20000 }, NOW).label, 'general-purpose');
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW - 20000 }, NOW).duration, '20s');
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW - 125 * MINUTE }, NOW).duration, '2h 5m');
@@ -414,6 +417,13 @@ test('describeAgentEdge renders a start and a departure with label, id and durat
     'story-groom · Fold monster speed answers (agent a1) — no longer live after 4m');
   // Never claims a finish: the snapshot cannot tell a finish from a stop, a drop or a lost session.
   assert.ok(!/finished/.test(describeAgentEdge('gone', a, NOW)));
+});
+
+test('describeAgentEdge names the spawn model when the meta carried one (t-0e99)', () => {
+  // Every agent belongs to the one orchestrator loop, so the model is what tells them apart.
+  const a = row('a1', { description: 'high-t-1: Groom it', model: 'haiku', startedAt: NOW - MINUTE });
+  assert.strictEqual(describeAgentEdge('start', a, NOW), 'story-groom · high-t-1: Groom it · haiku (agent a1)');
+  assert.ok(describeAgentEdge('gone', a, NOW).startsWith('story-groom · high-t-1: Groom it · haiku (agent a1)'));
 });
 
 test('describeAgentEdge: a departing row with no startedAt still reads cleanly', () => {

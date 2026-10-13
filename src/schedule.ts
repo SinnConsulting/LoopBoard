@@ -1,11 +1,11 @@
 // Scheduled loop restarts (t-77d1) — pure logic only. NEVER import `vscode` or node typings here:
 // this module is compiled by tsconfig.test.json (`types: []`) into out-test/ and unit-tested.
 //
-// A schedule is armed per model from the sidebar's ♻ popover and lives in memory for the window
+// A schedule is armed per loop from the sidebar's ♻ popover and lives in memory for the window
 // session only (the controller owns the map and the timers). Everything about WHEN it fires, WHETHER
 // it may fire, and what it becomes afterwards is decided here so it can be tested without a host.
 
-import { Model } from './model';
+import { LoopId, LOOP_IDS } from './model';
 
 // Preset minute values offered as one-click choices in the popover; "Custom…" accepts any other
 // positive integer number of minutes. Minutes are the ONLY unit — there is no hours/days selector.
@@ -43,15 +43,15 @@ export function appliesTo(action: LoopAction, running: boolean): boolean {
 }
 
 export interface RestartSchedule {
-  model: Model;
+  loop: LoopId;
   action: LoopAction;
   minutes: number;
   repeat: boolean;
   force: boolean;
   // Absolute epoch ms of the next intended fire. With `repeat`, re-derived after each fire.
   nextFireAt: number;
-  // True once the timer has fired but the restart was held back because the model was mid-task
-  // (force off). A pending restart waits indefinitely; at most one is ever pending per model.
+  // True once the timer has fired but the restart was held back because the loop was busy (force
+  // off). A pending restart waits indefinitely; at most one is ever pending per loop.
   pending: boolean;
 }
 
@@ -68,7 +68,7 @@ export function parseMinutes(raw: string): number | null {
 }
 
 export function armSchedule(
-  model: Model,
+  loop: LoopId,
   action: LoopAction,
   minutes: number,
   repeat: boolean,
@@ -76,7 +76,7 @@ export function armSchedule(
   now: number
 ): RestartSchedule {
   return {
-    model,
+    loop,
     action,
     minutes,
     repeat,
@@ -93,23 +93,39 @@ export function delayUntilFire(schedule: RestartSchedule, now: number): number {
 }
 
 // The one question the timer callback asks. `force` bypasses the check entirely; otherwise the
-// restart is only allowed when this model is not busy. "Busy" is never read from the terminal (its
-// output is unreadable) — the caller derives `busyModels` from the two things that ARE on disk: who
-// owns an In-Progress task in `.loopboard/TODO.md` (absent `model:` already resolved to the
-// default) and whose session still has a live subagent (t-sbag).
+// restart is only allowed when this loop is not busy. "Busy" is never read from the terminal (its
+// output is unreadable): the caller derives `busyLoops` from the two things that ARE on disk: any
+// In-Progress task in `.loopboard/TODO.md` and a live subagent in the loop's session (t-sbag,
+// t-0e99).
 //
 // `force` overriding BOTH is deliberate: force already means "interrupt whatever is running", and
 // the consent modal taken at arm time names the killed subagents as well as the mid-flight task.
-export function mayFire(schedule: RestartSchedule, busyModels: readonly Model[]): boolean {
-  // A scheduled start has no worker to cut off — spawning a terminal for a model whose task is
-  // In Progress is exactly what a human would want, so it never defers.
+export function mayFire(schedule: RestartSchedule, busyLoops: readonly LoopId[]): boolean {
+  // A scheduled start has no worker to cut off: spawning a terminal while a task is In Progress is
+  // exactly what a human would want, so it never defers.
   if (!supportsForce(schedule.action)) return true;
   if (schedule.force) return true;
-  return !busyModels.includes(schedule.model);
+  return !busyLoops.includes(schedule.loop);
 }
 
-// Marks a schedule as waiting for its model to go idle. Idempotent — at most one restart is ever
-// pending per model, so a repeating schedule cannot stack deferred fires.
+// The "do not restart this loop automatically" set (t-sbag, re-keyed by t-0e99): one orchestrator
+// works every task through its subagents, so EVERY loop is busy while ANY task is In Progress,
+// and a loop is busy on its own while its session has a live subagent (`withLiveAgents`).
+export function busyLoops(tasks: readonly { phase: string }[], withLiveAgents: Iterable<LoopId>, loops: readonly LoopId[] = LOOP_IDS): LoopId[] {
+  const busy = new Set<LoopId>(tasks.some((t) => t.phase === 'inprogress') ? loops : []);
+  for (const loop of withLiveAgents) busy.add(loop);
+  return [...busy];
+}
+
+// The idle edge `loopBoard.afterTask` acts on (t-0e99): the board's In-Progress count dropped to 0.
+// Whose task it was no longer matters, since one loop did all of them.
+export function inProgressEnded(prev: readonly { phase: string }[], next: readonly { phase: string }[]): boolean {
+  const count = (tasks: readonly { phase: string }[]) => tasks.filter((t) => t.phase === 'inprogress').length;
+  return count(prev) > 0 && count(next) === 0;
+}
+
+// Marks a schedule as waiting for its loop to go idle. Idempotent: at most one restart is ever
+// pending per loop, so a repeating schedule cannot stack deferred fires.
 export function deferSchedule(schedule: RestartSchedule): RestartSchedule {
   return schedule.pending ? schedule : { ...schedule, pending: true };
 }

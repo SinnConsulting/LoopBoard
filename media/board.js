@@ -126,6 +126,10 @@
   let composerText = saved.composerText || '';
   let composerGroomer = saved.composerGroomer || ''; // '' = default model
   let composerModel = saved.composerModel || '';     // '' = default model
+  // t-0e99: the composer's other routing picks, same '' = default idiom.
+  let composerGroomerEffort = saved.composerGroomerEffort || '';
+  let composerEffort = saved.composerEffort || '';
+  let composerReviewer = saved.composerReviewer || '';
   let composerNeedsFocus = false;
   let composerCaret = null; // caret offset to restore into the composer textarea after a repaint
   // Pending composer attachments (t-att1 rework): a brand-new story has no id to stage bytes
@@ -260,7 +264,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, overviewTag, overviewSelected, lastTag, tagGroups, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
+    vscode.setState({ phase, overviewTag, overviewSelected, lastTag, tagGroups, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, composerGroomerEffort, composerEffort, composerReviewer, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
   }
 
   // ---- single-line index values (t-c4d1) ----
@@ -633,8 +637,36 @@
   function defaultOpt(model) { return 'default (' + (model || 'opus') + ')'; }
   function workerDefaultOpt() { return defaultOpt(board && board.defaultWorkerModel); }
   function groomerDefaultOpt() { return defaultOpt(board && board.defaultGroomerModel); }
-  function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || []); }
+  // t-0e99: `auto` lets the orchestrator pick the model (LOOP.md Subagents table) on every role.
+  const AUTO = 'auto';
+  function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || [], [AUTO]); }
   function normModelValue(v, leadOpt) { return v === leadOpt ? '' : v; }
+
+  // Per-task effort (t-0e99): `max` is never a per-task value, `auto` = the rubric picks it.
+  const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', AUTO];
+  function effortDefaultOpt(effort) { return 'default (' + (effort || AUTO) + ')'; }
+  // "Review with" (t-0e99): the review subagent's model; `none` = no review subagent runs.
+  const NO_REVIEW = 'none';
+  function reviewerDefaultOpt() { return 'default (' + ((board && board.defaultReviewerModel) || NO_REVIEW) + ')'; }
+  function reviewerValues() { return ((board && board.models) || []).concat([AUTO, NO_REVIEW]); }
+
+  // A card select over plain values (effort, reviewer): the lead `default (...)` option maps to ''
+  // (no line on the index entry), every other option is the stored value itself. Commits through
+  // commitSelect like the Groom with / Work with selects (t-bbad: echo + repaint on pick).
+  function routingSelect(t, field, label, leadOpt, values) {
+    const sel = h('select', { class: 'model-select', 'aria-label': label, 'data-field': field });
+    const current = t[field] || leadOpt;
+    for (const opt of [leadOpt].concat(values)) {
+      const o = h('option', { value: opt }, opt);
+      if (opt === current) o.selected = true;
+      sel.append(o);
+    }
+    sel.addEventListener('change', (e) => commitSelect(t, field, normModelValue(e.target.value, leadOpt)));
+    return sel;
+  }
+  function groomEffortSelect(t) { return routingSelect(t, 'groomerEffort', 'Groom effort', effortDefaultOpt(board && board.defaultGroomerEffort), EFFORT_VALUES); }
+  function workEffortSelect(t) { return routingSelect(t, 'effort', 'Work effort', effortDefaultOpt(board && board.defaultWorkerEffort), EFFORT_VALUES); }
+  function reviewSelect(t) { return routingSelect(t, 'reviewer', 'Review with', reviewerDefaultOpt(), reviewerValues()); }
 
   // "Groom with" additionally offers an explicit On hold option (t-65a2) stored as `groomer: none`:
   // a held New/DRAFT task belongs to no loop and is never groomed until the human picks a real
@@ -1008,6 +1040,26 @@
     return pane;
   }
 
+  // The composer's routing picks as the draft message carries them ('' = the host's default).
+  function composerRouting() {
+    return { groomer: composerGroomer, groomerEffort: composerGroomerEffort, model: composerModel, effort: composerEffort, reviewer: composerReviewer };
+  }
+  function resetComposerRouting() {
+    composerGroomer = ''; composerModel = ''; composerGroomerEffort = ''; composerEffort = ''; composerReviewer = '';
+  }
+  // A composer select whose options are plain values after the `default (...)` lead option.
+  function plainComposerSelect(label, value, leadOpt, values, onchange) {
+    const sel = h('select', { class: 'model-select', 'aria-label': label });
+    for (const opt of [leadOpt].concat(values)) {
+      const o = h('option', { value: opt }, opt);
+      if (opt === (value || leadOpt)) o.selected = true;
+      sel.append(o);
+    }
+    sel.addEventListener('change', (e) => onchange(normModelValue(e.target.value, leadOpt)));
+    return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
+      h('span', { class: 'muted-11' }, label), sel);
+  }
+
   function renderComposer() {
     const area = h('textarea', {
       class: 'composer-area', rows: '10',
@@ -1028,7 +1080,7 @@
       return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
         h('span', { class: 'muted-11' }, label), sel);
     };
-    const closeComposer = () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; phase = 'new'; resetSearch(); saveState(); render(); };
+    const closeComposer = () => { composerOpen = false; composerText = ''; resetComposerRouting(); composerAttachments = []; phase = 'new'; resetSearch(); saveState(); render(); };
     // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the button
     // down via render()'s `root.textContent = ''` — waiting for `click` risks it being swallowed
     // when the composer textarea is unfocused (see t-d3dd). Routed through the shared
@@ -1039,11 +1091,11 @@
       if (!t) return;
       if (composerAttachments.length) {
         post({
-          type: 'createDraftWithAttach', text: t, groomer: composerGroomer, model: composerModel,
+          type: 'createDraftWithAttach', text: t, ...composerRouting(),
           attachments: composerAttachments.map((a) => ({ token: a.token, filename: a.filename, dataBase64: a.dataBase64 })),
         });
       } else {
-        post({ type: 'createDraft', text: t, groomer: composerGroomer, model: composerModel });
+        post({ type: 'createDraft', text: t, ...composerRouting() });
       }
       closeComposer();
     };
@@ -1130,10 +1182,13 @@
       pendingEl,
       h('div', { class: 'composer-actions' },
         saveBtn,
-        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; composerGroomer = ''; composerModel = ''; composerAttachments = []; saveState(); render(); } }, 'Cancel'),
+        h('button', { class: 'btn-secondary', type: 'button', onclick: () => { composerOpen = false; composerText = ''; resetComposerRouting(); composerAttachments = []; saveState(); render(); } }, 'Cancel'),
         attachBtn,
         modelSelect('Groom with', composerGroomer, groomerDefaultOpt(), (v) => { composerGroomer = v; saveState(); }, true),
+        plainComposerSelect('Groom effort', composerGroomerEffort, effortDefaultOpt(board && board.defaultGroomerEffort), EFFORT_VALUES, (v) => { composerGroomerEffort = v; saveState(); }),
         modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
+        plainComposerSelect('Work effort', composerEffort, effortDefaultOpt(board && board.defaultWorkerEffort), EFFORT_VALUES, (v) => { composerEffort = v; saveState(); }),
+        plainComposerSelect('Review with', composerReviewer, reviewerDefaultOpt(), reviewerValues(), (v) => { composerReviewer = v; saveState(); }),
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed. ⌘V pastes screenshots.'))
     );
   }
@@ -1574,8 +1629,10 @@
           isCollapsedCard ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', marginBottom: '8px', flexWrap: 'wrap' } },
             h('span', { class: 'muted-11' }, 'Groom with'),
             groomSel,
+            groomEffortSelect(t),
             h('span', { class: 'muted-11' }, 'Work with'),
-            workSel),
+            workSel,
+            workEffortSelect(t)),
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : descEl,
           isCollapsedCard ? null : attachEl,
@@ -2003,8 +2060,12 @@
     const selectsRow = h('div', { class: 'card-selects', style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' } },
       groomSel ? h('span', { class: 'muted-11' }, 'Groom with') : null,
       groomSel,
+      groomSel ? groomEffortSelect(t) : null,
       h('span', { class: 'muted-11' }, 'Work with'),
-      workSel);
+      workSel,
+      workEffortSelect(t),
+      h('span', { class: 'muted-11' }, 'Review with'),
+      reviewSelect(t));
     if (variant === 'new') {
       // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the
       // button down via render()'s `root.textContent = ''` — waiting for `click` risks it being
@@ -3064,8 +3125,7 @@
       overviewSelected = false;
       composerOpen = true;
       composerText = '';
-      composerGroomer = '';
-      composerModel = '';
+      resetComposerRouting();
       composerAttachments = [];
       composerNeedsFocus = true;
       saveState();

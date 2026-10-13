@@ -33,10 +33,13 @@ test('no LoopBoard agent definition ships with the repo', () => {
 test('template: every spawn passes model and effort, as general-purpose, on Claude Code 2.1.292+', () => {
   const r = subagentsRule();
   assert.match(r, /EVERY Agent-tool spawn MUST pass `model` and `effort`/);
-  assert.match(r, /Groomer, implementer, reviewer: `general-purpose`, `model` = your own slot model/);
+  // t-0e99: every groom, implementation and review is a subagent on the TASK's resolved model.
+  assert.match(r, /You never edit code: EVERY groom, implementation and review is a `general-purpose` subagent/);
+  assert.match(r, /`model` = the task's resolved `groomer:`\/`model:`\/`reviewer:` \(absent = prompt default\)/);
+  assert.match(r, /effort = its `groomer-effort:`\/`effort:` as set, `auto` = rubric below/);
   assert.match(r, /2\.1\.292\+/);
   assert.match(r, /else `medium`, the default/);
-  assert.match(r, /Your own `--effort` governs only you/, 'the slot effort governs only the loop master');
+  assert.match(r, /Your own `--effort` governs only you/, 'the orchestrator effort governs only the loop itself');
 });
 
 test('template: subagent titles are <effort>-<task id>: and haiku-<task id>:', () => {
@@ -46,11 +49,24 @@ test('template: subagent titles are <effort>-<task id>: and haiku-<task id>:', (
   assert.match(r, /`haiku-<task id>: <headline>`/);
 });
 
-test('template: Haiku never grooms, implements or reviews', () => {
+test('template: Haiku is a full task model (t-0e99); the helper still never commits', () => {
   const r = subagentsRule();
-  assert.match(r, /Haiku NEVER grooms, implements or reviews/);
-  assert.match(r, /task models are never `haiku`/);
-  assert.match(r, /helper never commits, pushes or branches/);
+  assert.doesNotMatch(r, /Haiku NEVER grooms, implements or reviews/);
+  assert.doesNotMatch(r, /task models are never `haiku`/);
+  assert.match(r, /Helper never commits, pushes or branches/);
+});
+
+test('template: the auto table: Sonnet at the level for low/medium/high, Opus at xhigh, never Haiku or Fable', () => {
+  const r = subagentsRule();
+  assert.match(r, /`auto` table, row = the rubric level: low\/medium\/high → Sonnet at that effort, xhigh → Opus at `xhigh`/);
+  assert.match(r, /never Haiku or Fable, never above `xhigh`/);
+  assert.match(r, /never a model your prompt does not list \(then the other of Sonnet\/Opus; neither listed → `phase: feedback` \+ `question:`\)/);
+});
+
+test('template: a derived effort is raised one step on Haiku and is the only one re-spawned up', () => {
+  const r = subagentsRule();
+  assert.match(r, /Derived effort \(rubric, or a review's implementer effort\): one step higher on Haiku \(max `xhigh`\)/);
+  assert.match(r, /on "bigger than briefed" re-spawned one level up \(max `xhigh`\), never pushed on\. A set effort is used as set/);
 });
 
 test('template: the four effort signals, each with its defining phrase', () => {
@@ -103,7 +119,7 @@ test('template: the GROOM/WORK limits of the old agent bodies appear once, and e
   assert.equal(count(/a per-goal account, deviations and anything unverified/g), 1, 'WORK return report once');
   assert.equal(count(/Neither the implementer nor the review subagent reads or writes any `\.loopboard\/` file \(Rule 16\)/g), 1, 'WORK neither reads nor writes .loopboard/');
   assert.doesNotMatch(all, /Interval \(`loopBoard\.loopInterval`\), effort,/, 'the old "effort rides the spawn command" note is gone');
-  assert.match(all, /your own `--effort`, grooming cap and delegated-work mode ride the spawn command/);
+  assert.match(all, /your own `--model`\/`--effort`, grooming cap, task models and defaults ride the spawn command/);
 });
 
 // The removed "Optional: effort-based delegation" section and every loop-agent reference it held
@@ -120,17 +136,15 @@ for (const file of ['README.md', 'docs/showcase/README.md']) {
   });
 }
 
-test('package.json: no slot effort description claims every subagent runs at the same effort', () => {
+test('package.json: the orchestrator effort sets the loop only; subagents get theirs per spawn (t-0e99)', () => {
   const pkg = JSON.parse(read('package.json'));
   const props = {};
   for (const block of [].concat(pkg.contributes.configuration)) Object.assign(props, block.properties);
-  const slots = Object.keys(props).filter((k) => /^loopBoard\.models\.[a-z]+\.effort$/.test(k));
-  assert.deepEqual(slots.sort(), ['loopBoard.models.fable.effort', 'loopBoard.models.opus.effort', 'loopBoard.models.sonnet.effort']);
-  for (const key of slots) {
-    const d = props[key].markdownDescription;
-    assert.doesNotMatch(d, /same effort|every subagent/i, `${key} still says subagents share the loop effort`);
-    assert.match(d, /subagents get their effort per spawn/, `${key} names per-spawn effort`);
-  }
+  assert.deepEqual(Object.keys(props).filter((k) => /\.effort$/.test(k)), ['loopBoard.orchestrator.effort'], 'no per-slot effort keys remain');
+  const d = props['loopBoard.orchestrator.effort'].markdownDescription;
+  assert.doesNotMatch(d, /same effort|every subagent/i, 'the orchestrator effort must not claim subagents share it');
+  assert.match(d, /subagents get their effort per spawn/);
+  assert.match(d, /over-split review work into many subagents/, 'the max-effort caveat is stated');
 });
 
 // t-716f review feedback: Rule 16 makes every subagent board-blind and the loop the board's only

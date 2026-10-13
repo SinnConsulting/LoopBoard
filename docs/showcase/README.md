@@ -78,7 +78,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
     </td>
     <td width="33%" valign="top">
       <b>6 · Loop terminals</b><br>
-      <sub>One Claude Code terminal per model.</sub><br>
+      <sub>One Orchestrator terminal, every task on its own model.</sub><br>
       <a href="gifs/06-loops.gif"><img src="gifs/06-loops.gif" width="100%" alt="Starting loops, watching context usage and scheduling a restart" /></a>
     </td>
   </tr>
@@ -90,7 +90,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
     </td>
     <td width="33%" valign="top">
       <b>8 · Settings</b><br>
-      <sub>Every model in one grid.</sub><br>
+      <sub>The Orchestrator and every model in one place.</sub><br>
       <a href="gifs/08-settings.gif"><img src="gifs/08-settings.gif" width="100%" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
     </td>
     <td width="33%" valign="middle" align="center">
@@ -158,23 +158,27 @@ Loops never commit to `main` and never merge. Merging is your call.
 <details>
 <summary><b>6 · Loop terminals</b></summary>
 
-Each **▶** opens a VS Code terminal named `Claude <Model>` running one command:
+**▶** opens ONE VS Code terminal, `Claude Orchestrator`, running one command:
 
 ```sh
-claude --permission-mode auto --model 'opus' --effort medium --name loopboard-opus-<id> \
-  '/loop 5m You are running as model opus with a grooming concurrency cap of 3. Open .loopboard/LOOP.md, …'
+claude --permission-mode auto --model 'opus' --effort medium --name loopboard-orchestrator-<id> \
+  '/loop 5m You are the LoopBoard orchestrator with a grooming concurrency cap of 3. Task models: …'
 ```
 
-The prompt only points at the **Automation** section of `.loopboard/LOOP.md`, which the loop
-re-reads every pass — edit your rules there and running loops follow.
+The Orchestrator never edits code: every groom, implementation and review is a subagent on the
+task's own model and effort (**Groom with**, **Work with** and **Review with** on each card, `auto`
+to let it pick). The prompt names the defaults and points at the **Automation** section of
+`.loopboard/LOOP.md`, which the loop re-reads every pass: edit your rules there and it follows.
 
-- **Context bar** — a session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
-  (default 35%, `0` = off). A loop holding the In Progress task is never interrupted; the restart
+- **Context bar**: the session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
+  (default 35%, `0` = off). It never interrupts a task In Progress or a live subagent; the restart
   waits.
-- **♻ / ■** — restart with a fresh context, or stop. **Right-click** ▶ ♻ ■ to schedule it.
+- **♻ / ■**: restart with a fresh context, or stop. **Right-click** ▶ ♻ ■ to schedule it.
+- **Coming from per-model loops?** Old `Claude Opus`/`Sonnet`/`Fable` terminals that survive the
+  update get one prompt to stop them, and once `LOOP.md` is synced a leftover one stands down.
 
-The Claude sessions in these recordings are simulated (VS Code can't read a terminal); the spawn
-line is the real one.
+These recordings still show the per-model loops LoopBoard ran before the Orchestrator; the Claude
+sessions in them are simulated (VS Code can't read a terminal).
 
 </details>
 
@@ -193,13 +197,15 @@ line is the real one.
 <details>
 <summary><b>8 · Settings</b></summary>
 
-The sidebar's **Settings** link opens LoopBoard's settings page. One grid covers every model:
-**on**, **default worker**, **default groomer**, **`--model`**, **effort**, **groomers**. Other
-settings are grouped below.
+The sidebar's **Settings** link opens LoopBoard's settings page. The **Orchestrator** block sets
+the one loop's `--model`, effort and grooming cap. The **Models** table turns each task model on or
+off and picks the **default groomer**, **default worker** and **default reviewer** (a model, `auto`
+or `none`), with a default effort beside the groomer and worker. Other settings are grouped below.
 
 - These are **VS Code user settings**; a cloned repo can never change how much authority your agent
   gets.
-- Spawn-time settings (`--model`, effort, interval, permission mode, …) apply on the next ▶ or ♻.
+- Spawn-time settings (`--model`, effort, defaults, interval, permission mode, …) apply on the next
+  ▶ or ♻; the board's selects and new drafts use a changed default at once.
 
 </details>
 
@@ -277,14 +283,14 @@ settings are grouped below.
 2. Run **LoopBoard: Initialize Workspace**.
 3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
    `echo '.loopboard/' >> .gitignore`
-4. Write a story, then press **▶** on a loop in the sidebar.
+4. Write a story, then press **▶** on the **Orchestrator** row in the sidebar.
 
 Commands:
 
 - **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
 - **LoopBoard: Open Board** — open the board.
 - **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
-- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+- **LoopBoard: Start Loop**: start the Orchestrator loop terminal, like ▶ in the sidebar.
 - **LoopBoard: What's New** — open the release notes for the version you're running, like
   **What's new?** in the sidebar.
 - **LoopBoard: Show Some Love** — show the sidebar's thank-you card with links to star LoopBoard on
@@ -301,7 +307,7 @@ all state lives in `.loopboard/`.
 
 ```
 .loopboard/
-  TODO.md          task index — one entry per active task (id, phase, model, groomer, Q&A)
+  TODO.md          task index: one entry per active task (id, phase, model/effort/groomer/reviewer, Q&A)
   DONE.md          approved tasks, newest first (created on the first approval)
   LOOP.md          workflow rules + the loop instructions, re-read every pass
   tasks/<id>.md    per task: meta, problem, description, goals, worklog, delivered
@@ -348,14 +354,23 @@ section.
 
 ## Subagent model and effort
 
-Every subagent a loop spawns — groomer, implementer, reviewer, helper — gets its `model` and
-`effort` per spawn, which needs **Claude Code 2.1.292+** (an older CLI most likely drops the effort
-silently). `LOOP.md`'s Subagents rule picks the effort from four signals in the story: subsystems,
-numbers to pin down, a reversed decision, an open approach. `medium` is the default, `high` or
-`xhigh` only when the story shows it, `low` only for exact, fully specified edits. The model stays
-the loop's own; only small mechanical helpers run on Haiku. A slot's `.effort` sets the loop
-session itself.
+ONE Orchestrator loop does all the work through subagents: every groom, implementation and review
+is a subagent with its own `model` and `effort`, passed per spawn, which needs **Claude Code
+2.1.292+** (an older CLI most likely drops the effort silently). The Orchestrator never edits code.
 
+- **Per task.** `Groom with`, `Work with` and `Review with` on each card (and in the composer) pick
+  the subagent models: Opus, Sonnet, Fable, Haiku, `auto`, or `none` for grooming (on hold) and
+  review (no review). An effort select sits beside **Groom with** and **Work with**: `low`…`xhigh`
+  or `auto`. Unset fields use the defaults on the settings page.
+- **`auto`.** The effort comes from `LOOP.md`'s rubric (four signals in the story: subsystems,
+  numbers to pin down, a reversed decision, an open approach; `medium` by default). The model
+  follows the rubric level: Sonnet at `low`/`medium`/`high`, Opus at `xhigh`, never Haiku or Fable.
+  The Orchestrator writes its picks onto the card, groomer picks before grooming and the work pick
+  with the groomed story, so you can change them before promoting.
+- **Haiku.** A full task model, chosen by hand only. An effort the Orchestrator derives for a Haiku
+  subagent runs one step higher (max `xhigh`); an effort you set is used as set.
+- **Review.** `Review with` (default `none`) runs a review subagent at the implementer's final
+  effort; `auto` means the model that groomed the story.
 - **Check effort in the transcript, never by asking.** A subagent asked for its effort makes one
   up; the `"effort"` field in its JSONL under `~/.claude/projects/` is the truth.
 

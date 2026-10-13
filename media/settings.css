@@ -136,6 +136,7 @@ tr.disabled td:not(.always) { opacity: .38; }
   box-shadow: inset 0 0 0 3px var(--vscode-button-background, #0078d4);
 }
 .radio:focus-visible, .sw:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+table.orchestrator { margin-bottom: 18px; }
 td.model input { width: 150px; font-family: var(--vscode-editor-font-family, Menlo, Consolas, monospace); }
 td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); outline-offset: -1px; }
 

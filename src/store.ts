@@ -10,7 +10,7 @@ import { Board, DoneEntry, IndexEntry, Task, TaskDetail } from './model';
 import { parseTodo, parseDone, EDITABLE_PHASES } from './parser';
 import { serializeTodo, serializeDone } from './writer';
 import { parseTaskFile, serializeTaskFile, draftDescription } from './taskfile';
-import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer } from './merge';
+import { FieldPatch, applyPatch, applyDetailPatch, patchTarget, normalizeModel, normalizeGroomer, normalizeReviewer, normalizeEffort } from './merge';
 import { promoteIndex, promoteIndexIfReady, promoteDetail, demoteIndex, demoteDetail, acceptDetail, acceptDoneEntry, moveEntry, MoveOutcome } from './gates';
 import { isEmptyOrMissing, planSync, SyncPlan } from './sync';
 import { Mutex } from './serialize';
@@ -20,6 +20,15 @@ import { parseRegistry, serializeRegistry, registryEntries, registryUnparsedCoun
 export type SaveOutcome = { status: 'applied' | 'conflict' | 'notfound' | 'error' | 'unsupported'; message?: string };
 export type AttachOutcome = SaveOutcome & { path?: string; description?: string; title?: string; feedback?: string[] };
 export type DraftOutcome = SaveOutcome & { id?: string };
+// The routing values a new draft is written with (t-0e99): the composer's picks, or the defaults.
+// Each is validated for its own role; anything off-list is simply left absent.
+export interface DraftRouting {
+  groomer?: string;
+  groomerEffort?: string;
+  model?: string;
+  effort?: string;
+  reviewer?: string;
+}
 export type ReorderOutcome = { status: MoveOutcome };
 
 // Opt-in debug trace level (loopBoard.debug). `off` = the sink is never touched.
@@ -664,7 +673,7 @@ export class Store {
     });
   }
 
-  async createDraft(text: string, today: string, groomer?: string, model?: string): Promise<DraftOutcome> {
+  async createDraft(text: string, today: string, routing?: DraftRouting): Promise<DraftOutcome> {
     return this.writeLock.run(async () => {
       const doc = parseTodo((await this.readFile(this.todoUri)) ?? '');
       const draft: IndexEntry = {
@@ -673,8 +682,11 @@ export class Store {
         phase: 'new',
         checked: false,
         isDraft: true,
-        model: normalizeModel(model ?? ''),
-        groomer: normalizeGroomer(groomer ?? ''), // accepts the on-hold sentinel too (t-65a2)
+        model: normalizeModel(routing?.model ?? ''),
+        effort: normalizeEffort(routing?.effort ?? ''),
+        groomer: normalizeGroomer(routing?.groomer ?? ''), // accepts the on-hold sentinel too (t-65a2)
+        groomerEffort: normalizeEffort(routing?.groomerEffort ?? ''),
+        reviewer: normalizeReviewer(routing?.reviewer ?? ''),
         questions: [],
         feedback: [],
         unknownLines: [],
@@ -697,6 +709,8 @@ export class Store {
       skeleton.description = draftDescription(text);
       await this.atomicWrite(this.taskUri(draft.id), serializeTaskFile(skeleton, draft.title, draft.id));
       this.debugLog('info', 'createDraft', `${draft.id} = ${draft.title}`);
+      this.debugLog('verbose', 'createDraft-routing', `${draft.id} -> groomer ${draft.groomer ?? '-'}/${draft.groomerEffort ?? '-'}, ` +
+        `worker ${draft.model ?? '-'}/${draft.effort ?? '-'}, reviewer ${draft.reviewer ?? '-'}`);
       this.debugLog('verbose', 'createDraft-description', skeleton.description === undefined
         ? `${draft.id} -> no copy (one line or nothing left once links are stripped)`
         : `${draft.id} -> copied ${skeleton.description.split('\n').length} line(s) into ## Description`);

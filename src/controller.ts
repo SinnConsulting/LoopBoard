@@ -1,14 +1,14 @@
 // Wires store + terminals + panel + sidebar. Handles webview messages and refreshes.
 import * as vscode from 'vscode';
-import { Store } from './store';
-import { TerminalManager, isKnownModel } from './terminals';
+import { Store, DraftRouting } from './store';
+import { TerminalManager } from './terminals';
 import { BoardPanel } from './panel';
 import { SettingsPanel } from './settingspanel';
 import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
-  Model, Board, ResolvedModel, resolveModels, readModelsConfig, BUILTIN_MODEL_IDS,
-  AfterTask, resolveAfterTask, resolveHeldAfterTask,
+  Board, LoopId, LOOP_IDS, isLoopId, resolveModels, readModelsConfig, SetLookup, resolveOrchestrator,
+  resolveTaskDefaults, AfterTask, resolveAfterTask, resolveHeldAfterTask,
 } from './model';
 import {
   ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
@@ -21,13 +21,14 @@ import { tagColorToast } from './tags';
 import { BuildStamp, WEBVIEW_ASSETS, describeStamp, stampsDiffer } from './buildstamp';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
-  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo, MAX_DELAY_MS,
+  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo, MAX_DELAY_MS, busyLoops, inProgressEnded,
 } from './schedule';
 import {
   IdleState, IdleFireContext, IDLE_WARN_MS, resetIdle, observeIdle, idleWarnAt, markWarned, keepRunning,
   describeIdle, describeIdleStop, sanitizeIdleMinutes, decideIdleWarn, decideIdleStop,
 } from './idle';
 import { computeNudges, formatNudge, mergeNudgeItems, NudgeItem } from './nudge';
+import { legacyLoopTerminals } from './loop';
 import { ContextReader, ContextReading } from './contextreader';
 import { AgentEdges, AgentRow, describeAgent, foldAgentEdges, describeAgentEdge, describeAgentSide, rowsForEdges } from './subagents';
 import { autoSyncPopup, decideAutoSync, describeSyncChanges } from './sync';
@@ -99,16 +100,15 @@ function base64ToBytes(dataBase64: string): Uint8Array {
   return bytes;
 }
 
-// Read a split default-model enum setting, falling back to the legacy single `loopBoard.defaultModel`
-// when the new key was never explicitly set — so pre-split configs keep steering both defaults.
-export function readDefaultModel(c: vscode.WorkspaceConfiguration, key: string): Model {
-  const explicit = c.inspect<Model>(key);
-  const set = explicit?.workspaceFolderValue ?? explicit?.workspaceValue ?? explicit?.globalValue;
-  if (set !== undefined) return set;
-  const legacy = c.inspect<Model>('defaultModel');
-  const legacyVal = legacy?.workspaceFolderValue ?? legacy?.workspaceValue ?? legacy?.globalValue;
-  if (legacyVal !== undefined) return legacyVal;
-  return c.get<Model>(key, 'opus');
+// The value a user EXPLICITLY set for a `loopBoard.`-relative key, or undefined when unset. Built
+// on `inspect()` because `get()` cannot tell "unset" from "set to the default", and the read-both
+// fallbacks in src/model.ts (`resolveOrchestrator`, `resolveTaskDefaults`) hinge on exactly that.
+// Undeclared legacy keys read the same way: VSCode keeps unregistered user values.
+export function explicitLookup(c: vscode.WorkspaceConfiguration): SetLookup {
+  return (key: string) => {
+    const i = c.inspect<unknown>(key);
+    return i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue;
+  };
 }
 
 export class Controller {
@@ -117,47 +117,47 @@ export class Controller {
   // Scheduled loop restarts (t-77d1). SESSION-ONLY BY DESIGN: nothing here is persisted to
   // globalState, workspaceState or `.loopboard/`. The terminals themselves die with the window, so
   // a schedule outliving its terminal would be meaningless — a reload clears every schedule.
-  private restartSchedules = new Map<Model, RestartSchedule>();
-  private restartTimers = new Map<Model, ReturnType<typeof setTimeout>>();
-  // Nudges routed to a model whose loop terminal is not running (t-068e): held here and delivered
-  // on the next refresh that finds a terminal — a spawn/recycle fires onDidChangeStatus, which
-  // refreshes. Session-only for the same reason the restart schedules are: the terminals die with
-  // the window. Held items merge and de-duplicate, so a model that stays down for ten board edits
-  // gets ONE line naming each task once, not ten lines.
-  private pendingNudges = new Map<Model, NudgeItem[]>();
+  private restartSchedules = new Map<LoopId, RestartSchedule>();
+  private restartTimers = new Map<LoopId, ReturnType<typeof setTimeout>>();
+  // Nudges for the orchestrator while its terminal is not running (t-068e, single target since
+  // t-0e99): held here and delivered on the next refresh that finds the terminal (a spawn/recycle
+  // fires onDidChangeStatus, which refreshes). Session-only for the same reason the restart
+  // schedules are: the terminals die with the window. Held items merge and de-duplicate, so a loop
+  // that stays down for ten board edits gets ONE line naming each task once, not ten lines.
+  private pendingNudges: NudgeItem[] = [];
   // Context-usage state (t-2b89) — session-only, like the schedules above. `contextUsage` is the
   // last measurement per slot (absent = nothing to show); `contextTripped` remembers WHICH session
   // already tripped the threshold, so a loop sitting above it is restarted once, not every poll;
-  // `contextPending` holds a trip whose slot owns the In-Progress task. Deliberately NOT an entry
+  // `contextPending` holds a trip deferred while the loop is busy. Deliberately NOT an entry
   // in `restartSchedules`: a timed schedule (t-77d1) and a context trip are independent mechanisms
   // that coexist on the same loop — neither replaces or suppresses the other.
-  private contextUsage = new Map<Model, ContextReading>();
-  private contextTripped = new Map<Model, string>();
-  private contextPending = new Set<Model>();
+  private contextUsage = new Map<LoopId, ContextReading>();
+  private contextTripped = new Map<LoopId, string>();
+  private contextPending = new Set<LoopId>();
   // The session id this slot's last restart ENDED (t-c7a2). Every restart path wipes the three
   // maps above, including the `contextTripped` marker that would have suppressed a re-read of the
   // dead session — so the one fact worth keeping is the id we just killed. A reading still carrying
   // it is the old file's echo and is dropped whole (`isStaleSession`), before the threshold is even
   // looked at. Released only by a reading with a DIFFERENT id, never by ■ or ▶: a ▶ after ■ starts
   // a new process with a new id, so the guard is inert there and still covers the same race.
-  private contextEnded = new Map<Model, string>();
+  private contextEnded = new Map<LoopId, string>();
   // Live subagents per slot (t-sbag), filled by the same poll as `contextUsage`. `agentBusy` is the
   // SECOND busy signal next to the tracker's In-Progress task: a loop whose session still has an
   // Agent-tool subagent working is not idle, however idle `.loopboard/` looks (grooming never sets
   // `phase: inprogress`). `agentRows` is what the sidebar's Agents section draws and what the debug
   // log names a held-back restart with. `afterTaskPending` is the afterTask recycle/clear held at
   // the idle edge because a subagent was still running — the same shape as `contextPending`.
-  private agentBusy = new Set<Model>();
-  private agentRows = new Map<Model, AgentRow[]>();
+  private agentBusy = new Set<LoopId>();
+  private agentRows = new Map<LoopId, AgentRow[]>();
   // t-aglg: `agentRows` holds `[]` both for "read fine, nothing live" and for "could not read", so
   // the fail-open is recorded apart (`agentsUnreadable`) for the log lines that must name it. The
   // `agents-start`/`agents-gone` edges diff against `agentBaseline` — the last SUCCESSFUL read —
   // never against `agentRows`, which a failed read clears to keep the sidebar honest.
-  private agentsUnreadable = new Set<Model>();
-  private agentBaseline = new Map<Model, AgentRow[]>();
-  private afterTaskPending = new Set<Model>();
+  private agentsUnreadable = new Set<LoopId>();
+  private agentBaseline = new Map<LoopId, AgentRow[]>();
+  private afterTaskPending = new Set<LoopId>();
   // Idle stop (t-2dd4) — session-only, like everything above. `idleStates` holds a slot's clock
-  // only while it runs (feature on, loop running, slot out of `busyModels`); `idleTimers` is that
+  // only while it runs (feature on, loop running, slot out of `busyLoops`); `idleTimers` is that
   // slot's ONE timer — the warning while the clock runs, the stop while the warning is up.
   // `idleWarnings` is the open popup, keyed by the `warnedAt` stamp it was shown for (t-f350): a
   // progress notification, the one kind VSCode lets an extension close — `close` settles its task
@@ -165,10 +165,10 @@ export class Controller {
   // both on every outcome, so the popup never outlives what it describes; a late cancel is still
   // ignored by stamp. `idleLabels` is what the rows last showed, so the poll repaints a countdown
   // that moved and nothing else.
-  private idleStates = new Map<Model, IdleState>();
-  private idleTimers = new Map<Model, ReturnType<typeof setTimeout>>();
-  private idleWarnings = new Map<Model, { stamp: number; close: () => void; countdown: ReturnType<typeof setInterval> | undefined }>();
-  private idleLabels = new Map<Model, string>();
+  private idleStates = new Map<LoopId, IdleState>();
+  private idleTimers = new Map<LoopId, ReturnType<typeof setTimeout>>();
+  private idleWarnings = new Map<LoopId, { stamp: number; close: () => void; countdown: ReturnType<typeof setInterval> | undefined }>();
+  private idleLabels = new Map<LoopId, string>();
   private contextTimer: ReturnType<typeof setInterval> | undefined;
   // Guards against overlapping polls: the interval and every refresh both trigger one, and each
   // awaits file IO.
@@ -259,10 +259,10 @@ export class Controller {
 
   dispose(): void {
     if (this.contextTimer !== undefined) clearInterval(this.contextTimer);
-    for (const model of [...this.restartTimers.keys()]) this.clearRestartTimer(model);
-    for (const model of [...this.idleTimers.keys()]) this.clearIdleTimer(model);
+    for (const loop of [...this.restartTimers.keys()]) this.clearRestartTimer(loop);
+    for (const loop of [...this.idleTimers.keys()]) this.clearIdleTimer(loop);
     // Close every open idle warning too, so no progress task is left pending (t-f350).
-    for (const model of [...this.idleWarnings.keys()]) this.settleIdleWarning(model, 'superseded');
+    for (const loop of [...this.idleWarnings.keys()]) this.settleIdleWarning(loop, 'superseded');
     for (const id of [...this.autoPromoteTimers.keys()]) this.clearAutoPromoteTimer(id);
   }
 
@@ -274,8 +274,10 @@ export class Controller {
     return {
       permissionMode: c.get<string>('permissionMode', 'auto'),
       interval: c.get<string>('loopInterval', '1m'),
-      defaultWorkerModel: readDefaultModel(c, 'defaultWorkerModel'),
-      defaultGroomerModel: readDefaultModel(c, 'defaultGroomerModel'),
+      // The five per-task defaults and the orchestrator's own spawn values (t-0e99), each with its
+      // read-both fallback to the pre-orchestrator keys until the settings migration is applied.
+      defaults: resolveTaskDefaults(explicitLookup(c)),
+      orchestrator: resolveOrchestrator(explicitLookup(c)),
       afterTask: readAfterTask(c),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       autoSyncTemplates: c.get<boolean>('autoSyncTemplates', true),
@@ -294,7 +296,7 @@ export class Controller {
 
   private async buildWebBoard(board: Board): Promise<WebBoard> {
     const cfg = this.config();
-    const enabledIds = cfg.models.filter((m: ResolvedModel) => m.enabled).map((m: ResolvedModel) => m.id);
+    const enabledIds = cfg.models.filter((m) => m.enabled).map((m) => m.id);
     const loops = this.terminals.status();
     // Decorate each loop row with its armed/pending restart (t-77d1) — recomputed per refresh so
     // the countdown and the "waiting for task" state stay live without extra plumbing.
@@ -328,7 +330,7 @@ export class Controller {
       if (idleLabel) this.idleLabels.set(l.id, idleLabel);
       else this.idleLabels.delete(l.id);
     }
-    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaultWorkerModel, loops, enabledIds, cfg.defaultGroomerModel, new Set(this.autoPromoteArms.keys()));
+    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaults, loops, enabledIds, new Set(this.autoPromoteArms.keys()));
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
     web.love = loveView(
@@ -388,104 +390,86 @@ export class Controller {
     }
   }
 
-  // Steering (t-068e): route each CHANGED task to the one loop that now has something to do and
-  // paste a line naming it into that loop's terminal. The nudge SUPPLEMENTS the every-pass board
-  // re-read, which stays the source of truth — a nudge that is never delivered costs correctness
-  // nothing, so nothing here throws, retries or blocks a refresh.
+  // Steering (t-068e): name each CHANGED task that gives the orchestrator something to do and paste
+  // a line naming it into its terminal (one target since t-0e99). The nudge SUPPLEMENTS the
+  // every-pass board re-read, which stays the source of truth: a nudge that is never delivered
+  // costs correctness nothing, so nothing here throws, retries or blocks a refresh.
   private maybeNudge(prev: Board | undefined, next: Board): void {
     const cfg = this.config();
     if (!cfg.nudgeLoops) return;
+    const loop: LoopId = 'orchestrator';
     // Suppressed items come back through `skipped` (t-6cbf) purely so the automatic decision is
     // visible in the log; the pure module does no logging of its own.
     const skipped: NudgeItem[] = [];
-    const routes = computeNudges(prev?.tasks, next.tasks, {
-      worker: cfg.defaultWorkerModel,
-      groomer: cfg.defaultGroomerModel,
-    }, skipped);
+    const items = computeNudges(prev?.tasks, next.tasks, skipped);
     for (const item of skipped) {
-      this.store.debugLog('verbose', 'nudge-skip', `${item.taskId}:${item.reason} — task-file-only change on a New/DRAFT task, no grooming work`);
+      this.store.debugLog('verbose', 'nudge-skip', `${item.taskId}:${item.reason}: task-file-only change on a New/DRAFT task, no grooming work`);
     }
-    for (const route of routes) {
-      const held = this.pendingNudges.get(route.model) ?? [];
-      // De-duplicate on task id: a task edited twice while its loop was down is named once, with
+    if (items.length) {
+      // De-duplicate on task id: a task edited twice while the loop was down is named once, with
       // the newest reason and the UNION of its change descriptors (pure helper, unit-tested).
-      this.pendingNudges.set(route.model, mergeNudgeItems(held, route.items));
-      this.store.debugLog('verbose', 'nudge-route', `${route.model} <- ${route.items.map((i) => `${i.taskId}:${i.reason}`).join(',')}`);
+      this.pendingNudges = mergeNudgeItems(this.pendingNudges, items);
+      this.store.debugLog('verbose', 'nudge-route', `${loop} <- ${items.map((i) => `${i.taskId}:${i.reason}`).join(',')}`);
     }
-    for (const [model, items] of [...this.pendingNudges]) {
-      if (this.terminals.nudge(model, formatNudge(items))) this.pendingNudges.delete(model);
-      else this.store.debugLog('verbose', 'nudge-hold', `${model} — no terminal, ${items.length} task(s) held for next spawn`);
-    }
+    if (!this.pendingNudges.length) return;
+    if (this.terminals.nudge(loop, formatNudge(this.pendingNudges))) this.pendingNudges = [];
+    else this.store.debugLog('verbose', 'nudge-hold', `${loop}: no terminal, ${this.pendingNudges.length} task(s) held for next spawn`);
   }
 
-  // Auto-recycle: when a model's task leaves In Progress and it has none left, recycle its terminal.
+  // Auto-recycle: when the board's last In-Progress task leaves In Progress, recycle the loop.
   private maybeAutoRecycle(prev: Board | undefined, next: Board): void {
-    if (!prev || this.config().afterTask !== 'recycle') return;
-    const inProgressBy = (b: Board, model: Model): number =>
-      b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? this.config().defaultWorkerModel) === model).length;
-    const busy = this.busyModels(next);
-    for (const model of BUILTIN_MODEL_IDS) {
-      const before = inProgressBy(prev, model);
-      const after = inProgressBy(next, model);
-      if (before > 0 && after === 0) {
-        // The task is done but the session may not be (t-sbag): a subagent it spawned can still be
-        // mid-edit, and recycling now kills it. Hold exactly like a deferred schedule does.
-        if (busy.includes(model)) {
-          this.holdAfterTask(model, next);
-          continue;
-        }
-        // Automatic lifecycle recycle — never steal focus from whatever the user is doing on the
-        // board (e.g. typing in an answer field).
-        this.store.debugLog('info', 'auto-recycle', `${model} — ${this.describeAgents(model, true)}`);
-        this.clearContextTrip(model, 'auto-recycle');
-        this.resetIdleClock(model, 'auto-recycle');
-        this.terminals.recycle(model, true);
+    if (!prev || this.config().afterTask !== 'recycle' || !inProgressEnded(prev.tasks, next.tasks)) return;
+    const busy = this.busyLoops(next);
+    for (const loop of LOOP_IDS) {
+      // The task is done but the session may not be (t-sbag): a subagent it spawned can still be
+      // mid-edit, and recycling now kills it. Hold exactly like a deferred schedule does.
+      if (busy.includes(loop)) {
+        this.holdAfterTask(loop, next);
+        continue;
       }
+      // Automatic lifecycle recycle: never steal focus from whatever the user is doing on the
+      // board (e.g. typing in an answer field).
+      this.store.debugLog('info', 'auto-recycle', `${loop}: ${this.describeAgents(loop, true)}`);
+      this.clearContextTrip(loop, 'auto-recycle');
+      this.resetIdleClock(loop, 'auto-recycle');
+      this.terminals.recycle(loop, true);
     }
   }
 
-  // Clear-after-task: when a model's task leaves In Progress and it has none left, send /clear to its
-  // terminal to reset the conversation context (terminal stays open). Runs after store.load() has
+  // Clear-after-task: when the board's last In-Progress task leaves In Progress, send /clear to the
+  // loop to reset the conversation context (terminal stays open). Runs after store.load() has
   // re-read the just-written TODO.md, so the tracker is persisted before we clear. The 'recycle'
-  // mode never reaches here — the modes are exclusive by construction now, where the old boolean
-  // pair needed an explicit skip.
+  // mode never reaches here: the modes are exclusive by construction.
   private maybeClearSession(prev: Board | undefined, next: Board): void {
-    const cfg = this.config();
-    if (!prev || cfg.afterTask !== 'clear') return;
-    const inProgressBy = (b: Board, model: Model): number =>
-      b.tasks.filter((t) => t.phase === 'inprogress' && (t.model ?? cfg.defaultWorkerModel) === model).length;
-    const busy = this.busyModels(next);
-    for (const model of BUILTIN_MODEL_IDS) {
-      const before = inProgressBy(prev, model);
-      const after = inProgressBy(next, model);
-      if (before > 0 && after === 0) {
-        // Same hold as auto-recycle (t-sbag): `/clear` throws away the context a live subagent's
-        // parent session is still working in.
-        if (busy.includes(model)) {
-          this.holdAfterTask(model, next);
-          continue;
-        }
-        this.store.debugLog('info', 'clear-session', `${model} — ${this.describeAgents(model, true)}`);
-        this.clearContextTrip(model, 'clear-session');
-        this.terminals.clearSession(model);
+    if (!prev || this.config().afterTask !== 'clear' || !inProgressEnded(prev.tasks, next.tasks)) return;
+    const busy = this.busyLoops(next);
+    for (const loop of LOOP_IDS) {
+      // Same hold as auto-recycle (t-sbag): `/clear` throws away the context a live subagent's
+      // parent session is still working in.
+      if (busy.includes(loop)) {
+        this.holdAfterTask(loop, next);
+        continue;
       }
+      this.store.debugLog('info', 'clear-session', `${loop}: ${this.describeAgents(loop, true)}`);
+      this.clearContextTrip(loop, 'clear-session');
+      this.terminals.clearSession(loop);
     }
   }
 
   // ---- afterTask held by a live subagent (t-sbag) ----
 
-  // Records the hold. Idempotent: at most one afterTask action is ever pending per model, exactly
+  // Records the hold. Idempotent: at most one afterTask action is ever pending per loop, exactly
   // like a deferred schedule, and it waits indefinitely.
-  private holdAfterTask(model: Model, board: Board): void {
-    this.afterTaskPending.add(model);
-    this.store.debugLog('info', 'aftertask-defer', `${model} — ${this.describeBusy(model, board)}, waiting for idle`);
+  private holdAfterTask(loop: LoopId, board: Board): void {
+    this.afterTaskPending.add(loop);
+    this.store.debugLog('info', 'aftertask-defer', `${loop}: ${this.describeBusy(loop, board)}, waiting for idle`);
   }
 
   // Drops a hold that something else has already satisfied. Logged (at info) whenever there really
   // was one: a hold that silently disappears is as hard to explain as one that silently fires.
-  private cancelAfterTask(model: Model, reason: string): void {
-    if (!this.afterTaskPending.delete(model)) return;
-    this.store.debugLog('info', 'aftertask-cancel', `${model} (${reason})`);
+  private cancelAfterTask(loop: LoopId, reason: string): void {
+    if (!this.afterTaskPending.delete(loop)) return;
+    this.store.debugLog('info', 'aftertask-cancel', `${loop} (${reason})`);
   }
 
   // The held recycle/clear fires on the same idle edge deferred schedules watch — which, for a
@@ -494,28 +478,28 @@ export class Controller {
   // happen now, and `none` simply drops the hold.
   private flushAfterTask(board: Board): void {
     if (this.afterTaskPending.size === 0) return;
-    const busy = this.busyModels(board);
+    const busy = this.busyLoops(board);
     const mode = this.config().afterTask;
-    for (const model of [...this.afterTaskPending]) {
-      if (busy.includes(model)) continue;
-      this.afterTaskPending.delete(model);
+    for (const loop of [...this.afterTaskPending]) {
+      if (busy.includes(loop)) continue;
+      this.afterTaskPending.delete(loop);
       // The slot may have been stopped or restarted by hand since the hold was recorded, and
       // `terminals.recycle` on a stopped slot is a plain START (dispose-if-present, then always
       // respawn). `resolveHeldAfterTask` is the pure guard against that — see its comment.
-      const running = this.terminals.status().some((l) => l.id === model && l.running);
+      const running = this.terminals.status().some((l) => l.id === loop && l.running);
       const held = resolveHeldAfterTask(mode, running);
       if (held.act === 'skip') {
         this.store.debugLog('info', 'aftertask-skip', held.reason === 'off'
-          ? `${model} — afterTask is off now, nothing to do`
-          : `${model} — loop is not running, nothing to restart`);
+          ? `${loop}: afterTask is off now, nothing to do`
+          : `${loop}: loop is not running, nothing to restart`);
         continue;
       }
-      this.store.debugLog('info', held.act === 'clear' ? 'clear-session' : 'auto-recycle', `${model} (held for a live subagent)`);
-      this.clearContextTrip(model, held.act === 'clear' ? 'clear-session' : 'auto-recycle');
-      if (held.act === 'clear') this.terminals.clearSession(model);
+      this.store.debugLog('info', held.act === 'clear' ? 'clear-session' : 'auto-recycle', `${loop} (held for a live subagent)`);
+      this.clearContextTrip(loop, held.act === 'clear' ? 'clear-session' : 'auto-recycle');
+      if (held.act === 'clear') this.terminals.clearSession(loop);
       else {
-        this.resetIdleClock(model, 'auto-recycle');
-        this.terminals.recycle(model, true);
+        this.resetIdleClock(loop, 'auto-recycle');
+        this.terminals.recycle(loop, true);
       }
     }
   }
@@ -543,24 +527,23 @@ export class Controller {
     // visible — hence the flush pair (plus the afterTask hold) runs here too whenever the busy set
     // actually moved (t-sbag).
     let busyChanged = false;
-    for (const m of cfg.models) {
-      if (!m.enabled) continue;
-      if (!this.terminals.status().some((l) => l.id === m.id && l.running)) {
+    for (const loop of LOOP_IDS) {
+      if (!this.terminals.status().some((l) => l.id === loop && l.running)) {
         // A stopped loop has no context to report and no trip to remember — but its session id is
         // still worth keeping (t-c7a2): this branch runs on the close-event poll during a
         // recycle's 400 ms gap, and wiping `contextTripped` here is exactly what let the reopen
         // poll re-trip on the identical reading it had just acted on.
-        changed = this.contextUsage.has(m.id) || changed;
-        this.rememberEndedSession(m.id);
-        this.contextTripped.delete(m.id);
-        this.contextPending.delete(m.id);
+        changed = this.contextUsage.has(loop) || changed;
+        this.rememberEndedSession(loop);
+        this.contextTripped.delete(loop);
+        this.contextPending.delete(loop);
         // Drop a held afterTask action for the same reason `contextPending` is dropped here: it was
         // recorded against a session that no longer exists, and `terminals.recycle` would start a
         // fresh loop rather than restart one (t-sbag). `flushAfterTask` guards this too; dropping
         // it at the source means a stopped loop never leaves a live hold behind at all.
-        this.cancelAfterTask(m.id, 'loop is not running');
+        this.cancelAfterTask(loop, 'loop is not running');
         // A stopped loop's session is gone, and with it every subagent it owned.
-        if (this.forgetAgents(m.id)) {
+        if (this.forgetAgents(loop)) {
           changed = true;
           busyChanged = true;
         }
@@ -568,11 +551,11 @@ export class Controller {
       }
       // Read the subagents FIRST: the context read below has several early exits, and the busy
       // signal must be refreshed on every poll regardless of whether a measurement came back.
-      if (await this.pollSubagents(m.id)) {
+      if (await this.pollSubagents(loop)) {
         changed = true;
         busyChanged = true;
       }
-      const reading = await this.contextReader.read(m.id, m.model);
+      const reading = await this.contextReader.read(loop, cfg.orchestrator.model);
       if (!reading) {
         // Keep the last reading: a transient miss (transcript mid-write, EBUSY) must not blank the
         // bar and lose a pending trip's label. A stopped loop is cleared above, which is the only
@@ -585,41 +568,41 @@ export class Controller {
       // today's "no measurement" rendering, rather than a stale one), not compared against the
       // threshold and cannot trip. The hysteresis below keeps its meaning for the NEW session; this
       // guard sits in front of it rather than replacing it.
-      if (isStaleSession(reading.sessionId, this.contextEnded.get(m.id))) {
-        this.store.debugLog('verbose', 'context-stale', `${m.id} session ${reading.sessionId} was ended — ignoring`);
+      if (isStaleSession(reading.sessionId, this.contextEnded.get(loop))) {
+        this.store.debugLog('verbose', 'context-stale', `${loop} session ${reading.sessionId} was ended, ignoring`);
         continue;
       }
-      this.contextEnded.delete(m.id);
-      const before = this.contextUsage.get(m.id);
-      this.contextUsage.set(m.id, reading);
+      this.contextEnded.delete(loop);
+      const before = this.contextUsage.get(loop);
+      this.contextUsage.set(loop, reading);
       if (!before || before.used !== reading.used || before.sessionId !== reading.sessionId) changed = true;
       // Re-arm the hysteresis on the way down, so a loop that dropped below the threshold without
       // changing session id (`/clear`, auto-compaction) can trip again.
-      if (shouldClearTrip(reading.percent, cfg.contextPercent) && this.contextTripped.delete(m.id)) {
-        this.store.debugLog('info', 'context-rearm', `${m.id} back to ${reading.percent}% — trip re-armed`);
+      if (shouldClearTrip(reading.percent, cfg.contextPercent) && this.contextTripped.delete(loop)) {
+        this.store.debugLog('info', 'context-rearm', `${loop} back to ${reading.percent}%, trip re-armed`);
       }
-      if (!shouldTrip(reading.percent, cfg.contextPercent, reading.sessionId, this.contextTripped.get(m.id))) continue;
+      if (!shouldTrip(reading.percent, cfg.contextPercent, reading.sessionId, this.contextTripped.get(loop))) continue;
       // Hysteresis: record the session that tripped BEFORE acting, so a loop parked above the
       // threshold is restarted once per session rather than on every poll.
-      this.contextTripped.set(m.id, reading.sessionId);
-      this.store.debugLog('info', 'context-trip', `${m.id} ${reading.percent}% >= ${cfg.contextPercent}% (${reading.used}/${reading.window})`);
+      this.contextTripped.set(loop, reading.sessionId);
+      this.store.debugLog('info', 'context-trip', `${loop} ${reading.percent}% >= ${cfg.contextPercent}% (${reading.used}/${reading.window})`);
       // An UNKNOWN board defers too (the constructor polls before the first refresh): with no
-      // board there is no way to tell whether this slot owns the In-Progress task, and the
-      // fail-open direction is the forbidden one.
-      if (!this.lastBoard || this.busyModels(this.lastBoard).includes(m.id)) {
+      // board there is no way to tell whether a task is In Progress, and the fail-open direction is
+      // the forbidden one.
+      if (!this.lastBoard || this.busyLoops(this.lastBoard).includes(loop)) {
         // NEVER forced: killing a worker mid-task would leave its task `phase: inprogress` with
         // nobody on it, which Rule 2 turns into a board-wide block. A live subagent holds it the
         // same way (t-sbag) — restarting would kill the agent mid-edit. Wait for the idle edge.
-        this.contextPending.add(m.id);
-        const why = this.lastBoard ? this.describeBusy(m.id, this.lastBoard) : 'board not loaded yet';
-        this.store.debugLog('info', 'context-defer', `${m.id} — ${why}, waiting for idle`);
+        this.contextPending.add(loop);
+        const why = this.lastBoard ? this.describeBusy(loop, this.lastBoard) : 'board not loaded yet';
+        this.store.debugLog('info', 'context-defer', `${loop}: ${why}, waiting for idle`);
         changed = true;
         continue;
       }
-      this.fireContextRestart(m.id, cfg.contextAction);
+      this.fireContextRestart(loop, cfg.contextAction);
       changed = true;
     }
-    // The idle edge a finishing subagent produces (t-sbag). Each flush re-checks `busyModels`, so
+    // The idle edge a finishing subagent produces (t-sbag). Each flush re-checks `busyLoops`, so
     // running them here can only release a hold that is genuinely over.
     if (busyChanged && this.lastBoard) {
       this.flushPendingRestarts(this.lastBoard);
@@ -640,38 +623,38 @@ export class Controller {
 
   // Re-reads one slot's live subagents and updates the busy signal. Returns whether the live set
   // changed — a repaint (the rows and their durations are on the sidebar) and a flush attempt.
-  private async pollSubagents(model: Model): Promise<boolean> {
+  private async pollSubagents(loop: LoopId): Promise<boolean> {
     if (!this.contextReader) return false;
     const now = Date.now();
-    const read = await this.contextReader.readSubagents(model, now);
+    const read = await this.contextReader.readSubagents(loop, now);
     const rows = read?.rows;
     // The session this slot's last restart ended (t-c7a2's echo guard, reused for the edges).
-    const ended = this.contextEnded.get(model);
+    const ended = this.contextEnded.get(loop);
     const edgeRows = rowsForEdges(read, ended);
     // Logged on EVERY poll: this is the trail that explains a restart that did not happen. A read
     // failure is named as such — it must never look like a confident "nothing is running".
     this.store.debugLog('verbose', 'agents-read', rows === undefined
-      ? `${model} — could not read this session's subagents`
-      : `${model} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}${edgeRows === undefined ? ` (ended session ${ended} — no edges)` : ''}`);
+      ? `${loop}: could not read this session's subagents`
+      : `${loop} ${rows.length} live${rows.length ? `: ${rows.map((r) => describeAgent(r, now).label).join(', ')}` : ''}${edgeRows === undefined ? ` (ended session ${ended}, no edges)` : ''}`);
     // A failed read is treated as "nothing live": an unreadable path must not hold every automatic
     // restart of this slot forever. Only a subagent we can actually SEE blocks one.
     const live = rows ?? [];
-    const before = this.agentRows.get(model) ?? [];
+    const before = this.agentRows.get(loop) ?? [];
     const same = before.length === live.length && before.every((r, i) => r.id === live[i].id);
-    this.agentRows.set(model, live);
-    if (live.length) this.agentBusy.add(model);
-    else this.agentBusy.delete(model);
+    this.agentRows.set(loop, live);
+    if (live.length) this.agentBusy.add(loop);
+    else this.agentBusy.delete(loop);
     // Lifecycle edges at info (t-aglg), from successful reads only: a failed read emits nothing and
     // leaves the baseline alone, so the next good read diffs against the last good one. A read of
     // the session a restart just ENDED counts as failed for the edges only (`rowsForEdges`) — its
     // killed agents would otherwise log a false `agents-start` now and a second `agents-gone` once
     // the new session resolves. The busy signal above is deliberately left as t-sbag defined it: a
     // `/clear` context action keeps the process, and whether that ends its agents is unverified.
-    if (rows === undefined) this.agentsUnreadable.add(model);
-    else this.agentsUnreadable.delete(model);
+    if (rows === undefined) this.agentsUnreadable.add(loop);
+    else this.agentsUnreadable.delete(loop);
     if (edgeRows !== undefined) {
-      this.logAgentEdges(model, foldAgentEdges(this.agentBaseline.get(model) ?? [], edgeRows), now);
-      this.agentBaseline.set(model, edgeRows);
+      this.logAgentEdges(loop, foldAgentEdges(this.agentBaseline.get(loop) ?? [], edgeRows), now);
+      this.agentBaseline.set(loop, edgeRows);
     }
     return !same;
   }
@@ -679,68 +662,68 @@ export class Controller {
   // Drops a slot's subagent state (its session is gone). Returns whether anything was actually
   // dropped, so a stopped loop only forces one repaint. Agents still in the baseline are logged as
   // `agents-gone` first: the session going away is one of the ways an agent stops being live.
-  private forgetAgents(model: Model): boolean {
-    this.logAgentEdges(model, foldAgentEdges(this.agentBaseline.get(model) ?? [], []), Date.now());
-    this.agentBaseline.delete(model);
-    this.agentsUnreadable.delete(model);
-    const hadRows = (this.agentRows.get(model) ?? []).length > 0;
-    this.agentRows.delete(model);
-    return this.agentBusy.delete(model) || hadRows;
+  private forgetAgents(loop: LoopId): boolean {
+    this.logAgentEdges(loop, foldAgentEdges(this.agentBaseline.get(loop) ?? [], []), Date.now());
+    this.agentBaseline.delete(loop);
+    this.agentsUnreadable.delete(loop);
+    const hadRows = (this.agentRows.get(loop) ?? []).length > 0;
+    this.agentRows.delete(loop);
+    return this.agentBusy.delete(loop) || hadRows;
   }
 
-  private logAgentEdges(model: Model, edges: AgentEdges, now: number): void {
-    for (const row of edges.gone) this.store.debugLog('info', 'agents-gone', `${model} ${describeAgentEdge('gone', row, now)}`);
-    for (const row of edges.started) this.store.debugLog('info', 'agents-start', `${model} ${describeAgentEdge('start', row, now)}`);
+  private logAgentEdges(loop: LoopId, edges: AgentEdges, now: number): void {
+    for (const row of edges.gone) this.store.debugLog('info', 'agents-gone', `${loop} ${describeAgentEdge('gone', row, now)}`);
+    for (const row of edges.started) this.store.debugLog('info', 'agents-start', `${loop} ${describeAgentEdge('start', row, now)}`);
   }
 
-  private fireContextRestart(model: Model, action: ContextAction): void {
-    this.contextPending.delete(model);
+  private fireContextRestart(loop: LoopId, action: ContextAction): void {
+    this.contextPending.delete(loop);
     // This path does not go through `clearContextTrip`, so it cancels the held afterTask action
     // itself — same rule: one restart, not two (t-sbag).
-    this.cancelAfterTask(model, `context ${action}`);
+    this.cancelAfterTask(loop, `context ${action}`);
     // The measurement belongs to the session we are about to end; the next poll measures the new
     // one. Its id is kept as the stale-session guard (t-c7a2) — this is the path the observed
     // restart storm took, and for `action: 'clear'` there is no terminal close/open event to route
     // through `clearContextTrip`.
-    const ended = this.rememberEndedSession(model);
-    this.store.debugLog('info', 'context-fire', `${model} ${action}${ended ? ` — ended session ${ended}` : ''} — ${this.describeAgents(model, true)}`);
+    const ended = this.rememberEndedSession(loop);
+    this.store.debugLog('info', 'context-fire', `${loop} ${action}${ended ? `, ended session ${ended}` : ''}; ${this.describeAgents(loop, true)}`);
     // preserveFocus — an automatic action never steals focus from whatever the user is doing.
-    if (action === 'clear') this.terminals.clearSession(model);
+    if (action === 'clear') this.terminals.clearSession(loop);
     else {
-      this.resetIdleClock(model, 'context recycle');
-      this.terminals.recycle(model, true);
+      this.resetIdleClock(loop, 'context recycle');
+      this.terminals.recycle(loop, true);
     }
   }
 
   // A pending context trip fires on the same idle edge deferred schedules watch.
   private flushPendingContext(board: Board): void {
     if (this.contextPending.size === 0) return;
-    const busy = this.busyModels(board);
+    const busy = this.busyLoops(board);
     const action = this.config().contextAction;
-    for (const model of [...this.contextPending]) {
-      if (!busy.includes(model)) this.fireContextRestart(model, action);
+    for (const loop of [...this.contextPending]) {
+      if (!busy.includes(loop)) this.fireContextRestart(loop, action);
     }
   }
 
   // Any restart of a loop — timed, manual ♻, stop, afterTask — invalidates a pending context trip
   // and its hysteresis marker: both were measured against a session that no longer exists.
-  private clearContextTrip(model: Model, reason: string): void {
+  private clearContextTrip(loop: LoopId, reason: string): void {
     // A held afterTask action goes with it (t-sbag). Whatever restarted this loop — the normal
     // idle edge, a manual ♻, a ■, a timed action — has already given the slot the fresh session
     // the hold was waiting to give it, and firing the hold on top would be a SECOND restart:
     // `terminals.recycle` disposes and respawns 400 ms later, so a duplicate lands inside that
     // window and tears down the terminal the first one just created. Placed above the early return
     // below, which only guards the context-trip half.
-    this.cancelAfterTask(model, reason);
+    this.cancelAfterTask(loop, reason);
     // Remember-then-drop runs UNCONDITIONALLY (t-c7a2); only the log line is conditional on there
     // having been a trip. The old early return skipped a loop that never tripped — but ending its
     // session still leaves a stale bar (threshold 50, loop at 41%, ♻ → the row keeps showing 41%
     // for a session that is gone), and nothing would have recorded the id to suppress it.
-    const ended = this.rememberEndedSession(model);
-    if (!this.contextPending.has(model) && !this.contextTripped.has(model)) return;
-    this.contextPending.delete(model);
-    this.contextTripped.delete(model);
-    this.store.debugLog('info', 'context-clear', `${model} (${reason})${ended ? ` — ended session ${ended}` : ''}`);
+    const ended = this.rememberEndedSession(loop);
+    if (!this.contextPending.has(loop) && !this.contextTripped.has(loop)) return;
+    this.contextPending.delete(loop);
+    this.contextTripped.delete(loop);
+    this.store.debugLog('info', 'context-clear', `${loop} (${reason})${ended ? `, ended session ${ended}` : ''}`);
   }
 
   // Move the last reading's session id into `contextEnded` and drop the measurement: it belongs to
@@ -748,10 +731,10 @@ export class Controller {
   // callers can name it in their own log line. No reading on record = nothing to remember, and the
   // first reading after the restart is accepted — the same files that produced no reading before
   // are the only ones a stale read could come from.
-  private rememberEndedSession(model: Model): string | undefined {
-    const sessionId = this.contextUsage.get(model)?.sessionId;
-    if (sessionId) this.contextEnded.set(model, sessionId);
-    this.contextUsage.delete(model);
+  private rememberEndedSession(loop: LoopId): string | undefined {
+    const sessionId = this.contextUsage.get(loop)?.sessionId;
+    if (sessionId) this.contextEnded.set(loop, sessionId);
+    this.contextUsage.delete(loop);
     return sessionId;
   }
 
@@ -766,33 +749,21 @@ export class Controller {
 
   // ---- scheduled loop restarts (t-77d1) ----
 
-  // Which models currently own an In-Progress task, with an absent `model:` resolved to the default
-  // — the same test maybeAutoRecycle uses. This was the only signal for "busy" until t-sbag added
-  // live subagents beside it (see busyModels); terminal output still can never be read (CLAUDE.md,
-  // src/terminals.ts), so these two files are all there is.
-  private inProgressModels(board: Board): Model[] {
-    const dflt = this.config().defaultWorkerModel;
-    const busy = new Set<Model>();
-    for (const t of board.tasks) if (t.phase === 'inprogress') busy.add(t.model ?? dflt);
-    return [...busy];
-  }
-
-  // The full "do not restart this loop automatically" set (t-sbag): the tracker's In-Progress
-  // owners UNION the slots whose session still has a live subagent. Every AUTOMATIC restart
-  // decision reads this; the manual ♻ button deliberately does not — a human clicking now is
-  // warned in the tooltip and then obeyed.
-  private busyModels(board: Board): Model[] {
-    const busy = new Set<Model>(this.inProgressModels(board));
-    for (const model of this.agentBusy) busy.add(model);
-    return [...busy];
+  // The full "do not restart this loop automatically" set (t-sbag): any In-Progress task UNION a
+  // live subagent in the loop's session (pure `busyLoops`, src/schedule.ts). Every AUTOMATIC
+  // restart decision reads this; the manual ♻ button deliberately does not: a human clicking now is
+  // warned in the tooltip and then obeyed. Terminal output can never be read (CLAUDE.md,
+  // src/terminals.ts), so the tracker and the session files are all there is.
+  private busyLoops(board: Board): LoopId[] {
+    return busyLoops(board.tasks, this.agentBusy);
   }
 
   // Why a slot counts as busy, for the log line that explains a deferral. Both reasons can hold at
   // once, and a deferral nobody can explain is the failure mode of the subagent hold.
-  private describeBusy(model: Model, board: Board): string {
+  private describeBusy(loop: LoopId, board: Board): string {
     const reasons: string[] = [];
-    if (this.inProgressModels(board).includes(model)) reasons.push('task in progress');
-    const rows = this.agentRows.get(model) ?? [];
+    if (board.tasks.some((t) => t.phase === 'inprogress')) reasons.push('task in progress');
+    const rows = this.agentRows.get(loop) ?? [];
     if (rows.length) {
       const now = Date.now();
       reasons.push(`${rows.length} live subagent${rows.length === 1 ? '' : 's'}: ${rows.map((r) => describeAgent(r, now).label).join(', ')}`);
@@ -804,54 +775,54 @@ export class Controller {
   // only the defer paths reach. `acting` is false for a swallowed action, which kills nothing. It
   // reflects the LAST poll, so it can be up to one poll (30 s) old: an agent spawned since then is
   // not named.
-  private describeAgents(model: Model, acting: boolean): string {
-    return describeAgentSide(this.agentRows.get(model) ?? [], this.agentsUnreadable.has(model), acting, Date.now());
+  private describeAgents(loop: LoopId, acting: boolean): string {
+    return describeAgentSide(this.agentRows.get(loop) ?? [], this.agentsUnreadable.has(loop), acting, Date.now());
   }
 
-  // Arms (or replaces) a model's schedule and starts its timer. Force consent is taken by the
+  // Arms (or replaces) a loop's schedule and starts its timer. Force consent is taken by the
   // caller, once, BEFORE this runs — fire time is silent.
-  private armRestart(model: Model, action: LoopAction, minutes: number, repeat: boolean, force: boolean): void {
-    const schedule = armSchedule(model, action, minutes, repeat, force, Date.now());
-    // One schedule per model, whichever button armed it: "start in 5m" and "stop in 10m" on the
+  private armRestart(loop: LoopId, action: LoopAction, minutes: number, repeat: boolean, force: boolean): void {
+    const schedule = armSchedule(loop, action, minutes, repeat, force, Date.now());
+    // One schedule per loop, whichever button armed it: "start in 5m" and "stop in 10m" on the
     // same loop are contradictory, so arming either replaces the other.
-    this.restartSchedules.set(model, schedule);
+    this.restartSchedules.set(loop, schedule);
     this.startRestartTimer(schedule);
-    this.store.debugLog('info', 'restart-arm', `${model} ${action} in ${minutes}m repeat=${repeat} force=${schedule.force}`);
+    this.store.debugLog('info', 'restart-arm', `${loop} ${action} in ${minutes}m repeat=${repeat} force=${schedule.force}`);
   }
 
   private startRestartTimer(schedule: RestartSchedule): void {
-    this.clearRestartTimer(schedule.model);
+    this.clearRestartTimer(schedule.loop);
     const timer = setTimeout(() => {
-      this.restartTimers.delete(schedule.model);
-      this.onRestartDue(schedule.model);
+      this.restartTimers.delete(schedule.loop);
+      this.onRestartDue(schedule.loop);
     }, delayUntilFire(schedule, Date.now()));
-    this.restartTimers.set(schedule.model, timer);
+    this.restartTimers.set(schedule.loop, timer);
   }
 
-  private clearRestartTimer(model: Model): void {
-    const timer = this.restartTimers.get(model);
+  private clearRestartTimer(loop: LoopId): void {
+    const timer = this.restartTimers.get(loop);
     if (timer === undefined) return;
     clearTimeout(timer);
-    this.restartTimers.delete(model);
+    this.restartTimers.delete(loop);
   }
 
-  // Cancels a model's schedule entirely — the popover's Clear button, and stopLoop.
-  private cancelRestart(model: Model, reason: string): void {
-    if (!this.restartSchedules.has(model)) return;
-    this.clearRestartTimer(model);
-    this.restartSchedules.delete(model);
-    this.store.debugLog('info', 'restart-cancel', `${model} (${reason})`);
+  // Cancels a loop's schedule entirely: the popover's Clear button, and stopLoop.
+  private cancelRestart(loop: LoopId, reason: string): void {
+    if (!this.restartSchedules.has(loop)) return;
+    this.clearRestartTimer(loop);
+    this.restartSchedules.delete(loop);
+    this.store.debugLog('info', 'restart-cancel', `${loop} (${reason})`);
   }
 
   // The timer elapsed. Either restart now, or mark the schedule pending and wait — indefinitely —
-  // for the model to go idle. A pending restart is never dropped or expired.
-  private onRestartDue(model: Model): void {
-    const schedule = this.restartSchedules.get(model);
+  // for the loop to go idle. A pending restart is never dropped or expired.
+  private onRestartDue(loop: LoopId): void {
+    const schedule = this.restartSchedules.get(loop);
     if (!schedule) return;
-    if (!this.lastBoard || !mayFire(schedule, this.busyModels(this.lastBoard))) {
-      this.restartSchedules.set(model, deferSchedule(schedule));
-      const why = this.lastBoard ? this.describeBusy(model, this.lastBoard) : 'board not loaded yet';
-      this.store.debugLog('info', 'restart-defer', `${model} — ${why}, waiting for idle`);
+    if (!this.lastBoard || !mayFire(schedule, this.busyLoops(this.lastBoard))) {
+      this.restartSchedules.set(loop, deferSchedule(schedule));
+      const why = this.lastBoard ? this.describeBusy(loop, this.lastBoard) : 'board not loaded yet';
+      this.store.debugLog('info', 'restart-defer', `${loop}: ${why}, waiting for idle`);
       void this.refresh('restart-defer');
       return;
     }
@@ -864,38 +835,38 @@ export class Controller {
   // state that can change before the timer elapses, and doing something else instead (starting a
   // loop the user has since stopped) would be worse than doing nothing.
   private fireRestart(schedule: RestartSchedule): void {
-    const model = schedule.model;
-    this.clearRestartTimer(model);
-    const running = this.terminals.status().some((l) => l.id === model && l.running);
+    const loop = schedule.loop;
+    this.clearRestartTimer(loop);
+    const running = this.terminals.status().some((l) => l.id === loop && l.running);
     if (!appliesTo(schedule.action, running)) {
-      this.store.debugLog('info', 'restart-skip', `${model} ${schedule.action} — loop is ${running ? 'already running' : 'not running'}, nothing to do — ${this.describeAgents(model, false)}`);
+      this.store.debugLog('info', 'restart-skip', `${loop} ${schedule.action}: loop is ${running ? 'already running' : 'not running'}, nothing to do; ${this.describeAgents(loop, false)}`);
     } else {
       // A start ends no session, so it kills nothing even when forced.
-      this.store.debugLog('info', 'restart-fire', `${model} ${schedule.action}${schedule.force ? ' (forced — a task may be mid-flight)' : ''} — ${this.describeAgents(model, schedule.action !== 'start')}`);
-      this.clearContextTrip(model, `timed ${schedule.action}`);
-      this.resetIdleClock(model, `timed ${schedule.action}`);
+      this.store.debugLog('info', 'restart-fire', `${loop} ${schedule.action}${schedule.force ? ' (forced: a task may be mid-flight)' : ''}; ${this.describeAgents(loop, schedule.action !== 'start')}`);
+      this.clearContextTrip(loop, `timed ${schedule.action}`);
+      this.resetIdleClock(loop, `timed ${schedule.action}`);
       // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
       // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
-      if (schedule.action === 'start') this.terminals.spawn(model, true);
-      else if (schedule.action === 'stop') this.terminals.stop(model);
-      else this.terminals.recycle(model, true);
+      if (schedule.action === 'start') this.terminals.spawn(loop, true);
+      else if (schedule.action === 'stop') this.terminals.stop(loop);
+      else this.terminals.recycle(loop, true);
     }
     const next = afterFire(schedule, Date.now());
     if (next) {
-      this.restartSchedules.set(model, next);
+      this.restartSchedules.set(loop, next);
       this.startRestartTimer(next);
     } else {
-      this.restartSchedules.delete(model);
+      this.restartSchedules.delete(loop);
     }
     void this.refresh('restart-fire');
   }
 
   // Called after every board load (and after a subagent poll that moved the busy set): any restart
-  // that was held back fires as soon as its model has neither an In-Progress task nor a live
+  // that was held back fires as soon as its loop has neither an In-Progress task nor a live
   // subagent left.
   private flushPendingRestarts(board: Board): void {
     if (this.restartSchedules.size === 0) return;
-    const busy = this.busyModels(board);
+    const busy = this.busyLoops(board);
     for (const schedule of [...this.restartSchedules.values()]) {
       if (schedule.pending && mayFire(schedule, busy)) this.fireRestart(schedule);
     }
@@ -909,139 +880,139 @@ export class Controller {
   // would be the opposite of what stopping meant — reset the idle clock, dispose the terminal.
   // `note` becomes the `loop-stop` line's detail and is what tells a manual ■ from an idle stop in
   // the log (t-aglg): the ■ passes its agent side, the idle stop prefixes `idle stop`.
-  private stopLoop(model: Model, reason: string, note: string): void {
-    this.clearContextTrip(model, reason);
-    this.cancelRestart(model, reason);
-    this.resetIdleClock(model, reason);
-    this.terminals.stop(model, note);
+  private stopLoop(loop: LoopId, reason: string, note: string): void {
+    this.clearContextTrip(loop, reason);
+    this.cancelRestart(loop, reason);
+    this.resetIdleClock(loop, reason);
+    this.terminals.stop(loop, note);
   }
 
   // ---- idle stop (t-2dd4) ----
 
-  // Observes every slot against `busyModels` and (re)arms its one timer. Called on every refresh
+  // Observes every slot against `busyLoops` and (re)arms its one timer. Called on every refresh
   // and every context poll (the poll is the only place a subagent's start or finish is visible).
-  // Idle = out of `busyModels` and nothing else (human decision, 2026-09-25): no In-Progress task
-  // and no live subagent SEEN — a failed subagent read counts as none, exactly as `busyModels`
+  // Idle = out of `busyLoops` and nothing else (human decision, 2026-09-25): no In-Progress task
+  // and no live subagent SEEN; a failed subagent read counts as none, exactly as `busyLoops`
   // treats it. Feature off, or loop not running → no state, no timer, no row line.
   private observeIdleClocks(board: Board): void {
     const cfg = this.config();
     if (!cfg.idleStopEnabled) {
-      for (const model of [...this.idleStates.keys()]) this.resetIdleClock(model, 'disabled');
+      for (const loop of [...this.idleStates.keys()]) this.resetIdleClock(loop, 'disabled');
       return;
     }
-    const busy = this.busyModels(board);
+    const busy = this.busyLoops(board);
     const running = new Set(this.terminals.status().filter((l) => l.running).map((l) => l.id));
     const now = Date.now();
-    for (const model of BUILTIN_MODEL_IDS) {
-      if (!running.has(model)) {
-        this.resetIdleClock(model, 'loop is not running');
+    for (const loop of LOOP_IDS) {
+      if (!running.has(loop)) {
+        this.resetIdleClock(loop, 'loop is not running');
         continue;
       }
-      const before = this.idleStates.get(model) ?? resetIdle();
-      const after = observeIdle(before, model, busy, now);
+      const before = this.idleStates.get(loop) ?? resetIdle();
+      const after = observeIdle(before, loop, busy, now);
       if (after.idleSince === undefined) {
         if (before.idleSince === undefined) continue; // busy, and no clock to drop
         // Turned busy. During the 30 s warning that is the hold the stop must never go past.
-        const why = this.describeBusy(model, board);
-        if (before.warnedAt !== undefined) this.store.debugLog('info', 'idle-hold', `${model} — ${why} during the idle warning, stop cancelled`);
-        this.resetIdleClock(model, why);
+        const why = this.describeBusy(loop, board);
+        if (before.warnedAt !== undefined) this.store.debugLog('info', 'idle-hold', `${loop}: ${why} during the idle warning, stop cancelled`);
+        this.resetIdleClock(loop, why);
         continue;
       }
       if (before.idleSince === undefined) {
-        this.store.debugLog('verbose', 'idle-start', `${model} — no task in progress, ${this.describeAgents(model, false)}; stop at ${cfg.idleStopMinutes}m`);
+        this.store.debugLog('verbose', 'idle-start', `${loop}: no task in progress, ${this.describeAgents(loop, false)}; stop at ${cfg.idleStopMinutes}m`);
       }
-      this.idleStates.set(model, after);
+      this.idleStates.set(loop, after);
       // Re-armed from the CURRENT minutes on every observation, so a change applied through the
       // settings page (which refreshes) moves the deadline at once. An open warning keeps its stop
       // timer untouched.
-      if (after.warnedAt === undefined) this.armIdleTimer(model, after, cfg.idleStopMinutes);
+      if (after.warnedAt === undefined) this.armIdleTimer(loop, after, cfg.idleStopMinutes);
     }
   }
 
-  private armIdleTimer(model: Model, state: IdleState, minutes: number): void {
+  private armIdleTimer(loop: LoopId, state: IdleState, minutes: number): void {
     const at = idleWarnAt(state, minutes);
     if (at === undefined) return;
-    this.clearIdleTimer(model);
+    this.clearIdleTimer(loop);
     const timer = setTimeout(() => {
-      this.idleTimers.delete(model);
-      this.onIdleWarnDue(model);
+      this.idleTimers.delete(loop);
+      this.onIdleWarnDue(loop);
     }, Math.max(0, Math.min(MAX_DELAY_MS, at - Date.now())));
-    this.idleTimers.set(model, timer);
+    this.idleTimers.set(loop, timer);
   }
 
-  private clearIdleTimer(model: Model): void {
-    const timer = this.idleTimers.get(model);
+  private clearIdleTimer(loop: LoopId): void {
+    const timer = this.idleTimers.get(loop);
     if (timer === undefined) return;
     clearTimeout(timer);
-    this.idleTimers.delete(model);
+    this.idleTimers.delete(loop);
   }
 
   // Drops a slot's clock, timer and open warning. Spawn, recycle, ■, a terminal that closed, the
   // feature turned off, a slot that turned busy: whatever the reason, a popup still on screen for
   // this slot is now stale, so it is closed and its outcome recorded as `superseded` here — a late
   // cancel on it is ignored by stamp.
-  private resetIdleClock(model: Model, reason: string): void {
-    this.clearIdleTimer(model);
-    this.settleIdleWarning(model, 'superseded');
-    if (this.idleStates.delete(model)) this.store.debugLog('verbose', 'idle-reset', `${model} (${reason})`);
+  private resetIdleClock(loop: LoopId, reason: string): void {
+    this.clearIdleTimer(loop);
+    this.settleIdleWarning(loop, 'superseded');
+    if (this.idleStates.delete(loop)) this.store.debugLog('verbose', 'idle-reset', `${loop} (${reason})`);
   }
 
   // Closes the books on an open warning — every outcome (`timeout`, `keep`, `superseded`) comes
   // through here: stops the countdown, closes the popup (settles its progress task) and logs the
   // outcome once.
-  private settleIdleWarning(model: Model, outcome: string): void {
-    const warning = this.idleWarnings.get(model);
+  private settleIdleWarning(loop: LoopId, outcome: string): void {
+    const warning = this.idleWarnings.get(loop);
     if (!warning) return;
-    this.idleWarnings.delete(model);
+    this.idleWarnings.delete(loop);
     if (warning.countdown !== undefined) clearInterval(warning.countdown);
     warning.close();
-    this.store.debugLog('info', 'popup-choice', `idle-stop ${model} -> ${outcome}`);
+    this.store.debugLog('info', 'popup-choice', `idle-stop ${loop} -> ${outcome}`);
   }
 
   // Everything a fire-time decision re-reads. Configuration is read NOW, not remembered: a change
   // made in settings.json with the settings page closed triggers no refresh (t-sgrp). An unknown
   // board counts as busy — the fail-open direction is the forbidden one here, as for the context
   // trip.
-  private idleFireContext(model: Model): IdleFireContext {
+  private idleFireContext(loop: LoopId): IdleFireContext {
     const cfg = this.config();
     return {
       enabled: cfg.idleStopEnabled,
-      running: this.terminals.status().some((l) => l.id === model && l.running),
-      busy: !this.lastBoard || this.busyModels(this.lastBoard).includes(model),
+      running: this.terminals.status().some((l) => l.id === loop && l.running),
+      busy: !this.lastBoard || this.busyLoops(this.lastBoard).includes(loop),
       minutes: cfg.idleStopMinutes,
       now: Date.now(),
     };
   }
 
-  private idleBusyReason(model: Model): string {
-    return this.lastBoard ? this.describeBusy(model, this.lastBoard) : 'board not loaded yet';
+  private idleBusyReason(loop: LoopId): string {
+    return this.lastBoard ? this.describeBusy(loop, this.lastBoard) : 'board not loaded yet';
   }
 
   // The warning timer fired: 30 s before the slot has been idle `minutes`.
-  private onIdleWarnDue(model: Model): void {
-    const state = this.idleStates.get(model);
+  private onIdleWarnDue(loop: LoopId): void {
+    const state = this.idleStates.get(loop);
     if (!state || state.warnedAt !== undefined) return;
-    const ctx = this.idleFireContext(model);
+    const ctx = this.idleFireContext(loop);
     const decision = decideIdleWarn(state, ctx);
     if (decision.act === 'reset') {
-      this.resetIdleClock(model, decision.reason);
+      this.resetIdleClock(loop, decision.reason);
       void this.postBoard();
       return;
     }
     if (decision.act === 'hold') {
       // A claim or a newly seen subagent raced the timer. Never forced: the clock restarts from
       // the next idle edge.
-      this.store.debugLog('info', 'idle-hold', `${model} — ${this.idleBusyReason(model)}, idle warning skipped`);
-      this.resetIdleClock(model, 'busy at warning time');
+      this.store.debugLog('info', 'idle-hold', `${loop}: ${this.idleBusyReason(loop)}, idle warning skipped`);
+      this.resetIdleClock(loop, 'busy at warning time');
       void this.postBoard();
       return;
     }
     if (decision.act === 'rearm') {
       // `minutes` was raised since the timer was armed.
-      this.armIdleTimer(model, state, ctx.minutes);
+      this.armIdleTimer(loop, state, ctx.minutes);
       return;
     }
-    this.showIdleWarning(model, state, ctx.minutes);
+    this.showIdleWarning(loop, state, ctx.minutes);
   }
 
   // Non-modal, never steals focus (t-f350). A progress notification rather than a warning message:
@@ -1049,29 +1020,29 @@ export class Controller {
   // settles — which `settleIdleWarning` does on every outcome. Its one button is the built-in
   // cancel, labelled `Cancel` (not settable), so the title says Cancel keeps the loop running. The
   // 30 s deadline is our own timer, not the notification's.
-  private showIdleWarning(model: Model, state: IdleState, minutes: number): void {
+  private showIdleWarning(loop: LoopId, state: IdleState, minutes: number): void {
     const stamp = Date.now();
     const warned = markWarned(state, stamp);
-    this.idleStates.set(model, warned);
+    this.idleStates.set(loop, warned);
     let close!: () => void;
     const closed = new Promise<void>((resolve) => { close = resolve; });
     const warning = { stamp, close, countdown: undefined as ReturnType<typeof setInterval> | undefined };
-    this.idleWarnings.set(model, warning);
-    this.store.debugLog('info', 'idle-warn', `${model} idle ${minutes}m — no task in progress, ${this.describeAgents(model, false)}; stopping in ${IDLE_WARN_MS / 1000}s unless kept running`);
-    this.clearIdleTimer(model);
-    this.idleTimers.set(model, setTimeout(() => {
-      this.idleTimers.delete(model);
-      this.onIdleStopDue(model, stamp);
+    this.idleWarnings.set(loop, warning);
+    this.store.debugLog('info', 'idle-warn', `${loop} idle ${minutes}m, no task in progress, ${this.describeAgents(loop, false)}; stopping in ${IDLE_WARN_MS / 1000}s unless kept running`);
+    this.clearIdleTimer(loop);
+    this.idleTimers.set(loop, setTimeout(() => {
+      this.idleTimers.delete(loop);
+      this.onIdleStopDue(loop, stamp);
     }, IDLE_WARN_MS));
-    const title = `LoopBoard: the ${model} loop has been idle for ${minutes} min. Cancel keeps it running.`;
+    const title = `LoopBoard: the ${loop} loop has been idle for ${minutes} min. Cancel keeps it running.`;
     this.store.debugLog('info', 'popup', `warning — ${title}`);
     void vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, (progress, token) => {
       // Settled before the task ran: `closed` is already resolved, and no countdown is started.
-      if (this.idleWarnings.get(model) !== warning) return closed;
+      if (this.idleWarnings.get(loop) !== warning) return closed;
       const report = () => progress.report({ message: describeIdle(warned, minutes, Date.now()) });
       report();
       warning.countdown = setInterval(report, 1000);
-      token.onCancellationRequested(() => this.onIdleKeep(model, stamp));
+      token.onCancellationRequested(() => this.onIdleKeep(loop, stamp));
       return closed;
     });
     void this.postBoard();
@@ -1079,39 +1050,39 @@ export class Controller {
 
   // `Cancel` on the warning = Keep running: the clock starts over. Superseded, stopped or already
   // kept (stamp gone or replaced): a late or stale cancel does nothing.
-  private onIdleKeep(model: Model, stamp: number): void {
-    const warning = this.idleWarnings.get(model);
+  private onIdleKeep(loop: LoopId, stamp: number): void {
+    const warning = this.idleWarnings.get(loop);
     if (!warning || warning.stamp !== stamp) return;
-    this.settleIdleWarning(model, 'keep');
-    const state = keepRunning(this.idleStates.get(model) ?? resetIdle(), Date.now());
-    this.idleStates.set(model, state);
-    this.store.debugLog('verbose', 'idle-start', `${model} — kept running, clock restarted`);
-    this.armIdleTimer(model, state, this.config().idleStopMinutes);
+    this.settleIdleWarning(loop, 'keep');
+    const state = keepRunning(this.idleStates.get(loop) ?? resetIdle(), Date.now());
+    this.idleStates.set(loop, state);
+    this.store.debugLog('verbose', 'idle-start', `${loop}: kept running, clock restarted`);
+    this.armIdleTimer(loop, state, this.config().idleStopMinutes);
     void this.postBoard();
   }
 
   // The stop is due: the 30 s ran out (`timeout`, the only outcome that stops).
-  private onIdleStopDue(model: Model, stamp: number): void {
-    const warning = this.idleWarnings.get(model);
+  private onIdleStopDue(loop: LoopId, stamp: number): void {
+    const warning = this.idleWarnings.get(loop);
     if (!warning || warning.stamp !== stamp) return;
-    const state = this.idleStates.get(model);
-    const ctx = this.idleFireContext(model);
+    const state = this.idleStates.get(loop);
+    const ctx = this.idleFireContext(loop);
     const decision = decideIdleStop(state, stamp, ctx);
     if (decision === 'superseded') {
-      this.resetIdleClock(model, !ctx.enabled ? 'disabled' : !ctx.running ? 'loop is not running' : 'superseded');
+      this.resetIdleClock(loop, !ctx.enabled ? 'disabled' : !ctx.running ? 'loop is not running' : 'superseded');
       void this.postBoard();
       return;
     }
     if (decision === 'hold') {
-      this.store.debugLog('info', 'idle-hold', `${model} — ${this.idleBusyReason(model)} during the idle warning, stop cancelled`);
-      this.resetIdleClock(model, 'busy at stop time');
+      this.store.debugLog('info', 'idle-hold', `${loop}: ${this.idleBusyReason(loop)} during the idle warning, stop cancelled`);
+      this.resetIdleClock(loop, 'busy at stop time');
       void this.postBoard();
       return;
     }
-    this.clearIdleTimer(model);
-    this.settleIdleWarning(model, 'timeout');
-    this.store.debugLog('info', 'idle-stop', `${model} ${describeIdleStop(state ?? resetIdle(), ctx.now, this.agentsUnreadable.has(model))}`);
-    this.stopLoop(model, 'idle stop', `idle stop — ${this.describeAgents(model, true)}`);
+    this.clearIdleTimer(loop);
+    this.settleIdleWarning(loop, 'timeout');
+    this.store.debugLog('info', 'idle-stop', `${loop} ${describeIdleStop(state ?? resetIdle(), ctx.now, this.agentsUnreadable.has(loop))}`);
+    this.stopLoop(loop, 'idle stop', `idle stop: ${this.describeAgents(loop, true)}`);
   }
 
   // Whether a row's idle line would read differently from what was last painted — the poll's cue
@@ -1119,9 +1090,9 @@ export class Controller {
   private idleRowsStale(): boolean {
     const minutes = this.config().idleStopMinutes;
     const now = Date.now();
-    for (const model of new Set([...this.idleStates.keys(), ...this.idleLabels.keys()])) {
-      const state = this.idleStates.get(model);
-      if ((state ? describeIdle(state, minutes, now) : '') !== (this.idleLabels.get(model) ?? '')) return true;
+    for (const loop of new Set([...this.idleStates.keys(), ...this.idleLabels.keys()])) {
+      const state = this.idleStates.get(loop);
+      if ((state ? describeIdle(state, minutes, now) : '') !== (this.idleLabels.get(loop) ?? '')) return true;
     }
     return false;
   }
@@ -1130,8 +1101,8 @@ export class Controller {
   // takes force consent ONCE here — a scheduled restart is unattended by definition, so prompting
   // at fire time would either block the restart the user asked for or pop over unrelated work.
   private async onArmRestart(msg: any): Promise<void> {
-    if (!isKnownModel(msg.model)) return;
-    const model = msg.model as Model;
+    if (!isLoopId(msg.loop)) return;
+    const loop: LoopId = msg.loop;
     // Absent action = the original ♻-only shape; keep restart as the default so an older webview
     // payload still arms what it meant.
     const action: LoopAction = isLoopAction(msg.action) ? msg.action : 'restart';
@@ -1142,13 +1113,13 @@ export class Controller {
     }
     const repeat = !!msg.repeat;
     const force = supportsForce(action) && !!msg.force;
-    if (force && !(await this.confirmForcedRestart(model, action))) {
-      this.store.debugLog('info', 'gate-cancelled', `restart-force ${model} ${action}`);
+    if (force && !(await this.confirmForcedRestart(loop, action))) {
+      this.store.debugLog('info', 'gate-cancelled', `restart-force ${loop} ${action}`);
       return this.refresh('restart-arm');
     }
-    this.armRestart(model, action, minutes, repeat, force);
+    this.armRestart(loop, action, minutes, repeat, force);
     const verb = action === 'start' ? 'Starting' : action === 'stop' ? 'Stopping' : 'Restarting';
-    this.toast('success', repeat ? `${verb} ${model} every ${minutes}m.` : `${verb} ${model} in ${minutes}m.`, undefined, 'check');
+    this.toast('success', repeat ? `${verb} the ${loop} loop every ${minutes}m.` : `${verb} the ${loop} loop in ${minutes}m.`, undefined, 'check');
     return this.refresh('restart-arm');
   }
 
@@ -1157,9 +1128,9 @@ export class Controller {
   // `inprogress` in `.loopboard/TODO.md` with nobody on it — and LOOP.md Rule 2's global
   // single-task limit means that stale entry then blocks EVERY loop from claiming work until a
   // human fixes it. Only reachable for the two actions that can kill a working terminal.
-  private async confirmForcedRestart(model: Model, action: LoopAction): Promise<boolean> {
+  private async confirmForcedRestart(loop: LoopId, action: LoopAction): Promise<boolean> {
     const verb = action === 'stop' ? 'stop' : 'restart';
-    const message = `Force-${verb} ${model} even while it is working on a task?`;
+    const message = `Force-${verb} the ${loop} loop even while it is working on a task?`;
     const confirmLabel = `Arm forced ${verb}`;
     this.store.debugLog('info', 'popup', `confirm — ${message}`);
     const choice = await vscode.window.showWarningMessage(
@@ -1171,7 +1142,7 @@ export class Controller {
       confirmLabel
     );
     const accepted = choice === confirmLabel;
-    this.store.debugLog('info', 'popup-choice', `confirm-force-${verb} ${model} -> ${accepted ? 'accepted' : 'cancelled'}`);
+    this.store.debugLog('info', 'popup-choice', `confirm-force-${verb} ${loop} -> ${accepted ? 'accepted' : 'cancelled'}`);
     return accepted;
   }
 
@@ -1214,12 +1185,10 @@ export class Controller {
         this.disarmPromote(String(msg.taskId ?? ''), 'right-click');
         return this.refresh('auto-promote-disarm');
       case 'createDraft': {
-        // Ungroomed drafts carry explicit groomer/model (default when unspecified) so a loop
-        // knows unambiguously who grooms and works the story — never left to the implicit default.
-        const cfg = this.config();
-        const groomer = String(msg.groomer ?? '') || cfg.defaultGroomerModel;
-        const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
-        await this.store.createDraft(String(msg.text ?? ''), today(), groomer, model);
+        // Ungroomed drafts carry every routing value explicitly (default when unspecified, t-0e99)
+        // so the orchestrator knows unambiguously how to groom, work and review the story, never
+        // left to the implicit default.
+        await this.store.createDraft(String(msg.text ?? ''), today(), this.draftRouting(msg));
         this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
       }
@@ -1231,9 +1200,7 @@ export class Controller {
         const attachments: unknown[] = Array.isArray(msg.attachments) ? msg.attachments : [];
         if (!text) return;
         const cfg = this.config();
-        const groomer = String(msg.groomer ?? '') || cfg.defaultGroomerModel;
-        const model = String(msg.model ?? '') || cfg.defaultWorkerModel;
-        const draft = await this.store.createDraft(text, today(), groomer, model);
+        const draft = await this.store.createDraft(text, today(), this.draftRouting(msg));
         if (draft.id) {
           // Stage bytes only (no auto-append) and then resolve the composer's caret-inserted
           // `[name](loopboard-pending:<n>)` placeholders to the real staged cache paths.
@@ -1255,34 +1222,34 @@ export class Controller {
         return this.refresh();
       }
       case 'spawnLoop':
-        if (isKnownModel(msg.model)) {
+        if (isLoopId(msg.loop)) {
           // A ▶ on a running loop only reveals it, so the clock is reset only for a real start.
-          if (!this.terminals.status().some((l) => l.id === msg.model && l.running)) this.resetIdleClock(msg.model, 'loop started');
-          this.terminals.spawn(msg.model);
+          if (!this.terminals.status().some((l) => l.id === msg.loop && l.running)) this.resetIdleClock(msg.loop, 'loop started');
+          this.terminals.spawn(msg.loop);
         }
         return;
       case 'revealTerminal':
-        if (isKnownModel(msg.model)) this.terminals.reveal(msg.model);
+        if (isLoopId(msg.loop)) this.terminals.reveal(msg.loop);
         return;
       case 'recycleLoop':
         // Left-click ♻ — restart right now. The scheduling popover is right-click (t-77d1
         // feedback); an armed schedule is left alone, since restarting now says nothing about
         // whether the user still wants the later one.
-        if (isKnownModel(msg.model)) {
-          this.clearContextTrip(msg.model, 'manual restart');
-          this.resetIdleClock(msg.model, 'manual restart');
+        if (isLoopId(msg.loop)) {
+          this.clearContextTrip(msg.loop, 'manual restart');
+          this.resetIdleClock(msg.loop, 'manual restart');
           // The manual button ignores the subagent hold, so its log line records what it killed.
-          this.terminals.recycle(msg.model, false, this.describeAgents(msg.model, true));
+          this.terminals.recycle(msg.loop, false, this.describeAgents(msg.loop, true));
         }
         return;
       case 'stopLoop':
-        if (isKnownModel(msg.model)) this.stopLoop(msg.model, 'loop stopped', this.describeAgents(msg.model, true));
+        if (isLoopId(msg.loop)) this.stopLoop(msg.loop, 'loop stopped', this.describeAgents(msg.loop, true));
         return;
       case 'armRestart':
         return this.onArmRestart(msg);
       case 'clearRestart':
-        if (isKnownModel(msg.model)) {
-          this.cancelRestart(msg.model, 'cleared from the popover');
+        if (isLoopId(msg.loop)) {
+          this.cancelRestart(msg.loop, 'cleared from the popover');
           return this.refresh('restart-clear');
         }
         return;
@@ -1403,6 +1370,42 @@ export class Controller {
     }
   }
 
+  // A new draft's routing values (t-0e99): the composer's picks, else the configured defaults, so
+  // the draft carries all five explicitly. A value off its role's list is dropped by the store.
+  private draftRouting(msg: any): DraftRouting {
+    const d = this.config().defaults;
+    const pick = (v: unknown, dflt: string): string => (typeof v === 'string' && v !== '' ? v : dflt);
+    return {
+      groomer: pick(msg.groomer, d.groomer),
+      groomerEffort: pick(msg.groomerEffort, d.groomerEffort),
+      model: pick(msg.model, d.worker),
+      effort: pick(msg.effort, d.workerEffort),
+      reviewer: pick(msg.reviewer, d.reviewer),
+    };
+  }
+
+  // Run once per activation (t-0e99): VSCode can revive terminals across the reload that installed
+  // this version, so a per-model `Claude Opus|Sonnet|Fable` loop may still be running the old
+  // instructions. One native warning offers to stop them all; the template's legacy guard covers a
+  // user who ignores it once Sync has pushed the new LOOP.md.
+  async maybeStopLegacyLoops(): Promise<void> {
+    const legacy = legacyLoopTerminals(this.terminals.openTerminalNames());
+    if (!legacy.length) {
+      this.store.debugLog('verbose', 'legacy-loops', 'none open');
+      return;
+    }
+    const message = `LoopBoard now runs one Orchestrator loop. ${legacy.length === 1 ? 'A per-model loop terminal is' : `${legacy.length} per-model loop terminals are`} still open (${legacy.join(', ')}). Stop ${legacy.length === 1 ? 'it' : 'them'}?`;
+    const stop = 'Stop';
+    this.store.debugLog('info', 'popup', `warning: ${message}`);
+    const choice = await vscode.window.showWarningMessage(message, stop);
+    if (choice !== stop) {
+      this.store.debugLog('info', 'popup-choice', `legacy-loops -> ${choice ?? 'dismissed'}`);
+      return;
+    }
+    const stopped = this.terminals.disposeTerminals(legacy);
+    this.store.debugLog('info', 'popup-choice', `legacy-loops -> stop (${stopped} terminal(s) disposed)`);
+  }
+
   // ---- LoopBoard's own settings page (t-sgrp) ----
 
   // The page's whole content comes from here: LoopBoard reads its OWN manifest back at runtime, so
@@ -1421,8 +1424,8 @@ export class Controller {
     const { panel, created } = SettingsPanel.show(this.extensionUri, () => {
       this.store.debugLog('info', 'settings-config-change', 'loopBoard.* changed — repainting the settings page and the board');
       // TWO repaints, because a `loopBoard.*` change moves two surfaces. Everything the board and
-      // sidebar draw from configuration — the enabled slot rows, the default worker/groomer marks,
-      // the context threshold — is read on demand inside `config()`, and `refresh()` is the only
+      // sidebar draw from configuration (the enabled models, the five defaults, the loop hint,
+      // the context threshold) is read on demand inside `config()`, and `refresh()` is the only
       // path that pushes a repaint to them; without this call they keep showing the OLD values
       // until an unrelated `.loopboard/` write or terminal event happens to refresh them.
       // Both are started, never chained: an await (or a rejection) in one must not skip the other.
@@ -1446,12 +1449,7 @@ export class Controller {
       values[key] = { defaultValue: inspected?.defaultValue, globalValue: inspected?.globalValue };
     }
     this.store.debugLog('verbose', 'settings-render', `${sections.length} section(s), ${Object.keys(values).length} key(s)`);
-    const c = vscode.workspace.getConfiguration('loopBoard');
-    const grid = buildModelGrid(
-      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
-      readDefaultModel(c, 'defaultWorkerModel'),
-      readDefaultModel(c, 'defaultGroomerModel'),
-    );
+    const grid = this.currentGrid();
     SettingsPanel.current.post({
       type: 'settings',
       form: buildSettingsForm(sections, values),
@@ -1521,16 +1519,24 @@ export class Controller {
     return this.writeConfig(resetPatch(key));
   }
 
+  // The grid as the spawn and the board would resolve it now (t-0e99). The `--model` field shows the
+  // RAW configured string (the new key, else the legacy Opus slot key it falls back to), so an unset
+  // field reads as "default" and can be cleared back to it.
+  private currentGrid() {
+    const c = vscode.workspace.getConfiguration('loopBoard');
+    const set = explicitLookup(c);
+    const raw = set('orchestrator.model') ?? set('models.opus.model');
+    return buildModelGrid(
+      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
+      { raw: typeof raw === 'string' ? raw : '', resolved: resolveOrchestrator(set) },
+      resolveTaskDefaults(set),
+    );
+  }
+
   // One grid cell edit. The grid is a different PRESENTATION of ordinary settings, so it lands in
   // the same write path; only the validation differs (pure, unit-tested in src/settingsgrid.ts).
   private async onGridPatch(slot: unknown, field: unknown, raw: unknown): Promise<void> {
-    const c = vscode.workspace.getConfiguration('loopBoard');
-    const grid = buildModelGrid(
-      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
-      readDefaultModel(c, 'defaultWorkerModel'),
-      readDefaultModel(c, 'defaultGroomerModel'),
-    );
-    const result = gridPatch(grid, slot, field, raw);
+    const result = gridPatch(this.currentGrid(), slot, field, raw);
     if (!result.ok) {
       this.store.debugLog('info', 'settings-reject', `${String(slot)}.${String(field)} — ${result.reason}`);
       SettingsPanel.current?.post({ type: 'settingsError', slot, field, reason: result.reason });

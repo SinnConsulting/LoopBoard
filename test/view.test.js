@@ -5,6 +5,9 @@ const assert = require('node:assert/strict');
 
 const { parseDone } = require('../out-test/parser.js');
 const { computeBadge, toWebviewBoard, computeConcurrency } = require('../out-test/view.js');
+const { TASK_DEFAULTS } = require('../out-test/model.js');
+// The five per-task defaults the board is built with (t-0e99), with Opus as the default worker.
+const D = { ...TASK_DEFAULTS, worker: 'opus' };
 
 // Minimal composed task (index + detail fields flattened, as store.compose produces).
 function task(over) {
@@ -73,7 +76,7 @@ test('dependency marked met when its id is in DONE (IndexEntry[])', () => {
     done: parseDone('## Tasks\n\n- [x] dep\n  - id: t-9c2e\n  - completed: 2026-07-01'),
     tasks: [task({ id: 't-dd01', dependsOn: ['t-9c2e', 't-missing'] })],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   const card = web.phases.backlog[0];
   assert.equal(card.dependsOn[0].met, true);
   assert.equal(card.dependsOn[1].met, false);
@@ -84,7 +87,7 @@ test('hasDetailFile flows to the webview payload', () => {
     preamble: '', done: [],
     tasks: [task({ id: 't-1', phase: 'new', hasDetailFile: false })],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.phases.new[0].hasDetailFile, false);
 });
 
@@ -95,7 +98,7 @@ test('groomer: none reaches the webview payload uncoerced', () => {
     preamble: '', done: [],
     tasks: [task({ id: 't-1', phase: 'new', groomer: 'none' })],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.phases.new[0].groomer, 'none');
 });
 
@@ -108,7 +111,7 @@ test('feedback maps to the feedback[] item list on every phase (t-ae10); the not
       task({ id: 't-3', phase: 'backlog' }),
     ],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.deepEqual(web.phases.inprogress[0].feedback, ['a', 'b']);
   assert.deepEqual(web.phases.review[0].feedback, ['c']);
   assert.deepEqual(web.phases.backlog[0].feedback, [], 'no feedback = empty list, not null');
@@ -136,7 +139,8 @@ test('computeConcurrency: one In Progress + a Backlog task → Active Queue name
     ],
   };
   const c = computeConcurrency(board, 'opus');
-  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet' }]);
+  // Each row carries the task's worker model AND effort (t-0e99), defaults filled in.
+  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet', effort: 'auto' }]);
   assert.deepEqual(c.skipped, [{ id: 't-prep', title: 'Prepared' }]);
   assert.equal(c.breached, false);
   assert.equal(c.message, 'Active Queue: t-run (sonnet)');
@@ -183,7 +187,7 @@ test('computeConcurrency flows onto the WebBoard payload', () => {
     preamble: '', done: [],
     tasks: [task({ id: 't-run', phase: 'inprogress', model: 'sonnet' }), task({ id: 't-prep', phase: 'backlog' })],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.concurrency.message, 'Active Queue: t-run (sonnet)');
 });
 
@@ -193,7 +197,7 @@ test('DONE entries render from the slim IndexEntry (no detail)', () => {
     done: parseDone('## Tasks\n\n- [x] Shipped\n  - id: t-1\n  - model: sonnet\n  - completed: 2026-07-01'),
     tasks: [],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.phases.done.length, 1);
   assert.equal(web.phases.done[0].title, 'Shipped');
   assert.equal(web.phases.done[0].completed, '2026-07-01');
@@ -207,7 +211,7 @@ test('DONE entries carry description/delivered through from their task file', ()
     done: [{ ...entry, description: 'Story text.', delivered: 'What shipped.' }],
     tasks: [],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.phases.done[0].description, 'Story text.');
   assert.equal(web.phases.done[0].delivered, 'What shipped.');
 });
@@ -220,7 +224,7 @@ test('WebTask carries problem/goals for an active task, defaulting to empty stri
       task({ id: 't-2' }),
     ],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   const [withSections, without] = web.phases.backlog;
   assert.equal(withSections.problem, 'It is broken.');
   assert.equal(withSections.goals, '- Fix it.');
@@ -237,7 +241,7 @@ test('DONE entries carry problem/goals through as well, so the Done card can sho
     done: [{ ...entry, problem: 'It was broken.', description: 'Story.', goals: '- Fixed.', delivered: 'What shipped.' }],
     tasks: [],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.phases.done[0].problem, 'It was broken.');
   assert.equal(web.phases.done[0].goals, '- Fixed.');
 });
@@ -256,12 +260,12 @@ test('autoPromote flags exactly the armed task ids, DRAFTs included', () => {
       task({ id: 't-5', phase: 'backlog' }),
     ],
   };
-  const web = toWebviewBoard(board, 'ws', 'opus', [], [], 'opus', new Set(['t-1', 't-3']));
+  const web = toWebviewBoard(board, 'ws', D, [], [], new Set(['t-1', 't-3']));
   const flagged = Object.values(web.phases).flat().filter((t) => t.autoPromote).map((t) => t.id);
   assert.deepEqual(flagged, ['t-1', 't-3']);
   for (const t of Object.values(web.phases).flat()) assert.equal(typeof t.autoPromote, 'boolean', t.id);
   // Omitted set (every existing caller) = nothing armed.
-  const plain = toWebviewBoard(board, 'ws', 'opus', []);
+  const plain = toWebviewBoard(board, 'ws', D, []);
   assert.equal(Object.values(plain.phases).flat().some((t) => t.autoPromote), false);
 });
 
@@ -285,7 +289,7 @@ const tagBoard = () => ({
 });
 
 test('WebTask.tags is filled for active tasks and for Done entries', () => {
-  const web = toWebviewBoard(tagBoard(), 'ws', 'opus', []);
+  const web = toWebviewBoard(tagBoard(), 'ws', D, []);
   assert.deepEqual(web.phases.new[0].tags, ['bug']);
   assert.deepEqual(web.phases.backlog[0].tags, ['feature', 'bug']);
   assert.deepEqual(web.phases.review[0].tags, []);
@@ -293,7 +297,7 @@ test('WebTask.tags is filled for active tasks and for Done entries', () => {
 });
 
 test('the payload carries the catalogue: registry plus tags in use, sorted, with color, open and Done counts', () => {
-  const web = toWebviewBoard(tagBoard(), 'ws', 'opus', []);
+  const web = toWebviewBoard(tagBoard(), 'ws', D, []);
   assert.deepEqual(web.tags, [
     { name: 'bug', color: 'red', open: 3, done: 1 },
     { name: 'docs', color: null, open: 0, done: 1 },
@@ -307,7 +311,7 @@ test('the payload carries the catalogue: registry plus tags in use, sorted, with
 test('the Done count covers every DONE.md entry, not only the 50 the Done tab shows', () => {
   const board = tagBoard();
   board.done = Array.from({ length: 60 }, (_, i) => doneEntry({ id: `t-x${i}`, tags: ['bug'] }));
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.equal(web.phases.done.length, 50);
   assert.equal(web.tags.find((t) => t.name === 'bug').done, 60);
   assert.equal(web.tagOverviews.bug.phases.done.length, 60);
@@ -327,7 +331,7 @@ test('tagOverview: total, done and the tagged ids per phase in pipeline order (d
 });
 
 test('the overview rows carry the other tags, unanswered count and the owning model', () => {
-  const web = toWebviewBoard(tagBoard(), 'ws', 'opus', []);
+  const web = toWebviewBoard(tagBoard(), 'ws', D, []);
   const ov = web.tagOverviews.bug;
   assert.equal(ov.total, 4);
   assert.equal(ov.done, 1);
@@ -342,8 +346,40 @@ test('the overview rows carry the other tags, unanswered count and the owning mo
 test('tagsInUse is empty when no task carries a tag, even with a non-empty registry', () => {
   const board = { preamble: '', tasks: [task({ id: 't-1' })], done: [doneEntry({ id: 't-2' })], tagRegistry: [{ name: 'bug', color: 'red' }] };
   assert.deepEqual(tagsInUse(board), []);
-  const web = toWebviewBoard(board, 'ws', 'opus', []);
+  const web = toWebviewBoard(board, 'ws', D, []);
   assert.deepEqual(web.tagsInUse, []);
   assert.deepEqual(web.tagOverviews, {});
   assert.deepEqual(web.tags, [{ name: 'bug', color: 'red', open: 0, done: 0 }]);
+});
+
+// ---- t-0e99: the routing fields and the five defaults reach the payload ----
+
+test('the five defaults ride the payload, and each task carries effort, groomer-effort and reviewer', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [
+      task({ id: 't-1', phase: 'backlog', model: 'haiku', effort: 'high', groomer: 'auto', groomerEffort: 'xhigh', reviewer: 'none' }),
+      task({ id: 't-2', phase: 'backlog' }),
+    ],
+  };
+  const defaults = { groomer: 'auto', groomerEffort: 'low', worker: 'haiku', workerEffort: 'medium', reviewer: 'fable' };
+  const web = toWebviewBoard(board, 'ws', defaults, [], ['opus', 'haiku']);
+  assert.equal(web.defaultGroomerModel, 'auto');
+  assert.equal(web.defaultGroomerEffort, 'low');
+  assert.equal(web.defaultWorkerModel, 'haiku');
+  assert.equal(web.defaultWorkerEffort, 'medium');
+  assert.equal(web.defaultReviewerModel, 'fable');
+  assert.deepEqual(web.models, ['opus', 'haiku']);
+  const [set, unset] = web.phases.backlog;
+  assert.deepEqual([set.model, set.effort, set.groomer, set.groomerEffort, set.reviewer], ['haiku', 'high', 'auto', 'xhigh', 'none']);
+  assert.deepEqual([unset.model, unset.effort, unset.groomer, unset.groomerEffort, unset.reviewer], [null, null, null, null, null], 'absent = default, never filled in on the card');
+});
+
+test('the In Progress rows show the worker model and effort, resolved against the defaults', () => {
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-1', title: 'A', phase: 'inprogress', effort: 'xhigh' })],
+  };
+  const web = toWebviewBoard(board, 'ws', { ...D, worker: 'sonnet', workerEffort: 'auto' }, []);
+  assert.deepEqual(web.concurrency.inProgress, [{ id: 't-1', title: 'A', model: 'sonnet', effort: 'xhigh' }]);
 });

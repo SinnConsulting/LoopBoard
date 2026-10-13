@@ -1,8 +1,8 @@
 /* LoopBoard's own settings page (t-sgrp). Vanilla JS, no framework.
 
    This file draws NOTHING of its own: the host derives the whole form from the extension's
-   `contributes.configuration` (src/settingsform.ts) plus the hand-built model grid
-   (src/settingsgrid.ts) and posts both. A setting added to package.json later therefore shows up
+   `contributes.configuration` (src/settingsform.ts) plus the hand-built Orchestrator block and
+   Models table (src/settingsgrid.ts) and posts both. A setting added to package.json later therefore shows up
    here without a line of change in this file, and the page can never drift from the manifest.
 
    Every edit goes back to the host, which re-validates it (the webview is never trusted) and writes
@@ -204,79 +204,91 @@
         controlFor(control)));
   }
 
-  // ---- the one hand-built block: the model grid ----
+  // ---- the one hand-built block (t-0e99): the Orchestrator block + the Models table ----
   function gridTable() {
     const grid = state.grid;
-    // The two radio columns are `loopBoard.defaultWorkerModel` / `defaultGroomerModel` — a single
-    // choice across all slots. Labelled bare, a filled radio reads as "this slot is a worker", which
-    // is not what it means: EVERY enabled slot can work, exactly one is the DEFAULT. So the word is
-    // stacked ABOVE the role rather than put in front of it — a one-line `default worker` would add
-    // ~80px of nowrap header to a table that is already the widest thing on the page, while stacked
-    // the column's intrinsic width is still just `groomer` and the layout does not move.
-    const roleHead = (role) => h('th', {}, h('span', { class: 'th-q' }, 'default'), role);
-    const head = h('tr', {},
-      h('th', { class: 'left' }, 'Slot'), h('th', {}, 'on'), roleHead('worker'), roleHead('groomer'),
-      h('th', { class: 'left' }, '--model'), h('th', {}, 'effort'), h('th', {}, 'groomers'));
-    const body = h('tbody', {});
+    const o = grid.orchestrator;
 
-    for (const row of grid.rows) {
-      const modelInput = h('input', {
-        type: 'text', value: row.model, placeholder: 'default', 'aria-label': row.label + ' --model string',
-      });
-      const modelError = h('div', { class: 'err' }, errors[row.id + '/model'] || '');
-      modelInput.addEventListener('input', () => {
-        const bad = modelInput.value.trim() !== '' && !VALID_MODEL.test(modelInput.value.trim());
-        modelInput.classList.toggle('invalid', bad);
-        modelError.textContent = bad
-          ? 'not a valid --model string — it would be ignored and ' + row.id + ' spawned instead'
-          : '';
-      });
-      modelInput.addEventListener('change', () => gridEdit(row.id, 'model', modelInput.value));
-
-      const effort = h('select', { 'aria-label': row.label + ' effort' });
-      for (const level of grid.efforts) {
-        effort.append(h('option', { value: level, selected: level === row.effort }, level));
-      }
-      effort.addEventListener('change', () => gridEdit(row.id, 'effort', effort.value));
-
-      const groomers = h('input', {
-        type: 'number', min: '1', value: String(row.groomConcurrency),
-        'aria-label': row.label + ' grooming concurrency',
-      });
-      groomers.addEventListener('change', () => gridEdit(row.id, 'groomConcurrency', Number(groomers.value)));
-
-      body.append(h('tr', { class: row.enabled ? '' : 'disabled' },
-        h('td', { class: 'left always' }, h('span', { class: 'slot' }, row.label)),
-        h('td', { class: 'always' }, toggle(row.enabled, row.label + ' slot enabled', (v) => gridEdit(row.id, 'enabled', v))),
-        h('td', {}, h('button', {
-          class: 'radio', type: 'button', role: 'radio', 'aria-checked': row.worker ? 'true' : 'false',
-          'aria-label': row.label + ' is the default worker',
-          onclick: () => gridEdit(row.id, 'worker', true),
-        })),
-        h('td', {}, h('button', {
-          class: 'radio', type: 'button', role: 'radio', 'aria-checked': row.groomer ? 'true' : 'false',
-          'aria-label': row.label + ' is the default groomer',
-          onclick: () => gridEdit(row.id, 'groomer', true),
-        })),
+    // The one loop's own spawn values: its `--model`, `--effort` and grooming cap.
+    const modelInput = h('input', {
+      type: 'text', value: o.model, placeholder: 'opus', 'aria-label': 'Orchestrator --model string',
+    });
+    const modelError = h('div', { class: 'err' }, errors['orchestrator/model'] || '');
+    modelInput.addEventListener('input', () => {
+      const bad = modelInput.value.trim() !== '' && !VALID_MODEL.test(modelInput.value.trim());
+      modelInput.classList.toggle('invalid', bad);
+      modelError.textContent = bad ? 'not a valid --model string, so opus would be spawned instead' : '';
+    });
+    modelInput.addEventListener('change', () => gridEdit('orchestrator', 'model', modelInput.value));
+    const effort = h('select', { 'aria-label': 'Orchestrator effort' });
+    for (const level of grid.efforts) effort.append(h('option', { value: level, selected: level === o.effort }, level));
+    effort.addEventListener('change', () => gridEdit('orchestrator', 'effort', effort.value));
+    const groomers = h('input', {
+      type: 'number', min: '1', value: String(o.groomConcurrency), 'aria-label': 'Orchestrator grooming concurrency',
+    });
+    groomers.addEventListener('change', () => gridEdit('orchestrator', 'groomConcurrency', Number(groomers.value)));
+    const orchestrator = h('table', { class: 'orchestrator' },
+      h('thead', {}, h('tr', {},
+        h('th', { class: 'left' }, 'Orchestrator'), h('th', { class: 'left' }, '--model'), h('th', {}, 'effort'), h('th', {}, 'groomers'))),
+      h('tbody', {}, h('tr', {},
+        h('td', { class: 'left always' }, h('span', { class: 'slot' }, 'the one loop')),
         h('td', { class: 'left model' }, modelInput, modelError),
         h('td', {}, effort),
-        h('td', {}, groomers)));
-    }
+        h('td', {}, groomers))));
 
-    const slotErrors = ['enabled', 'worker', 'groomer', 'effort', 'groomConcurrency']
-      .flatMap((field) => grid.rows.map((r) => errors[r.id + '/' + field]))
+    // The radio columns are the three default-model settings, a single choice across all rows.
+    // Labelled bare, a filled radio would read as "this model is a groomer", which is not what it
+    // means: EVERY enabled model can groom, exactly one is the DEFAULT. So `default` is stacked above
+    // the role, keeping each column as narrow as the role word.
+    const roleHead = (role) => h('th', {}, h('span', { class: 'th-q' }, 'default'), role);
+    const head = h('tr', {},
+      h('th', { class: 'left' }, 'Model'), h('th', {}, 'on'), roleHead('groomer'), roleHead('worker'), roleHead('reviewer'));
+    const body = h('tbody', {});
+    const radio = (row, role) => {
+      if (row.roles.indexOf(role) === -1) return h('td', {});
+      return h('td', {}, h('button', {
+        class: 'radio', type: 'button', role: 'radio', 'aria-checked': row[role] ? 'true' : 'false',
+        'aria-label': row.label + ' is the default ' + role,
+        onclick: () => gridEdit(row.id, role, true),
+      }));
+    };
+    for (const row of grid.rows) {
+      body.append(h('tr', { class: row.enabled ? '' : 'disabled' },
+        h('td', { class: 'left always' }, h('span', { class: 'slot' }, row.label)),
+        h('td', { class: 'always' }, row.toggle ? toggle(row.enabled, row.label + ' enabled', (v) => gridEdit(row.id, 'enabled', v)) : null),
+        radio(row, 'groomer'), radio(row, 'worker'), radio(row, 'reviewer')));
+    }
+    // The two default efforts sit under the columns they qualify; the reviewer has none (a review
+    // runs at the implementer's final effort).
+    const effortSelect = (field, value, label) => {
+      const sel = h('select', { 'aria-label': label });
+      for (const level of grid.taskEfforts) sel.append(h('option', { value: level, selected: level === value }, level));
+      sel.addEventListener('change', () => gridEdit('defaults', field, sel.value));
+      return sel;
+    };
+    body.append(h('tr', {},
+      h('td', { class: 'left always' }, h('span', { class: 'subtle' }, 'default effort')),
+      h('td', {}),
+      h('td', {}, effortSelect('groomerEffort', grid.defaults.groomerEffort, 'Default groomer effort')),
+      h('td', {}, effortSelect('workerEffort', grid.defaults.workerEffort, 'Default worker effort')),
+      h('td', {})));
+
+    const rowErrors = ['enabled', 'groomer', 'worker', 'reviewer', 'effort', 'groomConcurrency', 'groomerEffort', 'workerEffort']
+      .flatMap((field) => grid.rows.map((r) => r.id).concat(['orchestrator', 'defaults']).map((id) => errors[id + '/' + field]))
       .filter(Boolean);
 
     return [
       h('div', { class: 'grid-head' },
         h('span', { class: 'subtle' },
-          'Which slots exist, who they spawn, and how hard they think — the radios pick who takes a '
-          + 'task that names no model or groomer of its own.'),
+          'One Orchestrator loop delegates every groom, implementation and review to a subagent. The '
+          + 'radios pick the model a task gets when it names none of its own; `auto` lets the '
+          + 'Orchestrator pick Sonnet or Opus. The board and new drafts use a change at once.'),
         // Same marker as a `restart` row's: the grid stands in for those rows, so it must not say
-        // their fact in a second voice. `grid.note` names the three columns it covers.
+        // their fact in a second voice. `grid.note` names what it covers.
         appliesMarker(grid.note)),
+      orchestrator,
       h('table', {}, h('thead', {}, head), body),
-      slotErrors.length ? h('div', { class: 'err' }, slotErrors[0]) : null,
+      rowErrors.length ? h('div', { class: 'err' }, rowErrors[0]) : null,
     ];
   }
 

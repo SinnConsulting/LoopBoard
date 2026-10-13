@@ -247,6 +247,7 @@ export interface AgentRow {
   id: string;
   agentType: string;
   description: string;
+  model: string; // the `model` the spawn passed, as its meta records it (t-0e99); '' when absent
   // Start of the CURRENT working stretch, which is not the same thing as the spawn: a resumed
   // agent keeps its id and appends to the same transcript, so its first line still says when it
   // was originally spawned. `foldAgents` substitutes the latest resume instant when there is one.
@@ -294,6 +295,7 @@ export function foldAgents(metas: readonly AgentEntry[], events: readonly Marker
       id: entry.id,
       agentType: entry.agentType,
       description: entry.description,
+      model: entry.model,
       startedAt: resumedAt ?? entry.startedAt,
     });
   }
@@ -305,6 +307,7 @@ export function foldAgents(metas: readonly AgentEntry[], events: readonly Marker
 export interface AgentLabel {
   id: string;
   label: string;    // `<agentType> · <description>`, or just the description for `general-purpose`
+  model: string;    // the spawn's model, e.g. 'sonnet'; '' when its meta named none
   duration: string; // how long it has been running, e.g. '2m'
 }
 
@@ -319,6 +322,7 @@ export function describeAgent(row: AgentRow, now: number): AgentLabel {
   return {
     id: row.id,
     label,
+    model: row.model ?? '',
     duration: formatDuration(row.startedAt, now),
   };
 }
@@ -385,8 +389,10 @@ export function rowsForEdges(read: SubagentRead | undefined, endedSession: strin
 // session going away all look the same from a snapshot. An unknown start drops the `after …` tail
 // rather than leaving it dangling.
 export function describeAgentEdge(kind: 'start' | 'gone', row: AgentRow, now: number): string {
-  const { id, label, duration } = describeAgent(row, now);
-  const head = `${label} (agent ${id})`;
+  const { id, label, model, duration } = describeAgent(row, now);
+  // Every agent belongs to the one orchestrator loop now (t-0e99), so the model is what tells them
+  // apart in the log.
+  const head = `${label}${model ? ` · ${model}` : ''} (agent ${id})`;
   if (kind === 'start') return head;
   return `${head} — no longer live${duration ? ` after ${duration}` : ''}`;
 }

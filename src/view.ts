@@ -1,6 +1,9 @@
 // Board -> lean webview payload, plus attention/badge computation. No vscode imports
 // (takes primitives) so it stays easy to reason about.
-import { Board, DoneEntry, Task, Phase, Model, GroomerValue, TagEntry, normalizeTag } from './model';
+import {
+  Board, DoneEntry, Task, Phase, Model, ModelValue, GroomerValue, ReviewerValue, EffortValue, LoopId, TaskDefaults,
+  TagEntry, normalizeTag, resolveWorker,
+} from './model';
 
 export interface WebTask {
   id: string;
@@ -9,8 +12,11 @@ export interface WebTask {
   title: string;
   checked: boolean;
   hasDetailFile: boolean;
-  model: Model | null;
+  model: ModelValue | null;
+  effort: EffortValue | null; // worker effort (t-0e99); null = the default
   groomer: GroomerValue | null; // 'none' = on hold (t-65a2): no loop grooms this task
+  groomerEffort: EffortValue | null;
+  reviewer: ReviewerValue | null; // 'none' = no review subagent
   added: string | null;
   started: string | null;
   completed: string | null;
@@ -34,14 +40,14 @@ export interface WebTask {
 }
 
 export interface LoopStatus {
-  id: Model;
+  id: LoopId;
   name: string;
   running: boolean;
-  hint: string; // e.g. "model: <custom>" when the slot has a configured override; '' otherwise
+  hint: string; // `<model> · <effort>` the next spawn uses (t-0e99)
   // Scheduled-restart state (t-77d1), filled in by the controller from its in-memory schedule map —
   // session-only, never persisted. `restart` is null when nothing is armed; otherwise it carries the
   // settings so re-opening that button's popover shows them, plus a rendered one-line indicator.
-  // One schedule per model — arming from any of the three buttons replaces whatever was armed.
+  // One schedule per loop: arming from any of the three buttons replaces whatever was armed.
   restart?: {
     action: 'start' | 'restart' | 'stop'; // which button armed it
     minutes: number;
@@ -53,8 +59,8 @@ export interface LoopStatus {
   // Context usage of this slot's live Claude session (t-2b89), filled in by the controller from its
   // poll. Absent/null whenever there is no measurement — the loop is stopped, or its session file
   // or transcript could not be located — so the row shows nothing rather than a "0%" lie.
-  // `pending` = the threshold tripped while this slot owns the In-Progress task, so the restart is
-  // waiting for the idle edge (an automatic restart is NEVER forced).
+  // `pending` = the threshold tripped while the loop is busy (a task In Progress or a live
+  // subagent), so the restart is waiting for the idle edge (an automatic restart is NEVER forced).
   // `threshold` is `loopBoard.contextLimit.percent` — 0 when the feature is off. Above 0 the bar
   // paints everything from that mark rightwards as the orange restart zone, so the row shows not
   // just how full the context is but where the session will be restarted.
@@ -72,7 +78,7 @@ export interface LoopStatus {
   // an empty array means the sidebar's Agents section shows nothing for this slot. Nested agents
   // are listed flat. Each entry is `describeAgent()`'s output, recomputed per repaint so the
   // duration ticks between polls.
-  agents?: { id: string; label: string; duration: string }[];
+  agents?: { id: string; label: string; model: string; duration: string }[];
   // Idle-stop clock of this slot (t-2dd4), filled in by the controller. Null whenever the feature
   // is off, the loop is stopped, or the slot is busy (In-Progress task or live subagent) — there is
   // then no clock to show. `label` is `describeIdle()`'s output ("idle 12m · stop at 60m",
@@ -89,15 +95,15 @@ export interface WebTag {
   done: number;
 }
 
-// One row of the tag overview: the task's other tags, its unanswered-question count and the model
-// that owns it (the default worker model when it names none).
+// One row of the tag overview: the task's other tags, its unanswered-question count and its worker
+// model (the default worker model when it names none).
 export interface WebTagRow {
   id: string;
   isDraft: boolean;
   title: string;
   tags: string[];
   unanswered: number;
-  model: Model;
+  model: ModelValue;
 }
 
 export interface WebTagOverview {
@@ -119,9 +125,14 @@ export interface WebBoard {
   cardsStartCollapsed?: boolean; // set by the controller; card state of a phase tab with no saved
   // Collapse all / Expand all, and a change of it resets every tab (t-c8fd)
   workspaceName: string;
-  defaultWorkerModel: Model; // owns tasks with no model:; labels the board's Model select default
-  defaultGroomerModel: Model; // grooms tasks with no groomer:; labels the draft Groom-with default
-  models: Model[]; // enabled model slot ids, for the board/composer/draft model selects
+  // The five per-task defaults (t-0e99): what an absent routing field resolves to, and what each
+  // board select labels its `default (<value>)` option with.
+  defaultWorkerModel: ModelValue;
+  defaultWorkerEffort: EffortValue;
+  defaultGroomerModel: ModelValue;
+  defaultGroomerEffort: EffortValue;
+  defaultReviewerModel: ReviewerValue;
+  models: Model[]; // enabled task model ids, for the board/composer/draft model selects
   phases: Record<Phase, WebTask[]>;
   // Tag catalogue (t-0b10): registry tags plus every tag in use, sorted. `tagsInUse` is the sorted
   // names some active or Done task carries — empty keeps the sidebar's Tags entry hidden even with
@@ -135,11 +146,12 @@ export interface WebBoard {
 }
 
 // Board-wide view of the GLOBAL SINGLE-TASK LIMIT (LOOP.md Rule 2): at most one task may be
-// In Progress across all models. The extension cannot enforce it (loops claim by writing the
+// In Progress board-wide. The extension cannot enforce it (loops claim by writing the
 // markdown), but it surfaces the state so a human sees when the limit is holding back prepared
 // work — or being breached.
 export interface ConcurrencyStatus {
-  inProgress: { id: string; title: string; model: Model }[]; // tasks currently phase: inprogress (any model)
+  // Tasks currently phase: inprogress, each with its resolved worker model and effort (t-0e99).
+  inProgress: { id: string; title: string; model: ModelValue; effort: EffortValue }[];
   skipped: { id: string; title: string }[]; // Backlog tasks a loop would start but the limit blocks
   breached: boolean; // more than one task In Progress at once — the limit is being violated
   message: string | null; // "Active Queue: <id> ($MODEL), ..." — only when >1 relevant task (Rule 2)
@@ -169,7 +181,10 @@ function taskToWeb(t: Task, doneIds: Set<string>, armed: ReadonlySet<string>): W
     checked: t.checked,
     hasDetailFile: t.hasDetailFile,
     model: t.model ?? null,
+    effort: t.effort ?? null,
     groomer: t.groomer ?? null,
+    groomerEffort: t.groomerEffort ?? null,
+    reviewer: t.reviewer ?? null,
     added: t.added ?? null,
     started: t.started ?? null,
     completed: t.completed ?? null,
@@ -197,7 +212,10 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     checked: e.checked,
     hasDetailFile: false,
     model: e.model ?? null,
+    effort: null,
     groomer: e.groomer ?? null,
+    groomerEffort: null,
+    reviewer: null,
     added: null,
     started: null,
     completed: e.completed ?? null,
@@ -252,7 +270,7 @@ export function tagOverview(board: Board, tag: string): { tag: string; total: nu
   return { tag: name, total, done: phases.done.length, phases };
 }
 
-function overviewRows(board: Board, tag: string, defaultModel: Model): WebTagOverview {
+function overviewRows(board: Board, tag: string, defaultModel: ModelValue): WebTagOverview {
   const o = tagOverview(board, tag);
   const rows: Record<Phase, WebTagRow[]> = { new: [], backlog: [], inprogress: [], feedback: [], review: [], done: [] };
   for (const p of PIPELINE) {
@@ -295,10 +313,11 @@ export function computeBadge(board: Board): BadgeInfo {
   };
 }
 
-export function computeConcurrency(board: Board, defaultModel: Model): ConcurrencyStatus {
+export function computeConcurrency(board: Board, defaultModel: ModelValue, defaultEffort: EffortValue = 'auto'): ConcurrencyStatus {
+  const defaults = { worker: defaultModel, workerEffort: defaultEffort };
   const inProgress = board.tasks
     .filter((t) => t.phase === 'inprogress')
-    .map((t) => ({ id: t.id, title: t.title, model: t.model ?? defaultModel }));
+    .map((t) => ({ id: t.id, title: t.title, ...resolveWorker(t, defaults) }));
   // Prepared work a loop would pick up next: claimable Backlog tasks. Only "skipped" while
   // something is already In Progress (otherwise a loop is free to start them).
   const skipped =
@@ -318,10 +337,9 @@ export function computeConcurrency(board: Board, defaultModel: Model): Concurren
 export function toWebviewBoard(
   board: Board,
   workspaceName: string,
-  defaultWorkerModel: Model,
+  defaults: TaskDefaults,
   loops: LoopStatus[],
   models: Model[] = [],
-  defaultGroomerModel: Model = defaultWorkerModel,
   // Task ids holding an auto-promote arm (t-39e2), from the controller's session-only map.
   autoPromote: ReadonlySet<string> = new Set()
 ): WebBoard {
@@ -341,12 +359,15 @@ export function toWebviewBoard(
 
   const inUse = tagsInUse(board);
   const tagOverviews: Record<string, WebTagOverview> = {};
-  for (const tag of inUse) tagOverviews[tag] = overviewRows(board, tag, defaultWorkerModel);
+  for (const tag of inUse) tagOverviews[tag] = overviewRows(board, tag, defaults.worker);
 
   return {
     workspaceName,
-    defaultWorkerModel,
-    defaultGroomerModel,
+    defaultWorkerModel: defaults.worker,
+    defaultWorkerEffort: defaults.workerEffort,
+    defaultGroomerModel: defaults.groomer,
+    defaultGroomerEffort: defaults.groomerEffort,
+    defaultReviewerModel: defaults.reviewer,
     models,
     phases,
     tags: tagCatalogue(board),
@@ -354,6 +375,6 @@ export function toWebviewBoard(
     tagOverviews,
     loops,
     badge: computeBadge(board),
-    concurrency: computeConcurrency(board, defaultWorkerModel),
+    concurrency: computeConcurrency(board, defaults.worker, defaults.workerEffort),
   };
 }

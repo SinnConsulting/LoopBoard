@@ -52,7 +52,7 @@
 //     key is simply not listed — never that the wrong thing is written — so it needs no guard here.
 
 import { SETTINGS_PREFIX, ConfigPatch } from './settingsform';
-import { resolveAfterTask } from './model';
+import { resolveAfterTask, AUTO, isValidModelString, isValidEffort, sanitizeGroomConcurrency } from './model';
 
 export const AFTER_TASK_KEY = `${SETTINGS_PREFIX}afterTask`;
 export const AUTO_RECYCLE_KEY = `${SETTINGS_PREFIX}autoRecycle`;
@@ -60,13 +60,20 @@ export const CLEAR_SESSION_KEY = `${SETTINGS_PREFIX}clearSessionAfterTask`;
 export const DELEGATE_WORK_KEY = `${SETTINGS_PREFIX}delegateWork`;
 export const DELEGATE_REVIEW_KEY = `${SETTINGS_PREFIX}delegateReview`;
 export const OLD_DELEGATE_REVIEW_KEY = `${SETTINGS_PREFIX}delegateWork.review`;
+export const DEFAULT_REVIEWER_KEY = `${SETTINGS_PREFIX}defaultReviewerModel`;
+// The per-model loop slots (t-0e99): `models.<slot>.model|effort|groomConcurrency` became the one
+// orchestrator's `orchestrator.model|effort|groomConcurrency`.
+export const LEGACY_SLOTS = ['opus', 'sonnet', 'fable'];
+export const ORCHESTRATOR_FIELDS = ['model', 'effort', 'groomConcurrency'];
+export const slotFieldKey = (slot: string, field: string): string => `${SETTINGS_PREFIX}models.${slot}.${field}`;
+export const orchestratorKey = (field: string): string => `${SETTINGS_PREFIX}orchestrator.${field}`;
 export const AUTO_SYNC_TEMPLATES_KEY = `${SETTINGS_PREFIX}autoSyncTemplates`;
 export const PULSE_TEMPLATE_SYNC_KEY = `${SETTINGS_PREFIX}pulseTemplateSync`;
 
 // Keys the manifest does NOT declare and never will, but which the code still reads on purpose:
-// `readDefaultModel` (src/controller.ts) falls back to the pre-split `loopBoard.defaultModel` when
+// `resolveTaskDefaults` (src/model.ts) falls back to the pre-split `loopBoard.defaultModel` when
 // neither of the two new keys is set. Removing it as an "orphan" would silently change which model
-// a pre-split config spawns — exactly the behaviour change this feature must never make.
+// a pre-split config runs, exactly the behaviour change this feature must never make.
 // A legacy CONTAINER object (`{"loopBoard.models": {…}}`) needs no entry here: it is spared by the
 // prefix rule in `isOrphan`, because declared keys live underneath it.
 export const LEGACY_HONOURED_KEYS: string[] = [`${SETTINGS_PREFIX}defaultModel`];
@@ -86,18 +93,45 @@ export interface MigrationRule {
   resolve(values: SettingValues): { from: string; value: unknown } | undefined;
 }
 
+// One rule per orchestrator field (t-0e99). The orchestrator defaults to Opus, so the Opus slot's
+// value is the one that carries over; the Sonnet and Fable slot values carry nothing and are only
+// removed. `resolveOrchestrator` (src/model.ts) reads the same Opus key while the target is unset,
+// so migrating writes exactly the value already in force.
+const ORCHESTRATOR_RULES: MigrationRule[] = ORCHESTRATOR_FIELDS.map((field) => ({
+  target: orchestratorKey(field),
+  reason: 'deprecated' as const,
+  sources: LEGACY_SLOTS.map((slot) => slotFieldKey(slot, field)),
+  resolve: (values: SettingValues) => {
+    const from = slotFieldKey('opus', field);
+    const raw = values[from];
+    if (field === 'model') {
+      const value = typeof raw === 'string' ? raw.trim() : '';
+      return value && isValidModelString(value) ? { from, value } : undefined;
+    }
+    if (field === 'effort') return typeof raw === 'string' && isValidEffort(raw) ? { from, value: raw } : undefined;
+    return raw !== undefined && sanitizeGroomConcurrency(raw) === raw ? { from, value: raw } : undefined;
+  },
+}));
+
 export const MIGRATIONS: MigrationRule[] = [
+  ...ORCHESTRATOR_RULES,
   {
-    // Renamed on this branch. The old id is a child of the scalar `loopBoard.delegateWork`, so
-    // VSCode was already discarding the value — migrating it is the first time the user's stated
-    // choice ever takes effect.
-    target: DELEGATE_REVIEW_KEY,
-    reason: 'renamed',
-    sources: [OLD_DELEGATE_REVIEW_KEY],
+    // t-0e99: the review subagent's MODEL replaced the on/off switch. `true` meant "a review gates
+    // the PR", whose successor is `auto` (the model that groomed the story judges its Goals);
+    // `false` carries nothing. The pre-rename child id is a source too: it is a child of the scalar
+    // `loopBoard.delegateWork`, so while that is set it can only be swept, never read.
+    // `resolveTaskDefaults` honours `delegateReview: true` the same way until this is applied.
+    target: DEFAULT_REVIEWER_KEY,
+    reason: 'deprecated',
+    sources: [DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY],
     shadowedBy: DELEGATE_WORK_KEY,
     resolve: (values) => {
-      const raw = values[OLD_DELEGATE_REVIEW_KEY];
-      return typeof raw === 'boolean' ? { from: OLD_DELEGATE_REVIEW_KEY, value: raw } : undefined;
+      for (const key of [DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY]) {
+        const raw = values[key];
+        if (raw === undefined) continue;
+        return raw === true ? { from: key, value: AUTO } : undefined;
+      }
+      return undefined;
     },
   },
   {
@@ -235,8 +269,11 @@ export function buildMigrationPlan(declared: string[], values: SettingValues): M
       // its own button inside the page's collapsed "legacy keys" disclosure.
       if (rule.shadowedBy && values[rule.shadowedBy] !== undefined) {
         sweeps += 1;
+        // The source that sits UNDER the scalar parent is the one a read cannot see (t-0e99 gave
+        // this rule a second, readable source).
+        const hidden = rule.sources.find((k) => k.startsWith(`${rule.shadowedBy}.`)) ?? rule.sources[0];
         actions.push({
-          key: rule.sources[0],
+          key: hidden,
           kind: 'sweep',
           reason: rule.reason,
           value: undefined,

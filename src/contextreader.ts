@@ -1,11 +1,11 @@
-// Thin vscode wrapper around src/context.ts (t-2b89): locates a loop slot's live Claude Code
+// Thin vscode wrapper around src/context.ts (t-2b89): locates a loop's live Claude Code
 // session and reads its transcript tail. All the parsing lives in the pure module; this file only
 // knows where the files are and how to read them.
 //
 // These paths are OUTSIDE the workspace, so they deliberately do not go through `store.ts` (which
 // owns `.loopboard/` paths and nothing else). `vscode.workspace.fs` works on any local path.
 import * as vscode from 'vscode';
-import { Model } from './model';
+import { LoopId } from './model';
 import {
   ContextUsage, matchesSlot, newestPointer, parseSessionPointer, parseTranscriptUsage,
   contextPercent, windowSizeFor, SessionPointer,
@@ -73,10 +73,10 @@ export class ContextReader {
     return home ? vscode.Uri.joinPath(vscode.Uri.file(home), '.claude') : undefined;
   }
 
-  // The session file for this slot: one `<pid>.json` per LIVE process, matched on our `--name` plus
+  // The session file for this loop: one `<pid>.json` per LIVE process, matched on our `--name` plus
   // the workspace cwd. The `<pid>.<hash>.key` sidecars in the same directory are a messaging secret
   // — never read them.
-  private async findSessionId(model: Model, dir: vscode.Uri): Promise<string | undefined> {
+  private async findSessionId(loop: LoopId, dir: vscode.Uri): Promise<string | undefined> {
     const sessionsDir = vscode.Uri.joinPath(dir, 'sessions');
     let entries: [string, vscode.FileType][];
     try {
@@ -96,10 +96,10 @@ export class ContextReader {
         continue;
       }
       const pointer = parseSessionPointer(text);
-      if (pointer && matchesSlot(pointer, this.getCwd(), model)) matches.push(pointer);
+      if (pointer && matchesSlot(pointer, this.getCwd(), loop)) matches.push(pointer);
     }
     if (matches.length > 1) {
-      this.log('verbose', 'context-read', `${model} -> ${matches.length} session files match; using the newest`);
+      this.log('verbose', 'context-read', `${loop} -> ${matches.length} session files match; using the newest`);
     }
     return newestPointer(matches)?.sessionId;
   }
@@ -161,35 +161,35 @@ export class ContextReader {
     return usage;
   }
 
-  // One measurement for one slot. Undefined whenever anything is missing — no session file, no
+  // One measurement for one loop. Undefined whenever anything is missing: no session file, no
   // transcript, an unreadable path, a reshaped schema: the feature degrades to showing nothing.
-  async read(model: Model, modelString: string): Promise<ContextReading | undefined> {
+  async read(loop: LoopId, modelString: string): Promise<ContextReading | undefined> {
     const dir = this.claudeDir();
     if (!dir) return undefined;
-    const sessionId = await this.findSessionId(model, dir);
+    const sessionId = await this.findSessionId(loop, dir);
     if (!sessionId) return undefined;
     const usage = await this.readUsage(dir, sessionId);
     if (!usage) return undefined;
     // The transcript's own model id wins over the configured --model string (see windowSizeFor).
     const window = windowSizeFor(modelString, usage.model);
     const percent = contextPercent(usage.used, window);
-    this.log('verbose', 'context-read', `${model} ${usage.used}/${window} (${percent}%) session ${sessionId}`);
+    this.log('verbose', 'context-read', `${loop} ${usage.used}/${window} (${percent}%) session ${sessionId}`);
     return { sessionId, used: usage.used, window, percent };
   }
 
   // ---- live subagents (t-sbag) ----
 
-  // The live Agent-tool subagents of this slot's session. Reuses the session id and transcript Uri
+  // The live Agent-tool subagents of this loop's session. Reuses the session id and transcript Uri
   // `read()` already resolves — there is no second discovery path.
   //
   // `undefined` means COULD NOT READ (no session, no transcript, an unreadable transcript);
   // `rows: []` means read fine and nothing is live. The caller shows the same thing for both but
   // logs them apart: a read failure must never masquerade as "idle" silently. The resolved
   // `sessionId` rides along so the caller can recognise a read of a session it just ended (t-aglg).
-  async readSubagents(model: Model, now: number): Promise<SubagentRead | undefined> {
+  async readSubagents(loop: LoopId, now: number): Promise<SubagentRead | undefined> {
     const dir = this.claudeDir();
     if (!dir) return undefined;
-    const sessionId = await this.findSessionId(model, dir);
+    const sessionId = await this.findSessionId(loop, dir);
     if (!sessionId) return undefined;
     const transcript = await this.findTranscript(dir, sessionId);
     if (!transcript) return undefined;
@@ -236,7 +236,7 @@ export class ContextReader {
     for (const id of stale) {
       // Spelled out because this is the one drop that is NOT evidence the agent ended: it stopped
       // counting as live purely because it went quiet, and a restart may fire on the back of it.
-      this.log('verbose', 'agents-stale', `${model} agent ${id} — silent for over ${Math.round(AGENT_STALE_MS / 60000)}m (no finish marker, dropped for silence — a held restart may now fire)`);
+      this.log('verbose', 'agents-stale', `${loop} agent ${id}: silent for over ${Math.round(AGENT_STALE_MS / 60000)}m (no finish marker, dropped for silence; a held restart may now fire)`);
     }
     for (const row of rows) {
       if (row.startedAt === undefined) row.startedAt = await this.readAgentStart(agentsDir, row.id);

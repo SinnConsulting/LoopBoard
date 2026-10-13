@@ -24,6 +24,18 @@ function ensureIds(entries: IndexEntry[]): void {
   for (const e of entries) if (!e.id) e.id = assignId(ids);
 }
 
+// The routing keys in their fixed order (t-0e99): each effort right after the model it qualifies,
+// the reviewer last.
+function routingLines(entry: IndexEntry): string[] {
+  const out: string[] = [];
+  if (entry.model) out.push(`  - model: ${entry.model}`);
+  if (entry.effort) out.push(`  - effort: ${entry.effort}`);
+  if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+  if (entry.groomerEffort) out.push(`  - groomer-effort: ${entry.groomerEffort}`);
+  if (entry.reviewer) out.push(`  - reviewer: ${entry.reviewer}`);
+  return out;
+}
+
 // Serialize one active index entry (TODO.md). Fixed key order per §2.1.
 export function serializeEntry(entry: IndexEntry): string[] {
   const box = entry.checked ? '[x]' : '[ ]';
@@ -32,18 +44,16 @@ export function serializeEntry(entry: IndexEntry): string[] {
   if (entry.id) out.push(`  - id: ${entry.id}`);
 
   if (entry.isDraft) {
-    // Drafts carry no phase line (implicitly new); only optional model/groomer, plus any pending
+    // Drafts carry no phase line (implicitly new); only the optional routing keys, plus any pending
     // feedback (t-ae10) the groomer folds in while grooming (Rule 14).
-    if (entry.model) out.push(`  - model: ${entry.model}`);
-    if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+    out.push(...routingLines(entry));
     for (const f of entry.feedback) out.push(`  - feedback: ${oneLine(f)}`);
     for (const u of entry.unknownLines) out.push(u);
     return out;
   }
 
   out.push(`  - phase: ${entry.phase}`);
-  if (entry.model) out.push(`  - model: ${entry.model}`);
-  if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
+  out.push(...routingLines(entry));
   for (const q of entry.questions) {
     out.push(`  - question: ${oneLine(q.text)}`);
     out.push(`    - answer: ${oneLine(q.answer)}`.replace(/\s+$/, ''));

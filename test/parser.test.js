@@ -21,7 +21,7 @@ function entries(text) {
   return parseTodo(text).entries.map(entryShape);
 }
 
-const FIXTURES = ['index-full.md', 'index-unknown.md', 'index-legacy-note.md'];
+const FIXTURES = ['index-full.md', 'index-unknown.md', 'index-legacy-note.md', 'index-routing.md'];
 
 for (const name of FIXTURES) {
   test(`text idempotence after normalization: ${name}`, () => {
@@ -236,13 +236,76 @@ test('groomer: none round-trips on a DRAFT too', () => {
   assert.equal(serializeTodo(doc2), text, 'fixpoint');
 });
 
-test('an unrecognized model: (e.g. the removed haiku slot) lands in unknownLines, not entry.model', () => {
+test('haiku is a valid model: and groomer: again (t-0e99); an unrecognized value still lands in unknownLines', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] Haiku task', '  - id: t-hk01', '  - phase: backlog', '  - model: haiku', '  - groomer: haiku'].join('\n');
   const doc = parseTodo(src);
-  assert.equal(doc.entries[0].model, undefined);
-  assert.equal(doc.entries[0].groomer, undefined);
-  assert.deepEqual(doc.entries[0].unknownLines, ['  - model: haiku', '  - groomer: haiku']);
+  assert.equal(doc.entries[0].model, 'haiku');
+  assert.equal(doc.entries[0].groomer, 'haiku');
+  assert.deepEqual(doc.entries[0].unknownLines, []);
   assert.equal(serializeTodo(parseTodo(serializeTodo(doc))), serializeTodo(doc), 'fixpoint');
+  const odd = parseTodo(src.replace('model: haiku', 'model: gpt-5').replace('groomer: haiku', 'groomer: claude'));
+  assert.equal(odd.entries[0].model, undefined);
+  assert.equal(odd.entries[0].groomer, undefined);
+  assert.deepEqual(odd.entries[0].unknownLines, ['  - model: gpt-5', '  - groomer: claude']);
+});
+
+// ---- t-0e99: effort:, groomer-effort:, reviewer:, and `auto` ----
+
+test('[routing] the routing fixture is canonical: it round-trips byte for byte', () => {
+  const src = readFix('index-routing.md');
+  assert.equal(serializeTodo(parseTodo(src)), src);
+});
+
+test('[routing] every routing key and value parses onto the entry, a DRAFT included', () => {
+  const byId = Object.fromEntries(parseTodo(readFix('index-routing.md')).entries.map((e) => [e.id, e]));
+  const pick = (e) => [e.model, e.effort, e.groomer, e.groomerEffort, e.reviewer];
+  assert.deepEqual(pick(byId['t-r001']), ['auto', 'auto', 'haiku', 'xhigh', 'none']);
+  assert.equal(byId['t-r001'].isDraft, true);
+  assert.deepEqual(pick(byId['t-r002']), ['haiku', 'low', 'auto', 'auto', 'auto']);
+  assert.deepEqual(pick(byId['t-r003']), ['opus', 'medium', 'none', 'low', 'opus']);
+  assert.deepEqual(pick(byId['t-r004']), ['sonnet', 'high', 'opus', 'medium', 'sonnet']);
+  assert.deepEqual(pick(byId['t-r005']), ['fable', 'xhigh', 'sonnet', 'high', 'fable']);
+  assert.deepEqual(pick(byId['t-r006']), ['auto', undefined, 'fable', undefined, 'haiku']);
+  for (const e of Object.values(byId)) assert.deepEqual(e.unknownLines, [], e.id);
+});
+
+test('[routing] the writer emits the fixed order whatever order the file had', () => {
+  const src = ['# TODO', '', '## Tasks', '', '- [ ] Scrambled', '  - id: t-sc01', '  - reviewer: auto', '  - groomer-effort: low',
+    '  - effort: high', '  - groomer: opus', '  - phase: backlog', '  - model: sonnet'].join('\n');
+  const out = serializeTodo(parseTodo(src));
+  assert.ok(out.includes(['  - id: t-sc01', '  - phase: backlog', '  - model: sonnet', '  - effort: high', '  - groomer: opus',
+    '  - groomer-effort: low', '  - reviewer: auto'].join('\n')), out);
+  assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint');
+});
+
+test('[routing] off-list values land in flagged unknown lines and never void the other keys', () => {
+  const src = ['# TODO', '', '## Tasks', '', '- [ ] Off-list', '  - id: t-ol01', '  - phase: backlog', '  - model: none',
+    '  - effort: max', '  - groomer: opus', '  - groomer-effort: extreme', '  - reviewer: gpt', '  - feedback: keep me'].join('\n');
+  const e = parseTodo(src).entries[0];
+  assert.equal(e.id, 't-ol01');
+  assert.equal(e.phase, 'backlog');
+  assert.equal(e.groomer, 'opus');
+  assert.deepEqual(e.feedback, ['keep me']);
+  assert.equal(e.model, undefined, '`none` is not a worker value');
+  assert.equal(e.effort, undefined, '`max` is never a per-task effort');
+  assert.equal(e.groomerEffort, undefined);
+  assert.equal(e.reviewer, undefined);
+  assert.deepEqual(e.unknownLines, ['  - model: none', '  - effort: max', '  - groomer-effort: extreme', '  - reviewer: gpt']);
+  const out = serializeTodo(parseTodo(src));
+  assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint with the flagged lines kept');
+});
+
+test('[routing] DONE.md keeps id/model/groomer/completed only: the new keys stay unknown lines there', () => {
+  const src = ['## Tasks', '', '- [x] Accepted', '  - id: t-dn01', '  - model: auto', '  - effort: high', '  - groomer: haiku',
+    '  - reviewer: none', '  - completed: 2026-10-13'].join('\n');
+  const [e] = parseDone(src);
+  assert.equal(e.model, 'auto');
+  assert.equal(e.groomer, 'haiku');
+  assert.equal(e.effort, undefined);
+  assert.equal(e.reviewer, undefined);
+  assert.deepEqual(e.unknownLines, ['  - effort: high', '  - reviewer: none']);
+  const out = serializeDone(parseDone(src));
+  assert.equal(serializeDone(parseDone(out)), out, 'fixpoint');
 });
 
 test('ids assigned to id-less entries on write', () => {

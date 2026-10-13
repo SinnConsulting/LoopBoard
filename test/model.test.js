@@ -1,5 +1,6 @@
 'use strict';
-// Configurable models: built-in slots, per-slot enable + validated --model override (t-c1a7).
+// Task models + the orchestrator's own settings (t-c1a7, reshaped by t-0e99: one orchestrator loop
+// replaced the per-model slots, so the slot keys became `orchestrator.*` with a read-both fallback).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -8,18 +9,37 @@ const {
   isValidModelString,
   resolveModels,
   enabledModels,
-  resolveModelString,
   readModelsConfig,
   sanitizeGroomConcurrency,
   EFFORT_LEVELS,
+  TASK_EFFORT_LEVELS,
   isValidEffort,
+  isModelValue,
+  isGroomerValue,
+  isReviewerValue,
+  isEffortValue,
+  LOOP_IDS,
+  isLoopId,
+  resolveOrchestrator,
+  resolveTaskDefaults,
+  resolveWorker,
+  TASK_DEFAULTS,
   AFTER_TASK_MODES,
   resolveAfterTask,
   resolveHeldAfterTask,
 } = require('../out-test/model.js');
 
-test('the built-in model slots are exactly opus/sonnet/fable', () => {
-  assert.deepEqual(BUILTIN_MODEL_IDS, ['opus', 'sonnet', 'fable']);
+// An explicit-value lookup over a plain object, the shape the host builds from inspect().
+const lookup = (set) => (key) => set[key];
+
+test('the built-in task models are opus/sonnet/fable/haiku (t-0e99: Haiku is a full peer)', () => {
+  assert.deepEqual(BUILTIN_MODEL_IDS, ['opus', 'sonnet', 'fable', 'haiku']);
+});
+
+test('the only loop id is the orchestrator, and loop ids are validated at runtime', () => {
+  assert.deepEqual(LOOP_IDS, ['orchestrator']);
+  assert.ok(isLoopId('orchestrator'));
+  for (const bad of ['opus', 'sonnet', 'fable', 'haiku', '', undefined, null, 'Orchestrator']) assert.ok(!isLoopId(bad), String(bad));
 });
 
 test('isValidModelString admits the [1m] suffix and org aliases, rejects shell metachars', () => {
@@ -32,17 +52,21 @@ test('isValidModelString admits the [1m] suffix and org aliases, rejects shell m
   assert.ok(!isValidModelString(''));
 });
 
-test('resolveModels defaults: every slot enabled, --model equals its id, effort defaults to medium', () => {
-  const r = resolveModels(undefined);
-  assert.equal(r.length, 3);
-  for (const m of r) {
-    assert.equal(m.enabled, true);
-    assert.equal(m.model, m.id);
-    assert.equal(m.effort, 'medium');
+test('role value checks: model/groomer/reviewer/effort each accept exactly their listed values', () => {
+  for (const m of ['opus', 'sonnet', 'fable', 'haiku', 'auto']) {
+    assert.ok(isModelValue(m) && isGroomerValue(m) && isReviewerValue(m), m);
+  }
+  assert.ok(!isModelValue('none'), 'the worker has no none');
+  assert.ok(isGroomerValue('none') && isReviewerValue('none'), 'groomer and reviewer do');
+  for (const e of ['low', 'medium', 'high', 'xhigh', 'auto']) assert.ok(isEffortValue(e), e);
+  assert.ok(!isEffortValue('max'), 'max is never a per-task effort');
+  assert.deepEqual([...TASK_EFFORT_LEVELS], ['low', 'medium', 'high', 'xhigh']);
+  for (const bad of ['', 'Opus', 'gpt', 'default (opus)', null, undefined, 3]) {
+    assert.ok(!isModelValue(bad) && !isGroomerValue(bad) && !isReviewerValue(bad) && !isEffortValue(bad), String(bad));
   }
 });
 
-test('EFFORT_LEVELS / isValidEffort: the five ordered stops, rejects garbage', () => {
+test('EFFORT_LEVELS / isValidEffort: the five ordered session stops, rejects garbage', () => {
   assert.deepEqual(EFFORT_LEVELS, ['low', 'medium', 'high', 'xhigh', 'max']);
   for (const e of EFFORT_LEVELS) assert.ok(isValidEffort(e), `${e} valid`);
   assert.ok(!isValidEffort('HIGH'), 'case-sensitive');
@@ -50,80 +74,65 @@ test('EFFORT_LEVELS / isValidEffort: the five ordered stops, rejects garbage', (
   assert.ok(!isValidEffort(''));
 });
 
-test('a valid per-slot effort REPLACES the default; invalid falls back to medium', () => {
-  const r = resolveModels({ opus: { effort: 'xhigh' }, sonnet: { effort: 'extreme' } });
-  assert.equal(r.find((m) => m.id === 'opus').effort, 'xhigh');
-  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'medium'); // invalid -> default
+test('resolveModels defaults: every model enabled, in BUILTIN_MODELS order', () => {
+  const r = resolveModels(undefined);
+  assert.deepEqual(r.map((m) => m.id), ['opus', 'sonnet', 'fable', 'haiku']);
+  for (const m of r) assert.equal(m.enabled, true);
 });
 
-test('string-shorthand model config still resolves effort to the default (no effort field to set)', () => {
-  const r = resolveModels({ sonnet: 'sonnet[1m]' });
-  assert.equal(r.find((m) => m.id === 'sonnet').effort, 'medium');
-});
-
-test('a valid override REPLACES the default --model string; invalid is ignored', () => {
-  const r = resolveModels({ opus: { model: 'opus[1m]' }, sonnet: { model: 'bad;rm' } });
-  assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');
-  assert.equal(r.find((m) => m.id === 'sonnet').model, 'sonnet'); // invalid -> default
-});
-
-test('string shorthand sets the --model override (e.g. "sonnet": "sonnet[1m]")', () => {
-  const r = resolveModels({ sonnet: 'sonnet[1m]', opus: 'bad;rm' });
-  assert.equal(r.find((m) => m.id === 'sonnet').model, 'sonnet[1m]');
-  assert.equal(r.find((m) => m.id === 'sonnet').enabled, true);
-  assert.equal(r.find((m) => m.id === 'opus').model, 'opus'); // invalid shorthand -> default
-});
-
-test('enabled: false drops a slot from enabledModels', () => {
+test('enabled: false drops a model from enabledModels', () => {
   const en = enabledModels({ fable: { enabled: false } });
-  assert.deepEqual(en.map((m) => m.id), ['opus', 'sonnet']);
+  assert.deepEqual(en.map((m) => m.id), ['opus', 'sonnet', 'haiku']);
 });
 
-test('resolveModelString returns the override or the built-in default', () => {
-  assert.equal(resolveModelString('fable', undefined), 'fable');
-  assert.equal(resolveModelString('opus', { opus: { model: 'opus[1m]' } }), 'opus[1m]');
-});
-
-test('readModelsConfig maps flat per-slot enabled/model keys into a ModelsConfig for resolveModels', () => {
-  const store = {
-    'models.opus.enabled': true,
-    'models.opus.model': 'opus[1m]',
-    'models.opus.effort': 'xhigh',
-    'models.sonnet.enabled': false,
-    'models.sonnet.model': '',
-  };
+test('readModelsConfig maps the flat models.<id>.enabled keys into a ModelsConfig for resolveModels', () => {
+  const store = { 'models.sonnet.enabled': false, 'models.haiku.enabled': false };
   const get = (k, d) => (k in store ? store[k] : d);
   const cfg = readModelsConfig(get);
-  assert.equal(cfg.opus.model, 'opus[1m]');
   assert.equal(cfg.opus.enabled, true);
-  assert.equal(cfg.opus.effort, 'xhigh');
   assert.equal(cfg.sonnet.enabled, false);
-  // Unset slots fall back to the passed defaults (enabled true, empty override, medium effort).
-  assert.equal(cfg.fable.enabled, true);
-  assert.equal(cfg.fable.model, '');
-  assert.equal(cfg.fable.effort, 'medium');
-  // Flows straight through resolveModels: override applied, disabled slot dropped from enabled set.
-  const r = resolveModels(cfg);
-  assert.equal(r.find((m) => m.id === 'opus').model, 'opus[1m]');
-  assert.equal(r.find((m) => m.id === 'sonnet').enabled, false);
   assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'fable']);
 });
 
-// ---- grooming concurrency cap (t-23ce) ----
+// ---- the orchestrator's own settings (t-0e99), with the read-both fallback ----
 
-test('resolveModels defaults groomConcurrency to 3 on every slot', () => {
-  for (const m of resolveModels()) assert.equal(m.groomConcurrency, 3);
+test('resolveOrchestrator defaults: opus, medium, groom cap 3', () => {
+  assert.deepEqual(resolveOrchestrator(lookup({})), { model: 'opus', effort: 'medium', groomConcurrency: 3 });
 });
 
-test('a valid per-slot groomConcurrency REPLACES the default; invalid falls back to 3', () => {
-  const r = resolveModels({
-    opus: { groomConcurrency: 6 },
-    sonnet: { groomConcurrency: 0 },     // below the minimum
-    fable: { groomConcurrency: 2.5 },    // not an integer
-  });
-  assert.equal(r.find((m) => m.id === 'opus').groomConcurrency, 6);
-  assert.equal(r.find((m) => m.id === 'sonnet').groomConcurrency, 3);
-  assert.equal(r.find((m) => m.id === 'fable').groomConcurrency, 3);
+test('a valid orchestrator --model REPLACES the default; an invalid or empty one falls back to opus', () => {
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': 'opus[1m]' })).model, 'opus[1m]');
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': 'sonnet; rm -rf /' })).model, 'opus');
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': '   ' })).model, 'opus');
+});
+
+test('a valid orchestrator effort REPLACES the default; invalid falls back to medium', () => {
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'xhigh' })).effort, 'xhigh');
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'max' })).effort, 'max', 'max stays a session level');
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'extreme' })).effort, 'medium');
+});
+
+test('a valid orchestrator groomConcurrency REPLACES the default; invalid falls back to 3', () => {
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.groomConcurrency': 6 })).groomConcurrency, 6);
+  for (const bad of [0, 2.5, 100, '4']) {
+    assert.equal(resolveOrchestrator(lookup({ 'orchestrator.groomConcurrency': bad })).groomConcurrency, 3, String(bad));
+  }
+});
+
+test('until migrated, the old Opus slot keys still steer the orchestrator; Sonnet/Fable slot keys never do', () => {
+  const legacy = { 'models.opus.model': 'opus[1m]', 'models.opus.effort': 'high', 'models.opus.groomConcurrency': 5 };
+  assert.deepEqual(resolveOrchestrator(lookup(legacy)), { model: 'opus[1m]', effort: 'high', groomConcurrency: 5 });
+  const others = { 'models.sonnet.model': 'sonnet[1m]', 'models.fable.effort': 'xhigh', 'models.sonnet.groomConcurrency': 9 };
+  assert.deepEqual(resolveOrchestrator(lookup(others)), { model: 'opus', effort: 'medium', groomConcurrency: 3 });
+});
+
+test('a set orchestrator key always wins over the legacy Opus slot key', () => {
+  const both = {
+    'orchestrator.model': 'sonnet', 'models.opus.model': 'opus[1m]',
+    'orchestrator.effort': 'low', 'models.opus.effort': 'high',
+    'orchestrator.groomConcurrency': 2, 'models.opus.groomConcurrency': 5,
+  };
+  assert.deepEqual(resolveOrchestrator(lookup(both)), { model: 'sonnet', effort: 'low', groomConcurrency: 2 });
 });
 
 test('sanitizeGroomConcurrency rejects everything that is not a plain in-range integer', () => {
@@ -135,11 +144,43 @@ test('sanitizeGroomConcurrency rejects everything that is not a plain in-range i
   }
 });
 
-test('readModelsConfig reads the per-slot groomConcurrency key', () => {
-  const settings = { 'models.opus.groomConcurrency': 7 };
-  const cfg = readModelsConfig((k, d) => (k in settings ? settings[k] : d));
-  assert.equal(cfg.opus.groomConcurrency, 7);
-  assert.equal(cfg.sonnet.groomConcurrency, 3, 'unset slots take the default');
+// ---- the five per-task defaults (t-0e99) ----
+
+test('resolveTaskDefaults with nothing set: groomer opus, worker sonnet, efforts auto, reviewer none', () => {
+  assert.deepEqual(resolveTaskDefaults(lookup({})), TASK_DEFAULTS);
+  assert.deepEqual(TASK_DEFAULTS, { groomer: 'opus', groomerEffort: 'auto', worker: 'sonnet', workerEffort: 'auto', reviewer: 'none' });
+});
+
+test('set defaults are used; haiku and auto are valid models, an off-list value falls back', () => {
+  const d = resolveTaskDefaults(lookup({
+    defaultGroomerModel: 'auto', defaultGroomerEffort: 'xhigh', defaultWorkerModel: 'haiku',
+    defaultWorkerEffort: 'low', defaultReviewerModel: 'fable',
+  }));
+  assert.deepEqual(d, { groomer: 'auto', groomerEffort: 'xhigh', worker: 'haiku', workerEffort: 'low', reviewer: 'fable' });
+  const bad = resolveTaskDefaults(lookup({
+    defaultGroomerModel: 'none', defaultGroomerEffort: 'max', defaultWorkerModel: 'gpt', defaultWorkerEffort: 'max', defaultReviewerModel: 'all',
+  }));
+  assert.deepEqual(bad, TASK_DEFAULTS);
+});
+
+test('the pre-split loopBoard.defaultModel still steers both default models while neither is set', () => {
+  const d = resolveTaskDefaults(lookup({ defaultModel: 'fable' }));
+  assert.equal(d.groomer, 'fable');
+  assert.equal(d.worker, 'fable');
+  assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultWorkerModel: 'opus' })).worker, 'opus');
+});
+
+test('until migrated, delegateReview: true reads as reviewer auto; false or unset as none; a set reviewer wins', () => {
+  assert.equal(resolveTaskDefaults(lookup({ delegateReview: true })).reviewer, 'auto');
+  assert.equal(resolveTaskDefaults(lookup({ delegateReview: false })).reviewer, 'none');
+  assert.equal(resolveTaskDefaults(lookup({})).reviewer, 'none');
+  assert.equal(resolveTaskDefaults(lookup({ delegateReview: true, defaultReviewerModel: 'none' })).reviewer, 'none');
+});
+
+test('resolveWorker: a task own model/effort, else the worker defaults', () => {
+  const d = { worker: 'sonnet', workerEffort: 'auto' };
+  assert.deepEqual(resolveWorker({}, d), { model: 'sonnet', effort: 'auto' });
+  assert.deepEqual(resolveWorker({ model: 'haiku', effort: 'high' }, d), { model: 'haiku', effort: 'high' });
 });
 
 // ---- afterTask: one 3-state mode replacing the recycle boolean pair (t-1f1e) ----

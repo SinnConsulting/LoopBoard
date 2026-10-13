@@ -143,20 +143,21 @@ test('the model keys are claimed by the grid, never drawn as generic controls', 
     assert.ok(isGridKey(key), `${key} must be a grid key`);
     assert.equal(findControl(form, key), undefined, `${key} must not get a generic control`);
   }
-  const models = form.sections.find((s) => s.title === 'Models & Slots');
+  const models = form.sections.find((s) => s.title === 'Orchestrator & Models');
   assert.equal(models.grid, true);
   assert.deepEqual(models.controls, [], 'the grid section draws nothing else');
 });
 
-test('MODEL_GRID_KEYS is exactly the 14-key matrix the grid replaces', () => {
-  assert.equal(MODEL_GRID_KEYS.length, 14);
-  assert.ok(MODEL_GRID_KEYS.includes('loopBoard.defaultWorkerModel'));
-  assert.ok(MODEL_GRID_KEYS.includes('loopBoard.defaultGroomerModel'));
-  for (const slot of ['opus', 'sonnet', 'fable']) {
-    for (const field of ['enabled', 'model', 'effort', 'groomConcurrency']) {
-      assert.ok(MODEL_GRID_KEYS.includes(`loopBoard.models.${slot}.${field}`));
-    }
-  }
+test('MODEL_GRID_KEYS is exactly the 12 keys the grid replaces (t-0e99)', () => {
+  assert.deepEqual(MODEL_GRID_KEYS, [
+    'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
+    'loopBoard.defaultGroomerModel', 'loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerModel',
+    'loopBoard.defaultWorkerEffort', 'loopBoard.defaultReviewerModel',
+    'loopBoard.models.opus.enabled', 'loopBoard.models.sonnet.enabled', 'loopBoard.models.fable.enabled', 'loopBoard.models.haiku.enabled',
+  ]);
+  // Every grid key is a declared manifest key, and the section declares nothing else.
+  const first = Object.keys(manifest.contributes.configuration[0].properties).sort();
+  assert.deepEqual([...MODEL_GRID_KEYS].sort(), first);
 });
 
 test('the real manifest renders no Beta section and no Beta control (t-2047)', () => {
@@ -165,10 +166,10 @@ test('the real manifest renders no Beta section and no Beta control (t-2047)', (
     assert.equal(section.beta, false, `${section.title} must not read as Beta`);
     for (const c of section.controls) assert.equal(c.beta, false, `${c.key} must not read as Beta`);
   }
-  // The review toggle only applies while delegation is on — declared in the manifest, not inferred
-  // from the key name (the two ids no longer share a prefix, and must not).
+  // A dependency is declared in the manifest, not inferred from the key name. Since t-0e99 removed
+  // the delegation pair, the idle-stop minutes are the one dependant left.
   const agent = form.sections.find((s) => s.title === 'Agent Setup');
-  assert.equal(agent.controls.find((c) => c.key === 'loopBoard.delegateReview').dependsOn, 'loopBoard.delegateWork');
+  assert.equal(agent.controls.find((c) => c.key === 'loopBoard.idleStop.minutes').dependsOn, 'loopBoard.idleStop.enabled');
 });
 
 test('Beta is tag-driven: an all-experimental section renders as Beta, a mixed or untagged one does not', () => {
@@ -208,14 +209,13 @@ test('the real manifest renders as the three agreed sections', () => {
   const form = buildSettingsForm(manifest.contributes.configuration);
   assert.deepEqual(
     form.sections.map((s) => s.title),
-    ['Models & Slots', 'Agent Setup', 'Board & Workspace']
+    ['Orchestrator & Models', 'Agent Setup', 'Board & Workspace']
   );
   assert.deepEqual(
     form.sections.find((s) => s.title === 'Agent Setup').controls.map((c) => c.key),
     [
       'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
       'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.nudgeLoops',
-      'loopBoard.delegateWork', 'loopBoard.delegateReview',
       'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     ]
   );
@@ -296,13 +296,10 @@ test('every drawn generic control on the real page is classified', () => {
       assert.ok(['live', 'restart'].includes(control.applies), `${control.key} reached the page unclassified`);
     }
   }
-  // The 4 rows that must wear the marker (the other 9 restart keys are the grid's, which carries
-  // the same note for the whole table).
+  // The 2 rows that must wear the marker (the other 12 restart keys are the grid's, which carries
+  // the same note for the whole table, t-0e99).
   const marked = form.sections.flatMap((s) => s.controls).filter((c) => c.applies === 'restart').map((c) => c.key);
-  assert.deepEqual(marked, [
-    'loopBoard.permissionMode', 'loopBoard.loopInterval',
-    'loopBoard.delegateWork', 'loopBoard.delegateReview',
-  ]);
+  assert.deepEqual(marked, ['loopBoard.permissionMode', 'loopBoard.loopInterval']);
 });
 
 test('every drawn control keeps its markdown description source for the shared renderer', () => {
@@ -346,7 +343,7 @@ test('every section carries a unique, title-derived anchor slug', () => {
   const real = buildSettingsForm(manifest.contributes.configuration).sections;
   assert.ok(real.length > 1);
   assert.equal(new Set(real.map((s) => s.slug)).size, real.length, 'two sections share an anchor');
-  assert.equal(real.find((s) => s.title === 'Models & Slots').slug, 'models-slots');
+  assert.equal(real.find((s) => s.title === 'Orchestrator & Models').slug, 'orchestrator-models');
 
   // Same title twice: the second gets its own id rather than stealing the first one's.
   const dup = buildSettingsForm([
@@ -358,7 +355,7 @@ test('every section carries a unique, title-derived anchor slug', () => {
 
 test('formKeys lists every declared key, grid and deprecated included', () => {
   const keys = formKeys(manifest.contributes.configuration);
-  assert.ok(keys.includes('loopBoard.models.opus.effort'));
+  assert.ok(keys.includes('loopBoard.orchestrator.effort'));
   assert.ok(keys.includes('loopBoard.autoRecycle'));
   assert.equal(new Set(keys).size, keys.length, 'a key is declared twice');
 });
