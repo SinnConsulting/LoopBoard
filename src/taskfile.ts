@@ -12,9 +12,9 @@
 // story text and stays in place; only a known heading ends those three (t-c4d1, not fence-aware).
 // Fixpoint: serializeTaskFile(parseTaskFile(x)) is idempotent.
 
-import { TaskDetail } from './model';
+import { TaskDetail, normalizeTags } from './model';
 
-const META_KEYS = ['added', 'started', 'promoted', 'completed', 'link', 'depends on'];
+const META_KEYS = ['added', 'started', 'promoted', 'completed', 'link', 'depends on', 'tags'];
 // Removed key (t-33cb): a stale `- owner:` line from a pre-removal task file is recognized and
 // silently dropped on parse, never landing in unknownLines/re-emitted — so it can't reintroduce
 // the flagged "unparsed line" chip or get relocated to the bottom of the file.
@@ -32,6 +32,7 @@ function emptyDetail(raw: string): TaskDetail {
     worklog: [],
     links: [],
     dependsOn: [],
+    tags: [],
     unknownLines: [],
     raw,
   };
@@ -109,6 +110,7 @@ export function parseTaskFile(text: string): TaskDetail {
               case 'completed': detail.completed = v; break;
               case 'link': detail.links = splitList(v); break;
               case 'depends on': detail.dependsOn = splitList(v); break;
+              case 'tags': detail.tags = normalizeTags(splitList(v)); break;
             }
           } else {
             detail.unknownLines.push(line);
@@ -174,6 +176,7 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
   if (detail.completed) meta.push(`- completed: ${detail.completed}`);
   if (detail.links.length) meta.push(`- link: ${detail.links.join(', ')}`);
   if (detail.dependsOn.length) meta.push(`- depends on: ${detail.dependsOn.join(', ')}`);
+  if (detail.tags.length) meta.push(`- tags: ${detail.tags.join(', ')}`);
   if (meta.length) blocks.push(['## Meta', ...meta].join('\n'));
 
   // Canonical order (t-2191): Problem frames the story, Description tells it, Goals close it.

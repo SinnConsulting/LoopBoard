@@ -25,12 +25,14 @@
 // template-loop-compress pass over the whole file; owner-approved, raised by that overflow only.
 // 245 -> 257 (t-716f review feedback, decisions/docs.md): Rule 16 (board-blind subagents, the loop
 // as the board's only writer) still overflowed by exactly 12 lines after a second compress pass.
+// 257 -> 262 (t-0b10, decisions/docs.md): the tag rule (task-file `- tags:` line + Rule 14 tag
+// sentence) adds exactly 5 lines; owner-approved at merge with main.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MAX_LINES = 257;
+const MAX_LINES = 262;
 
 test('media/template-loop.md stays within its line budget', () => {
   const text = fs.readFileSync(path.join(process.cwd(), 'media', 'template-loop.md'), 'utf8');

@@ -25,6 +25,7 @@ const { buildSettingsForm, formKeys, findControl, toConfigPatch } = req('setting
 const { buildModelGrid, gridPatch } = req('settingsgrid.js');
 const { describeContext, describeThreshold } = req('context.js');
 const { computeNudges, formatNudge } = req('nudge.js');
+const { parseRegistry, serializeRegistry, registryEntries, applyTagColor } = req('tags.js');
 
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const LOOP_ORDER = ['fable', 'opus', 'sonnet'];
@@ -104,9 +105,10 @@ class Host {
     const done = parseDone(this.read('DONE.md') || '').map((entry) => {
       const text = this.read(`tasks/${entry.id}.md`);
       const detail = text === undefined ? emptyDetail() : parseTaskFile(text);
-      return { ...entry, problem: detail.problem, description: detail.description, goals: detail.goals, delivered: detail.delivered };
+      return { ...entry, problem: detail.problem, description: detail.description, goals: detail.goals, delivered: detail.delivered, tags: detail.tags };
     });
-    return { preamble: doc.preamble, tasks, done };
+    const tagRegistry = registryEntries(parseRegistry(this.read('tags.md') || ''));
+    return { preamble: doc.preamble, tasks, done, tagRegistry };
   }
 
   setting(key, dflt) {
@@ -231,12 +233,18 @@ class Host {
         if (gates.moveEntry(doc, msg.taskId, msg.phase, msg.beforeId) === 'applied') this.write('TODO.md', serializeTodo(doc));
         return this.refresh();
       }
+      // Tag color (controller.onTagColor -> store.setTagColor): one line of tags.md, no toast.
+      case 'setTagColor': {
+        const r = applyTagColor(parseRegistry(this.read('tags.md') || ''), msg.tag, msg.color, msg.base);
+        if (r.status === 'applied') this.write('tags.md', serializeRegistry(r.registry));
+        return this.refresh();
+      }
       case 'createDraft':
         this.createDraft(msg.text, msg.groomer || this.setting('defaultGroomerModel', 'opus'), msg.model || this.setting('defaultWorkerModel', 'sonnet'));
         await this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
       case 'reveal':
-        return this.post('board', { type: 'reveal', taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer, search: msg.search });
+        return this.post('board', { type: 'reveal', taskId: msg.taskId, phase: msg.phase, composer: !!msg.composer, search: msg.search, tag: typeof msg.tag === 'string' ? msg.tag : undefined });
       case 'settingsPatch': {
         const control = findControl(buildSettingsForm(this.settingsSections()), msg.key);
         const r = control && toConfigPatch(control, msg.value);

@@ -161,6 +161,19 @@ questions, an HTML-comment template) and `index-unknown.md`:
   complete-answer `suggestion:`) and the Rule 14 / Automation-fence hand-offs are pinned; what a
   live loop does with them is item 69 (untested).
 
+### Story tags — `test/tags.test.js`, `test/view.test.js`, `test/board-tags.test.js` (t-0b10)
+- `normalizeTags` trims, lower-cases, folds inner whitespace/comma/colon to `-`, de-duplicates and
+  drops empties; `- tags:` in a task file's Meta parses, serializes after `depends on`, and is a
+  text fixpoint; a `tags` patch routes to the task file and conflicts like `description`.
+- The `tags.md` registry keeps unknown lines and colors verbatim, is a text fixpoint, and a color
+  patch changes or appends only its own tag line (same-field conflict → disk wins).
+- The board payload carries `WebTask.tags`, the catalogue (registry + in use, sorted, with color and
+  open/Done counts — every DONE.md entry, not only the 50 shown), `tagsInUse` (empty without a
+  tagged task) and one overview per tag in use (task rows per phase in pipeline order).
+- The `tag:<name>` filter token (vm-extracted from `media/board.js`) is exact, case-insensitive and
+  ANDs with free text, `is:draft` and `task:<id>`; `media/template-loop.md` carries the `- tags:`
+  line and Rule 14's tag sentence within its line budget and names the append-only `.loopboard/tags.md` write.
+
 ### Loop-action schedule — `test/schedule.test.js` (t-77d1)
 - `LOOP_ACTIONS` is exactly `start`/`restart`/`stop`, and `isLoopAction` rejects every other
   payload value (the webview's `action` is never trusted).
@@ -1752,3 +1765,44 @@ and likewise cannot be verified headless.
       loop applies it, notes "recovered" in its Worklog and spawns no groomer for that task.
     - With `loopBoard.delegateWork` on: the implementer and review subagents read no `.loopboard/`
       file; the review brief carries the task's `## Goals`.
+
+70. **Story tags, the `tag:` filter and the tag overview (t-0b10) — UNTESTED in the live webview:**
+    the pure parts are pinned by `test/tags.test.js`, `test/taskfile.test.js`, `test/merge.test.js`,
+    `test/view.test.js`, `test/board-tags.test.js` (the `tag:` token and the source-text shape) and
+    `test/template-tags.test.js`; what the webview draws needs F5. Keep `.loopboard/tags.md` open
+    beside the board.
+    - Tag chips on cards: add `bug` to a Backlog card, a New card and a DRAFT. A chip shows on each,
+      also while the card is collapsed (the `＋ tag` control shows only while expanded).
+    - Placement: the tag chips and `＋ tag` come LAST in the chips row, directly after the last
+      machine chip (`added`/`started`/active days/links/dependencies, an unparsed-lines chip) with
+      the normal chip gap — not pushed to the right edge, not between the id chip and the info
+      chips — on expanded and collapsed cards and drafts (left-aligned there); Done rows show them
+      read-only directly after the completed date/link, before the chevron/delete buttons. On a
+      narrow card they wrap like any other chip, left-aligned.
+    - Adding: **＋ tag** opens an input; typing offers the catalogue (existing tags not already on
+      the card) and a name outside it is accepted too. Enter adds, Escape cancels, a click outside
+      an empty input closes it. Names fold to lower case and `-` (`Two Words` → `two-words`).
+      `tasks/<id>.md` gains `- tags: …` after `depends on` and nothing else changes.
+    - Removing: the chip's × drops that tag from the card and from `- tags:`.
+    - Color: the chip's dot opens a palette of six colors plus none; picking one repaints every
+      chip of that tag and writes `- <name>: <color>` to `.loopboard/tags.md` (created with a
+      `# Tags` heading when absent; the other lines untouched). Edit that line by hand to another
+      color while a palette pick is in flight → a "Tag color changed on disk" toast and disk wins.
+    - Typing `tag:bug` in a tab's filter box keeps only that tab's tasks carrying `bug`; it ANDs
+      with free text and with `is:draft`, and filters the current tab only.
+    - Done cards: their tags show as read-only chips (no dot menu, no ×, no ＋ tag); a chip name
+      still opens the overview.
+    - Sidebar: the Tags section is absent while no active or Done task carries a tag (even with a
+      non-empty `tags.md`), and appears as ONE "Tag overview" entry with the number of tags in use —
+      no row, swatch, count or highlight per tag.
+    - Overview: that entry opens a closable `# <tag>` tab after the phase tabs (the last-chosen
+      tag, else the first in use); a chip name on an active card and on a Done card opens that
+      tag's. It shows a tag picker with a swatch, a thin bar and `done/total` per tag (click
+      switches the tag), `% done` and "`D` of `T` tasks done · `O` open", one bar segmented by
+      phase with a legend whose entries jump to their group, and one collapsible group per
+      non-empty phase in pipeline order (id, DRAFT marker, title, other tag pills, unanswered
+      count, model badge). A row click lands on the task's own phase tab filtered to `task:<id>`.
+      The tab's ×, the selected tab, the folded groups and the last-chosen tag survive a webview
+      reload; clicking a phase tab leaves the overview tab in place, unselected.
+    - A groomer that coins a tag appends `- <name>` to `.loopboard/tags.md`; the board picks it up
+      on the next refresh with a neutral chip.

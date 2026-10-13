@@ -254,6 +254,21 @@ settings are grouped below.
       </ul>
     </td>
   </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <b>Story tags</b><br>
+      <sub>Group stories across phases and track them.</sub><br>
+      <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/13-tags.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/13-tags.gif" width="100%" alt="A New story gets a billing tag and a green color from the palette; tag:api filters the tab; the sidebar's Tags entry opens the tag overview with a progress bar across every phase, and the picker switches to the ci tag" /></a>
+    </td>
+    <td width="67%" valign="top">
+      <ul>
+        <li>Click <b>＋ tag</b> on a card or draft and type a name; it lands in the task file's Meta as <code>- tags:</code>. <b>×</b> removes it.</li>
+        <li>Click a chip's dot to give the tag a color. Colors are shared by every story and kept in <code>.loopboard/tags.md</code>.</li>
+        <li>Type <code>tag:&lt;name&gt;</code> in a tab's filter to keep only the stories carrying it.</li>
+        <li>The sidebar's <b>Tags</b> entry, or a chip's name, opens the tag overview: every tagged story grouped by phase, with a done/total progress bar.</li>
+      </ul>
+    </td>
+  </tr>
 </table>
 
 ---

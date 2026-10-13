@@ -74,6 +74,7 @@ order). Index owns title, phase, `model:`, `groomer:`, questions, `feedback:`: n
 - completed: YYYY-MM-DD
 - link: <url or task/** branch name>[, <…>]
 - depends on: t-xxxx[, t-yyyy]
+- tags: <tag>[, <tag>]
 
 ## Problem
 <groomer-owned, a worker NEVER edits it; 2-4 factual sentences: why this task exists, no design>
@@ -168,6 +169,10 @@ Newest-first `## Tasks` of `- [x] <Title>` entries, sub-bullets only `id:`, `mod
     first); one board click accepts it (writes `<text> accepted` into `answer:` via ordinary
     field-patch, no AI). No concrete option (open judgment call) → no suggestions; accepting one, or
     filling `answer:` otherwise, clears that question's other suggestions.
+    Tags: `- tags:` in `## Meta`, pick from the catalogue (`.loopboard/tags.md` + tags in use), coin
+    a new name only when none fits; a DRAFT's leading `#word` becomes tag `word`, out of the title.
+    Return a coined tag; the loop appends it as a bare `- <name>` line to `.loopboard/tags.md`
+    (created with a `# Tags` heading when absent), never editing or removing an existing line there.
 15. Claim tasks by `model:` (Backlog onward; absent = default model). Never claim a task whose
     `model:` names a different model. New-phase routing uses `groomer:` instead (Rule 14).
 16. Subagents are board-blind; the loop is the board's ONLY writer. No subagent (groomer,

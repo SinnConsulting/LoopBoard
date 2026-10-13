@@ -4,14 +4,15 @@
 // v2 routes patches by destination file: index fields patch `.loopboard/TODO.md`, detail fields
 // patch `.loopboard/tasks/<id>.md`. Both keep today's base/conflict semantics (disk wins).
 
-import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS } from './model';
+import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS, normalizeTags } from './model';
 
 // Feedback (t-ae10) has no whole-set field: `feedbackAdd` appends one item with no base compare, and
 // `feedbackItem` edits or deletes ONE item addressed by `itemIndex` plus that item's own base text.
 export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'answers' | 'feedbackAdd' | 'feedbackItem';
 // The three free-markdown story sections of `tasks/<id>.md` (t-2191). All three patch the SAME
 // file through the same generic path — a patch names one section and touches only that one.
-export type DetailField = 'description' | 'problem' | 'goals';
+// `tags` (t-0b10) rides the same path: its value is the Meta list, comma-joined.
+export type DetailField = 'description' | 'problem' | 'goals' | 'tags';
 export type PatchField = IndexField | DetailField;
 
 export interface FieldPatch {
@@ -42,7 +43,7 @@ export interface DetailMergeResult {
 
 const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
 const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem'];
-const DETAIL_FIELDS: DetailField[] = ['description', 'problem', 'goals'];
+const DETAIL_FIELDS: DetailField[] = ['description', 'problem', 'goals', 'tags'];
 
 // Which file a field patch targets. An unrecognised field falls through to `detail`, where
 // applyDetailPatch refuses it as `unsupported` (t-5831) — never as a conflict.
@@ -155,6 +156,8 @@ export function currentDetailFieldValue(detail: TaskDetail, field: DetailField):
       return detail.problem ?? '';
     case 'goals':
       return detail.goals ?? '';
+    case 'tags':
+      return detail.tags.join(', ');
   }
 }
 
@@ -168,6 +171,9 @@ function setDetailFieldValue(detail: TaskDetail, field: DetailField, value: stri
       break;
     case 'goals':
       detail.goals = value.trim() ? value : undefined;
+      break;
+    case 'tags':
+      detail.tags = normalizeTags(value.split(','));
       break;
   }
 }
@@ -270,6 +276,7 @@ export function fieldLabel(field: string): string {
     case 'description':
     case 'problem':
     case 'goals':
+    case 'tags':
       return field;
     default:
       return ''; // a field this build does not know — the text simply says "your edit"

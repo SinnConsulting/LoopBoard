@@ -506,3 +506,22 @@ test('[D5] feedbackItem edit whose base is gone is a conflict (unchanged)', () =
   assert.equal(r.status, 'conflict');
   assert.deepEqual(fbOf(doc, 't-bb01'), [A, B]);
 });
+
+// ---- tags (t-0b10) ----
+test('a tags patch routes to the task file, applies, and conflicts like description', () => {
+  assert.equal(patchTarget('tags'), 'detail');
+  const detail = parseTaskFile('# T (t-1)\n\n## Meta\n- tags: bug\n');
+  assert.equal(
+    applyDetailPatch(detail, { taskId: 't-1', field: 'tags', value: 'bug, Two Words', base: 'bug' }).status,
+    'applied',
+  );
+  assert.deepEqual(detail.tags, ['bug', 'two-words']);
+  // disk now holds `bug, two-words`; a stale base that is not the requested value loses
+  assert.equal(applyDetailPatch(detail, { taskId: 't-1', field: 'tags', value: 'bug, ui', base: 'bug' }).status, 'conflict');
+  assert.deepEqual(detail.tags, ['bug', 'two-words'], 'disk wins');
+  // an idempotent re-save of the value already on disk is not a conflict
+  assert.equal(applyDetailPatch(detail, { taskId: 't-1', field: 'tags', value: 'bug, two-words', base: 'bug' }).status, 'applied');
+  // clearing the list drops every tag
+  assert.equal(applyDetailPatch(detail, { taskId: 't-1', field: 'tags', value: '', base: 'bug, two-words' }).status, 'applied');
+  assert.deepEqual(detail.tags, []);
+});
