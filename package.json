@@ -406,7 +406,7 @@
             "order": 20,
             "default": "5m",
             "loopBoardApplies": "restart",
-            "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "Interval passed to `/loop`: a number followed by a unit, `s` seconds, `m` minutes, `h` hours or `d` days (e.g. `30s`, `5m`, `2h`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.contextLimit.percent": {
             "type": "number",
