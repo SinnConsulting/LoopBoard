@@ -1631,7 +1631,10 @@ export class Controller {
   async autoMigrateSettings(): Promise<void> {
     const log = (detail: string) => this.store.debugLog('info', 'settings-automigrate', detail);
     try {
-      const plan = this.stalePlan();
+      // Without the manifest every loopBoard.* key would look like an orphan and be removed.
+      const declared = formKeys(this.settingsManifest());
+      if (declared.length === 0) return log('skipped - could not read the configuration manifest, nothing written');
+      const plan = buildMigrationPlan(declared, this.collectSettingValues(declared));
       const enabled = this.config().autoMigrateSettings;
       const writes = decideAutoMigrate(plan, enabled);
       if (writes.length === 0) {
@@ -1639,6 +1642,7 @@ export class Controller {
         return log(enabled ? `skipped - nothing to migrate (${left})` : `skipped - setting off (${plan.writes.length} change(s) pending)`);
       }
       const failures = await this.applyMigrationWrites(plan, writes);
+      await this.postSettings();
       if (failures.length > 0) throw new Error(`${writes.length - failures.length} of ${writes.length} change(s) applied; ${failures.join('; ')}`);
       log(`applied - ${writes.length} change(s)`);
       const message =
@@ -1646,7 +1650,6 @@ export class Controller {
         (plan.conflicts > 0 ? ` ${plan.conflicts} conflict(s) wait in Migrate Config.` : '');
       this.store.debugLog('info', 'popup', `info - ${message}`);
       void vscode.window.showInformationMessage(message);
-      await this.postSettings();
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       log(`failed - ${reason}`);

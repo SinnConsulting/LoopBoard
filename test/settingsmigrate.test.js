@@ -543,6 +543,9 @@ test('activation runs the auto-migration once, before the template passes, and l
   const fn = ctl.slice(ctl.indexOf('  async autoMigrateSettings(): Promise<void> {'), ctl.indexOf('  async maybeShowGettingStarted('));
   assert.match(ctl, /get<boolean>\('autoMigrateSettings', true\)/);
   assert.match(fn, /decideAutoMigrate\(plan, enabled\)/);
+  const guard = fn.indexOf('if (declared.length === 0) return log(');
+  assert.ok(guard >= 0 && guard < fn.indexOf('buildMigrationPlan('), 'an empty manifest is skipped before any plan is built');
+  assert.ok(fn.indexOf('await this.postSettings()') < fn.indexOf('if (failures.length > 0) throw'), 'an open settings page repaints even after a partial failure');
   assert.match(fn, /debugLog\('info', 'settings-automigrate'/);
   for (const outcome of ['skipped - nothing to migrate', 'skipped - setting off', 'applied - ', 'failed - ']) {
     assert.ok(fn.includes(outcome), `logs "${outcome}"`);

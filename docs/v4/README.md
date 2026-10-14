@@ -103,9 +103,12 @@ The settings page is now two tables of dropdowns:
 
 ### Config migration
 
-Old keys keep working until you migrate them (they are read as fallbacks, never written). The
-settings page counts them in a warning banner and on the **Migrate Config** button; **Review
-migration** lists every change before anything is written.
+Activation migrates old keys by default: with `loopBoard.autoMigrateSettings` on, every move and
+removal below is applied once when the window loads, and a popup says how many. Only a conflict
+(old and new key both set by you) or a blind removal of a key VSCode cannot read is left for you:
+the settings page counts those in a warning banner and on the **Migrate Config** button, and
+**Review migration** lists every change before anything is written. With the setting off, old keys
+keep working until you migrate them (they are read as fallbacks, never written).
 
 | Old key | Becomes |
 |---|---|
@@ -126,7 +129,8 @@ terminal; ♻, the context-limit restart, the idle stop and scheduled actions ar
 2. Sync `.loopboard/LOOP.md` (automatic on activation while `loopBoard.autoSyncTemplates` is on, or
    **Synchronise Templates** on the settings page). A surviving per-model loop that reads the new
    file stands down by itself. Custom rules that talk about per-model loops need a hand edit.
-3. Open **Settings** and apply the migration if the banner shows one.
+3. Old settings migrate on that reload. Open **Settings** only if the banner shows a conflict or
+   a blind removal left for you.
 4. Press ▶ on the **Orchestrator** row. You need Claude Code **2.1.292+** (per-spawn effort).
 
 ## The benefit

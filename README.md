@@ -522,8 +522,11 @@ up on its next **▶** or **♻**. The board's selects and new drafts use a chan
 - **After task removed.** `loopBoard.afterTask` and its deprecated pair `loopBoard.autoRecycle` /
   `loopBoard.clearSessionAfterTask` are gone: nothing recycles or clears the Orchestrator because a
   task left In Progress. ♻, the context limit, the idle stop and schedules stay. Migrate Config
-  removes the old keys. The settings page's migration panel offers every move;
-  until you apply it, the old keys still take effect.
+  removes the old keys. With `loopBoard.autoMigrateSettings` on (the default), each activation
+  applies the bulk moves and removals automatically; a conflict (old and new key both set) or a
+  blind removal of an unreadable key still waits in the Migrate Config panel for your click. Turn
+  the setting off to migrate only by hand: the panel offers every move, and until you apply it the
+  old keys still take effect.
 - **Workspace settings are ignored.** A `loopBoard.*` value in `.vscode/settings.json` or a
   `.code-workspace` file no longer applies; move it to your user settings. Repos can no longer
   ship team defaults — deliberately.
