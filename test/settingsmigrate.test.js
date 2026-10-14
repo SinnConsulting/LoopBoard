@@ -499,3 +499,56 @@ test('the empty legacy loopBoard.models object is offered as a blind removal tha
   assert.ok(scanKeys(DECLARED).includes(LEGACY_CONTAINER_KEY), 'read by name');
   assert.equal(isOrphan(LEGACY_CONTAINER_KEY, DECLARED, []), false, 'never listed as an orphan');
 });
+
+// ---- the activation pass behind loopBoard.autoMigrateSettings (t-0e99) ----
+const { decideAutoMigrate } = require('../out-test/settingsmigrate.js');
+
+test('decideAutoMigrate: on applies exactly the bulk writes; off and an empty plan write nothing', () => {
+  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_REVIEW_KEY]: true, [PULSE_TEMPLATE_SYNC_KEY]: false });
+  assert.ok(plan.writes.length > 0);
+  assert.deepEqual(decideAutoMigrate(plan, true), plan.writes);
+  assert.deepEqual(decideAutoMigrate(plan, false), [], 'setting off: activation writes no setting');
+  const empty = buildMigrationPlan(DECLARED, {});
+  assert.deepEqual(decideAutoMigrate(empty, true), []);
+  assert.deepEqual(decideAutoMigrate(empty, false), []);
+});
+
+test('decideAutoMigrate never carries a conflict or a sweep, and leaves only the conflicts listed', () => {
+  const settings = {
+    [DELEGATE_WORK_KEY]: true, // a remove, and the parent that makes the old child key a sweep
+    'loopBoard.models.opus.effort': 'high', 'loopBoard.orchestrator.effort': 'low', // a conflict
+    'loopBoard.models.sonnet.model': 'sonnet[1m]', // a migrate
+    [AFTER_TASK_KEY]: 'clear', // a retired remove
+    [LEGACY_CONTAINER_KEY]: {}, // the container sweep
+  };
+  const plan = buildMigrationPlan(DECLARED, settings);
+  assert.equal(plan.conflicts, 1);
+  assert.equal(plan.sweeps, 2);
+  const writes = decideAutoMigrate(plan, true);
+  const held = plan.actions.filter((a) => a.kind === 'conflict' || a.kind === 'sweep').map((a) => a.key);
+  for (const key of held) assert.ok(!writes.some((w) => w.key === key), `${key} is never auto-applied`);
+  assert.ok(!writes.some((w) => w.key === 'loopBoard.orchestrator.effort'), 'a value set by hand is never overwritten');
+  applyWrites(settings, writes);
+  const after = buildMigrationPlan(DECLARED, settings);
+  assert.deepEqual(after.writes, [], 'no renamed or deprecated key is left for a bulk apply');
+  assert.equal(after.findings, after.conflicts, 'the Migrate Config count drops to the remaining conflicts');
+  assert.equal(after.conflicts, 1);
+});
+
+test('activation runs the auto-migration once, before the template passes, and logs every outcome', () => {
+  const ext = fs.readFileSync(path.join(root, 'src', 'extension.ts'), 'utf8');
+  assert.match(ext, /controller\.autoMigrateSettings\(\)\s*\.then\(\(\) => controller\.autoHeal\(\)\)/);
+  assert.equal(ext.match(/autoMigrateSettings\(\)/g).length, 1);
+  const ctl = fs.readFileSync(path.join(root, 'src', 'controller.ts'), 'utf8');
+  const fn = ctl.slice(ctl.indexOf('  async autoMigrateSettings(): Promise<void> {'), ctl.indexOf('  async maybeShowGettingStarted('));
+  assert.match(ctl, /get<boolean>\('autoMigrateSettings', true\)/);
+  assert.match(fn, /decideAutoMigrate\(plan, enabled\)/);
+  assert.match(fn, /debugLog\('info', 'settings-automigrate'/);
+  for (const outcome of ['skipped - nothing to migrate', 'skipped - setting off', 'applied - ', 'failed - ']) {
+    assert.ok(fn.includes(outcome), `logs "${outcome}"`);
+  }
+  assert.match(fn, /debugLog\('info', 'popup', `info - /);
+  assert.match(fn, /showInformationMessage/);
+  assert.match(fn, /debugLog\('info', 'popup', `error - /);
+  assert.match(fn, /showErrorMessage/);
+});

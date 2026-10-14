@@ -448,7 +448,7 @@ test('every key the code reads is still declared in the manifest', () => {
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel', 'loopBoard.defaultWorkerEffort',
     'loopBoard.defaultGroomerEffort', 'loopBoard.defaultReviewerModel',
     'loopBoard.maxAttachmentSizeMB', 'loopBoard.autoSyncTemplates', 'loopBoard.sidebarMarquee',
-    'loopBoard.cardsStartCollapsed', 'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew',
+    'loopBoard.cardsStartCollapsed', 'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew', 'loopBoard.autoMigrateSettings',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
     'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     ...['opus', 'sonnet', 'fable', 'haiku'].flatMap((m) => ['enabled', 'modelId', 'minEffort', 'maxEffort'].map((f) => `loopBoard.models.${m}.${f}`)),
@@ -493,6 +493,18 @@ test('template auto-sync is a live boolean in Board & Workspace, on by default (
   assert.equal(prop.loopBoardApplies, 'live');
   assert.match(prop.markdownDescription, /LOOP\.md\.bkp/, 'the description must name the legacy backup');
   assert.match(prop.markdownDescription, /loopboard:custom/, 'the description must promise the custom section is untouched');
+});
+
+test('settings auto-migration is a live boolean in Board & Workspace, on by default (t-0e99)', () => {
+  const board = sections.find((s) => s.title === 'LoopBoard: Board & Workspace');
+  const prop = board.properties['loopBoard.autoMigrateSettings'];
+  assert.ok(prop, 'loopBoard.autoMigrateSettings must be declared in Board & Workspace');
+  assert.equal(prop.type, 'boolean');
+  assert.equal(prop.default, true, 'stale settings migrate on activation unless the human opts out');
+  assert.equal(prop.scope, 'application');
+  assert.equal(prop.loopBoardApplies, 'live');
+  assert.match(prop.markdownDescription, /conflict/, 'the description must say conflicts are left for the human');
+  assert.match(prop.markdownDescription, /Migrate Config/);
 });
 
 test("the What's New tab is a live boolean in Board & Workspace, on by default (t-f070)", () => {

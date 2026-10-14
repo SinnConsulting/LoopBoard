@@ -238,6 +238,13 @@ export function actionWrites(action: PlannedAction): ConfigPatch[] {
   return [{ key: action.target as string, value: action.targetValue }, removal];
 }
 
+// The activation pass behind `loopBoard.autoMigrateSettings` (t-0e99): exactly the bulk Apply's
+// writes, so a conflict (which value wins is the user's call) and a sweep (no evidence the key is
+// there) stay in the Migrate Config panel for a manual click.
+export function decideAutoMigrate(plan: MigrationPlan, autoMigrateEnabled: boolean): ConfigPatch[] {
+  return autoMigrateEnabled ? plan.writes : [];
+}
+
 function show(value: unknown): string {
   return JSON.stringify(value ?? null);
 }

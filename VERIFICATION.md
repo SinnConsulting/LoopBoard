@@ -196,6 +196,11 @@ questions, an HTML-comment template) and `index-unknown.md`:
   FB10); the manifest declares the new keys, no `auto`, no `afterTask` pair, and the owner's
   defaults (FB12; every role default on a model that ships on); the migration replayed end to end
   re-scans clean, and the leftover `loopBoard.models` object is a lossless blind removal (FB11).
+- `test/settingsmigrate.test.js`, `test/manifest-settings.test.js`, `test/settingsform.test.js`:
+  `loopBoard.autoMigrateSettings` is a live boolean, default on, rendered in Board & Workspace;
+  `decideAutoMigrate` applies exactly the bulk writes when on, nothing when off or for an empty
+  plan, never a conflict or a sweep, and the re-scan leaves only the conflicts; activation runs it
+  once before the template passes and logs skipped/applied/failed plus its popups.
 - `test/subagents.test.js`, `test/view.test.js`, `test/board-routing.test.js`: agent rows are named
   `<groom|work|review> <model>-<effort>-<task id>: <title>` (the index title when known), In
   Progress rows `<model>-<effort>-<task id>: <title>` with the effort clamped into the model range;
@@ -1917,3 +1922,14 @@ and likewise cannot be verified headless.
       implementer continues; a task with `model: haiku` is implemented by a Haiku subagent; with
       `reviewer: opus` the review runs on Opus at the task's worker effort, with `none` there is no
       review.
+    - Auto-migrate settings: with `loopBoard.autoMigrateSettings` on (default), put a
+      pre-orchestrator user settings.json in place (`models.opus.effort`, `models.sonnet.model`,
+      `delegateReview: true`, `afterTask`, plus `orchestrator.effort` AND `models.opus.effort` both
+      set) and reload the window as after an update → one info popup names the change count;
+      settings.json now holds the new keys and no renamed or deprecated key except the conflicting
+      `models.opus.effort`, and the Migrate Config button reads `Migrate Config (1)` with only that
+      conflict listed. `loopBoard.debug: info` shows `settings-automigrate applied - N change(s)`
+      and the `popup` line. A second reload writes nothing (`skipped - nothing to migrate`).
+      Toggle the setting off, restore the old keys and reload → nothing is written
+      (`skipped - setting off`), and Migrate Config still lists and applies them. The other
+      Migrate Config items above need the setting off to keep their stale keys past a reload.

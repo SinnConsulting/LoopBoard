@@ -130,7 +130,7 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   on Sync, activation auto-sync included, no modal (backed up to `LOOP.md.bkp`). The gear opens LoopBoard's OWN settings page (t-sgrp),
   drawn from `contributes.configuration` (every key `scope: application`, so writes are always
   Global); its `loopBoard.*` config listener lives and dies with that panel — `src/` has none
-  otherwise, and configuration is still read on demand.
+  otherwise, and configuration is still read on demand. `loopBoard.autoMigrateSettings` (default on) applies Migrate Config's bulk writes per activation; conflicts/sweeps stay manual.
 - Packaging: `.vscodeignore` keeps the `.vsix` to `out/` + `media/` + manifest/README;
   `vsce package` needs `--no-dependencies` (zero runtime deps).
 - Debug trace (`loopBoard.debug` = `off | info | verbose`; rule: `.claude/rules/debug.md`): every

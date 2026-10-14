@@ -15,7 +15,7 @@ import {
   ConfigPatch, MODEL_GRID_KEYS, SETTINGS_PREFIX,
 } from './settingsform';
 import { buildModelGrid, gridPatch } from './settingsgrid';
-import { MigrationPlan, SettingValues, actionWrites, buildMigrationPlan, scanKeys } from './settingsmigrate';
+import { MigrationPlan, SettingValues, actionWrites, buildMigrationPlan, decideAutoMigrate, scanKeys } from './settingsmigrate';
 import { FieldPatch, refusalToast } from './merge';
 import { tagColorToast } from './tags';
 import { BuildStamp, WEBVIEW_ASSETS, describeStamp, stampsDiffer } from './buildstamp';
@@ -264,6 +264,7 @@ export class Controller {
       orchestrator: resolveOrchestrator(explicitLookup(c)),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       autoSyncTemplates: c.get<boolean>('autoSyncTemplates', true),
+      autoMigrateSettings: c.get<boolean>('autoMigrateSettings', true),
       sidebarMarquee: c.get<boolean>('sidebarMarquee', false),
       cardsStartCollapsed: c.get<boolean>('cardsStartCollapsed', true),
       nudgeLoops: c.get<boolean>('nudgeLoops', true),
@@ -1622,6 +1623,35 @@ export class Controller {
       log(`failed — ${reason}`);
       this.store.debugLog('info', 'popup', `error — LoopBoard: template auto-sync failed — ${reason}`);
       void vscode.window.showErrorMessage(`LoopBoard: template auto-sync failed — ${reason}`);
+    }
+  }
+
+  // Run once per activation (t-0e99): apply the bulk Migrate Config writes with no click while
+  // `loopBoard.autoMigrateSettings` is on. Settings are global, so this needs no `.loopboard/`.
+  async autoMigrateSettings(): Promise<void> {
+    const log = (detail: string) => this.store.debugLog('info', 'settings-automigrate', detail);
+    try {
+      const plan = this.stalePlan();
+      const enabled = this.config().autoMigrateSettings;
+      const writes = decideAutoMigrate(plan, enabled);
+      if (writes.length === 0) {
+        const left = `${plan.conflicts} conflict(s), ${plan.sweeps} blind removal(s) left for Migrate Config`;
+        return log(enabled ? `skipped - nothing to migrate (${left})` : `skipped - setting off (${plan.writes.length} change(s) pending)`);
+      }
+      const failures = await this.applyMigrationWrites(plan, writes);
+      if (failures.length > 0) throw new Error(`${writes.length - failures.length} of ${writes.length} change(s) applied; ${failures.join('; ')}`);
+      log(`applied - ${writes.length} change(s)`);
+      const message =
+        `LoopBoard: migrated ${writes.length} outdated setting change(s) in your user settings.` +
+        (plan.conflicts > 0 ? ` ${plan.conflicts} conflict(s) wait in Migrate Config.` : '');
+      this.store.debugLog('info', 'popup', `info - ${message}`);
+      void vscode.window.showInformationMessage(message);
+      await this.postSettings();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`failed - ${reason}`);
+      this.store.debugLog('info', 'popup', `error - LoopBoard: settings auto-migration failed - ${reason}`);
+      void vscode.window.showErrorMessage(`LoopBoard: settings auto-migration failed - ${reason}`);
     }
   }
 

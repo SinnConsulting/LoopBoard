@@ -70,7 +70,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   store.debugLog('info', 'activate', folder.name);
   store.startWatching();
-  void controller.autoHeal().then(() => controller.autoSyncTemplates()).then(() => controller.refresh());
+  void controller.autoMigrateSettings()
+    .then(() => controller.autoHeal())
+    .then(() => controller.autoSyncTemplates())
+    .then(() => controller.refresh());
   // Delayed: VSCode reconnects revived terminals during startup, after activation may already have
   // run, so an immediate look could miss a legacy loop terminal that is about to reappear.
   const legacyCheck = setTimeout(() => void controller.maybeStopLegacyLoops(), LEGACY_LOOP_CHECK_MS);
