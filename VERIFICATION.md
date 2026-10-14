@@ -1860,7 +1860,7 @@ and likewise cannot be verified headless.
 71. **One Orchestrator loop, per-task model/effort/reviewer, Haiku, no `auto` (t-0e99): UNTESTED in
     the live window and a live loop.** The pure parts are pinned by the suites above; what the
     webviews draw, what the host does with VS Code and what a real orchestrator does need F5.
-    - ▶ on the sidebar's ONE `Orchestrator` row (hint `<model> · <effort>`, e.g. `haiku · medium`)
+    - ▶ on the sidebar's ONE `Orchestrator` row (hint `<model> · <effort>`, e.g. `opus · low`)
       opens exactly one terminal, `Claude Orchestrator`, whose command line reads `claude
       --permission-mode <mode> --model '<orchestrator.model>' --effort <orchestrator.effort> --name
       loopboard-orchestrator-<hex> '/loop <interval> You are the LoopBoard orchestrator, grooming cap
@@ -1897,7 +1897,7 @@ and likewise cannot be verified headless.
       model id text with inline validation, lowest/highest effort selects). Turning off a model a
       role uses, picking an off model for a role, or a lowest effort above the highest is refused
       with the reason under the tables.
-    - Defaults (FB12): on a fresh profile the settings page shows Orchestrator haiku/medium, cap 3,
+    - Defaults (FB12): on a fresh profile the settings page shows Orchestrator opus/low, cap 3,
       groomer/worker/reviewer opus/medium (reviewer "the worker's"), Opus and Haiku on, Sonnet and
       Fable off, Opus low..xhigh, the others low..max, empty model ids. A card already on
       `model: sonnet` still shows `sonnet` selected with Sonnet off.

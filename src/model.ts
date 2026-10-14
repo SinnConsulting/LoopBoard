@@ -228,8 +228,7 @@ export interface OrchestratorConfig {
   groomConcurrency: number; // validated grooming cap per pass
 }
 
-// Haiku by default (owner decision 2026-10-14, gated on the CLI accepting every permission mode for
-// a Haiku session: decisions/loops.md).
+// Opus at effort low by default (owner decision, t-0e99 feedback: decisions/loops.md).
 export const ORCHESTRATOR_DEFAULTS: OrchestratorConfig = { model: 'opus', effort: 'low', groomConcurrency: DEFAULT_GROOM_CONCURRENCY };
 
 // The old Opus slot's `.effort|.groomConcurrency` still carry over until migrated (the Sonnet/Fable

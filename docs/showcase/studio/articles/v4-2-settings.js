@@ -43,7 +43,7 @@ module.exports = {
     await rec.click((await all.count()) ? all : settings.locator('.mig-do').first(), { ms: 450 });
     await rec.hold(1000);
 
-    await rec.caption('3', '<b>Roles</b>: Orchestrator on Haiku; groomer, worker and reviewer default to Opus');
+    await rec.caption('3', '<b>Roles</b>: Orchestrator on Opus at low effort; groomer, worker and reviewer default to Opus');
     await rec.spotlight(settings.locator('table.roles'));
     await rec.hold(1400);
     await rec.spotlight(null);

@@ -1,4 +1,4 @@
-/* v4 article: ▶ starts the ONE Orchestrator loop (Haiku by default); it edits no code and runs every
+/* v4 article: ▶ starts the ONE Orchestrator loop (Opus by default); it edits no code and runs every
  * groom and implementation as a subagent on the task's own model and effort. */
 'use strict';
 
@@ -38,7 +38,7 @@ module.exports = {
     });
 
     await rec.placeCursor(760, 420);
-    await rec.caption('1', '<b>▶</b> starts ONE loop: the Orchestrator, on <b>Haiku</b> by default');
+    await rec.caption('1', '<b>▶</b> starts ONE loop: the Orchestrator, on <b>Opus</b> by default');
     await rec.hold(900);
     await rec.click(ui.loopBtn(ctx, 'Orchestrator', 'Start loop'));
     await rec.hold(700);
