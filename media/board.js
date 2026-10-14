@@ -1637,6 +1637,8 @@
           isCollapsedCard ? null : textEl,
           isCollapsedCard ? null : descEl,
           isCollapsedCard ? null : attachEl,
+          // A groom that leaves the DRAFT: title in place can still write questions (t-0e99).
+          isCollapsedCard || !(t.questions.length || rescuedAnswers[t.id]) ? null : renderQuestions(t),
           isCollapsedCard ? null : renderFeedback(t),
           isCollapsedCard ? null : h('div', { class: 'muted-11', style: { marginTop: '8px' } }, 'added ' + (t.added || ''))),
         promoteButton(t, null),

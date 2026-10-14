@@ -1933,3 +1933,8 @@ and likewise cannot be verified headless.
       Toggle the setting off, restore the old keys and reload → nothing is written
       (`skipped - setting off`), and Migrate Config still lists and applies them. The other
       Migrate Config items above need the setting off to keep their stale keys past a reload.
+    - Questions on a DRAFT (untested in Docker; `test/board-draft-questions.test.js` pins the
+      payload and the source only): add `- question: X?` with a blank `- answer:` under a
+      `DRAFT:` entry in TODO.md on disk → after the refresh the expanded draft card shows the Open
+      questions panel with that question; filling and saving the answer writes it to the index;
+      the collapsed draft shows no panel.
