@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const models = resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d), set));
       return {
         permissionMode: c.get<string>('permissionMode', 'auto'),
-        interval: c.get<string>('loopInterval', '1m'),
+        interval: c.get<number | string>('loopInterval', 5),
         // t-0e99: the orchestrator's own flags plus the enabled task models (with their effort
         // ranges), the five defaults and the alias overrides, all frozen into the spawn (like the
         // interval).

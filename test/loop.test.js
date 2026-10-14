@@ -197,6 +197,15 @@ test('isValidLoopInterval: accepts minutes only (bare or m), rejects other units
   assert.equal(sanitizeLoopInterval('2h'), '1m', 'hours are rejected');
 });
 
+test('loop interval setting is an integer of minutes; a pre-integer string value still reads', () => {
+  for (const ok of [1, 5, 60]) assert.ok(isValidLoopInterval(ok), `${ok} valid`);
+  for (const bad of [0, -1, 2.5, NaN]) assert.ok(!isValidLoopInterval(bad), `${bad} invalid`);
+  assert.equal(sanitizeLoopInterval(5), '5m');
+  assert.equal(sanitizeLoopInterval(0), '1m');
+  assert.equal(sanitizeLoopInterval(2.5), '1m');
+  assert.equal(sanitizeLoopInterval('5m'), '5m', 'legacy string value');
+});
+
 test('sanitizeLoopInterval falls back to 1m for invalid values', () => {
   assert.equal(sanitizeLoopInterval('5m'), '5m');
   assert.equal(sanitizeLoopInterval('1m; rm -rf /'), '1m');

@@ -257,7 +257,7 @@ export class Controller {
     this.store.debugLog('verbose', 'config-read', 'loopBoard');
     return {
       permissionMode: c.get<string>('permissionMode', 'auto'),
-      interval: c.get<string>('loopInterval', '1m'),
+      interval: c.get<number | string>('loopInterval', 5),
       // The five per-task defaults and the orchestrator's own spawn values (t-0e99), each with its
       // read-both fallback to the pre-orchestrator keys until the settings migration is applied.
       defaults: resolveTaskDefaults(explicitLookup(c)),

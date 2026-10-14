@@ -19,13 +19,15 @@ export function sanitizePermissionMode(s: string): string {
 
 // The loop interval rides into the `/loop <interval> …` bootstrap prompt (buildLoopCommand). Restrict
 // it to a plain positive minute count so a settings-supplied value can't smuggle anything else onto the
-// line. Minutes only (no s/h/d, owner decision); a bare number means minutes; an invalid value falls back to '1m'.
+// line. Minutes only (no s/h/d, owner decision). The setting is an integer; a pre-integer string value
+// (`5`, `5m`) is still read so an existing user setting keeps working. Invalid falls back to '1m'.
 const LOOP_INTERVAL_RE = /^[1-9]\d*m?$/;
-export function isValidLoopInterval(s: string): boolean {
-  return LOOP_INTERVAL_RE.test(s);
+export function isValidLoopInterval(v: number | string): boolean {
+  return LOOP_INTERVAL_RE.test(String(v));
 }
-export function sanitizeLoopInterval(s: string): string {
-  if (!isValidLoopInterval(s)) return '1m';
+export function sanitizeLoopInterval(v: number | string): string {
+  if (!isValidLoopInterval(v)) return '1m';
+  const s = String(v);
   return s.endsWith('m') ? s : `${s}m`;
 }
 
@@ -79,7 +81,7 @@ export interface LoopPromptConfig {
 // LOOP.md contains several fenced blocks (layout, workflow, grammars), so we must NOT grab the
 // first fence: slice from the `## Automation` heading to the next `## ` heading (or EOF), and
 // require a fenced block inside that slice. No block -> undefined (caller warns).
-export function buildLoopCommand(loopText: string, interval: string, cfg: LoopPromptConfig): string | undefined {
+export function buildLoopCommand(loopText: string, interval: number | string, cfg: LoopPromptConfig): string | undefined {
   const lines = loopText.split('\n');
   let start = -1;
   for (let i = 0; i < lines.length; i++) {

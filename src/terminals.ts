@@ -19,7 +19,7 @@ const SUBMIT_DELAY_MS = 1500;
 
 export interface LoopSpawnConfig {
   permissionMode: string;
-  interval: string;
+  interval: number | string;
   orchestrator: OrchestratorConfig;
   models: ResolvedModel[]; // enabled task models, with their effort floor/ceiling
   defaults: TaskDefaults;
@@ -130,7 +130,7 @@ export class TerminalManager {
     }
     if (!isValidLoopInterval(cfg.interval)) {
       this.log('info', 'loop-spawn', `${loop} -> invalid loopInterval "${cfg.interval}"`);
-      vscode.window.showWarningMessage(`LoopBoard: invalid loopBoard.loopInterval "${cfg.interval}", using "1m".`);
+      vscode.window.showWarningMessage(`LoopBoard: invalid loopBoard.loopInterval "${cfg.interval}", using 1 minute.`);
     }
     // Everything below is frozen at spawn: the `--model`/`--effort` flags, and the cap, task models
     // and defaults in the prompt. A settings change reaches the loop only on its next ▶/♻.

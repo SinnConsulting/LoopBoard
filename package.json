@@ -401,12 +401,13 @@
             "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** — a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.loopInterval": {
-            "type": "string",
+            "type": "integer",
             "scope": "application",
+            "minimum": 1,
             "order": 20,
-            "default": "5m",
+            "default": 5,
             "loopBoardApplies": "restart",
-            "markdownDescription": "Interval passed to `/loop`, in minutes: a whole number, bare or with `m` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "Minutes between the loop's passes, passed to `/loop`; `5` (default). An invalid value falls back to 1. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.contextLimit.percent": {
             "type": "number",

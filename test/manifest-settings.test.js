@@ -226,6 +226,9 @@ test('with every setting unset, the spawn names the shipped defaults and a loop 
   });
   assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), cmd);
   assert.ok(cmd.includes('grooming cap 3.'), cmd);
+  assert.equal(all['loopBoard.loopInterval'].type, 'integer');
+  assert.equal(all['loopBoard.loopInterval'].minimum, 1);
+  assert.match(cmd, /^\/loop 5m /, 'the default 5 reaches /loop as 5 minutes');
   const threshold = sanitizeContextPercent(all['loopBoard.contextLimit.percent'].default);
   assert.equal(threshold, 35);
   assert.equal(shouldTrip(35, threshold, 's1', undefined), true, 'trips at 35%');
