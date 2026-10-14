@@ -16,7 +16,7 @@ const { serializeTodo } = require('../out-test/writer.js');
 const { TASK_DEFAULTS } = require('../out-test/model.js');
 
 // What the host hands the prompt builder with nothing configured (t-0e99).
-const ALL_MODELS = ['opus', 'sonnet', 'fable', 'haiku'];
+const ALL_MODELS = ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id }));
 const cfg = (over = {}) => ({ groomConcurrency: 3, models: ALL_MODELS, defaults: TASK_DEFAULTS, ...over });
 
 function readMedia(name) {
@@ -37,9 +37,10 @@ test('buildLoopCommand: the orchestrator prompt names the role, interval, cap, t
   assert.ok(cmd, 'a loop command was built from the shipped LOOP.md template');
   assert.match(cmd, /^\/loop 5m /, 'interval honored');
   assert.ok(cmd.includes('You are the LoopBoard orchestrator'), 'names the orchestrator role');
-  assert.ok(cmd.includes('grooming concurrency cap of 3'), 'names the grooming cap');
-  assert.ok(cmd.includes('Task models: opus, sonnet, fable, haiku.'), 'names the enabled task models');
-  assert.ok(cmd.includes('Defaults: groomer opus effort auto, worker sonnet effort auto, reviewer none.'), 'names the five defaults');
+  assert.ok(cmd.includes('grooming cap 3.'), 'names the grooming cap');
+  assert.ok(cmd.includes('Models: opus, sonnet, fable, haiku.'), 'names the enabled task models, no range when none is narrowed');
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer none.'), 'names the five defaults (owner decision 2026-10-14)');
+  assert.ok(!/\bauto\b/.test(cmd), 'no auto anywhere in the prompt');
   assert.ok(cmd.includes('.loopboard/LOOP.md'), 'points at LOOP.md');
   assert.ok(cmd.includes('Automation section'), 'directs the worker to the Automation section');
   assert.ok(!cmd.includes('running as model'), 'never names a model of its own: that is the legacy loop the template guard stops');
@@ -52,7 +53,8 @@ test('buildLoopCommand: the orchestrator prompt names the role, interval, cap, t
 test('buildLoopCommand: the longest realistic prompt still stays under 300 chars and apostrophe-free', () => {
   const longest = {
     groomConcurrency: 99,
-    models: ALL_MODELS,
+    // Every model narrowed to the longest range spelling (t-0e99 FB7).
+    models: ALL_MODELS.map((m) => ({ ...m, minEffort: 'medium', maxEffort: 'xhigh' })),
     defaults: { groomer: 'sonnet', groomerEffort: 'medium', worker: 'sonnet', workerEffort: 'medium', reviewer: 'sonnet' },
   };
   const cmd = buildLoopCommand(readMedia('template-loop.md'), '120m', longest);
@@ -62,19 +64,31 @@ test('buildLoopCommand: the longest realistic prompt still stays under 300 chars
 
 test('buildLoopCommand: only the enabled models are listed, and none at all says so', () => {
   const tpl = readMedia('template-loop.md');
-  assert.ok(buildLoopCommand(tpl, '1m', cfg({ models: ['opus', 'haiku'] })).includes('Task models: opus, haiku.'));
-  assert.ok(buildLoopCommand(tpl, '1m', cfg({ models: [] })).includes('Task models: none.'));
+  assert.ok(buildLoopCommand(tpl, '1m', cfg({ models: [{ id: 'opus' }, { id: 'haiku' }] })).includes('Models: opus, haiku.'));
+  assert.ok(buildLoopCommand(tpl, '1m', cfg({ models: [] })).includes('Models: none.'));
+});
+
+test('buildLoopCommand: a narrowed effort range rides beside its model; an inverted or hostile one narrows nothing (t-0e99 FB7)', () => {
+  const tpl = readMedia('template-loop.md');
+  const cmd = buildLoopCommand(tpl, '1m', cfg({ models: [
+    { id: 'opus', minEffort: 'low', maxEffort: 'max' },
+    { id: 'sonnet', minEffort: 'medium', maxEffort: 'high' },
+    { id: 'fable', minEffort: 'xhigh', maxEffort: 'low' },
+    { id: 'haiku', minEffort: "x'; ls", maxEffort: 'xhigh' },
+  ] }));
+  assert.ok(cmd.includes('Models: opus, sonnet medium-high, fable, haiku low-xhigh.'), cmd);
+  assert.ok(!cmd.includes("'") && !cmd.includes('; ls'), cmd);
 });
 
 test('buildLoopCommand: hostile models or defaults never reach the line; they fall back to the shipped defaults', () => {
   const tpl = readMedia('template-loop.md');
   const hostile = buildLoopCommand(tpl, '1m', {
     groomConcurrency: 3,
-    models: ['opus', "x'; rm -rf /", 'gpt'],
-    defaults: { groomer: "o'pus", groomerEffort: 'max', worker: 'none', workerEffort: '; ls', reviewer: 'everyone' },
+    models: [{ id: 'opus' }, { id: "x'; rm -rf /" }, { id: 'gpt' }, null],
+    defaults: { groomer: "o'pus", groomerEffort: 'auto', worker: 'none', workerEffort: '; ls', reviewer: 'everyone' },
   });
-  assert.ok(hostile.includes('Task models: opus.'), hostile);
-  assert.ok(hostile.includes('Defaults: groomer opus effort auto, worker sonnet effort auto, reviewer none.'), hostile);
+  assert.ok(hostile.includes('Models: opus.'), hostile);
+  assert.ok(hostile.includes('Defaults: groomer opus medium, worker opus medium, reviewer none.'), hostile);
   assert.ok(!hostile.includes('rm -rf') && !hostile.includes("'") && !hostile.includes('; ls'), hostile);
 });
 
@@ -127,12 +141,13 @@ test('buildClaudeBase: an invalid effort falls back to medium rather than reachi
   }
 });
 
-test('buildLoopCommand: the bootstrap prompt carries no effort ceiling (t-cffc); effort appears only as a default', () => {
+test('buildLoopCommand: the bootstrap prompt carries no effort ceiling (t-cffc); efforts appear only as defaults and ranges', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), '1m', cfg());
   assert.ok(!cmd.includes('effort ceiling'));
   // The loop session effort is the --effort flag; the only efforts in the prompt are the two
-  // per-task defaults (t-0e99).
-  assert.equal(cmd.match(/effort/g).length, 2, cmd);
+  // per-task defaults (t-0e99), and a per-model range only when one is narrowed.
+  assert.ok(!/effort/.test(cmd), cmd);
+  assert.equal(cmd.match(/\b(low|medium|high|xhigh|max)\b/g).length, 2, cmd);
 });
 
 test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do not expand', () => {
@@ -222,7 +237,7 @@ test('template-todo.md scaffold parses to zero entries and is a fixpoint', () =>
 
 test('buildLoopCommand: the grooming concurrency cap is spliced into the prompt', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), '1m', cfg({ groomConcurrency: 5 }));
-  assert.ok(cmd.includes('grooming concurrency cap of 5'), 'cap injected');
+  assert.ok(cmd.includes('grooming cap 5.'), 'cap injected');
   assert.ok(!cmd.includes("'"), 'still apostrophe-free');
   assert.ok(!cmd.includes('\n'), 'still a single line');
   assert.ok(cmd.length < 300, 'still inside the bootstrap line budget');
@@ -230,7 +245,7 @@ test('buildLoopCommand: the grooming concurrency cap is spliced into the prompt'
 
 test('buildLoopCommand: the cap defaults to 3 when omitted', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), '1m', cfg({ groomConcurrency: undefined }));
-  assert.ok(cmd.includes('grooming concurrency cap of 3'));
+  assert.ok(cmd.includes('grooming cap 3.'));
 });
 
 test('buildLoopCommand: a hostile or out-of-range cap falls back to 3, never reaching the line raw', () => {
@@ -238,7 +253,7 @@ test('buildLoopCommand: a hostile or out-of-range cap falls back to 3, never rea
   // survive. There is deliberately no `0 = unlimited` sentinel.
   for (const bad of ['5; rm -rf /', 0, -1, 1.5, NaN, Infinity, 100, null, undefined, {}]) {
     const cmd = buildLoopCommand(readMedia('template-loop.md'), '1m', cfg({ groomConcurrency: bad }));
-    assert.ok(cmd.includes('grooming concurrency cap of 3'), `expected ${JSON.stringify(bad)} -> 3`);
+    assert.ok(cmd.includes('grooming cap 3.'), `expected ${JSON.stringify(bad)} -> 3`);
     assert.ok(!cmd.includes('rm -rf'));
   }
 });
@@ -276,7 +291,7 @@ test('the orchestrator prompt carries no delegation switch, whatever the old set
   const cmd = buildLoopCommand(readMedia('template-loop.md'), '5m', cfg());
   assert.ok(!cmd.includes('Delegate work') && !cmd.includes('without review'));
   assert.ok(cmd.includes('.loopboard/LOOP.md') && cmd.includes('Automation section'), 'still points at the Automation section');
-  assert.ok(cmd.includes('grooming concurrency cap of'), 'still names the grooming cap');
+  assert.ok(cmd.includes('grooming cap'), 'still names the grooming cap');
 });
 
 test('template Automation block: delegation is always on, the review runs on the resolved reviewer, none = no review', () => {
@@ -289,7 +304,8 @@ test('template Automation block: delegation is always on, the review runs on the
   assert.match(fence, /no git worktree, no --no-verify/, 'implementer inherits the git contract');
   assert.match(fence, /writes any `\.loopboard\/` file/, 'subagents never write the tracker');
   assert.match(fence, /If the task's resolved reviewer is `none`: take the returned PR straight through the finishing order above/);
-  assert.match(fence, /review subagent on the resolved reviewer model \(`auto` = the resolved groomer model; the resolved worker model when that is `auto` or `none`\) at the implementer's final effort, one step higher on Haiku/);
+  assert.match(fence, /review subagent on the resolved reviewer model at the resolved worker effort of the task, to review the PR/);
+  assert.match(fence, /returns its URL, branch, commit shas, a per-goal account, deviations, anything unverified and its `complexity:` line/);
   assert.ok(!fence.includes('gh pr merge'), 'the loop never merges a PR (merging is the human action alone)');
   assert.match(fence, /NEVER merge a PR/, 'the prohibition is stated, not merely implied by absence');
   assert.match(fence, /Review = delivered with its PR still OPEN/, 'an open PR is the normal successful end state');
@@ -328,14 +344,31 @@ test('template: the legacy guard stands a per-model loop down, and the prompt ne
   assert.ok(!buildLoopCommand(tpl, '1m', cfg()).includes('You are running as model'));
 });
 
-test('template: grooming writes the auto picks onto the index, for grooming and for working', () => {
+test('template: grooming never picks a model or effort; complexity is recorded, never routed (owner decision 2026-10-14)', () => {
+  const tpl = readMedia('template-loop.md');
+  const fence = automationFence(tpl);
+  assert.ok(!/\bauto\b/.test(tpl.replace(/--permission-mode auto/g, '')), 'no `auto` value or rule anywhere in the template');
+  for (const gone of ['`auto` table', 'work: <model> <effort>', 'a pick on the index then counts as set', 'one step higher on Haiku', 'Derived effort', 're-spawned one level up']) {
+    assert.ok(!tpl.includes(gone), 'still in the template: ' + gone);
+  }
+  assert.match(fence, /## Goals \(a bullet list of verifiable outcomes; a worker never edits Problem or Goals\) plus its Meta `complexity-groomer:`/);
+  assert.match(fence, /`link:` \(the PR URL when a PR exists, otherwise the branch name, never a commit sha\) and `complexity-worker:` \(from the implementer report\); THEN commit and push/);
+});
+
+test('template: a Feedback or Review task whose answers or feedback change the story goes back through a groomer first (t-0e99 FB9)', () => {
   const fence = automationFence(readMedia('template-loop.md'));
-  assert.match(fence, /replace each of its groomer model and groomer effort that is `auto` \(set, or by default\) with its pick by the Subagents `auto` table from the draft text, `feedback:` and answers, written as `groomer:`\/`groomer-effort:` on its index entry BEFORE spawning, and leave a field that is not `auto` as set/);
-  assert.match(fence, /when its worker model or effort is `auto`, brief the groomer to end its report with one line `work: <model> <effort> \(<signals>\)` picked the same way/);
-  // Only the `auto` fields are replaced: an explicit model (Haiku or Fable included) survives.
-  assert.match(fence, /an explicit worker model keeps its model and only takes the effort, one step higher on Haiku\), and write only the worker fields that are `auto` as concrete `model:`\/`effort:` together with the groomed story/);
-  assert.match(fence, /a pick on the index then counts as set/);
-  assert.match(fence, /a field set back to `auto` is picked again on the next re-groom/);
+  const step4 = fence.slice(fence.indexOf('(4) '), fence.indexOf('(5) '));
+  const step5 = fence.slice(fence.indexOf('(5) '), fence.indexOf('(6) '));
+  const order = [
+    'if the answers change its Problem, Description or Goals',
+    'FIRST spawn or resume a GROOM subagent with its task file story and the answers',
+    'write the returned sections to the task file',
+    'delete the folded question/answer pairs from the index',
+    'ONLY then let an implementer continue',
+  ].map((x) => step4.indexOf(x));
+  order.forEach((i) => assert.ok(i > 0, 'step (4) names every re-groom step'));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'groom, write, delete, then implement');
+  assert.match(step5, /feedback that changes its Problem, Description or Goals takes the same GROOM step first, as in \(4\)/);
 });
 
 test('template: the Automation intro and Notes describe ONE orchestrator loop', () => {
@@ -345,7 +378,7 @@ test('template: the Automation intro and Notes describe ONE orchestrator loop', 
   assert.match(intro, /`Claude Orchestrator`/);
   assert.ok(!/per model|You are running as/.test(intro));
   const notes = tpl.slice(tpl.indexOf('Notes:'), tpl.indexOf('<!-- loopboard:sync:automation:end -->'));
-  assert.match(notes.replace(/\s+/g, ' '), /your own `--model`\/`--effort`, grooming cap, task models and defaults ride the spawn command/);
+  assert.match(notes.replace(/\s+/g, ' '), /your own `--model`\/`--effort`, grooming cap, task models with effort ranges, defaults and model ids ride the spawn/);
   assert.match(notes, /▶ starts the one orchestrator loop/);
 });
 
@@ -461,7 +494,7 @@ test('the spawn line carries the orchestrator --model, --effort and --name loopb
 test('src/terminals.ts names every terminal it creates through loopTerminalName, never from a model id', () => {
   const src = fs.readFileSync(path.join(process.cwd(), 'src', 'terminals.ts'), 'utf8');
   const creates = src.split('\n').filter((l) => l.includes('createTerminal('));
-  assert.deepEqual(creates.map((l) => l.trim()), ["const terminal = vscode.window.createTerminal({ name: loopTerminalName(loop), cwd: this.getCwd() });"]);
+  assert.deepEqual(creates.map((l) => l.trim()), ["const terminal = vscode.window.createTerminal({ name: loopTerminalName(loop), cwd: this.getCwd(), env });"]);
   assert.ok(!src.includes('BUILTIN_MODEL_IDS'), 'terminals are never keyed by task models');
 });
 

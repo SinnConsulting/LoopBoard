@@ -32,21 +32,21 @@ test('no LoopBoard agent definition ships with the repo', () => {
 
 test('template: every spawn passes model and effort, as general-purpose, on Claude Code 2.1.292+', () => {
   const r = subagentsRule();
-  assert.match(r, /EVERY Agent-tool spawn MUST pass `model` and `effort`/);
-  // t-0e99: every groom, implementation and review is a subagent on the TASK's resolved model.
+  assert.match(r, /EVERY Agent-tool spawn MUST pass `model` and `effort`, NEVER picked or estimated by you/);
+  // t-0e99: every groom, implementation and review is a subagent on the TASK's own model and effort,
+  // else the configured default (owner decision 2026-10-14: nothing picks one on the user's behalf).
   assert.match(r, /You never edit code: EVERY groom, implementation and review is a `general-purpose` subagent/);
-  assert.match(r, /`model` = the task's resolved `groomer:`\/`model:`\/`reviewer:` \(absent = prompt default\)/);
-  assert.match(r, /effort = its `groomer-effort:`\/`effort:` as set, `auto` = rubric below/);
+  assert.match(r, /`model` = the task's `groomer:`\/`model:`\/`reviewer:`, effort = its `groomer-effort:`\/`effort:` \(a review: the task's worker effort\); an absent field = the default your bootstrap prompt names/);
+  assert.match(r, /A model it lists as `<model> <min>-<max>` clamps that effort into the range/, 'the per-model floor and ceiling (FB7)');
   assert.match(r, /2\.1\.292\+/);
-  assert.match(r, /else `medium`, the default/);
   assert.match(r, /Your own `--effort` governs only you/, 'the orchestrator effort governs only the loop itself');
 });
 
-test('template: subagent titles are <effort>-<task id>: and haiku-<task id>:', () => {
+test('template: subagent titles carry the full <mode> <model>-<effort>-<task id>: prefix before the story title (t-0e99 FB1/FB5/FB6)', () => {
   const r = subagentsRule();
-  assert.match(r, /`<effort>-<task id>: <2-4 word headline>`/);
-  assert.match(r, /`high-t-4589: Swing sheet`/);
-  assert.match(r, /`haiku-<task id>: <headline>`/);
+  assert.match(r, /Title \(Agent `description`; ignore its 3-5 word hint, the full prefix MUST come before the title\): `<groom\|work\|review> <model>-<effort>-<task id>: <task title>`/);
+  assert.match(r, /`work opus-high-t-4589: Swing sheet export`/);
+  assert.match(r, /title `<mode> haiku-low-<id>: <headline>`/);
 });
 
 test('template: Haiku is a full task model (t-0e99); the helper still never commits', () => {
@@ -56,45 +56,28 @@ test('template: Haiku is a full task model (t-0e99); the helper still never comm
   assert.match(r, /Helper never commits, pushes or branches/);
 });
 
-test('template: the auto table: Sonnet at the level for low/medium/high, Opus at xhigh, never Haiku or Fable', () => {
+test('template: no auto table, no derived effort, no re-spawn one level up (owner decision 2026-10-14)', () => {
   const r = subagentsRule();
-  assert.match(r, /`auto` table, row = the rubric level: low\/medium\/high → Sonnet at that effort, xhigh → Opus at `xhigh`/);
-  assert.match(r, /never Haiku or Fable, never above `xhigh`/);
-  assert.match(r, /never a model your prompt does not list \(then the other of Sonnet\/Opus; neither listed → `phase: feedback` \+ `question:`\)/);
+  for (const gone of [/`auto`/, /auto table/i, /Derived effort/, /one step higher on Haiku/, /re-spawned one level up/, /bigger than briefed/, /rubric/i, /never effort `max`/]) {
+    assert.doesNotMatch(r, gone);
+  }
 });
 
-test('template: a derived effort is raised one step on Haiku and is the only one re-spawned up', () => {
+test('template: complexity is a record (four signals, levels, the report line and the two Meta keys), never routing', () => {
   const r = subagentsRule();
-  assert.match(r, /Derived effort \(an `auto` pick, a review's implementer effort\): one step higher on Haiku \(max `xhigh`\)/);
-  assert.match(r, /still derived at spawn, a subagent reporting "bigger than briefed" is re-spawned one level up \(max `xhigh`\), never pushed on/);
-});
-
-test('template: the four effort signals, each with its defining phrase', () => {
-  const r = subagentsRule();
-  assert.match(r, /\*\*S\*\* spans 3\+ separately running or shipped parts/);
-  assert.match(r, /tests and docs never count/);
-  assert.match(r, /\*\*N\*\* a Goal states a threshold, timing, size, budget or count the worker must measure or pin down/);
+  assert.match(r, /Complexity is a RECORD, never routing/);
+  assert.match(r, /a GROOM subagent ends its report with `complexity: <level> \(<signals>\)` judged from the groomed story, an implementer judged from what the work took/);
+  assert.match(r, /`-` = no signal: `high \(D\)`, `medium \(-\)`/);
+  assert.match(r, /you write it to Meta as `complexity-groomer:` with the groomed story \(a re-groom overwrites it\) or `complexity-worker:` with `## Delivered`/);
+  assert.match(r, /\*\*S\*\* spans 3\+ separately running or shipped parts \(tests and docs never count\)/);
+  assert.match(r, /\*\*N\*\* a Goal states a threshold, timing, size, budget or count to measure or pin down/);
   assert.match(r, /\*\*D\*\* the story amends or reverses a recorded decision/);
-  assert.match(r, /\*\*U\*\* the approach is open \(2\+ options, none picked\), a bug's root cause is unknown, or a Goal says investigate or measure before deciding/);
-});
-
-test('template: levels, tie-break and the effort brief line', () => {
-  const r = subagentsRule();
-  assert.match(r, /`high` = at least one of S\/N\/D/);
-  assert.match(r, /`xhigh` = at least two of S\/N\/D AND U/);
-  assert.match(r, /`low` = no signal AND every Goal names the exact file and exact text or value AND no new logic branch/);
-  assert.match(r, /Tie-break: a signal the story leaves unclear counts as absent — the lower level wins/);
-  assert.match(r, /`effort: <level> \(<signals that held>\)`/);
-  assert.match(r, /`effort: high \(D\)`/);
-  assert.match(r, /re-spawned one level up \(max `xhigh`\), never pushed on/);
-  assert.match(r, /A resume \(SendMessage\) keeps its spawn effort: re-spawn to change it/);
-});
-
-test('template: never fork, never max, review at the implementer\'s final effort', () => {
-  const r = subagentsRule();
+  assert.match(r, /\*\*U\*\* the approach is open, a root cause is unknown, or a Goal says investigate first/);
+  assert.match(r, /`low` = no signal AND every Goal names the exact file and exact text or value AND no new logic branch; `high` = at least one of S\/N\/D; `xhigh` = two of S\/N\/D AND U; else `medium`/);
+  assert.match(r, /A signal the story leaves unclear counts as absent/);
+  assert.match(r, /Brief names mode \(GROOM\/WORK\/REVIEW\), task id and `effort: <level>`/);
+  assert.match(r, /a resume \(SendMessage\) keeps its spawn effort/);
   assert.match(r, /Never `subagent_type: fork`/);
-  assert.match(r, /never effort `max`/);
-  assert.match(r, /the review runs at the implementer's final effort/);
 });
 
 test('template: the Haiku helper test — kind, determined, checkable, worth it; doubt keeps the task model', () => {
@@ -116,10 +99,10 @@ test('template: the GROOM/WORK limits of the old agent bodies appear once, and e
   assert.equal(count(/names overlapping tasks by full title/g), 1);
   assert.equal(count(/A GROOM subagent returns its report: title, `## Problem`, `## Description`, `## Goals`, and every human decision with its concrete options \(max 3, recommended first\) and the reason for the recommendation/g), 1, 'GROOM return report once');
   assert.equal(count(/commits only its own files by explicit path/g), 1, 'WORK staging once');
-  assert.equal(count(/a per-goal account, deviations and anything unverified/g), 1, 'WORK return report once');
+  assert.equal(count(/a per-goal account, deviations, anything unverified and its `complexity:` line/g), 1, 'WORK return report once');
   assert.equal(count(/Neither the implementer nor the review subagent reads or writes any `\.loopboard\/` file \(Rule 16\)/g), 1, 'WORK neither reads nor writes .loopboard/');
   assert.doesNotMatch(all, /Interval \(`loopBoard\.loopInterval`\), effort,/, 'the old "effort rides the spawn command" note is gone');
-  assert.match(all, /your own `--model`\/`--effort`, grooming cap, task models and defaults ride the spawn command/);
+  assert.match(all, /your own `--model`\/`--effort`, grooming cap, task models with effort ranges, defaults and model ids ride the spawn/);
 });
 
 // The removed "Optional: effort-based delegation" section and every loop-agent reference it held
@@ -141,6 +124,7 @@ test('package.json: the orchestrator effort sets the loop only; subagents get th
   const props = {};
   for (const block of [].concat(pkg.contributes.configuration)) Object.assign(props, block.properties);
   assert.deepEqual(Object.keys(props).filter((k) => /\.effort$/.test(k)), ['loopBoard.orchestrator.effort'], 'no per-slot effort keys remain');
+  assert.match(props['loopBoard.models.haiku.minEffort'].markdownDescription, /lowest effort any subagent on Haiku runs at/, 'the per-model floor (FB7)');
   const d = props['loopBoard.orchestrator.effort'].markdownDescription;
   assert.doesNotMatch(d, /same effort|every subagent/i, 'the orchestrator effort must not claim subagents share it');
   assert.match(d, /subagents get their effort per spawn/);

@@ -123,11 +123,10 @@ class Host {
       groomer: this.setting('defaultGroomerModel', TASK_DEFAULTS.groomer),
     };
   }
-  // The settings grid as the controller builds it (t-0e99): orchestrator block + models table.
+  // The settings grid as the controller builds it (t-0e99): Roles table + Models table.
   grid() {
     const set = (k) => this.settings[k];
-    const raw = set('orchestrator.model') ?? '';
-    return buildModelGrid(this.modelsCfg(), { raw, resolved: resolveOrchestrator(set) }, this.defaults());
+    return buildModelGrid(this.modelsCfg(), resolveOrchestrator(set), this.defaults());
   }
   modelsCfg() {
     const cfg = {};

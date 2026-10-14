@@ -22,10 +22,6 @@ export const BUILTIN_MODELS: { id: Model; label: string }[] = [
 
 export const BUILTIN_MODEL_IDS: Model[] = BUILTIN_MODELS.map((m) => m.id);
 
-// `auto` (t-0e99): the orchestrator picks the model or effort itself (LOOP.md Subagents table) and
-// writes the concrete value onto the index entry.
-export const AUTO = 'auto';
-
 // "On hold" sentinel for the `groomer:` field (t-65a2). Absent still means "default groomer";
 // this explicit value means NO groomer — no loop may groom, re-groom or answer-fold the task
 // until the human picks a real groomer again. It is a value of the existing routing field rather
@@ -33,30 +29,25 @@ export const AUTO = 'auto';
 // `reviewer:` means no review subagent runs.
 export const GROOMER_HOLD = 'none';
 export const NO_REVIEW = 'none';
-export type ModelValue = Model | typeof AUTO;
-export type GroomerValue = Model | typeof AUTO | typeof GROOMER_HOLD;
-export type ReviewerValue = Model | typeof AUTO | typeof NO_REVIEW;
+export type GroomerValue = Model | typeof GROOMER_HOLD;
+export type ReviewerValue = Model | typeof NO_REVIEW;
 
 export function isModel(v: unknown): v is Model {
   return typeof v === 'string' && (BUILTIN_MODEL_IDS as string[]).includes(v);
 }
-export function isModelValue(v: unknown): v is ModelValue {
-  return v === AUTO || isModel(v);
-}
 export function isGroomerValue(v: unknown): v is GroomerValue {
-  return v === GROOMER_HOLD || isModelValue(v);
+  return v === GROOMER_HOLD || isModel(v);
 }
 export function isReviewerValue(v: unknown): v is ReviewerValue {
-  return v === NO_REVIEW || isModelValue(v);
+  return v === NO_REVIEW || isModel(v);
 }
 
-// Per-task effort (`effort:` / `groomer-effort:`). `max` is deliberately absent: it is a loop
-// session level only (`EFFORT_LEVELS` below), never a per-task value.
+// Per-task effort (`effort:` / `groomer-effort:`). `max` is deliberately absent (human decision,
+// t-0e99): only the role defaults and the orchestrator's own session may run at `max`.
 export const TASK_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 export type TaskEffort = (typeof TASK_EFFORT_LEVELS)[number];
-export type EffortValue = TaskEffort | typeof AUTO;
-export function isEffortValue(v: unknown): v is EffortValue {
-  return v === AUTO || (typeof v === 'string' && (TASK_EFFORT_LEVELS as readonly string[]).includes(v));
+export function isTaskEffort(v: unknown): v is TaskEffort {
+  return typeof v === 'string' && (TASK_EFFORT_LEVELS as readonly string[]).includes(v);
 }
 
 // Loop identity (t-0e99), split from the task model: it keys the terminal, the session name and
@@ -80,23 +71,60 @@ export function isValidModelString(s: string): boolean {
   return MODEL_STRING_RE.test(s);
 }
 
-// Reasoning effort the orchestrator's loop session is started with, passed as `claude --effort
-// <level>` (t-cffc, buildClaudeBase). It governs the loop session only: each subagent gets its
-// effort per spawn (t-716f), from the task's `effort:`/`groomer-effort:` or the LOOP.md rubric.
-// Same five levels as the CLI's `--effort`. Order matters (Faster -> Smarter).
+// The CLI's five `--effort` levels: the orchestrator's session (`claude --effort`, t-cffc), the
+// role defaults and the per-model floor/ceiling. Each subagent gets its effort per spawn (t-716f)
+// from the task's `effort:`/`groomer-effort:`, else the role default. Order matters (Faster ->
+// Smarter): `clampEffort` relies on it.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORT_LEVELS)[number];
-export function isValidEffort(s: string): s is Effort {
-  return (EFFORT_LEVELS as readonly string[]).includes(s);
+export function isValidEffort(s: unknown): s is Effort {
+  return typeof s === 'string' && (EFFORT_LEVELS as readonly string[]).includes(s);
 }
 
-// Per-model user configuration: only whether the model is offered (board selects, `auto`, the
-// bootstrap prompt's task-model list). The per-slot `--model`/effort/grooming-cap keys are gone with
-// the per-model loops (t-0e99); the orchestrator carries its own.
+// Per-model effort floor and ceiling (t-0e99 FB7): every spawn on that model has its effort clamped
+// into [minEffort, maxEffort]. The full range (low..max) clamps nothing, and is what an unset, invalid
+// or inverted (min above max) pair resolves to, so a bad pair never narrows anything by accident.
+export interface EffortRange {
+  minEffort: Effort;
+  maxEffort: Effort;
+}
+export const FULL_EFFORT_RANGE: EffortRange = { minEffort: 'low', maxEffort: 'max' };
+
+export function sanitizeEffortRange(min: unknown, max: unknown): EffortRange {
+  const lo = isValidEffort(min) ? min : FULL_EFFORT_RANGE.minEffort;
+  const hi = isValidEffort(max) ? max : FULL_EFFORT_RANGE.maxEffort;
+  return EFFORT_LEVELS.indexOf(lo) > EFFORT_LEVELS.indexOf(hi) ? { ...FULL_EFFORT_RANGE } : { minEffort: lo, maxEffort: hi };
+}
+
+export function isNarrowed(r: EffortRange): boolean {
+  return r.minEffort !== FULL_EFFORT_RANGE.minEffort || r.maxEffort !== FULL_EFFORT_RANGE.maxEffort;
+}
+
+export function clampEffort(effort: Effort, r: EffortRange): Effort {
+  const at = EFFORT_LEVELS.indexOf(effort);
+  const lo = EFFORT_LEVELS.indexOf(r.minEffort);
+  const hi = EFFORT_LEVELS.indexOf(r.maxEffort);
+  return EFFORT_LEVELS[Math.min(hi, Math.max(lo, at))];
+}
+
+// Per-model user configuration (t-0e99): whether the model is offered (board selects, the bootstrap
+// prompt's model list), the model id its alias resolves to (FB4: `''` = the CLI's own alias) and its
+// effort floor/ceiling (FB7). The per-slot `--model`/effort/grooming-cap keys are gone with the
+// per-model loops; the orchestrator carries its own.
 export interface ModelConfigObject {
   enabled?: boolean; // default true
+  modelId?: string; // default '' (the alias as the CLI resolves it)
+  minEffort?: string;
+  maxEffort?: string;
 }
 export type ModelsConfig = Record<string, ModelConfigObject | undefined>;
+
+// The env var the Claude Code CLI reads to resolve each alias (verified with 2.1.296: it moves both
+// the session's own `--model <alias>` and every Agent-tool spawn with that `model`). The Agent tool
+// accepts only the four aliases, so this is the one way a model id reaches a subagent.
+export function aliasEnvVar(model: Model): string {
+  return `ANTHROPIC_DEFAULT_${model.toUpperCase()}_MODEL`;
+}
 
 // Cap on grooming subagents one orchestrator pass may run in parallel (t-23ce). There is
 // deliberately NO `0 = unlimited` sentinel: unbounded fan-out is the defect this cap exists to
@@ -111,25 +139,63 @@ export function sanitizeGroomConcurrency(value: unknown): number {
   return value;
 }
 
-// Build a ModelsConfig from the flattened `models.<id>.enabled` keys. `get` is a scoped config
-// lookup (a vscode WorkspaceConfiguration.get bound to the `loopBoard` section), passed as a plain
-// function so this module stays vscode-free and unit-testable.
-export function readModelsConfig(get: <T>(key: string, dflt: T) => T): ModelsConfig {
+// Build a ModelsConfig from the flattened `models.<id>.*` keys. `get` is a scoped config lookup (a
+// vscode WorkspaceConfiguration.get bound to the `loopBoard` section), passed as a plain function so
+// this module stays vscode-free and unit-testable. `set` (optional) is the explicit-value lookup:
+// while `models.<id>.modelId` is unset, the old per-slot `models.<id>.model` string (the loop's own
+// `--model` before t-0e99) is read as the model id (read-both, never a write) until migrated.
+export function readModelsConfig(get: <T>(key: string, dflt: T) => T, set?: SetLookup): ModelsConfig {
   const cfg: ModelsConfig = {};
-  for (const id of BUILTIN_MODEL_IDS) cfg[id] = { enabled: get<boolean>(`models.${id}.enabled`, true) };
+  for (const id of BUILTIN_MODEL_IDS) {
+    let modelId = get<string>(`models.${id}.modelId`, '');
+    if (!modelId && set) {
+      const legacy = set(`models.${id}.model`);
+      if (typeof legacy === 'string' && legacy.trim() !== id) modelId = legacy;
+    }
+    cfg[id] = {
+      enabled: get<boolean>(`models.${id}.enabled`, true),
+      modelId,
+      minEffort: get<string>(`models.${id}.minEffort`, FULL_EFFORT_RANGE.minEffort),
+      maxEffort: get<string>(`models.${id}.maxEffort`, FULL_EFFORT_RANGE.maxEffort),
+    };
+  }
   return cfg;
 }
 
 // A task model after applying user config. Order follows BUILTIN_MODELS.
-export interface ResolvedModel {
+export interface ResolvedModel extends EffortRange {
   id: Model;
   label: string;
   enabled: boolean;
+  modelId: string; // validated; '' = the CLI's own alias
 }
 
 export function resolveModels(config?: ModelsConfig): ResolvedModel[] {
   const cfg = config || {};
-  return BUILTIN_MODELS.map((m) => ({ id: m.id, label: m.label, enabled: cfg[m.id]?.enabled !== false }));
+  return BUILTIN_MODELS.map((m) => {
+    const c = cfg[m.id];
+    const id = typeof c?.modelId === 'string' ? c.modelId.trim() : '';
+    return {
+      id: m.id,
+      label: m.label,
+      enabled: c?.enabled !== false,
+      modelId: id && isValidModelString(id) ? id : '',
+      ...sanitizeEffortRange(c?.minEffort, c?.maxEffort),
+    };
+  });
+}
+
+// The terminal env that points each overridden alias at its model id. Values never reach a shell
+// line (they are process env), and an invalid id was already dropped by resolveModels.
+export function aliasEnv(models: readonly ResolvedModel[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const m of models) if (m.modelId) env[aliasEnvVar(m.id)] = m.modelId;
+  return env;
+}
+
+export function effortRangeOf(models: readonly ResolvedModel[], model: Model): EffortRange {
+  const m = models.find((r) => r.id === model);
+  return m ? { minEffort: m.minEffort, maxEffort: m.maxEffort } : { ...FULL_EFFORT_RANGE };
 }
 
 export function enabledModels(config?: ModelsConfig): ResolvedModel[] {
@@ -144,46 +210,49 @@ export function enabledModels(config?: ModelsConfig): ResolvedModel[] {
 export type SetLookup = (key: string) => unknown;
 
 export interface OrchestratorConfig {
-  model: string; // validated `--model` string
+  model: Model; // the loop session's `--model` alias (its id override rides the terminal env)
   effort: Effort; // validated loop session `--effort`
   groomConcurrency: number; // validated grooming cap per pass
 }
 
-export const ORCHESTRATOR_DEFAULTS: OrchestratorConfig = { model: 'opus', effort: 'medium', groomConcurrency: DEFAULT_GROOM_CONCURRENCY };
+// Haiku by default (owner decision 2026-10-14, gated on the CLI accepting every permission mode for
+// a Haiku session: decisions/loops.md).
+export const ORCHESTRATOR_DEFAULTS: OrchestratorConfig = { model: 'haiku', effort: 'medium', groomConcurrency: DEFAULT_GROOM_CONCURRENCY };
 
-// The orchestrator defaults to Opus, so the old Opus slot's `.model|.effort|.groomConcurrency` are
-// the values that carry over (the Sonnet/Fable slot keys carry nothing).
+// The old Opus slot's `.effort|.groomConcurrency` still carry over until migrated (the Sonnet/Fable
+// slot keys carry nothing). Its `.model` string is no longer an orchestrator value: it is read as the
+// Opus model id instead (readModelsConfig).
 export function resolveOrchestrator(set: SetLookup): OrchestratorConfig {
   const pick = (key: string): unknown => {
     const v = set(`orchestrator.${key}`);
     return v !== undefined ? v : set(`models.opus.${key}`);
   };
-  const model = pick('model');
+  const model = set('orchestrator.model');
   const effort = pick('effort');
-  const trimmed = typeof model === 'string' ? model.trim() : '';
   return {
-    model: trimmed && isValidModelString(trimmed) ? trimmed : ORCHESTRATOR_DEFAULTS.model,
-    effort: typeof effort === 'string' && isValidEffort(effort) ? effort : ORCHESTRATOR_DEFAULTS.effort,
+    model: isModel(model) ? model : ORCHESTRATOR_DEFAULTS.model,
+    effort: isValidEffort(effort) ? effort : ORCHESTRATOR_DEFAULTS.effort,
     groomConcurrency: sanitizeGroomConcurrency(pick('groomConcurrency')),
   };
 }
 
 // The five per-task defaults an absent index field resolves to. They ride the bootstrap prompt
 // (sync copies LOOP.md byte for byte, so it cannot carry a configured value) and the board's
-// selects show them as `default (<value>)`.
+// selects show them as `default (<value>)`. Nothing ever picks a model or effort on the user's
+// behalf (owner decision 2026-10-14): a spawn gets the task's field, else these.
 export interface TaskDefaults {
-  groomer: ModelValue;
-  groomerEffort: EffortValue;
-  worker: ModelValue;
-  workerEffort: EffortValue;
+  groomer: Model;
+  groomerEffort: Effort;
+  worker: Model;
+  workerEffort: Effort;
   reviewer: ReviewerValue;
 }
 
 export const TASK_DEFAULTS: TaskDefaults = {
   groomer: 'opus',
-  groomerEffort: AUTO,
-  worker: 'sonnet',
-  workerEffort: AUTO,
+  groomerEffort: 'medium',
+  worker: 'opus',
+  workerEffort: 'medium',
   reviewer: NO_REVIEW,
 };
 
@@ -191,34 +260,39 @@ export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
   // The pre-split `loopBoard.defaultModel` still steers both default models while neither new key
   // is set (decisions/loops.md); an off-list value is ignored rather than spawned.
   const legacy = set('defaultModel');
-  const model = (key: string, dflt: ModelValue): ModelValue => {
+  const model = (key: string, dflt: Model): Model => {
     const v = set(key);
-    if (v !== undefined) return isModelValue(v) ? v : dflt;
-    return isModelValue(legacy) ? legacy : dflt;
+    if (v !== undefined) return isModel(v) ? v : dflt;
+    return isModel(legacy) ? legacy : dflt;
   };
-  const effort = (key: string): EffortValue => {
+  const effort = (key: string, dflt: Effort): Effort => {
     const v = set(key);
-    return isEffortValue(v) ? v : AUTO;
+    return isValidEffort(v) ? v : dflt;
   };
   // `loopBoard.delegateReview: true` meant "a review subagent gates the PR"; its successor value is
-  // `auto` (the groomer's model judges against its own Goals). Read only while the new key is unset.
+  // `opus`. Read only while the new key is unset.
   const reviewerSet = set('defaultReviewerModel');
   const reviewer: ReviewerValue = reviewerSet !== undefined
     ? (isReviewerValue(reviewerSet) ? reviewerSet : TASK_DEFAULTS.reviewer)
-    : set('delegateReview') === true ? AUTO : TASK_DEFAULTS.reviewer;
+    : set('delegateReview') === true ? 'opus' : TASK_DEFAULTS.reviewer;
   return {
     groomer: model('defaultGroomerModel', TASK_DEFAULTS.groomer),
-    groomerEffort: effort('defaultGroomerEffort'),
+    groomerEffort: effort('defaultGroomerEffort', TASK_DEFAULTS.groomerEffort),
     worker: model('defaultWorkerModel', TASK_DEFAULTS.worker),
-    workerEffort: effort('defaultWorkerEffort'),
+    workerEffort: effort('defaultWorkerEffort', TASK_DEFAULTS.workerEffort),
     reviewer,
   };
 }
 
-// A task's worker as the orchestrator will resolve it: its own `model:`/`effort:`, else the
-// defaults. What the sidebar's In Progress row shows.
-export function resolveWorker(entry: { model?: ModelValue; effort?: EffortValue }, d: Pick<TaskDefaults, 'worker' | 'workerEffort'>): { model: ModelValue; effort: EffortValue } {
-  return { model: entry.model ?? d.worker, effort: entry.effort ?? d.workerEffort };
+// A task's worker as the orchestrator will spawn it: its own `model:`/`effort:`, else the defaults,
+// the effort clamped into that model's floor/ceiling. What the sidebar's In Progress row shows.
+export function resolveWorker(
+  entry: { model?: Model; effort?: TaskEffort },
+  d: Pick<TaskDefaults, 'worker' | 'workerEffort'>,
+  models: readonly ResolvedModel[] = [],
+): { model: Model; effort: Effort } {
+  const model = entry.model ?? d.worker;
+  return { model, effort: clampEffort(entry.effort ?? d.workerEffort, effortRangeOf(models, model)) };
 }
 
 // What a loop does with its terminal once the board's In-Progress task leaves In Progress (t-1f1e).
@@ -277,10 +351,10 @@ export interface IndexEntry {
   phase: Phase;
   checked: boolean;
   isDraft: boolean;
-  model?: ModelValue; // worker model (absent = default worker)
-  effort?: EffortValue; // worker effort (absent = default worker effort)
+  model?: Model; // worker model (absent = default worker)
+  effort?: TaskEffort; // worker effort (absent = default worker effort)
   groomer?: GroomerValue; // groomer model (absent = default groomer; 'none' = on hold)
-  groomerEffort?: EffortValue; // `groomer-effort:` (absent = default groomer effort)
+  groomerEffort?: TaskEffort; // `groomer-effort:` (absent = default groomer effort)
   reviewer?: ReviewerValue; // review subagent model (absent = default reviewer; 'none' = no review)
   questions: Question[];
   // Human feedback, one item per `feedback:` line, any phase incl. drafts (Rule 13; t-ae10 folded the
@@ -301,6 +375,10 @@ export interface TaskDetail {
   links: string[];
   dependsOn: string[];
   tags: string[]; // normalized (tags.ts), `- tags:` in Meta, [] when none (t-0b10)
+  // Complexity records (t-0e99), free text `<level> (<signals>)`: written by the orchestrator from
+  // the groomer's and the implementer's reports. A record only: nothing routes by them.
+  complexityGroomer?: string;
+  complexityWorker?: string;
   // Groomer-owned bookends around the story (t-2191): `problem` is why the task exists (short and
   // factual), `goals` is what "done" means (a bullet list the reviewer judges `delivered` against).
   // Both free markdown like `description`, both optional — existing task files simply have neither.

@@ -161,13 +161,13 @@ Loops never commit to `main` and never merge. Merging is your call.
 **▶** opens ONE VS Code terminal, `Claude Orchestrator`, running one command:
 
 ```sh
-claude --permission-mode auto --model 'opus' --effort medium --name loopboard-orchestrator-<id> \
-  '/loop 5m You are the LoopBoard orchestrator with a grooming concurrency cap of 3. Task models: …'
+claude --permission-mode auto --model 'haiku' --effort medium --name loopboard-orchestrator-<id> \
+  '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus, sonnet, fable, …'
 ```
 
 The Orchestrator never edits code: every groom, implementation and review is a subagent on the
-task's own model and effort (**Groom with**, **Work with** and **Review with** on each card, `auto`
-to let it pick). The prompt names the defaults and points at the **Automation** section of
+task's own model and effort (**Groom with**, **Work with** and **Review with** on each card), else
+the role default; it never picks one for you. The prompt names the defaults and points at the **Automation** section of
 `.loopboard/LOOP.md`, which the loop re-reads every pass: edit your rules there and it follows.
 
 - **Context bar**: the session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
@@ -197,10 +197,11 @@ sessions in them are simulated (VS Code can't read a terminal).
 <details>
 <summary><b>8 · Settings</b></summary>
 
-The sidebar's **Settings** link opens LoopBoard's settings page. The **Orchestrator** block sets
-the one loop's `--model`, effort and grooming cap. The **Models** table turns each task model on or
-off and picks the **default groomer**, **default worker** and **default reviewer** (a model, `auto`
-or `none`), with a default effort beside the groomer and worker. Other settings are grouped below.
+The sidebar's **Settings** link opens LoopBoard's settings page. The **Roles** table picks, from
+dropdowns, the model and effort of the **Orchestrator** (plus its grooming cap) and the defaults for
+the **groomer**, **worker** and **reviewer** (`none` = no review). The **Models** table turns each
+model on or off, can point its alias at a specific **model id**, and sets its **lowest** and
+**highest effort**: every spawn on that model is clamped into that range. Other settings follow.
 
 - These are **VS Code user settings**; a cloned repo can never change how much authority your agent
   gets.
@@ -359,18 +360,16 @@ is a subagent with its own `model` and `effort`, passed per spawn, which needs *
 2.1.292+** (an older CLI most likely drops the effort silently). The Orchestrator never edits code.
 
 - **Per task.** `Groom with`, `Work with` and `Review with` on each card (and in the composer) pick
-  the subagent models: Opus, Sonnet, Fable, Haiku, `auto`, or `none` for grooming (on hold) and
-  review (no review). An effort select sits beside **Groom with** and **Work with**: `low`…`xhigh`
-  or `auto`. Unset fields use the defaults on the settings page.
-- **`auto`.** The effort comes from `LOOP.md`'s rubric (four signals in the story: subsystems,
-  numbers to pin down, a reversed decision, an open approach; `medium` by default). The model
-  follows the rubric level: Sonnet at `low`/`medium`/`high`, Opus at `xhigh`, never Haiku or Fable.
-  The Orchestrator writes its picks onto the card, groomer picks before grooming and the work pick
-  with the groomed story, so you can change them before promoting.
-- **Haiku.** A full task model, chosen by hand only. An effort the Orchestrator derives for a Haiku
-  subagent runs one step higher (max `xhigh`); an effort you set is used as set.
-- **Review.** `Review with` (default `none`) runs a review subagent at the implementer's final
-  effort; `auto` means the model that groomed the story.
+  the subagent models: Opus, Sonnet, Fable, Haiku, or `none` for grooming (on hold) and review (no
+  review). An effort select sits beside **Groom with** and **Work with** (`low`…`xhigh`). Unset
+  fields use the role defaults on the settings page. LoopBoard never picks a model or effort for you.
+- **Effort range per model.** A model's lowest and highest effort (settings page) clamp every spawn
+  on it, whether the effort came from the task or a default.
+- **Complexity.** The groomer and the implementer each record the task's complexity in its task file
+  (`complexity-groomer:` / `complexity-worker:`, e.g. `high (D)`), for calibration only.
+- **Review.** `Review with` (default `none`) runs a review subagent at the task's worker effort.
+- **Sidebar names.** Agents rows read `<groom|work|review> <model>-<effort>-<task id>: <title>`, and
+  so does each subagent's name in Claude Code.
 - **Check effort in the transcript, never by asking.** A subagent asked for its effort makes one
   up; the `"effort"` field in its JSONL under `~/.claude/projects/` is the truth.
 

@@ -13,11 +13,11 @@
 //   - [ ] <Title — single line>
 //     - id: t-3f9a               (assigned on write if missing; identity anchor)
 //     - phase: new | backlog | inprogress | feedback | review   (omitted for DRAFTs = new)
-//     - model: opus | sonnet | fable | haiku | auto           (optional; worker model)
-//     - effort: low | medium | high | xhigh | auto             (optional; worker effort)
-//     - groomer: opus | sonnet | fable | haiku | auto | none   (optional; `none` = on hold)
-//     - groomer-effort: low | medium | high | xhigh | auto     (optional)
-//     - reviewer: opus | sonnet | fable | haiku | auto | none  (optional; `none` = no review)
+//     - model: opus | sonnet | fable | haiku           (optional; worker model)
+//     - effort: low | medium | high | xhigh            (optional; worker effort)
+//     - groomer: opus | sonnet | fable | haiku | none  (optional; `none` = on hold)
+//     - groomer-effort: low | medium | high | xhigh    (optional)
+//     - reviewer: opus | sonnet | fable | haiku | none (optional; `none` = no review)
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
@@ -30,7 +30,7 @@
 //   `reviewer:` in TODO.md only (DONE.md keeps id/model/groomer/completed, t-0e99).
 // ========================================================================================
 
-import { IndexDoc, IndexEntry, Phase, Question, isModelValue, isGroomerValue, isReviewerValue, isEffortValue } from './model';
+import { IndexDoc, IndexEntry, Phase, Question, isModel, isGroomerValue, isReviewerValue, isTaskEffort } from './model';
 
 const TASKS_HEADING_RE = /^##\s+Tasks\b/i;
 const TASK_RE = /^- \[([ xX])\]\s?(.*)$/;
@@ -77,7 +77,7 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
       // An off-list value of any of the five routing keys returns false and lands in
       // unknownLines (flagged), reading as "absent" without voiding the entry's other keys.
       case 'model':
-        if (!isModelValue(v)) return false;
+        if (!isModel(v)) return false;
         entry.model = v;
         return true;
       case 'groomer':
@@ -88,11 +88,11 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
         entry.groomer = v;
         return true;
       case 'effort':
-        if (allowCompleted || !isEffortValue(v)) return false;
+        if (allowCompleted || !isTaskEffort(v)) return false;
         entry.effort = v;
         return true;
       case 'groomer-effort':
-        if (allowCompleted || !isEffortValue(v)) return false;
+        if (allowCompleted || !isTaskEffort(v)) return false;
         entry.groomerEffort = v;
         return true;
       case 'reviewer':

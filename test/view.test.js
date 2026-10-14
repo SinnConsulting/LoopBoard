@@ -140,7 +140,7 @@ test('computeConcurrency: one In Progress + a Backlog task → Active Queue name
   };
   const c = computeConcurrency(board, 'opus');
   // Each row carries the task's worker model AND effort (t-0e99), defaults filled in.
-  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet', effort: 'auto' }]);
+  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet', effort: 'medium' }]);
   assert.deepEqual(c.skipped, [{ id: 't-prep', title: 'Prepared' }]);
   assert.equal(c.breached, false);
   assert.equal(c.message, 'Active Queue: t-run (sonnet)');
@@ -358,20 +358,20 @@ test('the five defaults ride the payload, and each task carries effort, groomer-
   const board = {
     preamble: '', done: [],
     tasks: [
-      task({ id: 't-1', phase: 'backlog', model: 'haiku', effort: 'high', groomer: 'auto', groomerEffort: 'xhigh', reviewer: 'none' }),
+      task({ id: 't-1', phase: 'backlog', model: 'haiku', effort: 'high', groomer: 'fable', groomerEffort: 'xhigh', reviewer: 'none' }),
       task({ id: 't-2', phase: 'backlog' }),
     ],
   };
-  const defaults = { groomer: 'auto', groomerEffort: 'low', worker: 'haiku', workerEffort: 'medium', reviewer: 'fable' };
+  const defaults = { groomer: 'sonnet', groomerEffort: 'low', worker: 'haiku', workerEffort: 'max', reviewer: 'fable' };
   const web = toWebviewBoard(board, 'ws', defaults, [], ['opus', 'haiku']);
-  assert.equal(web.defaultGroomerModel, 'auto');
+  assert.equal(web.defaultGroomerModel, 'sonnet');
   assert.equal(web.defaultGroomerEffort, 'low');
   assert.equal(web.defaultWorkerModel, 'haiku');
-  assert.equal(web.defaultWorkerEffort, 'medium');
+  assert.equal(web.defaultWorkerEffort, 'max');
   assert.equal(web.defaultReviewerModel, 'fable');
   assert.deepEqual(web.models, ['opus', 'haiku']);
   const [set, unset] = web.phases.backlog;
-  assert.deepEqual([set.model, set.effort, set.groomer, set.groomerEffort, set.reviewer], ['haiku', 'high', 'auto', 'xhigh', 'none']);
+  assert.deepEqual([set.model, set.effort, set.groomer, set.groomerEffort, set.reviewer], ['haiku', 'high', 'fable', 'xhigh', 'none']);
   assert.deepEqual([unset.model, unset.effort, unset.groomer, unset.groomerEffort, unset.reviewer], [null, null, null, null, null], 'absent = default, never filled in on the card');
 });
 
@@ -380,6 +380,17 @@ test('the In Progress rows show the worker model and effort, resolved against th
     preamble: '', done: [],
     tasks: [task({ id: 't-1', title: 'A', phase: 'inprogress', effort: 'xhigh' })],
   };
-  const web = toWebviewBoard(board, 'ws', { ...D, worker: 'sonnet', workerEffort: 'auto' }, []);
+  const web = toWebviewBoard(board, 'ws', { ...D, worker: 'sonnet', workerEffort: 'medium' }, []);
   assert.deepEqual(web.concurrency.inProgress, [{ id: 't-1', title: 'A', model: 'sonnet', effort: 'xhigh' }]);
+});
+
+test('the In Progress effort is clamped into the worker model range, as the orchestrator spawns it (FB7)', () => {
+  const { resolveModels } = require('../out-test/model.js');
+  const board = {
+    preamble: '', done: [],
+    tasks: [task({ id: 't-1', title: 'A', phase: 'inprogress', effort: 'xhigh' }), task({ id: 't-2', title: 'B', phase: 'inprogress', model: 'haiku' })],
+  };
+  const resolved = resolveModels({ sonnet: { maxEffort: 'high' }, haiku: { minEffort: 'high' } });
+  const web = toWebviewBoard(board, 'ws', { ...D, worker: 'sonnet', workerEffort: 'low' }, [], [], new Set(), resolved);
+  assert.deepEqual(web.concurrency.inProgress.map((t) => [t.model, t.effort]), [['sonnet', 'high'], ['haiku', 'high']]);
 });

@@ -336,8 +336,11 @@ test('an empty subagents directory folds to no rows', () => {
 // ---- rendering ----
 
 test('describeAgent renders `agentType · description` plus a duration', () => {
+  // A description that does not follow the LOOP.md title rule: the row keeps the type and leads
+  // with the spawn's model alias.
   assert.deepStrictEqual(describeAgent({ id: 'a111', agentType: 'story-groom', description: 'Fold monster speed answers', model: 'haiku', startedAt: NOW - MINUTE }, NOW), {
-    id: 'a111', label: 'story-groom · Fold monster speed answers', model: 'haiku', duration: '1m',
+    id: 'a111', label: 'story-groom · Fold monster speed answers', head: 'haiku', title: 'story-groom · Fold monster speed answers',
+    titled: false, model: 'haiku', duration: '1m',
   });
   // A row built without a model (an older meta) renders an empty model, never `undefined`.
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW }, NOW).model, '');
@@ -353,8 +356,22 @@ test('describeAgent drops the `general-purpose` prefix when there is a descripti
   // LOOP.md spawns every groomer/implementer/reviewer as `general-purpose` with an
   // `<effort>-<task id>: <headline>` title, so the type would only repeat on every row.
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'general-purpose', description: 'high-t-4589: Swing sheet', startedAt: NOW - MINUTE }, NOW).label, 'high-t-4589: Swing sheet');
-  // Any other type keeps it — a read-only Haiku helper is `Explore`.
+  // Any other type keeps it: a description off the title rule is shown as given.
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'Explore', description: 'haiku-t-4589: Find old paths', startedAt: NOW - MINUTE }, NOW).label, 'Explore · haiku-t-4589: Find old paths');
+});
+
+test('describeAgent names a titled spawn `<mode> <model>-<effort>-<task id>: <task title>` (t-0e99 FB1/FB5)', () => {
+  const titled = describeAgent({ id: 'a', agentType: 'loop', description: 'work opus-medium-t-0bae: Stone island boss', model: 'opus', startedAt: NOW - MINUTE }, NOW);
+  assert.deepStrictEqual([titled.head, titled.title, titled.label, titled.titled], ['work opus-medium-t-0bae:', 'Stone island boss', 'work opus-medium-t-0bae: Stone island boss', true]);
+  // The t-716f shape (no model, no mode) takes the model from the spawn record; the agent type is
+  // dropped either way, and a full id in the record still reads as its alias.
+  const old = describeAgent({ id: 'a', agentType: 'loop', description: 'medium-t-0bae: Stone island', model: 'claude-sonnet-5-5', startedAt: NOW }, NOW);
+  assert.deepStrictEqual([old.head, old.title], ['sonnet-medium-t-0bae:', 'Stone island']);
+  // The task index title wins over an abbreviated one, so the row names the story.
+  const full = describeAgent({ id: 'a', agentType: 'general-purpose', description: 'groom haiku-low-t-1: Short', startedAt: NOW }, NOW, (id) => (id === 't-1' ? 'The whole story title' : undefined));
+  assert.deepStrictEqual([full.head, full.title], ['groom haiku-low-t-1:', 'The whole story title']);
+  const review = describeAgent({ id: 'a', agentType: 'general-purpose', description: 'review fable-xhigh-t-9: Check it', startedAt: NOW }, NOW, () => undefined);
+  assert.equal(review.label, 'review fable-xhigh-t-9: Check it');
 });
 
 // ---- lifecycle edges + the agent side of a restart (t-aglg) ----
@@ -421,9 +438,12 @@ test('describeAgentEdge renders a start and a departure with label, id and durat
 
 test('describeAgentEdge names the spawn model when the meta carried one (t-0e99)', () => {
   // Every agent belongs to the one orchestrator loop, so the model is what tells them apart.
-  const a = row('a1', { description: 'high-t-1: Groom it', model: 'haiku', startedAt: NOW - MINUTE });
-  assert.strictEqual(describeAgentEdge('start', a, NOW), 'story-groom · high-t-1: Groom it · haiku (agent a1)');
-  assert.ok(describeAgentEdge('gone', a, NOW).startsWith('story-groom · high-t-1: Groom it · haiku (agent a1)'));
+  const a = row('a1', { description: 'Groom it', model: 'haiku', startedAt: NOW - MINUTE });
+  assert.strictEqual(describeAgentEdge('start', a, NOW), 'story-groom · Groom it · haiku (agent a1)');
+  assert.ok(describeAgentEdge('gone', a, NOW).startsWith('story-groom · Groom it · haiku (agent a1)'));
+  // A titled label already leads with its model, so it is not repeated.
+  const t = row('a2', { description: 'groom haiku-high-t-1: Groom it', model: 'haiku', startedAt: NOW - MINUTE });
+  assert.strictEqual(describeAgentEdge('start', t, NOW), 'groom haiku-high-t-1: Groom it (agent a2)');
 });
 
 test('describeAgentEdge: a departing row with no startedAt still reads cleanly', () => {

@@ -4,7 +4,7 @@ import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
 import { Controller, explicitLookup } from './controller';
 import { ContextReader } from './contextreader';
-import { isLoopId, enabledModels, readModelsConfig, resolveOrchestrator, resolveTaskDefaults } from './model';
+import { isLoopId, resolveModels, readModelsConfig, resolveOrchestrator, resolveTaskDefaults, aliasEnv } from './model';
 
 // How long after activation the legacy per-model loop terminals are looked for (t-0e99).
 const LEGACY_LOOP_CHECK_MS = 5000;
@@ -27,14 +27,17 @@ export function activate(context: vscode.ExtensionContext): void {
     () => {
       const c = vscode.workspace.getConfiguration('loopBoard');
       const set = explicitLookup(c);
+      const models = resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d), set));
       return {
         permissionMode: c.get<string>('permissionMode', 'auto'),
         interval: c.get<string>('loopInterval', '1m'),
-        // t-0e99: the orchestrator's own flags plus the enabled task models and the five defaults,
-        // all frozen into the spawn command (like the interval).
+        // t-0e99: the orchestrator's own flags plus the enabled task models (with their effort
+        // ranges), the five defaults and the alias overrides, all frozen into the spawn (like the
+        // interval).
         orchestrator: resolveOrchestrator(set),
-        models: enabledModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))).map((m) => m.id),
+        models: models.filter((m) => m.enabled),
         defaults: resolveTaskDefaults(set),
+        env: aliasEnv(models),
       };
     },
     (level, event, detail) => store.debugLog(level, event, detail)

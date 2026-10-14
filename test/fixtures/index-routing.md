@@ -6,8 +6,8 @@ Every routing key and every value it takes (t-0e99), in canonical order.
 
 - [ ] DRAFT: a draft may carry every routing key
   - id: t-r001
-  - model: auto
-  - effort: auto
+  - model: opus
+  - effort: high
   - groomer: haiku
   - groomer-effort: xhigh
   - reviewer: none
@@ -18,9 +18,9 @@ Every routing key and every value it takes (t-0e99), in canonical order.
   - phase: new
   - model: haiku
   - effort: low
-  - groomer: auto
-  - groomer-effort: auto
-  - reviewer: auto
+  - groomer: haiku
+  - groomer-effort: medium
+  - reviewer: none
 
 - [ ] Groomer on hold, Opus reviews
   - id: t-r003
@@ -54,6 +54,6 @@ Every routing key and every value it takes (t-0e99), in canonical order.
 - [ ] Only some keys set
   - id: t-r006
   - phase: review
-  - model: auto
+  - model: sonnet
   - groomer: fable
   - reviewer: haiku

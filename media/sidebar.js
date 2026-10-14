@@ -365,16 +365,17 @@
             c.breached ? 'In Progress — limit breached' : 'In Progress'));
         const revealLabel = 'Open the in-progress task on the board';
         for (const t of c.inProgress) {
-          // `t.model` / `t.effort` are the task's worker model and effort, already resolved host-side
-          // (the defaults when the entry carries no `model:`/`effort:` line, t-0e99).
-          // A long title truncates with `…` by default, the `(<id>)` pinned and never cut; with
-          // `loopBoard.sidebarMarquee` on, the whole `<title> (<id>)` marquee-scrolls instead (see
+          // Named like an Agents row (t-0e99): `<model>-<effort>-<task id>: <title>`, the worker
+          // model and effort already resolved host-side (the defaults when the entry carries no
+          // `model:`/`effort:` line, clamped into the model's effort range). A long title truncates
+          // with `…` by default; with `loopBoard.sidebarMarquee` on it marquee-scrolls instead (see
           // setupMarquees). The native tooltip carries the full text either way (t-9a29) — the
           // aria-label keeps saying what a click does.
-          const full = (t.title || t.id) + ' (' + t.id + ')';
+          const head = t.model + '-' + t.effort + '-' + t.id + ':';
+          const full = head + ' ' + (t.title || t.id);
           const ipRow = h('button', { class: 'sb-row agent click', type: 'button', title: full + '\nClick to open on the board', 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
-            h('span', { class: 'agent-model' }, t.model + ' · ' + t.effort),
-            marquee(h('span', { class: 'marquee-text' }, t.title || t.id), h('span', { class: 'marquee-id' }, '\u00a0(' + t.id + ')')));
+            h('span', { class: 'agent-model' }, head),
+            marquee(h('span', { class: 'marquee-text' }, t.title || t.id)));
           // Its click reads only `t.id`, which its title shows, so an unchanged row survives a
           // repaint (tooltip, hover pause and marquee intact) instead of being rebuilt (see paint).
           keep.add(ipRow);
@@ -387,7 +388,8 @@
       }
 
       // Agents (t-sbag): one group (the orchestrator's, t-0e99), one row per LIVE subagent, never
-      // a finished one, each led by the model it was spawned on. The section exists to explain why
+      // a finished one, each led by `a.head`: `<groom|work|review> <model>-<effort>-<task id>:` when
+      // the spawn followed LOOP.md's title rule, else just its model (src/subagents.ts). The section exists to explain why
       // an automatic restart is being held back, so an empty one is hidden entirely and a workspace
       // without subagents sees no new chrome. Read-only: a subagent can be neither opened nor
       // stopped from out here.
@@ -399,10 +401,10 @@
           // Same marquee as the In-Progress title above (incl. its reduced-motion opt-out and its
           // default-off truncation): the label is long and the sidebar is narrow, and there is only
           // ever ONE marquee in here. The row's title already carries the full label.
-          agentsSection.append(h('div', { class: 'sb-row agent', title: (a.model || l.name) + ' · ' + a.label },
-            h('span', { class: 'agent-model' }, a.model || l.name),
+          agentsSection.append(h('div', { class: 'sb-row agent', title: a.head ? a.head + ' ' + a.title : a.label },
             h('span', { class: 'agent-dot pulse' }),
-            marquee(h('span', { class: 'marquee-text' }, a.label)),
+            h('span', { class: 'agent-model' }, a.head),
+            marquee(h('span', { class: 'marquee-text' }, a.title)),
             h('span', { class: 'agent-duration' }, a.duration)));
         }
       }

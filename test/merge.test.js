@@ -244,16 +244,17 @@ test('a groomer patch writes the on-hold sentinel, and clearing it takes the tas
 // ---- t-0e99: per-role validation for the five routing fields ----
 
 test('each routing field accepts exactly its own role values; anything else clears it to the default', () => {
-  for (const m of ['opus', 'sonnet', 'fable', 'haiku', 'auto']) {
+  for (const m of ['opus', 'sonnet', 'fable', 'haiku']) {
     assert.equal(normalizeModel(m), m, m);
     assert.equal(normalizeGroomer(m), m, m);
     assert.equal(normalizeReviewer(m), m, m);
   }
   assert.equal(normalizeReviewer('none'), 'none', 'none = no review');
   assert.equal(normalizeReviewer(' none '), 'none');
-  for (const e of ['low', 'medium', 'high', 'xhigh', 'auto']) assert.equal(normalizeEffort(e), e, e);
+  for (const e of ['low', 'medium', 'high', 'xhigh']) assert.equal(normalizeEffort(e), e, e);
   assert.equal(normalizeEffort('max'), undefined, 'max is never a per-task effort');
-  for (const bad of ['', 'default (auto)', 'default (none)', 'Opus', 'gpt']) {
+  // `auto` is no value at all since the owner decision of 2026-10-14: it clears like any off-list word.
+  for (const bad of ['', 'auto', 'default (auto)', 'default (none)', 'Opus', 'gpt']) {
     assert.equal(normalizeModel(bad), undefined, bad);
     assert.equal(normalizeGroomer(bad), undefined, bad);
     assert.equal(normalizeReviewer(bad), undefined, bad);
@@ -265,13 +266,13 @@ test('effort, groomerEffort and reviewer patch the index entry and write in the 
   const doc = parseTodo(readFix('index-full.md'));
   const id = 't-dd01';
   const base = (f) => currentFieldValue(doc.entries.find((e) => e.id === id), f);
-  for (const [field, value] of [['reviewer', 'haiku'], ['groomerEffort', 'auto'], ['effort', 'xhigh'], ['groomer', 'auto'], ['model', 'haiku']]) {
+  for (const [field, value] of [['reviewer', 'haiku'], ['groomerEffort', 'low'], ['effort', 'xhigh'], ['groomer', 'fable'], ['model', 'haiku']]) {
     assert.equal(applyPatch(doc, { taskId: id, field, value, base: base(field) }).status, 'applied', field);
   }
   const e = doc.entries.find((x) => x.id === id);
-  assert.deepEqual([e.model, e.effort, e.groomer, e.groomerEffort, e.reviewer], ['haiku', 'xhigh', 'auto', 'auto', 'haiku']);
+  assert.deepEqual([e.model, e.effort, e.groomer, e.groomerEffort, e.reviewer], ['haiku', 'xhigh', 'fable', 'low', 'haiku']);
   const out = serializeTodo(doc);
-  assert.ok(out.includes('  - id: t-dd01\n  - phase: backlog\n  - model: haiku\n  - effort: xhigh\n  - groomer: auto\n  - groomer-effort: auto\n  - reviewer: haiku'), out);
+  assert.ok(out.includes('  - id: t-dd01\n  - phase: backlog\n  - model: haiku\n  - effort: xhigh\n  - groomer: fable\n  - groomer-effort: low\n  - reviewer: haiku'), out);
   assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint');
 });
 

@@ -451,15 +451,16 @@ test('a long list is capped and summarised', () => {
   assert.ok(!line.includes('\n'));
 });
 
-// ---- t-0e99: the orchestrator writing its `auto` picks must not nudge itself ----
+// ---- t-0e99: no routing carve-out once nothing writes routing picks (owner decision 2026-10-14) ----
 
-test('a routing-only change on a New/DRAFT task nudges nobody: the pre-spawn pick write (t-0e99)', () => {
-  const before = entry({ isDraft: true, groomer: 'auto', groomerEffort: 'auto', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: auto\n  - groomer-effort: auto' });
+test('a routing re-pick on a New/DRAFT task nudges its groomer: the orchestrator never writes routing lines', () => {
+  const before = entry({ isDraft: true, groomer: 'sonnet', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: sonnet' });
   const next = { ...before, groomer: 'opus', groomerEffort: 'high', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: opus\n  - groomer-effort: high' };
   const skipped = [];
-  assert.deepStrictEqual(computeNudges([before], [next], skipped), []);
-  assert.deepStrictEqual(skipped.map((i) => [i.taskId, i.reason]), [[before.id, 'groom']]);
-  assert.deepStrictEqual(skipped[0].changes, ['groomer → opus', 'groomer-effort → high']);
+  const items = computeNudges([before], [next], skipped);
+  assert.deepStrictEqual(items.map((i) => [i.taskId, i.reason]), [[before.id, 'groom']]);
+  assert.deepStrictEqual(items[0].changes, ['groomer → opus', 'groomer-effort → high']);
+  assert.deepStrictEqual(skipped, []);
 });
 
 test('taking a draft OFF hold still nudges, and a routing change plus real work still nudges', () => {
@@ -471,7 +472,7 @@ test('taking a draft OFF hold still nudges, and a routing change plus real work 
   assert.deepStrictEqual(computeNudges([draft], [withFeedback]).map((i) => i.reason), ['feedback']);
 });
 
-test('the routing carve-out is New/DRAFT only: a Backlog re-pick still nudges the claim', () => {
+test('a Backlog re-pick still nudges the claim', () => {
   const backlog = entry({ phase: 'backlog', model: 'sonnet', raw: '- [ ] B\n  - phase: backlog\n  - model: sonnet' });
   const repicked = { ...backlog, model: 'haiku', raw: '- [ ] B\n  - phase: backlog\n  - model: haiku' };
   assert.deepStrictEqual(computeNudges([backlog], [repicked]).map((i) => i.reason), ['backlog']);

@@ -2,7 +2,7 @@
 // Spawn/reuse/status/recycle + /loop injection. No external deps (no tmux/node-pty); output is
 // never read.
 import * as vscode from 'vscode';
-import { LoopId, LOOPS, OrchestratorConfig, TaskDefaults, isValidModelString } from './model';
+import { LoopId, LOOPS, OrchestratorConfig, ResolvedModel, TaskDefaults, isValidModelString, isNarrowed } from './model';
 import { LoopStatus } from './view';
 import { buildLoopCommand, buildClaudeBase, isValidPermissionMode, isValidLoopInterval, revealStep, loopTerminalName } from './loop';
 import { sessionSuffix, spawnSessionName } from './context';
@@ -21,8 +21,11 @@ export interface LoopSpawnConfig {
   permissionMode: string;
   interval: string;
   orchestrator: OrchestratorConfig;
-  models: string[]; // enabled task model ids
+  models: ResolvedModel[]; // enabled task models, with their effort floor/ceiling
   defaults: TaskDefaults;
+  // `ANTHROPIC_DEFAULT_<ALIAS>_MODEL` per overridden alias (aliasEnv, t-0e99 FB4): the terminal's
+  // process env, so the orchestrator's own alias and every subagent spawned on it resolve to it.
+  env: Record<string, string>;
 }
 
 export class TerminalManager {
@@ -111,7 +114,7 @@ export class TerminalManager {
       return;
     }
     const cfg = this.getConfig();
-    // `resolveOrchestrator` already validated the `--model` string; it is checked once more right
+    // `resolveOrchestrator` already validated the `--model` alias; it is checked once more right
     // before it reaches the shell line, so no code path splices an unvalidated config value.
     const modelString = cfg.orchestrator.model;
     if (!isValidModelString(modelString)) {
@@ -136,7 +139,8 @@ export class TerminalManager {
       models: cfg.models,
       defaults: cfg.defaults,
     });
-    const terminal = vscode.window.createTerminal({ name: loopTerminalName(loop), cwd: this.getCwd() });
+    const env = Object.keys(cfg.env).length ? cfg.env : undefined;
+    const terminal = vscode.window.createTerminal({ name: loopTerminalName(loop), cwd: this.getCwd(), env });
     terminal.show(preserveFocus);
     this.revealedLoop = loop;
     // `--name loopboard-<loop>-<suffix>` is what lets the context indicator (t-2b89) find THIS
@@ -153,12 +157,14 @@ export class TerminalManager {
       cfg.orchestrator.effort
     );
     const d = cfg.defaults;
+    const models = cfg.models.map((m) => `${m.id}${isNarrowed(m) ? ` ${m.minEffort}-${m.maxEffort}` : ''}`);
+    const envNote = Object.entries(cfg.env).map(([k, v]) => `${k}=${v}`).join(' ');
     this.log(
       'info',
       'loop-spawn',
       `${loop} -> --model ${modelString} (effort ${cfg.orchestrator.effort}, groom cap ${cfg.orchestrator.groomConcurrency}, ` +
-        `task models ${cfg.models.join(',') || 'none'}, defaults groomer ${d.groomer}/${d.groomerEffort} ` +
-        `worker ${d.worker}/${d.workerEffort} reviewer ${d.reviewer})`
+        `task models ${models.join(',') || 'none'}, defaults groomer ${d.groomer}/${d.groomerEffort} ` +
+        `worker ${d.worker}/${d.workerEffort} reviewer ${d.reviewer}${envNote ? `, env ${envNote}` : ''})`
     );
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the

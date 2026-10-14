@@ -148,12 +148,13 @@ test('the model keys are claimed by the grid, never drawn as generic controls', 
   assert.deepEqual(models.controls, [], 'the grid section draws nothing else');
 });
 
-test('MODEL_GRID_KEYS is exactly the 12 keys the grid replaces (t-0e99)', () => {
+test('MODEL_GRID_KEYS is exactly the 24 keys the grid replaces (t-0e99)', () => {
+  const perModel = (id) => ['enabled', 'modelId', 'minEffort', 'maxEffort'].map((f) => `loopBoard.models.${id}.${f}`);
   assert.deepEqual(MODEL_GRID_KEYS, [
     'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
     'loopBoard.defaultGroomerModel', 'loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerModel',
     'loopBoard.defaultWorkerEffort', 'loopBoard.defaultReviewerModel',
-    'loopBoard.models.opus.enabled', 'loopBoard.models.sonnet.enabled', 'loopBoard.models.fable.enabled', 'loopBoard.models.haiku.enabled',
+    ...perModel('opus'), ...perModel('sonnet'), ...perModel('fable'), ...perModel('haiku'),
   ]);
   // Every grid key is a declared manifest key, and the section declares nothing else.
   const first = Object.keys(manifest.contributes.configuration[0].properties).sort();

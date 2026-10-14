@@ -289,7 +289,7 @@ export class Controller {
       // Idle stop (t-2dd4): opt-in, off by default; an invalid minutes value falls back to 60.
       idleStopEnabled: c.get<boolean>('idleStop.enabled', false) === true,
       idleStopMinutes: sanitizeIdleMinutes(c.get<number>('idleStop.minutes', 60)),
-      models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
+      models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d), explicitLookup(c))),
     };
   }
 
@@ -297,6 +297,7 @@ export class Controller {
     const cfg = this.config();
     const enabledIds = cfg.models.filter((m) => m.enabled).map((m) => m.id);
     const loops = this.terminals.status();
+    const titleOf = (id: string) => board.tasks.find((t) => t.id === id)?.title;
     // Decorate each loop row with its armed/pending restart (t-77d1) — recomputed per refresh so
     // the countdown and the "waiting for task" state stay live without extra plumbing.
     const now = Date.now();
@@ -320,7 +321,7 @@ export class Controller {
           : null;
       // Live subagents (t-sbag): rendered per repaint so each row's duration ticks between the
       // 30 s polls. A stopped loop has no session and therefore no agents.
-      l.agents = (l.running ? this.agentRows.get(l.id) ?? [] : []).map((r) => describeAgent(r, now));
+      l.agents = (l.running ? this.agentRows.get(l.id) ?? [] : []).map((r) => describeAgent(r, now, titleOf));
       // Idle clock (t-2dd4): only while the feature is on, the loop runs and a clock exists — a busy
       // slot has no state, so it draws no line.
       const idle = cfg.idleStopEnabled && l.running ? this.idleStates.get(l.id) : undefined;
@@ -329,7 +330,7 @@ export class Controller {
       if (idleLabel) this.idleLabels.set(l.id, idleLabel);
       else this.idleLabels.delete(l.id);
     }
-    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaults, loops, enabledIds, new Set(this.autoPromoteArms.keys()));
+    const web = toWebviewBoard(board, this.store.workspaceName, cfg.defaults, loops, enabledIds, new Set(this.autoPromoteArms.keys()), cfg.models);
     web.todoMissing = this.store.todoMissing;
     web.helpUrl = HELP_URL;
     web.love = loveView(
@@ -1533,16 +1534,13 @@ export class Controller {
     return this.writeConfig(resetPatch(key));
   }
 
-  // The grid as the spawn and the board would resolve it now (t-0e99). The `--model` field shows the
-  // RAW configured string (the new key, else the legacy Opus slot key it falls back to), so an unset
-  // field reads as "default" and can be cleared back to it.
+  // The grid as the spawn and the board would resolve it now (t-0e99).
   private currentGrid() {
     const c = vscode.workspace.getConfiguration('loopBoard');
     const set = explicitLookup(c);
-    const raw = set('orchestrator.model') ?? set('models.opus.model');
     return buildModelGrid(
-      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d)),
-      { raw: typeof raw === 'string' ? raw : '', resolved: resolveOrchestrator(set) },
+      readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d), set),
+      resolveOrchestrator(set),
       resolveTaskDefaults(set),
     );
   }

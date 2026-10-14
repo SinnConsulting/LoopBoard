@@ -47,16 +47,16 @@ test('an empty config plans nothing', () => {
 
 // ---- category 1: the review switch became a reviewer model (t-0e99) ----
 
-test('delegateReview: true migrates to defaultReviewerModel: auto, then is removed', () => {
+test('delegateReview: true migrates to defaultReviewerModel: opus, then is removed (owner decision 2026-10-14)', () => {
   const plan = buildMigrationPlan(DECLARED, { [DELEGATE_REVIEW_KEY]: true });
   const action = byKey(plan, DELEGATE_REVIEW_KEY);
   assert.equal(action.kind, 'migrate');
   assert.equal(action.reason, 'deprecated');
   assert.equal(action.target, DEFAULT_REVIEWER_KEY);
-  assert.equal(action.targetValue, 'auto');
+  assert.equal(action.targetValue, 'opus');
   // Destination first, removal second: an interrupted run must never lose the value.
   assert.deepEqual(plan.writes, [
-    { key: DEFAULT_REVIEWER_KEY, value: 'auto' },
+    { key: DEFAULT_REVIEWER_KEY, value: 'opus' },
     { key: DELEGATE_REVIEW_KEY, value: undefined },
   ]);
 });
@@ -87,7 +87,7 @@ test('an explicit delegateReview: false is never turned into a review by the old
 
 test('the migrated reviewer IS what resolveTaskDefaults honours today', () => {
   // The guarantee that migrating changes no behaviour: until applied, the reader treats
-  // `delegateReview: true` as `auto` and `false` as `none`.
+  // `delegateReview: true` as `opus` and `false` as `none`.
   for (const value of [true, false]) {
     const honoured = resolveTaskDefaults((k) => (k === 'delegateReview' ? value : undefined)).reviewer;
     const write = buildMigrationPlan(DECLARED, { [DELEGATE_REVIEW_KEY]: value }).writes.find((w) => w.key === DEFAULT_REVIEWER_KEY);
@@ -181,11 +181,9 @@ test('no blind removal is offered when nothing shadows the key', () => {
 
 const slot = (m, f) => `loopBoard.models.${m}.${f}`;
 
-test('the Opus slot model/effort/groomConcurrency move to orchestrator.*', () => {
-  const plan = buildMigrationPlan(DECLARED, {
-    [slot('opus', 'model')]: 'opus[1m]', [slot('opus', 'effort')]: 'high', [slot('opus', 'groomConcurrency')]: 5,
-  });
-  for (const [field, value] of [['model', 'opus[1m]'], ['effort', 'high'], ['groomConcurrency', 5]]) {
+test('the Opus slot effort/groomConcurrency move to orchestrator.*', () => {
+  const plan = buildMigrationPlan(DECLARED, { [slot('opus', 'effort')]: 'high', [slot('opus', 'groomConcurrency')]: 5 });
+  for (const [field, value] of [['effort', 'high'], ['groomConcurrency', 5]]) {
     const action = byKey(plan, slot('opus', field));
     assert.equal(action.kind, 'migrate', field);
     assert.equal(action.target, `loopBoard.orchestrator.${field}`);
@@ -193,13 +191,27 @@ test('the Opus slot model/effort/groomConcurrency move to orchestrator.*', () =>
     assert.deepEqual(actionWrites(action), [{ key: `loopBoard.orchestrator.${field}`, value }, { key: slot('opus', field), value: undefined }]);
   }
   // Destination writes come first in a bulk apply.
-  assert.deepEqual(plan.writes.slice(0, 3).map((w) => w.key), ['loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency']);
+  assert.deepEqual(plan.writes.slice(0, 2).map((w) => w.key), ['loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency']);
 });
 
-test('the Sonnet and Fable slot model/effort/groomConcurrency are only removed, nothing carried', () => {
+test('each slot --model string becomes that model id (t-0e99 FB4); the bare alias carries nothing', () => {
+  const plan = buildMigrationPlan(DECLARED, {
+    [slot('opus', 'model')]: 'claude-opus-5-5[1m]', [slot('sonnet', 'model')]: 'sonnet[1m]', [slot('fable', 'model')]: 'fable',
+  });
+  for (const [m, value] of [['opus', 'claude-opus-5-5[1m]'], ['sonnet', 'sonnet[1m]']]) {
+    const action = byKey(plan, slot(m, 'model'));
+    assert.equal(action.kind, 'migrate', m);
+    assert.equal(action.reason, 'renamed');
+    assert.equal(action.target, slot(m, 'modelId'));
+    assert.equal(action.targetValue, value);
+  }
+  assert.equal(byKey(plan, slot('fable', 'model')).kind, 'remove', 'the bare alias is what an unset id already means');
+  assert.ok(!plan.writes.some((w) => w.key === 'loopBoard.orchestrator.model'), 'the orchestrator model is an alias select now, never a migrated string');
+});
+
+test('the Sonnet and Fable slot effort/groomConcurrency are only removed, nothing carried', () => {
   const values = {};
   for (const m of ['sonnet', 'fable']) {
-    values[slot(m, 'model')] = `${m}[1m]`;
     values[slot(m, 'effort')] = 'xhigh';
     values[slot(m, 'groomConcurrency')] = 7;
   }
@@ -210,7 +222,7 @@ test('the Sonnet and Fable slot model/effort/groomConcurrency are only removed, 
     assert.equal(action.reason, 'deprecated', `${key} is listed as deprecated, not as an anonymous orphan`);
   }
   assert.ok(plan.writes.every((w) => w.value === undefined), 'no orchestrator value is written from a non-Opus slot');
-  assert.equal(plan.writes.length, 6);
+  assert.equal(plan.writes.length, 4);
 });
 
 test('a Sonnet/Fable slot key is a plain removal even when the orchestrator key is set by hand', () => {
@@ -221,22 +233,27 @@ test('a Sonnet/Fable slot key is a plain removal even when the orchestrator key 
   assert.deepEqual(plan.writes, [{ key: slot('sonnet', 'effort'), value: undefined }], 'and a bulk apply removes it');
 });
 
-test('an invalid Opus slot value carries nothing, and a set orchestrator key makes it a conflict', () => {
+test('an invalid Opus slot value carries nothing, and a set target key makes it a conflict', () => {
   const bad = buildMigrationPlan(DECLARED, { [slot('opus', 'model')]: 'opus; rm -rf /', [slot('opus', 'effort')]: 'ludicrous', [slot('opus', 'groomConcurrency')]: 0 });
   assert.ok(bad.writes.every((w) => w.value === undefined), 'nothing invalid is ever written');
-  const conflict = buildMigrationPlan(DECLARED, { [slot('opus', 'model')]: 'opus[1m]', 'loopBoard.orchestrator.model': 'sonnet' });
-  assert.equal(byKey(conflict, slot('opus', 'model')).kind, 'conflict');
+  const conflict = buildMigrationPlan(DECLARED, { [slot('opus', 'effort')]: 'high', 'loopBoard.orchestrator.effort': 'low' });
+  assert.equal(byKey(conflict, slot('opus', 'effort')).kind, 'conflict');
   assert.deepEqual(conflict.writes, []);
+  const idConflict = buildMigrationPlan(DECLARED, { [slot('opus', 'model')]: 'opus[1m]', [slot('opus', 'modelId')]: 'claude-opus-5-5' });
+  assert.equal(byKey(idConflict, slot('opus', 'model')).kind, 'conflict');
 });
 
-test('the migrated orchestrator values ARE what resolveOrchestrator honours today', () => {
+test('the migrated values ARE what the readers honour today', () => {
+  const { readModelsConfig, resolveModels } = require('../out-test/model.js');
   const values = { [slot('opus', 'model')]: 'opus[1m]', [slot('opus', 'effort')]: 'xhigh', [slot('opus', 'groomConcurrency')]: 4, [slot('sonnet', 'effort')]: 'low' };
-  const honoured = resolveOrchestrator((k) => values[`loopBoard.${k}`]);
+  const set = (k) => values[`loopBoard.${k}`];
+  const honoured = resolveOrchestrator(set);
+  const ids = Object.fromEntries(resolveModels(readModelsConfig((k, d) => d, set)).map((m) => [m.id, m.modelId]));
   const written = Object.fromEntries(buildMigrationPlan(DECLARED, values).writes.filter((w) => w.value !== undefined).map((w) => [w.key, w.value]));
   assert.deepEqual(written, {
-    'loopBoard.orchestrator.model': honoured.model,
     'loopBoard.orchestrator.effort': honoured.effort,
     'loopBoard.orchestrator.groomConcurrency': honoured.groomConcurrency,
+    'loopBoard.models.opus.modelId': ids.opus,
   });
 });
 

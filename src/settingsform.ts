@@ -146,15 +146,16 @@ export interface ConfigPatch {
 export type Validation = { ok: true; value: unknown } | { ok: false; reason: string };
 export type PatchResult = { ok: true; patch: ConfigPatch } | { ok: false; reason: string };
 
-// The 12 keys the hand-built grid claims (t-0e99): the orchestrator's three, the five per-task
-// defaults and the four model toggles. They are ordinary manifest properties (the grid is a
-// different PRESENTATION of them, not a different storage), so they are removed from their
-// section's generic controls and the section is flagged `grid` instead.
+// The 24 keys the hand-built grid claims (t-0e99): the orchestrator's three, the five per-task
+// defaults and, per model, its toggle, model id and effort floor/ceiling. They are ordinary manifest
+// properties (the grid is a different PRESENTATION of them, not a different storage), so they are
+// removed from their section's generic controls and the section is flagged `grid` instead.
+export const MODEL_FIELDS = ['enabled', 'modelId', 'minEffort', 'maxEffort'] as const;
 export const MODEL_GRID_KEYS: string[] = [
   ...['model', 'effort', 'groomConcurrency'].map((f) => `${SETTINGS_PREFIX}orchestrator.${f}`),
   ...['defaultGroomerModel', 'defaultGroomerEffort', 'defaultWorkerModel', 'defaultWorkerEffort', 'defaultReviewerModel']
     .map((k) => `${SETTINGS_PREFIX}${k}`),
-  ...BUILTIN_MODEL_IDS.map((id) => `${SETTINGS_PREFIX}models.${id}.enabled`),
+  ...BUILTIN_MODEL_IDS.flatMap((id) => MODEL_FIELDS.map((f) => `${SETTINGS_PREFIX}models.${id}.${f}`)),
 ];
 
 export function isGridKey(key: string): boolean {

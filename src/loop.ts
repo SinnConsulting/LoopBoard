@@ -1,7 +1,7 @@
 // Pure loop-command builder. No vscode imports so it is unit-testable in Docker.
 import {
-  LoopId, LOOPS, TaskDefaults, TASK_DEFAULTS, isModel, isModelValue, isEffortValue, isReviewerValue,
-  isValidEffort, sanitizeGroomConcurrency,
+  LoopId, LOOPS, Model, TaskDefaults, TASK_DEFAULTS, EffortRange, isModel, isReviewerValue,
+  isValidEffort, sanitizeGroomConcurrency, sanitizeEffortRange, isNarrowed,
 } from './model';
 
 // Allowlist for `--permission-mode`, mirroring the `loopBoard.permissionMode` enum in package.json.
@@ -28,11 +28,11 @@ export function sanitizeLoopInterval(s: string): string {
   return isValidLoopInterval(s) ? s : '1m';
 }
 
-// Build the `claude …` invocation prefix (everything before the /loop prompt argv). The resolved
-// `--model` string is configurable (`loopBoard.orchestrator.model`) and may contain shell glob
-// metacharacters (`[` `]`, e.g. `opus[1m]`), so it MUST be single-quoted, otherwise zsh tries to
-// glob-expand it and aborts with "no matches found". The string is pre-validated
-// (isValidModelString) to contain no single quote, so a plain single-quote wrap is safe.
+// Build the `claude …` invocation prefix (everything before the /loop prompt argv). The `--model`
+// is the orchestrator's alias (`loopBoard.orchestrator.model`); a model id override reaches the CLI
+// through the terminal env (aliasEnv), never this line. It stays single-quoted because a string with
+// shell glob metacharacters (`[` `]`, e.g. `opus[1m]`) would otherwise be glob-expanded by zsh, and
+// the caller still checks it with isValidModelString (no single quote), so the wrap is safe.
 // permissionMode is spliced unquoted, so it is sanitized to the package.json enum here (invalid ->
 // 'auto'); never trust a raw config value on the shell line.
 //
@@ -57,15 +57,18 @@ export function buildClaudeBase(permissionMode: string, modelString: string, ses
 // but never a configured value: the cap, the enabled task models and the five defaults ride here.
 export interface LoopPromptConfig {
   groomConcurrency?: number;
-  models: readonly string[]; // enabled task model ids, in display order
+  // Enabled task model ids, in display order, each with its effort floor/ceiling (t-0e99 FB7).
+  models: readonly ({ id: string } & Partial<EffortRange>)[];
   defaults: TaskDefaults;
 }
 
 // Build the tiny bootstrap prompt pasted into the orchestrator's terminal: it names the role, the
-// interval, the grooming cap, the enabled task models and the defaults; the loop reads the full
-// standing instructions from `.loopboard/LOOP.md`'s ## Automation section on every pass (so editing
-// that section retunes a running loop). Effort is NOT here (t-cffc): it is a `claude --effort`
-// startup flag (buildClaudeBase). It names NO model of its own: a prompt saying "You are running
+// interval, the grooming cap, the enabled task models (a narrowed effort range as `<min>-<max>`
+// beside its model, which the template clamps every spawn into) and the defaults (`<model>
+// <effort>`); the loop reads the full standing instructions from `.loopboard/LOOP.md`'s
+// ## Automation section on every pass (so editing that section retunes a running loop). The
+// orchestrator's OWN effort is NOT here (t-cffc): it is a `claude --effort` startup flag
+// (buildClaudeBase). It names NO model of its own: a prompt saying "You are running
 // as model ..." is the legacy per-model loop the template's guard tells to stand down.
 //
 // Every value is spliced into a single-quoted shell argv, so each one is re-validated against its
@@ -96,19 +99,22 @@ export function buildLoopCommand(loopText: string, interval: string, cfg: LoopPr
   if (!/```[^\n]*\n[\s\S]*?```/.test(section)) return undefined;
 
   const groomCap = sanitizeGroomConcurrency(cfg.groomConcurrency);
-  const models = (cfg.models || []).filter(isModel);
+  const models = (cfg.models || []).filter((m) => m && isModel(m.id)).map((m) => {
+    const r = sanitizeEffortRange(m.minEffort, m.maxEffort);
+    return isNarrowed(r) ? `${m.id} ${r.minEffort}-${r.maxEffort}` : m.id;
+  });
   const d = cfg.defaults || TASK_DEFAULTS;
   const pick = <T>(v: unknown, ok: (x: unknown) => x is T, dflt: T): T => (ok(v) ? v : dflt);
-  const groomer = pick(d.groomer, isModelValue, TASK_DEFAULTS.groomer);
-  const groomerEffort = pick(d.groomerEffort, isEffortValue, TASK_DEFAULTS.groomerEffort);
-  const worker = pick(d.worker, isModelValue, TASK_DEFAULTS.worker);
-  const workerEffort = pick(d.workerEffort, isEffortValue, TASK_DEFAULTS.workerEffort);
+  const groomer: Model = pick(d.groomer, isModel, TASK_DEFAULTS.groomer);
+  const groomerEffort = pick(d.groomerEffort, isValidEffort, TASK_DEFAULTS.groomerEffort);
+  const worker: Model = pick(d.worker, isModel, TASK_DEFAULTS.worker);
+  const workerEffort = pick(d.workerEffort, isValidEffort, TASK_DEFAULTS.workerEffort);
   const reviewer = pick(d.reviewer, isReviewerValue, TASK_DEFAULTS.reviewer);
   return (
-    `/loop ${sanitizeLoopInterval(interval)} You are the LoopBoard orchestrator with a grooming concurrency cap of ${groomCap}. ` +
-    `Task models: ${models.length ? models.join(', ') : 'none'}. ` +
-    `Defaults: groomer ${groomer} effort ${groomerEffort}, worker ${worker} effort ${workerEffort}, reviewer ${reviewer}. ` +
-    `Follow the Automation section of .loopboard/LOOP.md exactly on every pass.`
+    `/loop ${sanitizeLoopInterval(interval)} You are the LoopBoard orchestrator, grooming cap ${groomCap}. ` +
+    `Models: ${models.length ? models.join(', ') : 'none'}. ` +
+    `Defaults: groomer ${groomer} ${groomerEffort}, worker ${worker} ${workerEffort}, reviewer ${reviewer}. ` +
+    `Follow the Automation section of .loopboard/LOOP.md on every pass.`
   );
 }
 

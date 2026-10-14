@@ -4,7 +4,7 @@
 // v2 routes patches by destination file: index fields patch `.loopboard/TODO.md`, detail fields
 // patch `.loopboard/tasks/<id>.md`. Both keep today's base/conflict semantics (disk wins).
 
-import { IndexDoc, IndexEntry, TaskDetail, ModelValue, GroomerValue, ReviewerValue, EffortValue, isModelValue, isGroomerValue, isReviewerValue, isEffortValue, normalizeTags } from './model';
+import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, ReviewerValue, TaskEffort, isModel, isGroomerValue, isReviewerValue, isTaskEffort, normalizeTags } from './model';
 
 // Feedback (t-ae10) has no whole-set field: `feedbackAdd` appends one item with no base compare, and
 // `feedbackItem` edits or deletes ONE item addressed by `itemIndex` plus that item's own base text.
@@ -57,9 +57,9 @@ export function patchTarget(field: PatchField): 'index' | 'detail' {
 // Each routing field validates against its OWN role's values (t-0e99): a value off that list, such
 // as '', 'default (opus)', `none` on the worker or `max` as an effort, clears the field back to the
 // default rather than writing something the parser would flag.
-export function normalizeModel(value: string): ModelValue | undefined {
+export function normalizeModel(value: string): Model | undefined {
   const v = value.trim();
-  return isModelValue(v) ? v : undefined;
+  return isModel(v) ? v : undefined;
 }
 
 // The groomer field additionally accepts the on-hold sentinel (t-65a2).
@@ -74,9 +74,9 @@ export function normalizeReviewer(value: string): ReviewerValue | undefined {
   return isReviewerValue(v) ? v : undefined;
 }
 
-export function normalizeEffort(value: string): EffortValue | undefined {
+export function normalizeEffort(value: string): TaskEffort | undefined {
   const v = value.trim();
-  return isEffortValue(v) ? v : undefined;
+  return isTaskEffort(v) ? v : undefined;
 }
 
 // Current on-disk value of an index field, as a plain string (matches what the webview renders).

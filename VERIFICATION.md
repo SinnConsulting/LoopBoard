@@ -152,10 +152,12 @@ questions, an HTML-comment template) and `index-unknown.md`:
   `effort: <level> (<signals>)` brief line, the `<effort>-<task id>:` / `haiku-<task id>:` titles,
   the S/N/D/U signals with their defining phrases, the `high`/`xhigh`/`low` rows and the
   unclear-is-absent tie-break, and the four Haiku-helper conditions (doubt keeps the task model;
-  the helper never commits). Since t-0e99 the `model` is the task's resolved
-  `groomer:`/`model:`/`reviewer:`, the `auto` table (Sonnet low/medium/high, Opus xhigh, never
-  Haiku or Fable, never above xhigh), the Haiku one-step raise for a derived effort and the
-  derived-only re-spawn are pinned, and "Haiku never grooms" is pinned ABSENT. The GROOM/WORK limits
+  the helper never commits). Since t-0e99 the `model` and `effort` are the task's own fields, else
+  the prompt default, never picked by the loop (owner decision 2026-10-14: the `auto` table, the
+  rubric as an effort picker, the Haiku raise and the re-spawn rule are pinned ABSENT); the four
+  signals survive as the complexity RECORD (`complexity-groomer:`/`complexity-worker:`); the
+  `<mode> <model>-<effort>-<task id>: <task title>` title and the per-model effort range clamp are
+  pinned, and "Haiku never grooms" is pinned ABSENT. The GROOM/WORK limits
   appear once; the Notes no longer say effort rides the spawn command for subagents.
 - README.md and `docs/showcase/README.md` name the 2.1.292 minimum and carry no loop-agent
   reference; the orchestrator `.effort` description in `package.json` says subagents get their
@@ -169,8 +171,9 @@ questions, an HTML-comment template) and `index-unknown.md`:
 
 ### Orchestrator loop and per-task routing (t-0e99)
 - `test/loop.test.js`: no rule or Automation step routes or claims by a loop's own model; the legacy
-  guard opens the fence and the prompt never trips it; the `auto` picks are written onto the index
-  for grooming and working; delegation is always on, the review runs on the resolved reviewer
+  guard opens the fence and the prompt never trips it; no `auto` value or pick is left anywhere; a
+  Feedback/Review task whose answers or feedback change the story is re-groomed before an
+  implementer continues (FB9); delegation is always on, the review runs on the resolved reviewer
   (`none` = no review); the intro and Notes describe one orchestrator.
 - `test/parser.test.js` + `test/fixtures/index-routing.md`: every value of `model:`, `effort:`,
   `groomer:`, `groomer-effort:` and `reviewer:` parses (a DRAFT included), the fixture round-trips
@@ -178,19 +181,23 @@ questions, an HTML-comment template) and `index-unknown.md`:
   other keys, and DONE.md keeps the new keys as unknown lines. `test/merge.test.js`: per-role
   validation, patching and the fixed write order.
 - `test/nudge.test.js`: every reason goes to the one orchestrator whatever the task models;
-  `groomer: none` is never nudged; the new keys are named in the change list.
+  `groomer: none` is never nudged; the new keys are named in the change list; a routing re-pick on
+  a New/DRAFT nudges its groomer (the pre-spawn carve-out left with `auto`).
+- `test/taskfile.test.js`: `complexity-groomer:`/`complexity-worker:` round-trip in Meta, unflagged.
   `test/schedule.test.js`, `test/idle.test.js`: busy = any In-Progress task or a live subagent
   (`busyLoops`), the afterTask edge is the board-wide In-Progress count dropping to 0
   (`inProgressEnded`), schedules and the idle clock are keyed by `orchestrator`.
 - `test/model.test.js`, `test/settingsmigrate.test.js`, `test/settingsgrid.test.js`,
   `test/manifest-settings.test.js`: the orchestrator and default settings resolve with their
-  read-both fallbacks (old Opus slot keys, `delegateReview: true` = reviewer `auto`, legacy
-  `defaultModel`); the migration panel moves the Opus slot keys to `orchestrator.*`, removes the
-  Sonnet/Fable slot keys and `delegateWork`, and migrates `delegateReview`; the grid's writes and
-  refusals; the manifest declares the new keys and no longer the removed ones.
-- `test/subagents.test.js`, `test/view.test.js`: agent rows and the log edge carry the spawn's
-  model; the payload carries the five defaults and each task's routing keys; In Progress rows carry
-  the resolved worker model and effort.
+  read-both fallbacks (old Opus slot effort/cap, each slot `--model` string as that model id,
+  `delegateReview: true` = reviewer `opus`, legacy `defaultModel`); the per-model id override
+  (`aliasEnv`) and effort range (`clampEffort`); the migration panel's moves and removals; the
+  Roles/Models grid's writes and refusals; the manifest declares the new keys, no `auto`, and the
+  new defaults (orchestrator Haiku, worker Opus, efforts `medium`).
+- `test/subagents.test.js`, `test/view.test.js`, `test/board-routing.test.js`: agent rows are named
+  `<groom|work|review> <model>-<effort>-<task id>: <title>` (the index title when known), In
+  Progress rows `<model>-<effort>-<task id>: <title>` with the effort clamped into the model range;
+  the payload carries the five defaults and each task's routing keys.
 
 ### Story tags — `test/tags.test.js`, `test/view.test.js`, `test/board-tags.test.js` (t-0b10)
 - `normalizeTags` trims, lower-cases, folds inner whitespace/comma/colon to `-`, de-duplicates and
@@ -1842,17 +1849,20 @@ and likewise cannot be verified headless.
       reload; clicking a phase tab leaves the overview tab in place, unselected.
     - A groomer that coins a tag appends `- <name>` to `.loopboard/tags.md`; the board picks it up
       on the next refresh with a neutral chip.
-71. **One Orchestrator loop, per-task model/effort/reviewer, Haiku and `auto` (t-0e99): UNTESTED in
+71. **One Orchestrator loop, per-task model/effort/reviewer, Haiku, no `auto` (t-0e99): UNTESTED in
     the live window and a live loop.** The pure parts are pinned by the suites above; what the
     webviews draw, what the host does with VS Code and what a real orchestrator does need F5.
-    - ▶ on the sidebar's ONE `Orchestrator` row (hint `<model> · <effort>`, e.g. `opus · medium`)
+    - ▶ on the sidebar's ONE `Orchestrator` row (hint `<model> · <effort>`, e.g. `haiku · medium`)
       opens exactly one terminal, `Claude Orchestrator`, whose command line reads `claude
       --permission-mode <mode> --model '<orchestrator.model>' --effort <orchestrator.effort> --name
-      loopboard-orchestrator-<hex> '/loop <interval> You are the LoopBoard orchestrator ...'` and
-      submits itself. No `Claude Opus|Sonnet|Fable` terminal appears from any button or command;
-      **LoopBoard: Start Loop** from the palette starts the orchestrator.
-    - Change `loopBoard.orchestrator.model|effort|groomConcurrency`, a default or a model toggle on
-      the settings page: the row hint and the next ▶/♻ use it; a running loop keeps its old values.
+      loopboard-orchestrator-<hex> '/loop <interval> You are the LoopBoard orchestrator, grooming cap
+      ...'` and submits itself. No `Claude Opus|Sonnet|Fable` terminal appears from any button or
+      command; **LoopBoard: Start Loop** from the palette starts the orchestrator.
+    - With `loopBoard.models.opus.modelId` set, the terminal's environment carries
+      `ANTHROPIC_DEFAULT_OPUS_MODEL=<id>` (check with `echo` in that terminal, or the spawn's `info`
+      `loop-spawn` line naming the env); an Opus subagent reports that id.
+    - Change a role model/effort, the groomers cap, a model toggle, id or effort range on the
+      settings page: the row hint and the next ▶/♻ use it; a running loop keeps its old values.
     - Legacy terminals: with a `Claude Opus` terminal revived across a reload (or opened by hand
       with that name), activation shows ONE warning offering **Stop**; Stop disposes it, dismissing
       leaves it. `.loopboard/debug.log` at `info` shows the `popup` line and the `popup-choice`
@@ -1862,23 +1872,30 @@ and likewise cannot be verified headless.
     - Schedules (right-click ▶ ♻ ■), the context bar and its threshold restart, the idle stop and
       `loopBoard.afterTask` all act on the one row; with any task In Progress, or a subagent live,
       an automatic restart waits (row says so).
-    - Sidebar: In Progress rows lead with the task's worker model and effort (e.g. `sonnet · auto`);
-      the Agents section is one group whose rows lead with each subagent's model (e.g. `haiku`).
-    - Board: card and composer selects offer Haiku and `auto` for Groom with, Work with and Review
-      with (On hold / `none` for groom and review), with an effort select (`low`…`xhigh`, `auto`)
-      beside Groom with and Work with; Review with shows on non-draft cards and in the composer, not
-      on the draft card. Each pick writes the matching index line (`effort:`, `groomer-effort:`,
-      `reviewer:`) in the fixed order; picking `default (…)` removes it. A draft saved from the
-      composer carries all five routing lines (the picks, else the defaults).
-    - Settings page: the Orchestrator block (`--model` with inline validation, effort, groomers) and
-      the Models table (Opus, Sonnet, Fable, Haiku, `auto`, `none`; `on` toggles; default
-      groomer/worker/reviewer radios; default-effort selects). Turning off a model that is a default
-      in any role is refused with the reason beside the table.
-    - Migration panel: with `loopBoard.models.opus.model: "opus[1m]"`, `models.sonnet.effort`,
-      `delegateWork` and `delegateReview: true` in user settings, **Scan** lists the Opus move to
-      `orchestrator.model`, the removals and `defaultReviewerModel: auto`; before applying, the
-      orchestrator row hint already shows `opus[1m]` (read-both).
-    - A live orchestrator: a DRAFT with `groomer: auto` gets a concrete `groomer:`/`groomer-effort:`
-      written before grooming; with `model: auto` the groomed story lands with concrete
-      `model:`/`effort:`; a task with `model: haiku` is implemented by a Haiku subagent; with
-      `reviewer: auto` the review runs on the groomer's model, with `none` there is no review.
+    - Sidebar: In Progress rows read `<model>-<effort>-<task id>: <title>` (e.g. `opus-medium-t-5afa:
+      Space no longer…`), the effort clamped into the model's range; the Agents section is one group
+      whose rows read `● <groom|work|review> <model>-<effort>-<task id>: <title>  <duration>`, the
+      head never truncated, the title from the index. In Claude Code's own agent list, each
+      subagent's name shows that full prefix before the story title.
+    - Board: card and composer selects offer the enabled models (no `auto`) for Groom with, Work
+      with and Review with (On hold / `none` for groom and review), with an effort select
+      (`low`…`xhigh`) beside Groom with and Work with; Review with shows on non-draft cards and in
+      the composer, not on the draft card. Each pick writes the matching index line in the fixed
+      order; picking `default (…)` removes it. A draft saved from the composer carries all five
+      routing lines (the picks, else the defaults; a `max` default leaves its effort line out).
+    - Settings page (dense, dropdowns): the Roles table (Orchestrator, Groomer, Worker, Reviewer:
+      model select over the enabled models, effort select `low`…`max`, the reviewer's effort reads
+      "the worker's", groomers per pass on the Orchestrator row) and the Models table (`on` switch,
+      model id text with inline validation, lowest/highest effort selects). Turning off a model a
+      role uses, picking an off model for a role, or a lowest effort above the highest is refused
+      with the reason under the tables.
+    - Migration panel: with `loopBoard.models.opus.model: "claude-opus-5-5[1m]"`,
+      `models.opus.effort`, `models.sonnet.effort`, `delegateWork` and `delegateReview: true` in
+      user settings, **Scan** lists the model-id move to `models.opus.modelId`, the effort move to
+      `orchestrator.effort`, the removals and `defaultReviewerModel: opus`.
+    - A live orchestrator: a groomed story lands with `complexity-groomer:` in its Meta, a delivered
+      one with `complexity-worker:`; nothing writes a model or effort onto the index; a Feedback task
+      whose answers change its Goals is re-groomed (story rewritten, pairs deleted) before the
+      implementer continues; a task with `model: haiku` is implemented by a Haiku subagent; with
+      `reviewer: opus` the review runs on Opus at the task's worker effort, with `none` there is no
+      review.

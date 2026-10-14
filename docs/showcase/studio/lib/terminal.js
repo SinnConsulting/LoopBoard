@@ -17,7 +17,7 @@ const SUFFIX = { opus: 'k3f9', sonnet: 'q7d2', fable: 'm1x8' };
 
 function spawnLine(model) {
   const base = buildClaudeBase('auto', model, `loopboard-${model}-${SUFFIX[model]}`, 'medium');
-  const cmd = buildLoopCommand(LOOP_TEXT, '5m', { groomConcurrency: 3, models: ['opus', 'sonnet', 'fable', 'haiku'], defaults: TASK_DEFAULTS });
+  const cmd = buildLoopCommand(LOOP_TEXT, '5m', { groomConcurrency: 3, models: ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id })), defaults: TASK_DEFAULTS });
   return { base, cmd, shell: `${base} '${cmd}'` };
 }
 

@@ -52,7 +52,7 @@
 //     key is simply not listed — never that the wrong thing is written — so it needs no guard here.
 
 import { SETTINGS_PREFIX, ConfigPatch } from './settingsform';
-import { resolveAfterTask, AUTO, isValidModelString, isValidEffort, sanitizeGroomConcurrency } from './model';
+import { resolveAfterTask, isValidModelString, isValidEffort, sanitizeGroomConcurrency } from './model';
 
 export const AFTER_TASK_KEY = `${SETTINGS_PREFIX}afterTask`;
 export const AUTO_RECYCLE_KEY = `${SETTINGS_PREFIX}autoRecycle`;
@@ -61,10 +61,10 @@ export const DELEGATE_WORK_KEY = `${SETTINGS_PREFIX}delegateWork`;
 export const DELEGATE_REVIEW_KEY = `${SETTINGS_PREFIX}delegateReview`;
 export const OLD_DELEGATE_REVIEW_KEY = `${SETTINGS_PREFIX}delegateWork.review`;
 export const DEFAULT_REVIEWER_KEY = `${SETTINGS_PREFIX}defaultReviewerModel`;
-// The per-model loop slots (t-0e99): `models.<slot>.model|effort|groomConcurrency` became the one
-// orchestrator's `orchestrator.model|effort|groomConcurrency`.
+// The per-model loop slots (t-0e99): `models.<slot>.effort|groomConcurrency` became the one
+// orchestrator's `orchestrator.effort|groomConcurrency`, `models.<slot>.model` that model's id.
 export const LEGACY_SLOTS = ['opus', 'sonnet', 'fable'];
-export const ORCHESTRATOR_FIELDS = ['model', 'effort', 'groomConcurrency'];
+export const ORCHESTRATOR_FIELDS = ['effort', 'groomConcurrency'];
 export const slotFieldKey = (slot: string, field: string): string => `${SETTINGS_PREFIX}models.${slot}.${field}`;
 export const orchestratorKey = (field: string): string => `${SETTINGS_PREFIX}orchestrator.${field}`;
 export const AUTO_SYNC_TEMPLATES_KEY = `${SETTINGS_PREFIX}autoSyncTemplates`;
@@ -96,10 +96,10 @@ export interface MigrationRule {
   inert?: boolean;
 }
 
-// One rule per orchestrator field (t-0e99). The orchestrator defaults to Opus, so the Opus slot's
-// value is the one that carries over; `resolveOrchestrator` (src/model.ts) reads the same key while
-// the target is unset, so migrating writes exactly the value already in force. The Sonnet and Fable
-// slot values carry nothing: an inert rule per field only removes them.
+// One rule per orchestrator field (t-0e99). The old Opus loop is the one whose effort and grooming
+// cap carry over; `resolveOrchestrator` (src/model.ts) reads the same key while the target is unset,
+// so migrating writes exactly the value already in force. The Sonnet and Fable slot values carry
+// nothing: an inert rule per field only removes them.
 const ORCHESTRATOR_RULES: MigrationRule[] = ORCHESTRATOR_FIELDS.flatMap((field) => [
   {
     target: orchestratorKey(field),
@@ -108,10 +108,6 @@ const ORCHESTRATOR_RULES: MigrationRule[] = ORCHESTRATOR_FIELDS.flatMap((field) 
     resolve: (values: SettingValues) => {
       const from = slotFieldKey('opus', field);
       const raw = values[from];
-      if (field === 'model') {
-        const value = typeof raw === 'string' ? raw.trim() : '';
-        return value && isValidModelString(value) ? { from, value } : undefined;
-      }
       if (field === 'effort') return typeof raw === 'string' && isValidEffort(raw) ? { from, value: raw } : undefined;
       return raw !== undefined && sanitizeGroomConcurrency(raw) === raw ? { from, value: raw } : undefined;
     },
@@ -125,12 +121,27 @@ const ORCHESTRATOR_RULES: MigrationRule[] = ORCHESTRATOR_FIELDS.flatMap((field) 
   },
 ]);
 
+// Each slot's own `--model` string (t-0e99 FB4) is that model's id now (`models.<slot>.modelId`,
+// applied as the alias's env override): `readModelsConfig` reads it there until migrated. The bare
+// alias carries nothing, as it is what an unset model id already means.
+const MODEL_ID_RULES: MigrationRule[] = LEGACY_SLOTS.map((slot) => ({
+  target: slotFieldKey(slot, 'modelId'),
+  reason: 'renamed' as const,
+  sources: [slotFieldKey(slot, 'model')],
+  resolve: (values: SettingValues) => {
+    const from = slotFieldKey(slot, 'model');
+    const raw = values[from];
+    const value = typeof raw === 'string' ? raw.trim() : '';
+    return value && value !== slot && isValidModelString(value) ? { from, value } : undefined;
+  },
+}));
+
 export const MIGRATIONS: MigrationRule[] = [
   ...ORCHESTRATOR_RULES,
+  ...MODEL_ID_RULES,
   {
     // t-0e99: the review subagent's MODEL replaced the on/off switch. `true` meant "a review gates
-    // the PR", whose successor is `auto` (the model that groomed the story judges its Goals);
-    // `false` carries nothing. ONLY `delegateReview` decides, exactly as `resolveTaskDefaults`
+    // the PR", whose successor is `opus` (owner decision 2026-10-14); `false` carries nothing. ONLY `delegateReview` decides, exactly as `resolveTaskDefaults`
     // reads it until this is applied: the pre-rename child id never took effect, so it is
     // removal-only (carrying it would turn reviews on against an explicit `delegateReview: false`
     // once that key is gone). It is a child of the scalar `loopBoard.delegateWork`, so while that
@@ -140,7 +151,7 @@ export const MIGRATIONS: MigrationRule[] = [
     sources: [DELEGATE_REVIEW_KEY, OLD_DELEGATE_REVIEW_KEY],
     shadowedBy: DELEGATE_WORK_KEY,
     resolve: (values) =>
-      values[DELEGATE_REVIEW_KEY] === true ? { from: DELEGATE_REVIEW_KEY, value: AUTO } : undefined,
+      values[DELEGATE_REVIEW_KEY] === true ? { from: DELEGATE_REVIEW_KEY, value: 'opus' } : undefined,
   },
   {
     // The deprecated boolean pair. The mapping is NOT restated here: `resolveAfterTask` is what

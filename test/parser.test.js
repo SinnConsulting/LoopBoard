@@ -249,7 +249,7 @@ test('haiku is a valid model: and groomer: again (t-0e99); an unrecognized value
   assert.deepEqual(odd.entries[0].unknownLines, ['  - model: gpt-5', '  - groomer: claude']);
 });
 
-// ---- t-0e99: effort:, groomer-effort:, reviewer:, and `auto` ----
+// ---- t-0e99: effort:, groomer-effort:, reviewer: (no `auto` value, owner decision 2026-10-14) ----
 
 test('[routing] the routing fixture is canonical: it round-trips byte for byte', () => {
   const src = readFix('index-routing.md');
@@ -259,28 +259,28 @@ test('[routing] the routing fixture is canonical: it round-trips byte for byte',
 test('[routing] every routing key and value parses onto the entry, a DRAFT included', () => {
   const byId = Object.fromEntries(parseTodo(readFix('index-routing.md')).entries.map((e) => [e.id, e]));
   const pick = (e) => [e.model, e.effort, e.groomer, e.groomerEffort, e.reviewer];
-  assert.deepEqual(pick(byId['t-r001']), ['auto', 'auto', 'haiku', 'xhigh', 'none']);
+  assert.deepEqual(pick(byId['t-r001']), ['opus', 'high', 'haiku', 'xhigh', 'none']);
   assert.equal(byId['t-r001'].isDraft, true);
-  assert.deepEqual(pick(byId['t-r002']), ['haiku', 'low', 'auto', 'auto', 'auto']);
+  assert.deepEqual(pick(byId['t-r002']), ['haiku', 'low', 'haiku', 'medium', 'none']);
   assert.deepEqual(pick(byId['t-r003']), ['opus', 'medium', 'none', 'low', 'opus']);
   assert.deepEqual(pick(byId['t-r004']), ['sonnet', 'high', 'opus', 'medium', 'sonnet']);
   assert.deepEqual(pick(byId['t-r005']), ['fable', 'xhigh', 'sonnet', 'high', 'fable']);
-  assert.deepEqual(pick(byId['t-r006']), ['auto', undefined, 'fable', undefined, 'haiku']);
+  assert.deepEqual(pick(byId['t-r006']), ['sonnet', undefined, 'fable', undefined, 'haiku']);
   for (const e of Object.values(byId)) assert.deepEqual(e.unknownLines, [], e.id);
 });
 
 test('[routing] the writer emits the fixed order whatever order the file had', () => {
-  const src = ['# TODO', '', '## Tasks', '', '- [ ] Scrambled', '  - id: t-sc01', '  - reviewer: auto', '  - groomer-effort: low',
+  const src = ['# TODO', '', '## Tasks', '', '- [ ] Scrambled', '  - id: t-sc01', '  - reviewer: fable', '  - groomer-effort: low',
     '  - effort: high', '  - groomer: opus', '  - phase: backlog', '  - model: sonnet'].join('\n');
   const out = serializeTodo(parseTodo(src));
   assert.ok(out.includes(['  - id: t-sc01', '  - phase: backlog', '  - model: sonnet', '  - effort: high', '  - groomer: opus',
-    '  - groomer-effort: low', '  - reviewer: auto'].join('\n')), out);
+    '  - groomer-effort: low', '  - reviewer: fable'].join('\n')), out);
   assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint');
 });
 
 test('[routing] off-list values land in flagged unknown lines and never void the other keys', () => {
   const src = ['# TODO', '', '## Tasks', '', '- [ ] Off-list', '  - id: t-ol01', '  - phase: backlog', '  - model: none',
-    '  - effort: max', '  - groomer: opus', '  - groomer-effort: extreme', '  - reviewer: gpt', '  - feedback: keep me'].join('\n');
+    '  - effort: max', '  - groomer: opus', '  - groomer-effort: auto', '  - reviewer: auto', '  - feedback: keep me'].join('\n');
   const e = parseTodo(src).entries[0];
   assert.equal(e.id, 't-ol01');
   assert.equal(e.phase, 'backlog');
@@ -288,18 +288,18 @@ test('[routing] off-list values land in flagged unknown lines and never void the
   assert.deepEqual(e.feedback, ['keep me']);
   assert.equal(e.model, undefined, '`none` is not a worker value');
   assert.equal(e.effort, undefined, '`max` is never a per-task effort');
-  assert.equal(e.groomerEffort, undefined);
+  assert.equal(e.groomerEffort, undefined, '`auto` is no value at all (owner decision 2026-10-14)');
   assert.equal(e.reviewer, undefined);
-  assert.deepEqual(e.unknownLines, ['  - model: none', '  - effort: max', '  - groomer-effort: extreme', '  - reviewer: gpt']);
+  assert.deepEqual(e.unknownLines, ['  - model: none', '  - effort: max', '  - groomer-effort: auto', '  - reviewer: auto']);
   const out = serializeTodo(parseTodo(src));
   assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint with the flagged lines kept');
 });
 
 test('[routing] DONE.md keeps id/model/groomer/completed only: the new keys stay unknown lines there', () => {
-  const src = ['## Tasks', '', '- [x] Accepted', '  - id: t-dn01', '  - model: auto', '  - effort: high', '  - groomer: haiku',
+  const src = ['## Tasks', '', '- [x] Accepted', '  - id: t-dn01', '  - model: fable', '  - effort: high', '  - groomer: haiku',
     '  - reviewer: none', '  - completed: 2026-10-13'].join('\n');
   const [e] = parseDone(src);
-  assert.equal(e.model, 'auto');
+  assert.equal(e.model, 'fable');
   assert.equal(e.groomer, 'haiku');
   assert.equal(e.effort, undefined);
   assert.equal(e.reviewer, undefined);

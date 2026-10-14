@@ -637,18 +637,16 @@
   function defaultOpt(model) { return 'default (' + (model || 'opus') + ')'; }
   function workerDefaultOpt() { return defaultOpt(board && board.defaultWorkerModel); }
   function groomerDefaultOpt() { return defaultOpt(board && board.defaultGroomerModel); }
-  // t-0e99: `auto` lets the orchestrator pick the model (LOOP.md Subagents table) on every role.
-  const AUTO = 'auto';
-  function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || [], [AUTO]); }
+  function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || []); }
   function normModelValue(v, leadOpt) { return v === leadOpt ? '' : v; }
 
-  // Per-task effort (t-0e99): `max` is never a per-task value, `auto` = the rubric picks it.
-  const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', AUTO];
-  function effortDefaultOpt(effort) { return 'default (' + (effort || AUTO) + ')'; }
+  // Per-task effort (t-0e99): `max` is never a per-task value (only a role default may be `max`).
+  const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh'];
+  function effortDefaultOpt(effort) { return 'default (' + (effort || 'medium') + ')'; }
   // "Review with" (t-0e99): the review subagent's model; `none` = no review subagent runs.
   const NO_REVIEW = 'none';
   function reviewerDefaultOpt() { return 'default (' + ((board && board.defaultReviewerModel) || NO_REVIEW) + ')'; }
-  function reviewerValues() { return ((board && board.models) || []).concat([AUTO, NO_REVIEW]); }
+  function reviewerValues() { return ((board && board.models) || []).concat([NO_REVIEW]); }
 
   // A card select over plain values (effort, reviewer): the lead `default (...)` option maps to ''
   // (no line on the index entry), every other option is the stored value itself. Commits through

@@ -117,9 +117,9 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   (Rule 2 → board-wide block) and kills live subagents — hence the modal's wording.
 - One Orchestrator loop (t-0e99): `LoopId` (`orchestrator`) keys terminal, `--name` and every
   controller map; `Model` (`opus|sonnet|fable|haiku`) is only the task value. It never edits code:
-  every groom, implementation and review is a subagent on the task's resolved routing keys (absent =
-  the five defaults, which ride the bootstrap prompt). Old slot/delegate settings stay read-both
-  until migrated.
+  every groom/implementation/review is a subagent on the task's routing keys, else the five defaults
+  (bootstrap prompt, plus narrowed per-model effort ranges). NO `auto`: nothing picks a model or
+  effort; complexity is a Meta record. Id override = `ANTHROPIC_DEFAULT_<MODEL>_MODEL` env; old keys read-both.
 - Workspace custom rules (t-4a04): a hand-owned `<!-- loopboard:custom:begin/end -->` free-text
   section in `.loopboard/LOOP.md` — NO setting, NO reconciler, NO config listener (the earlier
   `loopBoard.customRules` + per-line-marker machinery was removed after human rejection; do not

@@ -24,16 +24,16 @@ function block(text, marker) {
   throw new Error('unbalanced braces after ' + marker);
 }
 
-test('every model select offers auto after the enabled models; Groom with adds On hold last', () => {
-  assert.match(board, /function modelOptions\(leadOpt\) \{ return \[leadOpt\]\.concat\(\(board && board\.models\) \|\| \[\], \[AUTO\]\); \}/);
+test('every model select offers the enabled models only, never auto; Groom with adds On hold last', () => {
+  assert.match(board, /function modelOptions\(leadOpt\) \{ return \[leadOpt\]\.concat\(\(board && board\.models\) \|\| \[\]\); \}/);
   assert.match(board, /function groomerOptions\(leadOpt\) \{ return modelOptions\(leadOpt\)\.concat\(\[GROOMER_HOLD_OPT\]\); \}/);
-  assert.match(board, /const AUTO = 'auto';/);
+  assert.ok(!/\bAUTO\b/.test(board), 'no auto option anywhere on the board (owner decision 2026-10-14)');
 });
 
-test('effort selects offer low..xhigh and auto, never max; Review with offers the models, auto and none', () => {
-  assert.match(board, /const EFFORT_VALUES = \['low', 'medium', 'high', 'xhigh', AUTO\];/);
+test('effort selects offer low..xhigh, never max or auto; Review with offers the models and none', () => {
+  assert.match(board, /const EFFORT_VALUES = \['low', 'medium', 'high', 'xhigh'\];/);
   assert.ok(!/EFFORT_VALUES = \[[^\]]*'max'/.test(board), 'max is never a per-task effort');
-  assert.match(board, /function reviewerValues\(\) \{ return \(\(board && board\.models\) \|\| \[\]\)\.concat\(\[AUTO, NO_REVIEW\]\); \}/);
+  assert.match(board, /function reviewerValues\(\) \{ return \(\(board && board\.models\) \|\| \[\]\)\.concat\(\[NO_REVIEW\]\); \}/);
 });
 
 test('the routing selects commit through commitSelect with the patch field as data-field', () => {
@@ -75,9 +75,11 @@ test('the sidebar talks to the host in loop ids, never in model ids', () => {
   assert.match(sidebar, /vscode\.postMessage\(\{ type: message, loop: l\.id \}\)/, 'the ▶ ♻ ■ buttons');
 });
 
-test('In Progress rows lead with the worker model and effort; Agents rows with each subagent model', () => {
-  assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, t\.model \+ ' · ' \+ t\.effort\)/);
-  assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, a\.model \|\| l\.name\)/);
+test('In Progress and Agents rows are named <model>-<effort>-<task id>: <title>, Agents led by groom/work/review (t-0e99 FB1/FB2/FB5)', () => {
+  assert.match(sidebar, /const head = t\.model \+ '-' \+ t\.effort \+ '-' \+ t\.id \+ ':';/);
+  assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, head\),\s*marquee\(h\('span', \{ class: 'marquee-text' \}, t\.title \|\| t\.id\)\)\)/);
+  assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, a\.head\),\s*marquee\(h\('span', \{ class: 'marquee-text' \}, a\.title\)\)/);
+  assert.ok(!sidebar.includes('a.model || l.name'), 'no model column of its own: the model lives in the name');
   // A loop is "working" whenever any task is In Progress: one orchestrator does all of them.
   assert.match(sidebar, /const owns = !!\(board\.concurrency && board\.concurrency\.inProgress\.length\);/);
 });

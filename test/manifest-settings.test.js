@@ -37,9 +37,9 @@ const REMOVED_KEYS = [
 // activation and no setting needs a window reload.
 //
 // This list is the SPAWN-COMMAND reality, hand-kept against `src/loop.ts`: `buildClaudeBase`
-// (permissionMode, the orchestrator's `--model` and `--effort`) and `buildLoopCommand` (interval,
-// grooming cap, the enabled task models and the five per-task defaults, t-0e99) are the only
-// places a setting is baked in.
+// (permissionMode, the orchestrator's `--model` and `--effort`), `buildLoopCommand` (interval,
+// grooming cap, the enabled task models with their effort ranges and the five per-task defaults,
+// t-0e99) and the terminal env (`aliasEnv`: each model id) are the only places a setting is baked in.
 // Adding a setting to package.json without classifying it — or classifying one this list does not
 // know — turns the suite red, which is the whole point: an absent marker on the settings page is
 // then information ("this one is live"), never an oversight.
@@ -49,7 +49,7 @@ const RESTART_KEYS = [
   'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
   'loopBoard.defaultGroomerModel', 'loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerModel',
   'loopBoard.defaultWorkerEffort', 'loopBoard.defaultReviewerModel',
-  'loopBoard.models.opus.enabled', 'loopBoard.models.sonnet.enabled', 'loopBoard.models.fable.enabled', 'loopBoard.models.haiku.enabled',
+  ...['opus', 'sonnet', 'fable', 'haiku'].flatMap((m) => ['enabled', 'modelId', 'minEffort', 'maxEffort'].map((f) => `loopBoard.models.${m}.${f}`)),
 ];
 // The one sentence every `restart` description ends with, so the NATIVE settings editor — which
 // cannot render the page's marker — states the same fact in the same words. Imported, not retyped:
@@ -126,31 +126,45 @@ test('the delegation pair and the per-slot loop keys are no longer declared (t-0
   for (const key of REMOVED_KEYS) assert.ok(!declared.has(key), `${key} is still declared`);
 });
 
-test('t-0e99 declares the orchestrator, the five defaults and the Haiku toggle, enums widened', () => {
+test('t-0e99 declares the orchestrator, the five defaults and per model its toggle, id and effort range; no auto anywhere', () => {
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
   const models = ['opus', 'sonnet', 'fable', 'haiku'];
-  assert.equal(all['loopBoard.orchestrator.model'].type, 'string');
-  assert.equal(all['loopBoard.orchestrator.model'].default, 'opus');
-  assert.deepEqual(all['loopBoard.orchestrator.effort'].enum, ['low', 'medium', 'high', 'xhigh', 'max']);
+  const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+  assert.deepEqual(all['loopBoard.orchestrator.model'].enum, models, 'a select over the aliases (FB3)');
+  assert.equal(all['loopBoard.orchestrator.model'].default, 'haiku');
+  assert.deepEqual(all['loopBoard.orchestrator.effort'].enum, efforts);
   assert.equal(all['loopBoard.orchestrator.effort'].default, 'medium');
   assert.equal(all['loopBoard.orchestrator.groomConcurrency'].default, 3);
   assert.equal(all['loopBoard.orchestrator.groomConcurrency'].minimum, 1);
-  assert.deepEqual(all['loopBoard.defaultGroomerModel'].enum, [...models, 'auto']);
-  assert.deepEqual(all['loopBoard.defaultWorkerModel'].enum, [...models, 'auto']);
-  assert.deepEqual(all['loopBoard.defaultReviewerModel'].enum, ['none', 'auto', ...models]);
+  assert.deepEqual(all['loopBoard.defaultGroomerModel'].enum, models);
+  assert.deepEqual(all['loopBoard.defaultWorkerModel'].enum, models);
+  assert.deepEqual(all['loopBoard.defaultReviewerModel'].enum, ['none', ...models]);
   for (const key of ['loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerEffort']) {
-    assert.deepEqual(all[key].enum, ['auto', 'low', 'medium', 'high', 'xhigh'], `${key}: no max per task`);
+    assert.deepEqual(all[key].enum, efforts, key);
+    assert.equal(all[key].default, 'medium', key);
   }
-  for (const m of models) assert.equal(all[`loopBoard.models.${m}.enabled`].default, true, m);
-  // Defaults keep today's behaviour: groomer Opus, worker Sonnet, no review, the rubric picks effort.
+  for (const m of models) {
+    assert.equal(all[`loopBoard.models.${m}.enabled`].default, true, m);
+    assert.equal(all[`loopBoard.models.${m}.modelId`].type, 'string', m);
+    assert.equal(all[`loopBoard.models.${m}.modelId`].default, '', m);
+    assert.match(all[`loopBoard.models.${m}.modelId`].markdownDescription, new RegExp(`ANTHROPIC_DEFAULT_${m.toUpperCase()}_MODEL`), m);
+    assert.deepEqual(all[`loopBoard.models.${m}.minEffort`].enum, efforts, m);
+    assert.equal(all[`loopBoard.models.${m}.minEffort`].default, 'low', m);
+    assert.deepEqual(all[`loopBoard.models.${m}.maxEffort`].enum, efforts, m);
+    assert.equal(all[`loopBoard.models.${m}.maxEffort`].default, 'max', m);
+  }
+  // Role defaults (owner decision 2026-10-14): groomer and worker Opus, no review.
   assert.equal(all['loopBoard.defaultGroomerModel'].default, 'opus');
-  assert.equal(all['loopBoard.defaultWorkerModel'].default, 'sonnet');
+  assert.equal(all['loopBoard.defaultWorkerModel'].default, 'opus');
   assert.equal(all['loopBoard.defaultReviewerModel'].default, 'none');
-  assert.equal(all['loopBoard.defaultGroomerEffort'].default, 'auto');
-  assert.equal(all['loopBoard.defaultWorkerEffort'].default, 'auto');
+  for (const [key, prop] of Object.entries(all)) {
+    if (key === 'loopBoard.permissionMode') continue; // `--permission-mode auto` is the CLI's own mode
+    assert.ok(!(prop.enum || []).includes('auto'), `${key} still offers auto`);
+    assert.ok(!/`auto`/.test(prop.markdownDescription), `${key} still describes auto`);
+  }
   // Every one of them is application-scoped (asserted for all keys above) and lives in section 1.
   const first = Object.keys(sections[0].properties);
-  for (const key of [...Object.keys(all).filter((k) => k.startsWith('loopBoard.orchestrator.')), 'loopBoard.models.haiku.enabled']) {
+  for (const key of [...Object.keys(all).filter((k) => k.startsWith('loopBoard.orchestrator.') || k.startsWith('loopBoard.models.'))]) {
     assert.ok(first.includes(key), `${key} must sit in ${sections[0].title}`);
   }
 });
@@ -180,7 +194,7 @@ test('new defaults: context limit 35 (t-2047), no review subagent by default (t-
   // Each description says which state is the default.
   assert.match(all['loopBoard.contextLimit.percent'].markdownDescription, /`35` \(default\)/);
   assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /`none` \(default\): no review subagent/);
-  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /Replaces `loopBoard\.delegateReview` \(`true` became `auto`\)/);
+  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /Replaces `loopBoard\.delegateReview` \(`true` became `opus`\)/);
 });
 
 test('with every setting unset, the spawn names the shipped defaults and a loop trips at 35%', () => {
@@ -194,11 +208,11 @@ test('with every setting unset, the spawn names the shipped defaults and a loop 
   const unset = () => undefined;
   const cmd = buildLoopCommand(tpl, all['loopBoard.loopInterval'].default, {
     groomConcurrency: resolveOrchestrator(unset).groomConcurrency,
-    models: ['opus', 'sonnet', 'fable', 'haiku'],
+    models: ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id })),
     defaults: resolveTaskDefaults(unset),
   });
-  assert.ok(cmd.includes('Defaults: groomer opus effort auto, worker sonnet effort auto, reviewer none.'), cmd);
-  assert.ok(cmd.includes('grooming concurrency cap of 3'), cmd);
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer none.'), cmd);
+  assert.ok(cmd.includes('grooming cap 3.'), cmd);
   const threshold = sanitizeContextPercent(all['loopBoard.contextLimit.percent'].default);
   assert.equal(threshold, 35);
   assert.equal(shouldTrip(35, threshold, 's1', undefined), true, 'trips at 35%');
@@ -420,8 +434,7 @@ test('every key the code reads is still declared in the manifest', () => {
     'loopBoard.cardsStartCollapsed', 'loopBoard.nudgeLoops', 'loopBoard.showWhatsNew',
     'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.debug',
     'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
-    'loopBoard.models.opus.enabled', 'loopBoard.models.sonnet.enabled',
-    'loopBoard.models.fable.enabled', 'loopBoard.models.haiku.enabled',
+    ...['opus', 'sonnet', 'fable', 'haiku'].flatMap((m) => ['enabled', 'modelId', 'minEffort', 'maxEffort'].map((f) => `loopBoard.models.${m}.${f}`)),
   ]) {
     assert.ok(declared.has(key), `${key} is read by src/ but no longer declared`);
   }
