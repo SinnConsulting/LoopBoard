@@ -188,8 +188,10 @@ test('buildClaudeBase sanitizes an injected permissionMode so the shell line sta
 });
 
 test('isValidLoopInterval: accepts <digits><s|m|h|d>, rejects garbage/injection', () => {
-  for (const ok of ['1m', '5m', '30s', '2h', '7d', '10m']) assert.ok(isValidLoopInterval(ok), `${ok} valid`);
-  for (const bad of ['', '1', 'm', '1x', '1m; ls', '-1m', '1 m', '1M']) assert.ok(!isValidLoopInterval(bad), `${bad} invalid`);
+  for (const ok of ['1m', '5m', '30s', '2h', '7d', '10m', '1', '5']) assert.ok(isValidLoopInterval(ok), `${ok} valid`);
+  for (const bad of ['', 'm', '1x', '1m; ls', '-1m', '1 m', '1M', '1mm']) assert.ok(!isValidLoopInterval(bad), `${bad} invalid`);
+  assert.equal(sanitizeLoopInterval('1'), '1m', 'bare number means minutes');
+  assert.equal(sanitizeLoopInterval('5m'), '5m');
 });
 
 test('sanitizeLoopInterval falls back to 1m for invalid values', () => {
