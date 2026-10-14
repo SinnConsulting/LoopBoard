@@ -190,9 +190,9 @@
               "haiku"
             ],
             "order": 80,
-            "default": "none",
+            "default": "opus",
             "loopBoardApplies": "restart",
-            "markdownDescription": "The model the review subagent runs on for tasks with no `reviewer:` field. `none` (default): no review subagent, the implementer's PR goes to Review directly. Any model: the review runs on it, at the task's worker effort (clamped into the reviewer model's range). A pass takes the task to Review with its PR still open; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. The loop never merges a PR. Replaces `loopBoard.delegateReview` (`true` became `opus`). The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "The model the review subagent runs on for tasks with no `reviewer:` field. `none`: no review subagent, the implementer's PR goes to Review directly. Any model (default `opus`): the review runs on it, at the task's worker effort (clamped into the reviewer model's range). A pass takes the task to Review with its PR still open; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. The loop never merges a PR. Replaces `loopBoard.delegateReview` (`true` became `opus`, `false` became `none`). The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.opus.enabled": {
             "type": "boolean",
@@ -236,17 +236,17 @@
               "max"
             ],
             "order": 120,
-            "default": "max",
+            "default": "xhigh",
             "loopBoardApplies": "restart",
-            "markdownDescription": "**Opus.** The highest effort any subagent on Opus runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "**Opus.** Default `xhigh`. The highest effort any subagent on Opus runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.sonnet.enabled": {
             "type": "boolean",
             "scope": "application",
             "order": 130,
-            "default": true,
+            "default": false,
             "loopBoardApplies": "restart",
-            "markdownDescription": "**Sonnet.** Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "**Sonnet.** Off by default. Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.sonnet.modelId": {
             "type": "string",
@@ -290,9 +290,9 @@
             "type": "boolean",
             "scope": "application",
             "order": 170,
-            "default": true,
+            "default": false,
             "loopBoardApplies": "restart",
-            "markdownDescription": "**Fable.** Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "**Fable.** Off by default. Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.fable.modelId": {
             "type": "string",
@@ -408,24 +408,6 @@
             "loopBoardApplies": "restart",
             "markdownDescription": "Interval passed to `/loop` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
-          "loopBoard.afterTask": {
-            "type": "string",
-            "scope": "application",
-            "enum": [
-              "none",
-              "clear",
-              "recycle"
-            ],
-            "enumDescriptions": [
-              "Leave the terminal alone — the next task continues in the same conversation (default).",
-              "Soft: send /clear to the terminal so the next task starts on a fresh conversation. The terminal keeps running.",
-              "Hard: close the terminal and open a new one. Fully fresh, but the loop is briefly down while it restarts."
-            ],
-            "order": 30,
-            "default": "none",
-            "loopBoardApplies": "live",
-            "markdownDescription": "What to do with the Orchestrator's loop terminal once the board's In Progress task leaves In Progress. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair: if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). Whatever this is set to, the ♻ button still recycles a loop by hand at any time."
-          },
           "loopBoard.contextLimit.percent": {
             "type": "number",
             "scope": "application",
@@ -450,7 +432,7 @@
             "order": 50,
             "default": "recycle",
             "loopBoardApplies": "live",
-            "markdownDescription": "What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size."
+            "markdownDescription": "What to do with a loop terminal when `loopBoard.contextLimit.percent` trips."
           },
           "loopBoard.nudgeLoops": {
             "type": "boolean",
@@ -477,24 +459,6 @@
             "loopBoardApplies": "live",
             "loopBoardDependsOn": "loopBoard.idleStop.enabled",
             "markdownDescription": "Only applies while `loopBoard.idleStop.enabled` is on. How many minutes a loop must be idle before it is stopped; `60` (default). The warning appears 30 seconds before that mark, and the stop behaves exactly like the ■ button. An invalid value falls back to 60."
-          },
-          "loopBoard.autoRecycle": {
-            "type": "boolean",
-            "scope": "application",
-            "order": 900,
-            "default": false,
-            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this.",
-            "loopBoardApplies": "live",
-            "markdownDescription": "Deprecated: when a task finishes, restart the loop terminal so the next task starts fresh."
-          },
-          "loopBoard.clearSessionAfterTask": {
-            "type": "boolean",
-            "scope": "application",
-            "order": 910,
-            "default": false,
-            "markdownDeprecationMessage": "Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this.",
-            "loopBoardApplies": "live",
-            "markdownDescription": "Deprecated: when a task finishes, send /clear to the loop terminal so the next task starts fresh."
           }
         }
       },

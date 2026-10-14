@@ -112,7 +112,7 @@ Any `src/**` change requires `make test` + `make check` green before it counts a
   loop is BUSY and waits indefinitely; busy = any In-Progress task ∪ a live subagent (`busyLoops`)
   (t-sbag: pure `src/subagents.ts`, `contextreader.readSubagents`, 60-min transcript-mtime staleness
   cap; manual ♻ only warns in its tooltip; `force` and a scheduled start override it). The idle edge
-  is `maybeAutoRecycle`'s, but a finishing subagent writes no `.loopboard/` — so the context poll
+  is a board refresh, but a finishing subagent writes no `.loopboard/`, so the context poll
   re-runs the flushes too. A forced restart leaves the task `phase: inprogress` with no worker
   (Rule 2 → board-wide block) and kills live subagents — hence the modal's wording.
 - One Orchestrator loop (t-0e99): `LoopId` (`orchestrator`) keys terminal, `--name` and every

@@ -16,7 +16,7 @@ const {
   AUTO_SYNC_TEMPLATES_KEY, PULSE_TEMPLATE_SYNC_KEY,
 } = require('../out-test/settingsmigrate.js');
 const { formKeys } = require('../out-test/settingsform.js');
-const { resolveAfterTask, resolveOrchestrator, resolveTaskDefaults } = require('../out-test/model.js');
+const { resolveOrchestrator, resolveTaskDefaults } = require('../out-test/model.js');
 
 const root = path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -61,10 +61,12 @@ test('delegateReview: true migrates to defaultReviewerModel: opus, then is remov
   ]);
 });
 
-test('delegateReview: false carries nothing and is only removed', () => {
+test('delegateReview: false migrates to defaultReviewerModel: none, so the opt-out survives the Opus review default (t-0e99 FB12)', () => {
   const plan = buildMigrationPlan(DECLARED, { [DELEGATE_REVIEW_KEY]: false });
-  assert.equal(byKey(plan, DELEGATE_REVIEW_KEY).kind, 'remove');
-  assert.deepEqual(plan.writes, [{ key: DELEGATE_REVIEW_KEY, value: undefined }]);
+  const action = byKey(plan, DELEGATE_REVIEW_KEY);
+  assert.equal(action.kind, 'migrate');
+  assert.equal(action.targetValue, 'none');
+  assert.deepEqual(plan.writes, [{ key: DEFAULT_REVIEWER_KEY, value: 'none' }, { key: DELEGATE_REVIEW_KEY, value: undefined }]);
 });
 
 test('the pre-rename delegateWork.review id never took effect, so it is removed and carries nothing', () => {
@@ -76,13 +78,13 @@ test('the pre-rename delegateWork.review id never took effect, so it is removed 
 });
 
 test('an explicit delegateReview: false is never turned into a review by the old child key', () => {
-  // Pass 1: delegateWork shadows the child, delegateReview: false is removed, nothing is written.
+  // Pass 1: delegateWork shadows the child, delegateReview: false becomes reviewer `none`.
   const first = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true, [DELEGATE_REVIEW_KEY]: false });
-  assert.ok(first.writes.every((w) => w.value === undefined), 'pass 1 writes no value');
+  assert.deepEqual(first.writes.filter((w) => w.value !== undefined), [{ key: DEFAULT_REVIEWER_KEY, value: 'none' }], 'pass 1 writes only the opt-out');
   // Pass 2: with delegateWork gone the stale child `true` is readable, and is only removed.
   const second = buildMigrationPlan(DECLARED, { [OLD_DELEGATE_REVIEW_KEY]: true });
   assert.ok(!second.writes.some((w) => w.key === DEFAULT_REVIEWER_KEY), 'no reviewer is written');
-  assert.equal(resolveTaskDefaults((k) => (k === 'delegateWork.review' ? true : undefined)).reviewer, 'none', 'and it was never in force');
+  assert.equal(resolveTaskDefaults((k) => (k === 'delegateWork.review' ? true : undefined)).reviewer, resolveTaskDefaults(() => undefined).reviewer, 'and it was never in force');
 });
 
 test('the migrated reviewer IS what resolveTaskDefaults honours today', () => {
@@ -91,8 +93,7 @@ test('the migrated reviewer IS what resolveTaskDefaults honours today', () => {
   for (const value of [true, false]) {
     const honoured = resolveTaskDefaults((k) => (k === 'delegateReview' ? value : undefined)).reviewer;
     const write = buildMigrationPlan(DECLARED, { [DELEGATE_REVIEW_KEY]: value }).writes.find((w) => w.key === DEFAULT_REVIEWER_KEY);
-    if (honoured === 'none') assert.equal(write, undefined, `${value}: none is the default, so nothing is written`);
-    else assert.equal(write.value, honoured);
+    assert.equal(write.value, honoured, String(value));
   }
 });
 
@@ -154,12 +155,12 @@ test('a blind removal is NEVER carried by a bulk apply', () => {
 });
 
 test('a real finding alongside a blind removal is counted separately, and only the findings are bulk', () => {
-  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true, [AUTO_RECYCLE_KEY]: true });
+  const plan = buildMigrationPlan(DECLARED, { [DELEGATE_WORK_KEY]: true, 'loopBoard.models.sonnet.model': 'sonnet[1m]' });
   assert.equal(plan.sweeps, 1);
   assert.equal(plan.findings, 2);
   assert.deepEqual(plan.writes, [
-    { key: AFTER_TASK_KEY, value: 'recycle' },
-    { key: AUTO_RECYCLE_KEY, value: undefined },
+    { key: 'loopBoard.models.sonnet.modelId', value: 'sonnet[1m]' },
+    { key: 'loopBoard.models.sonnet.model', value: undefined },
     { key: DELEGATE_WORK_KEY, value: undefined },
   ]);
   assert.equal(plan.writes.some((w) => w.key === OLD_DELEGATE_REVIEW_KEY), false);
@@ -280,10 +281,10 @@ test('every planned action is executable on its own', () => {
 });
 
 test('a single migrate row writes its destination first, then drops the source', () => {
-  const plan = buildMigrationPlan(DECLARED, { [AUTO_RECYCLE_KEY]: true });
-  assert.deepEqual(actionWrites(byKey(plan, AUTO_RECYCLE_KEY)), [
-    { key: AFTER_TASK_KEY, value: 'recycle' },
-    { key: AUTO_RECYCLE_KEY, value: undefined },
+  const plan = buildMigrationPlan(DECLARED, { 'loopBoard.models.sonnet.model': 'claude-haiku-5-5' });
+  assert.deepEqual(actionWrites(byKey(plan, 'loopBoard.models.sonnet.model')), [
+    { key: 'loopBoard.models.sonnet.modelId', value: 'claude-haiku-5-5' },
+    { key: 'loopBoard.models.sonnet.model', value: undefined },
   ]);
 });
 
@@ -305,80 +306,26 @@ test('a blind removal row removes exactly one key, never its shadowing parent', 
   assert.equal(plan.actions.filter((a) => a.key === DELEGATE_WORK_KEY).length, 1, 'the parent is its own, separate row');
 });
 
-// ---- category 2: deprecated pair -> afterTask ----
+// ---- category 2: the after-task recycle/clear is gone (t-0e99 FB13) ----
 
-test('autoRecycle migrates to afterTask: "recycle"', () => {
-  const plan = buildMigrationPlan(DECLARED, { [AUTO_RECYCLE_KEY]: true });
-  const action = byKey(plan, AUTO_RECYCLE_KEY);
-  assert.equal(action.kind, 'migrate');
-  assert.equal(action.reason, 'deprecated');
-  assert.equal(action.targetValue, 'recycle');
-  assert.deepEqual(plan.writes, [
-    { key: AFTER_TASK_KEY, value: 'recycle' },
-    { key: AUTO_RECYCLE_KEY, value: undefined },
-  ]);
-});
-
-test('clearSessionAfterTask migrates to afterTask: "clear"', () => {
-  const plan = buildMigrationPlan(DECLARED, { [CLEAR_SESSION_KEY]: true });
-  assert.equal(byKey(plan, CLEAR_SESSION_KEY).targetValue, 'clear');
-  assert.deepEqual(plan.writes, [
-    { key: AFTER_TASK_KEY, value: 'clear' },
-    { key: CLEAR_SESSION_KEY, value: undefined },
-  ]);
-});
-
-test('both booleans on: autoRecycle decides, clearSessionAfterTask is only removed', () => {
-  // The same precedence `resolveAfterTask` applies at run time — a recycle always won, which made
-  // clear moot. Migrating must reproduce that, not pick the other one.
-  const plan = buildMigrationPlan(DECLARED, { [AUTO_RECYCLE_KEY]: true, [CLEAR_SESSION_KEY]: true });
-  assert.equal(byKey(plan, AUTO_RECYCLE_KEY).kind, 'migrate');
-  assert.equal(byKey(plan, AUTO_RECYCLE_KEY).targetValue, 'recycle');
-  assert.equal(byKey(plan, CLEAR_SESSION_KEY).kind, 'remove');
-  assert.match(byKey(plan, CLEAR_SESSION_KEY).detail, /loopBoard\.autoRecycle is what decides/);
-  assert.deepEqual(plan.writes, [
-    { key: AFTER_TASK_KEY, value: 'recycle' },
-    { key: AUTO_RECYCLE_KEY, value: undefined },
-    { key: CLEAR_SESSION_KEY, value: undefined },
-  ]);
-});
-
-test('deprecated booleans explicitly set to false are removed without writing afterTask', () => {
-  const plan = buildMigrationPlan(DECLARED, { [AUTO_RECYCLE_KEY]: false, [CLEAR_SESSION_KEY]: false });
-  assert.equal(byKey(plan, AUTO_RECYCLE_KEY).kind, 'remove');
-  assert.equal(byKey(plan, CLEAR_SESSION_KEY).kind, 'remove');
-  assert.deepEqual(plan.writes, [
-    { key: AUTO_RECYCLE_KEY, value: undefined },
-    { key: CLEAR_SESSION_KEY, value: undefined },
-  ]);
-  assert.ok(!plan.writes.some((w) => w.key === AFTER_TASK_KEY), 'afterTask must not be written for a no-op pair');
-});
-
-test('afterTask already set makes the deprecated pair a conflict, not an overwrite', () => {
-  const plan = buildMigrationPlan(DECLARED, {
-    [AFTER_TASK_KEY]: 'none',
-    [AUTO_RECYCLE_KEY]: true,
-  });
-  assert.equal(byKey(plan, AUTO_RECYCLE_KEY).kind, 'conflict');
-  assert.deepEqual(plan.writes, []);
-  assert.equal(plan.conflicts, 1);
-});
-
-test('the migrated afterTask value IS what resolveAfterTask honours today, for every combination', () => {
-  // The guarantee that migrating changes no behaviour. If the honouring rule ever changes, this
-  // fails rather than leaving a second, drifting copy of the mapping in the migration table.
-  for (const recycle of [true, false]) {
-    for (const clear of [true, false]) {
-      const values = { [AUTO_RECYCLE_KEY]: recycle, [CLEAR_SESSION_KEY]: clear };
-      const honoured = resolveAfterTask(undefined, recycle, clear);
-      const write = buildMigrationPlan(DECLARED, values).writes.find((w) => w.key === AFTER_TASK_KEY);
-      if (honoured === 'none') {
-        assert.equal(write, undefined, `${recycle}/${clear}: "none" is the default, so nothing is written`);
-      } else {
-        assert.equal(write.value, honoured, `${recycle}/${clear} must migrate to the honoured mode`);
-      }
+test('afterTask and its deprecated pair are plain deprecated removals, whatever their value; nothing is written', () => {
+  for (const values of [
+    { [AFTER_TASK_KEY]: 'recycle', [AUTO_RECYCLE_KEY]: true, [CLEAR_SESSION_KEY]: true },
+    { [AFTER_TASK_KEY]: 'none', [AUTO_RECYCLE_KEY]: false, [CLEAR_SESSION_KEY]: false },
+  ]) {
+    const plan = buildMigrationPlan(DECLARED, values);
+    for (const key of [AFTER_TASK_KEY, AUTO_RECYCLE_KEY, CLEAR_SESSION_KEY]) {
+      const action = byKey(plan, key);
+      assert.equal(action.kind, 'remove', key);
+      assert.equal(action.reason, 'deprecated', `${key} is named, not an anonymous orphan`);
+      assert.match(action.detail, /after-task recycle\/clear was removed/);
     }
+    assert.equal(plan.actions.length, 3, 'one row each, no orphan duplicate');
+    assert.deepEqual(plan.writes, [AFTER_TASK_KEY, AUTO_RECYCLE_KEY, CLEAR_SESSION_KEY].map((key) => ({ key, value: undefined })));
+    assert.equal(plan.conflicts, 0);
   }
+  assert.ok(!DECLARED.includes(AFTER_TASK_KEY) && !DECLARED.includes(AUTO_RECYCLE_KEY) && !DECLARED.includes(CLEAR_SESSION_KEY));
+  for (const key of [AFTER_TASK_KEY, AUTO_RECYCLE_KEY, CLEAR_SESSION_KEY]) assert.ok(scanKeys(DECLARED).includes(key), `${key} is read by name`);
 });
 
 test('a stored pulseTemplateSync (either value) is removed as deprecated, never migrated onto autoSyncTemplates (t-4dce)', () => {
@@ -493,4 +440,62 @@ test('every action carries a detail sentence naming what happens', () => {
     assert.equal(typeof action.detail, 'string');
     assert.ok(action.detail.length > 10, `${action.key} needs a readable detail line`);
   }
+});
+
+// ---- t-0e99 FB11: the migration end to end, and the empty legacy `loopBoard.models` object ----
+// Replays a plan against a flat settings map the way `applyMigrationWrites` drives `update()` (a
+// value sets the key, `undefined` deletes it), re-reads the result with the same readers the spawn
+// uses, and re-scans: what the owner's user settings looked like before their migrate run.
+
+const { LEGACY_CONTAINER_KEY } = require('../out-test/settingsmigrate.js');
+function applyWrites(settings, writes) {
+  for (const w of writes) { if (w.value === undefined) delete settings[w.key]; else settings[w.key] = w.value; }
+}
+
+test('migrating the old slot keys end to end: the model id, effort and cap land where the readers look, and a re-scan finds nothing', () => {
+  const { readModelsConfig, resolveModels } = require('../out-test/model.js');
+  const settings = {
+    'loopBoard.models.sonnet.model': 'claude-haiku-5-5',
+    'loopBoard.models.opus.effort': 'high', 'loopBoard.models.opus.groomConcurrency': 4,
+    'loopBoard.models.sonnet.effort': 'xhigh', 'loopBoard.models.fable.groomConcurrency': 7,
+    [DELEGATE_REVIEW_KEY]: true, [AUTO_RECYCLE_KEY]: true, [AFTER_TASK_KEY]: 'clear',
+  };
+  const set = (k) => settings[`loopBoard.${k}`];
+  const get = (k, d) => (`loopBoard.${k}` in settings ? settings[`loopBoard.${k}`] : d);
+  const before = { orch: resolveOrchestrator(set), ids: resolveModels(readModelsConfig(get, set)).map((m) => m.modelId), reviewer: resolveTaskDefaults(set).reviewer };
+  const plan = buildMigrationPlan(DECLARED, settings);
+  applyWrites(settings, plan.writes);
+  assert.equal(settings['loopBoard.models.sonnet.modelId'], 'claude-haiku-5-5', 'the slot --model string became the Sonnet model id');
+  assert.ok(!('loopBoard.models.sonnet.model' in settings));
+  assert.deepEqual(
+    { orch: resolveOrchestrator(set), ids: resolveModels(readModelsConfig(get, set)).map((m) => m.modelId), reviewer: resolveTaskDefaults(set).reviewer },
+    before, 'migrating changed nothing that is in force',
+  );
+  for (const k of [AUTO_RECYCLE_KEY, AFTER_TASK_KEY, DELEGATE_REVIEW_KEY, 'loopBoard.models.sonnet.effort', 'loopBoard.models.fable.groomConcurrency']) {
+    assert.ok(!(k in settings), `${k} removed`);
+  }
+  const again = buildMigrationPlan(DECLARED, settings);
+  assert.equal(again.findings, 0, 'nothing left to migrate');
+  assert.deepEqual(again.writes, []);
+});
+
+test('the empty legacy loopBoard.models object is offered as a blind removal that keeps every model setting', () => {
+  // VSCode folds flat `models.*` keys and a literal object into one tree, so the plan sees the tree.
+  const tree = { opus: { maxEffort: 'xhigh' }, sonnet: { enabled: true }, fable: { enabled: false } };
+  const plan = buildMigrationPlan(DECLARED, { [LEGACY_CONTAINER_KEY]: tree });
+  const row = byKey(plan, LEGACY_CONTAINER_KEY);
+  assert.equal(row.kind, 'sweep');
+  assert.equal(plan.findings, 0, 'a blind removal is no finding');
+  assert.deepEqual(plan.writes, [], 'never part of a bulk apply');
+  assert.deepEqual(actionWrites(row), [
+    { key: 'loopBoard.models.opus.maxEffort', value: 'xhigh' },
+    { key: 'loopBoard.models.sonnet.enabled', value: true },
+    { key: 'loopBoard.models.fable.enabled', value: false },
+    { key: LEGACY_CONTAINER_KEY, value: undefined },
+  ], 'every leaf re-written as its own key first, the object removed last');
+  assert.deepEqual(actionWrites(byKey(buildMigrationPlan(DECLARED, { [LEGACY_CONTAINER_KEY]: {} }), LEGACY_CONTAINER_KEY)), [{ key: LEGACY_CONTAINER_KEY, value: undefined }]);
+  // A stale leaf still inside it is a migration's business first: no removal that could lose it.
+  assert.equal(byKey(buildMigrationPlan(DECLARED, { [LEGACY_CONTAINER_KEY]: { sonnet: { model: 'x' } } }), LEGACY_CONTAINER_KEY), undefined);
+  assert.ok(scanKeys(DECLARED).includes(LEGACY_CONTAINER_KEY), 'read by name');
+  assert.equal(isOrphan(LEGACY_CONTAINER_KEY, DECLARED, []), false, 'never listed as an orphan');
 });

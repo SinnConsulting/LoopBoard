@@ -51,7 +51,7 @@ export function isTaskEffort(v: unknown): v is TaskEffort {
 }
 
 // Loop identity (t-0e99), split from the task model: it keys the terminal, the session name and
-// every controller map (schedules, nudges, context, agents, afterTask, idle). Only the orchestrator
+// every controller map (schedules, nudges, context, agents, idle). Only the orchestrator
 // ships; another loop category later is one more member here, not a framework.
 export type LoopId = 'orchestrator';
 export const LOOPS: { id: LoopId; label: string }[] = [{ id: 'orchestrator', label: 'Orchestrator' }];
@@ -82,19 +82,32 @@ export function isValidEffort(s: unknown): s is Effort {
 }
 
 // Per-model effort floor and ceiling (t-0e99 FB7): every spawn on that model has its effort clamped
-// into [minEffort, maxEffort]. The full range (low..max) clamps nothing, and is what an unset, invalid
-// or inverted (min above max) pair resolves to, so a bad pair never narrows anything by accident.
+// into [minEffort, maxEffort]. The full range (low..max) clamps nothing. An unset or invalid bound
+// reads as the model's shipped default, and an inverted pair (min above max) as the whole default
+// range, so a bad pair never narrows anything by accident.
 export interface EffortRange {
   minEffort: Effort;
   maxEffort: Effort;
 }
 export const FULL_EFFORT_RANGE: EffortRange = { minEffort: 'low', maxEffort: 'max' };
 
-export function sanitizeEffortRange(min: unknown, max: unknown): EffortRange {
-  const lo = isValidEffort(min) ? min : FULL_EFFORT_RANGE.minEffort;
-  const hi = isValidEffort(max) ? max : FULL_EFFORT_RANGE.maxEffort;
-  return EFFORT_LEVELS.indexOf(lo) > EFFORT_LEVELS.indexOf(hi) ? { ...FULL_EFFORT_RANGE } : { minEffort: lo, maxEffort: hi };
+export function sanitizeEffortRange(min: unknown, max: unknown, dflt: EffortRange = FULL_EFFORT_RANGE): EffortRange {
+  const lo = isValidEffort(min) ? min : dflt.minEffort;
+  const hi = isValidEffort(max) ? max : dflt.maxEffort;
+  return EFFORT_LEVELS.indexOf(lo) > EFFORT_LEVELS.indexOf(hi)
+    ? { minEffort: dflt.minEffort, maxEffort: dflt.maxEffort }
+    : { minEffort: lo, maxEffort: hi };
 }
+
+// The shipped per-model defaults (owner decision 2026-10-14, the settings page the owner runs): Opus
+// and Haiku on, Sonnet and Fable off; Opus capped at `xhigh`. Every role default sits on a model
+// that is on. Mirrors the manifest (test/manifest-settings.test.js pins the two together).
+export const MODEL_DEFAULTS: Record<Model, { enabled: boolean } & EffortRange> = {
+  opus: { enabled: true, minEffort: 'low', maxEffort: 'xhigh' },
+  sonnet: { enabled: false, minEffort: 'low', maxEffort: 'max' },
+  fable: { enabled: false, minEffort: 'low', maxEffort: 'max' },
+  haiku: { enabled: true, minEffort: 'low', maxEffort: 'max' },
+};
 
 export function isNarrowed(r: EffortRange): boolean {
   return r.minEffort !== FULL_EFFORT_RANGE.minEffort || r.maxEffort !== FULL_EFFORT_RANGE.maxEffort;
@@ -153,10 +166,10 @@ export function readModelsConfig(get: <T>(key: string, dflt: T) => T, set?: SetL
       if (typeof legacy === 'string' && legacy.trim() !== id) modelId = legacy;
     }
     cfg[id] = {
-      enabled: get<boolean>(`models.${id}.enabled`, true),
+      enabled: get<boolean>(`models.${id}.enabled`, MODEL_DEFAULTS[id].enabled),
       modelId,
-      minEffort: get<string>(`models.${id}.minEffort`, FULL_EFFORT_RANGE.minEffort),
-      maxEffort: get<string>(`models.${id}.maxEffort`, FULL_EFFORT_RANGE.maxEffort),
+      minEffort: get<string>(`models.${id}.minEffort`, MODEL_DEFAULTS[id].minEffort),
+      maxEffort: get<string>(`models.${id}.maxEffort`, MODEL_DEFAULTS[id].maxEffort),
     };
   }
   return cfg;
@@ -178,9 +191,9 @@ export function resolveModels(config?: ModelsConfig): ResolvedModel[] {
     return {
       id: m.id,
       label: m.label,
-      enabled: c?.enabled !== false,
+      enabled: typeof c?.enabled === 'boolean' ? c.enabled : MODEL_DEFAULTS[m.id].enabled,
       modelId: id && isValidModelString(id) ? id : '',
-      ...sanitizeEffortRange(c?.minEffort, c?.maxEffort),
+      ...sanitizeEffortRange(c?.minEffort, c?.maxEffort, MODEL_DEFAULTS[m.id]),
     };
   });
 }
@@ -206,7 +219,7 @@ export function enabledModels(config?: ModelsConfig): ResolvedModel[] {
 // `set` returns the value a user EXPLICITLY set for a `loopBoard.`-relative key, or undefined when
 // it is unset (the host passes an `inspect()`-based lookup, so a manifest default never reads as
 // set). Until the human applies the settings migration, the readers fall back to the old keys
-// (read-both, never a write), exactly like `resolveAfterTask` and the legacy `defaultModel`.
+// (read-both, never a write), exactly like the legacy `defaultModel`.
 export type SetLookup = (key: string) => unknown;
 
 export interface OrchestratorConfig {
@@ -253,7 +266,7 @@ export const TASK_DEFAULTS: TaskDefaults = {
   groomerEffort: 'medium',
   worker: 'opus',
   workerEffort: 'medium',
-  reviewer: NO_REVIEW,
+  reviewer: 'opus',
 };
 
 export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
@@ -269,12 +282,14 @@ export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
     const v = set(key);
     return isValidEffort(v) ? v : dflt;
   };
-  // `loopBoard.delegateReview: true` meant "a review subagent gates the PR"; its successor value is
-  // `opus`. Read only while the new key is unset.
+  // `loopBoard.delegateReview` was the on/off switch: `true` reads as `opus`, an explicit `false` as
+  // `none` (the shipped default reviews now, so an explicit opt-out must survive). Read only while
+  // the new key is unset.
   const reviewerSet = set('defaultReviewerModel');
+  const legacyReview = set('delegateReview');
   const reviewer: ReviewerValue = reviewerSet !== undefined
     ? (isReviewerValue(reviewerSet) ? reviewerSet : TASK_DEFAULTS.reviewer)
-    : set('delegateReview') === true ? 'opus' : TASK_DEFAULTS.reviewer;
+    : legacyReview === true ? 'opus' : legacyReview === false ? NO_REVIEW : TASK_DEFAULTS.reviewer;
   return {
     groomer: model('defaultGroomerModel', TASK_DEFAULTS.groomer),
     groomerEffort: effort('defaultGroomerEffort', TASK_DEFAULTS.groomerEffort),
@@ -293,49 +308,6 @@ export function resolveWorker(
 ): { model: Model; effort: Effort } {
   const model = entry.model ?? d.worker;
   return { model, effort: clampEffort(entry.effort ?? d.workerEffort, effortRangeOf(models, model)) };
-}
-
-// What a loop does with its terminal once the board's In-Progress task leaves In Progress (t-1f1e).
-// One 3-state mode replaces the old `autoRecycle` + `clearSessionAfterTask` boolean pair, whose
-// interaction was already hard-coded (a recycle always won, making `clear` moot).
-//   none    — leave the terminal and its conversation alone
-//   clear   — soft: send /clear, the terminal keeps running
-//   recycle — hard: close the terminal and open a new one
-export type AfterTask = 'none' | 'clear' | 'recycle';
-export const AFTER_TASK_MODES: AfterTask[] = ['none', 'clear', 'recycle'];
-
-// Resolve the mode, falling back to the deprecated booleans when `afterTask` is unset — the same
-// read-both shape `resolveOrchestrator` uses for the old slot keys. The new key always wins, and
-// nothing is ever written back to user config. The legacy mapping is lossless because
-// `autoRecycle` already suppressed `clearSessionAfterTask` at the only call site.
-export function resolveAfterTask(
-  afterTask: string | undefined,
-  legacyAutoRecycle = false,
-  legacyClearSession = false,
-): AfterTask {
-  if (typeof afterTask === 'string' && (AFTER_TASK_MODES as string[]).includes(afterTask)) return afterTask as AfterTask;
-  if (legacyAutoRecycle) return 'recycle';
-  if (legacyClearSession) return 'clear';
-  return 'none';
-}
-
-// What a HELD afterTask action should do when its idle edge finally arrives (t-sbag). A hold can
-// outlive the state it was recorded in: the slot's terminal may have been stopped or restarted by
-// hand in the meantime, and both `TerminalManager.recycle` (dispose-if-present, then ALWAYS
-// respawn) and `clearSession` (early-returns with no terminal) would then do the wrong thing — the
-// first by silently starting a loop the human just stopped, the second by logging a success for a
-// no-op. So the decision is made here, once, and mirrors `appliesTo` in src/schedule.ts: an action
-// that no longer applies is SWALLOWED, never turned into something else.
-export type HeldAfterTask =
-  | { act: 'recycle' | 'clear' }
-  | { act: 'skip'; reason: 'off' | 'not-running' };
-
-export function resolveHeldAfterTask(mode: AfterTask, running: boolean): HeldAfterTask {
-  // Order matters only for the log line: a stopped loop is the more specific reason, and the one
-  // worth naming, since "afterTask is off" would be a misleading explanation for a swallowed hold.
-  if (!running) return { act: 'skip', reason: 'not-running' };
-  if (mode === 'none') return { act: 'skip', reason: 'off' };
-  return { act: mode };
 }
 
 export interface Question {

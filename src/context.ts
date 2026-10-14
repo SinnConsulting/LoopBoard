@@ -203,9 +203,8 @@ export function describeThreshold(threshold: number, action: ContextAction): str
   return `${action === 'clear' ? '/clear' : 'restart'} at ${threshold}%`;
 }
 
-// What to do with a loop whose context crossed the threshold — the same two verbs
-// `loopBoard.afterTask` exposes. A hard `stop` is deliberately not offered: an automatic action
-// must never leave a slot silently dead.
+// What to do with a loop whose context crossed the threshold: a soft `/clear` or a hard restart. A
+// hard `stop` is deliberately not offered: an automatic action must never leave a slot silently dead.
 export type ContextAction = 'clear' | 'recycle';
 export const CONTEXT_ACTIONS: ContextAction[] = ['clear', 'recycle'];
 export function sanitizeContextAction(value: unknown): ContextAction {

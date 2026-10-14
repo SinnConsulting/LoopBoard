@@ -144,19 +144,31 @@ test('t-0e99 declares the orchestrator, the five defaults and per model its togg
     assert.equal(all[key].default, 'medium', key);
   }
   for (const m of models) {
-    assert.equal(all[`loopBoard.models.${m}.enabled`].default, true, m);
+    assert.equal(all[`loopBoard.models.${m}.enabled`].default, m === 'opus' || m === 'haiku', `${m}: Opus and Haiku on, Sonnet and Fable off`);
     assert.equal(all[`loopBoard.models.${m}.modelId`].type, 'string', m);
     assert.equal(all[`loopBoard.models.${m}.modelId`].default, '', m);
     assert.match(all[`loopBoard.models.${m}.modelId`].markdownDescription, new RegExp(`ANTHROPIC_DEFAULT_${m.toUpperCase()}_MODEL`), m);
     assert.deepEqual(all[`loopBoard.models.${m}.minEffort`].enum, efforts, m);
     assert.equal(all[`loopBoard.models.${m}.minEffort`].default, 'low', m);
     assert.deepEqual(all[`loopBoard.models.${m}.maxEffort`].enum, efforts, m);
-    assert.equal(all[`loopBoard.models.${m}.maxEffort`].default, 'max', m);
+    assert.equal(all[`loopBoard.models.${m}.maxEffort`].default, m === 'opus' ? 'xhigh' : 'max', m);
   }
-  // Role defaults (owner decision 2026-10-14): groomer and worker Opus, no review.
+  // Role defaults (owner decision 2026-10-14, the owner's own settings page): groomer, worker and
+  // reviewer Opus; every role default sits on a model that ships ON.
   assert.equal(all['loopBoard.defaultGroomerModel'].default, 'opus');
   assert.equal(all['loopBoard.defaultWorkerModel'].default, 'opus');
-  assert.equal(all['loopBoard.defaultReviewerModel'].default, 'none');
+  assert.equal(all['loopBoard.defaultReviewerModel'].default, 'opus');
+  for (const key of ['loopBoard.orchestrator.model', 'loopBoard.defaultGroomerModel', 'loopBoard.defaultWorkerModel', 'loopBoard.defaultReviewerModel']) {
+    assert.equal(all[`loopBoard.models.${all[key].default}.enabled`].default, true, `${key} defaults to a model that ships on`);
+  }
+  const { MODEL_DEFAULTS } = require('../out-test/model.js');
+  for (const m of models) {
+    assert.deepEqual(MODEL_DEFAULTS[m], {
+      enabled: all[`loopBoard.models.${m}.enabled`].default,
+      minEffort: all[`loopBoard.models.${m}.minEffort`].default,
+      maxEffort: all[`loopBoard.models.${m}.maxEffort`].default,
+    }, `${m}: the host fallback equals the manifest default`);
+  }
   for (const [key, prop] of Object.entries(all)) {
     if (key === 'loopBoard.permissionMode') continue; // `--permission-mode auto` is the CLI's own mode
     assert.ok(!(prop.enum || []).includes('auto'), `${key} still offers auto`);
@@ -186,15 +198,16 @@ test('the shipped manifest defaults are exactly the host fallbacks in src/model.
   });
 });
 
-test('new defaults: context limit 35 (t-2047), no review subagent by default (t-0e99)', () => {
+test('new defaults: context limit 35 (t-2047), an Opus review subagent by default (t-0e99 FB12)', () => {
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
   assert.equal(all['loopBoard.contextLimit.percent'].default, 35);
   assert.equal(all['loopBoard.contextLimit.action'].default, 'recycle');
-  assert.equal(all['loopBoard.defaultReviewerModel'].default, 'none');
+  assert.equal(all['loopBoard.defaultReviewerModel'].default, 'opus');
   // Each description says which state is the default.
   assert.match(all['loopBoard.contextLimit.percent'].markdownDescription, /`35` \(default\)/);
-  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /`none` \(default\): no review subagent/);
-  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /Replaces `loopBoard\.delegateReview` \(`true` became `opus`\)/);
+  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /`none`: no review subagent/);
+  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /Any model \(default `opus`\)/);
+  assert.match(all['loopBoard.defaultReviewerModel'].markdownDescription, /Replaces `loopBoard\.delegateReview` \(`true` became `opus`, `false` became `none`\)/);
 });
 
 test('with every setting unset, the spawn names the shipped defaults and a loop trips at 35%', () => {
@@ -211,7 +224,7 @@ test('with every setting unset, the spawn names the shipped defaults and a loop 
     models: ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id })),
     defaults: resolveTaskDefaults(unset),
   });
-  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer none.'), cmd);
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), cmd);
   assert.ok(cmd.includes('grooming cap 3.'), cmd);
   const threshold = sanitizeContextPercent(all['loopBoard.contextLimit.percent'].default);
   assert.equal(threshold, 35);
@@ -339,14 +352,15 @@ test('a key the code still reads as a legacy fallback is never redeclared, so it
   }
 });
 
-test('the deprecated pair is still declared, still deprecated, and still out of the tens run', () => {
-  const agent = sections.find((s) => s.title === 'LoopBoard: Agent Setup');
-  for (const key of ['loopBoard.autoRecycle', 'loopBoard.clearSessionAfterTask']) {
-    const prop = agent.properties[key];
-    assert.ok(prop, `${key} must stay declared — it is still honoured as a fallback`);
-    assert.equal(typeof prop.markdownDeprecationMessage, 'string', `${key} must stay deprecated`);
-    assert.ok(prop.order >= 900, `${key} must sort after the section's live settings`);
+test('the after-task recycle/clear is gone: afterTask and its deprecated pair are no longer declared or read (t-0e99 FB13)', () => {
+  const declared = new Set(entries().map((e) => e.key));
+  for (const key of ['loopBoard.afterTask', 'loopBoard.autoRecycle', 'loopBoard.clearSessionAfterTask']) {
+    assert.ok(!declared.has(key), `${key} is still declared`);
+    for (const f of ['controller.ts', 'model.ts', 'extension.ts']) {
+      assert.ok(!fs.readFileSync(path.join(root, 'src', f), 'utf8').includes(`'${key.slice('loopBoard.'.length)}'`), `${f} still reads ${key}`);
+    }
   }
+  for (const { prop } of entries()) assert.doesNotMatch(prop.markdownDescription, /afterTask/, 'no description points at the removed setting');
 });
 
 test('every property says WHEN a change takes effect — exactly one valid class, no exceptions', () => {
@@ -426,7 +440,7 @@ test('every key the code reads is still declared in the manifest', () => {
   // runtime, as a setting that silently reverts to its hard-coded fallback.
   const declared = new Set(entries().map((e) => e.key));
   for (const key of [
-    'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
+    'loopBoard.permissionMode', 'loopBoard.loopInterval',
     'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
     'loopBoard.defaultWorkerModel', 'loopBoard.defaultGroomerModel', 'loopBoard.defaultWorkerEffort',
     'loopBoard.defaultGroomerEffort', 'loopBoard.defaultReviewerModel',

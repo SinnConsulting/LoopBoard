@@ -31,7 +31,7 @@ test('the Roles table: orchestrator, groomer, worker, reviewer, each a model sel
   assert.deepEqual(g.roles.map((r) => r.id), GRID_ROLES);
   assert.deepEqual(GRID_ROLES, ['orchestrator', 'groomer', 'worker', 'reviewer']);
   assert.deepEqual(g.roles.map((r) => r.label), ['Orchestrator', 'Groomer', 'Worker', 'Reviewer']);
-  assert.deepEqual(g.roles.map((r) => r.model), ['haiku', 'opus', 'opus', 'none'], 'the shipped role defaults (owner decision 2026-10-14)');
+  assert.deepEqual(g.roles.map((r) => r.model), ['haiku', 'opus', 'opus', 'opus'], 'the shipped role defaults (owner decision 2026-10-14)');
   for (const id of ['orchestrator', 'groomer', 'worker']) assert.deepEqual(role(g, id).models, ['opus', 'sonnet', 'haiku'], id + ': Fable is off');
   assert.deepEqual(role(g, 'reviewer').models, ['opus', 'sonnet', 'haiku', 'none'], 'none is a reviewer value only');
   assert.deepEqual(g.roles.map((r) => r.effort), ['medium', 'medium', 'medium', null], 'the reviewer runs at the worker effort');
@@ -52,7 +52,7 @@ test('the Models table: the four models with on switch, model id and effort floo
   assert.deepEqual(g.models.map((m) => m.enabled), [true, true, false, true]);
   assert.deepEqual([model(g, 'opus').modelId, model(g, 'opus').minEffort, model(g, 'opus').maxEffort], ['claude-opus-5-5[1m]', 'medium', 'xhigh']);
   assert.deepEqual([model(g, 'sonnet').modelId, model(g, 'sonnet').minEffort, model(g, 'sonnet').maxEffort], ['', 'low', 'max']);
-  assert.deepEqual(model(g, 'opus').usedBy, ['groomer', 'worker']);
+  assert.deepEqual(model(g, 'opus').usedBy, ['groomer', 'worker', 'reviewer']);
   assert.deepEqual(model(g, 'haiku').usedBy, ['orchestrator']);
   assert.deepEqual(model(g, 'sonnet').usedBy, []);
 });
@@ -111,10 +111,16 @@ test('switching off a model that a role uses is REFUSED, the orchestrator includ
   assert.deepEqual(gridPatch(free, 'haiku', 'enabled', 'yes'), { ok: true, patches: [{ key: 'loopBoard.models.haiku.enabled', value: false }] }, 'non-boolean is false');
 });
 
-test('a model id is validated like any spawn value; empty RESETS it to the CLI alias (FB4)', () => {
+test('a model id is validated like any spawn value; empty RESETS it to the CLI alias; both retire the legacy key (FB4, FB10)', () => {
   const g = grid();
-  assert.deepEqual(gridPatch(g, 'opus', 'modelId', ' claude-opus-5-5[1m] '), { ok: true, patches: [{ key: 'loopBoard.models.opus.modelId', value: 'claude-opus-5-5[1m]' }] });
-  assert.deepEqual(gridPatch(g, 'opus', 'modelId', '   '), { ok: true, patches: [{ key: 'loopBoard.models.opus.modelId', value: undefined }] });
+  assert.deepEqual(gridPatch(g, 'opus', 'modelId', ' claude-opus-5-5[1m] '), { ok: true, patches: [
+    { key: 'loopBoard.models.opus.modelId', value: 'claude-opus-5-5[1m]' },
+    { key: 'loopBoard.models.opus.model', value: undefined },
+  ] });
+  assert.deepEqual(gridPatch(g, 'opus', 'modelId', '   '), { ok: true, patches: [
+    { key: 'loopBoard.models.opus.modelId', value: undefined },
+    { key: 'loopBoard.models.opus.model', value: undefined },
+  ] });
   for (const bad of ['opus; rm -rf /', 'claude 5', '$(x)']) {
     const r = gridPatch(g, 'opus', 'modelId', bad);
     assert.equal(r.ok, false, bad);
@@ -168,4 +174,29 @@ test('the editable attributes are exactly the grid fields', () => {
 test('enabledKey and modelKey build the flattened manifest keys', () => {
   assert.equal(enabledKey('haiku'), 'loopBoard.models.haiku.enabled');
   assert.equal(modelKey('opus', 'maxEffort'), 'loopBoard.models.opus.maxEffort');
+});
+
+// t-0e99 FB10: the owner's user settings still held `"loopBoard.models.sonnet.model":
+// "claude-haiku-5-5"`; clearing the Sonnet id deleted only `modelId`, the read-both fallback read the
+// legacy string back, and Sonnet subagents kept running on Haiku. Replays the grid's writes against a
+// settings map and re-reads it the way the host does.
+test('clearing (or setting) a model id sticks even with the legacy per-slot --model string still in user settings', () => {
+  const { readModelsConfig, resolveModels, aliasEnv } = require('../out-test/model.js');
+  const settings = { 'loopBoard.models.sonnet.model': 'claude-haiku-5-5' };
+  const get = (k, d) => (`loopBoard.${k}` in settings ? settings[`loopBoard.${k}`] : d);
+  const set = (k) => settings[`loopBoard.${k}`];
+  const read = () => resolveModels(readModelsConfig(get, set));
+  const sonnet = () => read().find((m) => m.id === 'sonnet').modelId;
+  const apply = (r) => { assert.equal(r.ok, true); for (const p of r.patches) { if (p.value === undefined) delete settings[p.key]; else settings[p.key] = p.value; } };
+  assert.equal(sonnet(), 'claude-haiku-5-5', 'precondition: the legacy string is read as the id');
+  const g = buildModelGrid(readModelsConfig(get, set), ORCHESTRATOR_DEFAULTS, TASK_DEFAULTS);
+  assert.equal(g.models.find((m) => m.id === 'sonnet').modelId, 'claude-haiku-5-5', 'the field shows it');
+  apply(gridPatch(g, 'sonnet', 'modelId', ''));
+  assert.equal(sonnet(), '', 'cleared: the CLI alias applies');
+  assert.deepEqual(aliasEnv(read()), {}, 'no env override is sent');
+  assert.ok(!('loopBoard.models.sonnet.model' in settings), 'the legacy key is retired');
+  settings['loopBoard.models.sonnet.model'] = 'claude-haiku-5-5';
+  apply(gridPatch(g, 'sonnet', 'modelId', 'claude-sonnet-5-5[1m]'));
+  assert.equal(sonnet(), 'claude-sonnet-5-5[1m]');
+  assert.ok(!('loopBoard.models.sonnet.model' in settings), 'setting an id retires the legacy key too');
 });

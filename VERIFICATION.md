@@ -185,15 +185,17 @@ questions, an HTML-comment template) and `index-unknown.md`:
   a New/DRAFT nudges its groomer (the pre-spawn carve-out left with `auto`).
 - `test/taskfile.test.js`: `complexity-groomer:`/`complexity-worker:` round-trip in Meta, unflagged.
   `test/schedule.test.js`, `test/idle.test.js`: busy = any In-Progress task or a live subagent
-  (`busyLoops`), the afterTask edge is the board-wide In-Progress count dropping to 0
-  (`inProgressEnded`), schedules and the idle clock are keyed by `orchestrator`.
+  (`busyLoops`), schedules and the idle clock are keyed by `orchestrator`; no after-task
+  recycle/clear path remains (FB13).
 - `test/model.test.js`, `test/settingsmigrate.test.js`, `test/settingsgrid.test.js`,
   `test/manifest-settings.test.js`: the orchestrator and default settings resolve with their
   read-both fallbacks (old Opus slot effort/cap, each slot `--model` string as that model id,
   `delegateReview: true` = reviewer `opus`, legacy `defaultModel`); the per-model id override
   (`aliasEnv`) and effort range (`clampEffort`); the migration panel's moves and removals; the
-  Roles/Models grid's writes and refusals; the manifest declares the new keys, no `auto`, and the
-  new defaults (orchestrator Haiku, worker Opus, efforts `medium`).
+  Roles/Models grid's writes and refusals (a model-id edit also retires the legacy `.model` string,
+  FB10); the manifest declares the new keys, no `auto`, no `afterTask` pair, and the owner's
+  defaults (FB12; every role default on a model that ships on); the migration replayed end to end
+  re-scans clean, and the leftover `loopBoard.models` object is a lossless blind removal (FB11).
 - `test/subagents.test.js`, `test/view.test.js`, `test/board-routing.test.js`: agent rows are named
   `<groom|work|review> <model>-<effort>-<task id>: <title>` (the index title when known), In
   Progress rows `<model>-<effort>-<task id>: <title>` with the effort clamped into the model range;
@@ -547,7 +549,8 @@ New v2 checklist (from REFACTORING.md Phase 8):
     carries the empty custom section (it rides in the template, outside every sync marker), while
     Sync in an existing workspace without the section never adds it.
 
-27. **Restructured settings (t-1f1e):** open Settings → Extensions → LoopBoard. **Models** reads as
+27. **Restructured settings (t-1f1e; the After Task half is SUPERSEDED by t-0e99 FB13, which removed
+    `loopBoard.afterTask` and its pair, see item 71):** open Settings → Extensions → LoopBoard. **Models** reads as
     two defaults then three slot blocks (Opus/Sonnet/Fable, each *enabled → custom model → effort*);
     **Loop Behavior** reads interval, After Task, permission mode, pulse, custom rules, debug, max
     attachment size — no separate "Permissions" group, and no two rows fighting over the same
@@ -893,7 +896,7 @@ and likewise cannot be verified headless.
     Settings*) → a panel says **Nothing to migrate**, and `settings.json` is byte-identical
     afterwards. No dialog, no empty list, no write.
 
-    *Deprecated pair:* put `"loopBoard.autoRecycle": true` and `"loopBoard.clearSessionAfterTask":
+    *Deprecated pair (SUPERSEDED by t-0e99 FB13: the three keys are now plain removals, item 71):* put `"loopBoard.autoRecycle": true` and `"loopBoard.clearSessionAfterTask":
     true` in user settings, remove `loopBoard.afterTask`, click **Migrate Config** → the panel lists
     exactly two lines: `MIGRATE loopBoard.autoRecycle = true — set loopBoard.afterTask to "recycle",
     then remove this key.` and `REMOVE loopBoard.clearSessionAfterTask = true — … loopBoard.
@@ -1889,6 +1892,21 @@ and likewise cannot be verified headless.
       model id text with inline validation, lowest/highest effort selects). Turning off a model a
       role uses, picking an off model for a role, or a lowest effort above the highest is refused
       with the reason under the tables.
+    - Defaults (FB12): on a fresh profile the settings page shows Orchestrator haiku/medium, cap 3,
+      groomer/worker/reviewer opus/medium (reviewer "the worker's"), Opus and Haiku on, Sonnet and
+      Fable off, Opus low..xhigh, the others low..max, empty model ids. A card already on
+      `model: sonnet` still shows `sonnet` selected with Sonnet off.
+    - Model id (FB10): with `"loopBoard.models.sonnet.model": "claude-haiku-5-5"` in user settings
+      the Sonnet id field shows it; clearing it removes BOTH keys and the field stays empty after a
+      reload.
+    - Pending migration (FB11): with any stale key in user settings the Migrate Config button reads
+      `Migrate Config (N)` in the warning colour and a yellow banner offers **Review migration**;
+      both disappear once applied. A leftover `"loopBoard.models": {}` is offered only inside the
+      collapsed "Legacy keys" disclosure.
+    - After task removed (FB13): the Agent Setup section has no After task row; a task leaving In
+      Progress neither recycles nor clears the Orchestrator; ♻, context limit, idle stop and
+      schedules still work; Migrate Config lists `afterTask`/`autoRecycle`/`clearSessionAfterTask`
+      as removals.
     - Migration panel: with `loopBoard.models.opus.model: "claude-opus-5-5[1m]"`,
       `models.opus.effort`, `models.sonnet.effort`, `delegateWork` and `delegateReview: true` in
       user settings, **Scan** lists the model-id move to `models.opus.modelId`, the effort move to

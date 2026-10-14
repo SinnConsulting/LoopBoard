@@ -30,9 +30,6 @@ const {
   resolveTaskDefaults,
   resolveWorker,
   TASK_DEFAULTS,
-  AFTER_TASK_MODES,
-  resolveAfterTask,
-  resolveHeldAfterTask,
 } = require('../out-test/model.js');
 
 // An explicit-value lookup over a plain object, the shape the host builds from inspect().
@@ -82,29 +79,32 @@ test('EFFORT_LEVELS / isValidEffort: the five ordered session stops, rejects gar
   assert.ok(!isValidEffort(''));
 });
 
-test('resolveModels defaults: every model enabled, in BUILTIN_MODELS order', () => {
+test('resolveModels defaults: Opus and Haiku on, Sonnet and Fable off, in BUILTIN_MODELS order (t-0e99 FB12)', () => {
   const r = resolveModels(undefined);
   assert.deepEqual(r.map((m) => m.id), ['opus', 'sonnet', 'fable', 'haiku']);
-  for (const m of r) assert.equal(m.enabled, true);
+  assert.deepEqual(r.map((m) => m.enabled), [true, false, false, true]);
+  assert.deepEqual(r.map((m) => [m.minEffort, m.maxEffort]), [['low', 'xhigh'], ['low', 'max'], ['low', 'max'], ['low', 'max']]);
+  assert.deepEqual(r.map((m) => m.modelId), ['', '', '', '']);
 });
 
-test('enabled: false drops a model from enabledModels', () => {
-  const en = enabledModels({ fable: { enabled: false } });
-  assert.deepEqual(en.map((m) => m.id), ['opus', 'sonnet', 'haiku']);
+test('enabled: false drops a model from enabledModels; enabled: true brings an off-by-default one back', () => {
+  assert.deepEqual(enabledModels({ fable: { enabled: false } }).map((m) => m.id), ['opus', 'haiku']);
+  assert.deepEqual(enabledModels({ sonnet: { enabled: true }, haiku: { enabled: false } }).map((m) => m.id), ['opus', 'sonnet']);
 });
 
 test('readModelsConfig maps the flat models.<id>.enabled keys into a ModelsConfig for resolveModels', () => {
-  const store = { 'models.sonnet.enabled': false, 'models.haiku.enabled': false };
+  const store = { 'models.sonnet.enabled': true, 'models.haiku.enabled': false };
   const get = (k, d) => (k in store ? store[k] : d);
   const cfg = readModelsConfig(get);
   assert.equal(cfg.opus.enabled, true);
-  assert.equal(cfg.sonnet.enabled, false);
-  assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'fable']);
+  assert.equal(cfg.sonnet.enabled, true);
+  assert.equal(cfg.fable.enabled, false, 'unset = the shipped default');
+  assert.deepEqual(enabledModels(cfg).map((m) => m.id), ['opus', 'sonnet']);
 });
 
 // ---- per-model model id and effort floor/ceiling (t-0e99 FB4, FB7) ----
 
-test('resolveModels: model id and effort range per model; unset = the alias and the full range', () => {
+test('resolveModels: model id and effort range per model; unset or invalid = the alias and the shipped range', () => {
   const store = {
     'models.opus.modelId': 'claude-opus-5-5[1m]', 'models.sonnet.modelId': 'x; rm -rf /',
     'models.haiku.minEffort': 'medium', 'models.haiku.maxEffort': 'xhigh',
@@ -116,10 +116,12 @@ test('resolveModels: model id and effort range per model; unset = the alias and 
   assert.equal(by.opus.modelId, 'claude-opus-5-5[1m]');
   assert.equal(by.sonnet.modelId, '', 'an invalid id is dropped, never spawned');
   assert.deepEqual([by.haiku.minEffort, by.haiku.maxEffort], ['medium', 'xhigh']);
-  assert.deepEqual([by.fable.minEffort, by.fable.maxEffort], ['low', 'max'], 'an inverted pair narrows nothing');
+  assert.deepEqual([by.fable.minEffort, by.fable.maxEffort], ['low', 'max'], 'an inverted pair reads as the shipped range');
   assert.deepEqual([by.sonnet.minEffort, by.sonnet.maxEffort], ['low', 'max'], 'an invalid floor reads as unset');
-  assert.deepEqual([by.opus.minEffort, by.opus.maxEffort], ['low', 'max']);
-  assert.ok(isNarrowed(by.haiku) && !isNarrowed(by.opus) && !isNarrowed(by.fable));
+  assert.deepEqual([by.opus.minEffort, by.opus.maxEffort], ['low', 'xhigh'], 'Opus ships capped at xhigh');
+  assert.ok(isNarrowed(by.haiku) && isNarrowed(by.opus) && !isNarrowed(by.fable));
+  const inverted = resolveModels({ opus: { minEffort: 'max' } }).find((m) => m.id === 'opus');
+  assert.deepEqual([inverted.minEffort, inverted.maxEffort], ['low', 'xhigh'], 'a floor above the default ceiling falls back to the default range');
 });
 
 test('clampEffort raises to the floor and lowers to the ceiling; sanitizeEffortRange guards the pair', () => {
@@ -202,9 +204,12 @@ test('sanitizeGroomConcurrency rejects everything that is not a plain in-range i
 
 // ---- the five per-task defaults (t-0e99) ----
 
-test('resolveTaskDefaults with nothing set: groomer opus, worker opus, efforts medium, reviewer none (owner decision 2026-10-14)', () => {
+test('resolveTaskDefaults with nothing set: groomer, worker and reviewer opus, efforts medium (owner decision 2026-10-14)', () => {
   assert.deepEqual(resolveTaskDefaults(lookup({})), TASK_DEFAULTS);
-  assert.deepEqual(TASK_DEFAULTS, { groomer: 'opus', groomerEffort: 'medium', worker: 'opus', workerEffort: 'medium', reviewer: 'none' });
+  assert.deepEqual(TASK_DEFAULTS, { groomer: 'opus', groomerEffort: 'medium', worker: 'opus', workerEffort: 'medium', reviewer: 'opus' });
+  // Every role default sits on a model that ships on.
+  const on = resolveModels(undefined).filter((m) => m.enabled).map((m) => m.id);
+  for (const m of [TASK_DEFAULTS.groomer, TASK_DEFAULTS.worker, TASK_DEFAULTS.reviewer, resolveOrchestrator(lookup({})).model]) assert.ok(on.includes(m), m);
 });
 
 test('set defaults are used; haiku is a valid model and max a valid role effort; auto and off-list values fall back', () => {
@@ -226,10 +231,10 @@ test('the pre-split loopBoard.defaultModel still steers both default models whil
   assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultWorkerModel: 'opus' })).worker, 'opus');
 });
 
-test('until migrated, delegateReview: true reads as reviewer opus; false or unset as none; a set reviewer wins', () => {
+test('until migrated, delegateReview: true reads as reviewer opus, an explicit false as none, unset as the default; a set reviewer wins', () => {
   assert.equal(resolveTaskDefaults(lookup({ delegateReview: true })).reviewer, 'opus');
-  assert.equal(resolveTaskDefaults(lookup({ delegateReview: false })).reviewer, 'none');
-  assert.equal(resolveTaskDefaults(lookup({})).reviewer, 'none');
+  assert.equal(resolveTaskDefaults(lookup({ delegateReview: false })).reviewer, 'none', 'an explicit opt-out survives the new review default');
+  assert.equal(resolveTaskDefaults(lookup({})).reviewer, 'opus');
   assert.equal(resolveTaskDefaults(lookup({ delegateReview: true, defaultReviewerModel: 'none' })).reviewer, 'none');
 });
 
@@ -240,60 +245,13 @@ test('resolveWorker: a task own model/effort, else the worker defaults, clamped 
   const models = resolveModels({ sonnet: { maxEffort: 'xhigh' }, haiku: { minEffort: 'xhigh' } });
   assert.deepEqual(resolveWorker({}, d, models), { model: 'sonnet', effort: 'xhigh' }, 'the default is lowered to the ceiling');
   assert.deepEqual(resolveWorker({ model: 'haiku', effort: 'low' }, d, models), { model: 'haiku', effort: 'xhigh' }, 'the task value is raised to the floor');
-  assert.deepEqual(effortRangeOf(models, 'opus'), { minEffort: 'low', maxEffort: 'max' });
+  assert.deepEqual(effortRangeOf(models, 'opus'), { minEffort: 'low', maxEffort: 'xhigh' }, 'the shipped Opus range');
+  assert.deepEqual(effortRangeOf([], 'opus'), { minEffort: 'low', maxEffort: 'max' }, 'no model data = no clamp');
 });
 
-// ---- afterTask: one 3-state mode replacing the recycle boolean pair (t-1f1e) ----
+// ---- afterTask is gone (t-0e99 FB13): no mode, no held action, no read-both of the old pair ----
 
-test('the after-task modes are exactly none/clear/recycle', () => {
-  assert.deepEqual(AFTER_TASK_MODES, ['none', 'clear', 'recycle']);
-});
-
-test('an explicitly set afterTask always wins over the deprecated booleans', () => {
-  assert.equal(resolveAfterTask('none', true, true), 'none');
-  assert.equal(resolveAfterTask('clear', true, false), 'clear');
-  assert.equal(resolveAfterTask('recycle', false, false), 'recycle');
-});
-
-test('with afterTask unset the legacy booleans map losslessly', () => {
-  assert.equal(resolveAfterTask(undefined, false, false), 'none');
-  assert.equal(resolveAfterTask(undefined, false, true), 'clear');
-  assert.equal(resolveAfterTask(undefined, true, false), 'recycle');
-  // autoRecycle already suppressed clearSessionAfterTask at the only call site, so the combination
-  // has always meant "recycle" — the merge loses nothing.
-  assert.equal(resolveAfterTask(undefined, true, true), 'recycle');
-});
-
-test('an unrecognized afterTask value falls back rather than disabling the feature', () => {
-  assert.equal(resolveAfterTask('RECYCLE', true, false), 'recycle');
-  assert.equal(resolveAfterTask('', false, true), 'clear');
-  assert.equal(resolveAfterTask('nonsense', false, false), 'none');
-});
-
-test('a HELD afterTask action on a stopped loop is swallowed, never turned into a start', () => {
-  // t-sbag: an afterTask recycle deferred by a live subagent waits indefinitely, so the human can
-  // click ■ (or ♻, which disposes and respawns) in between. `TerminalManager.recycle` disposes
-  // only IF a terminal exists but ALWAYS respawns 400 ms later — so firing a held recycle at a
-  // stopped slot would start a fresh loop seconds after the human stopped it, and firing a second
-  // one into a manual restart's respawn window would tear down the terminal it just created. Same
-  // rule as `appliesTo` for scheduled actions: an action that no longer applies does NOTHING.
-  assert.deepEqual(resolveHeldAfterTask('recycle', false), { act: 'skip', reason: 'not-running' });
-  assert.deepEqual(resolveHeldAfterTask('clear', false), { act: 'skip', reason: 'not-running' });
-  // ...and 'not-running' outranks 'off', so the log never explains a swallowed hold with the wrong
-  // reason.
-  assert.deepEqual(resolveHeldAfterTask('none', false), { act: 'skip', reason: 'not-running' });
-});
-
-test('a HELD afterTask action on a running loop performs the CURRENT mode', () => {
-  // The mode is re-read at fire time rather than remembered: what is configured now is what should
-  // happen now, and `none` drops the hold instead of acting on a setting the user has since turned
-  // off. `clear` must also be gated on running — `clearSession` early-returns with no terminal,
-  // which would otherwise log a success for something that did not happen.
-  assert.deepEqual(resolveHeldAfterTask('recycle', true), { act: 'recycle' });
-  assert.deepEqual(resolveHeldAfterTask('clear', true), { act: 'clear' });
-  assert.deepEqual(resolveHeldAfterTask('none', true), { act: 'skip', reason: 'off' });
-});
-
-test('afterTask defaults to none with no config at all', () => {
-  assert.equal(resolveAfterTask(undefined), 'none');
+test('the after-task recycle/clear left the model: no AfterTask mode or resolver remains', () => {
+  const model = require('../out-test/model.js');
+  for (const name of ['AFTER_TASK_MODES', 'resolveAfterTask', 'resolveHeldAfterTask']) assert.equal(model[name], undefined, name);
 });

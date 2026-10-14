@@ -637,7 +637,10 @@
   function defaultOpt(model) { return 'default (' + (model || 'opus') + ')'; }
   function workerDefaultOpt() { return defaultOpt(board && board.defaultWorkerModel); }
   function groomerDefaultOpt() { return defaultOpt(board && board.defaultGroomerModel); }
-  function modelOptions(leadOpt) { return [leadOpt].concat((board && board.models) || []); }
+  // A value the task already carries stays an option even when its model is switched off (Sonnet
+  // and Fable ship off, t-0e99), so a select never shows another model than the file holds.
+  function withCurrent(opts, current) { return current && opts.indexOf(current) === -1 ? opts.concat([current]) : opts; }
+  function modelOptions(leadOpt, current) { return withCurrent([leadOpt].concat((board && board.models) || []), current); }
   function normModelValue(v, leadOpt) { return v === leadOpt ? '' : v; }
 
   // Per-task effort (t-0e99): `max` is never a per-task value (only a role default may be `max`).
@@ -654,7 +657,7 @@
   function routingSelect(t, field, label, leadOpt, values) {
     const sel = h('select', { class: 'model-select', 'aria-label': label, 'data-field': field });
     const current = t[field] || leadOpt;
-    for (const opt of [leadOpt].concat(values)) {
+    for (const opt of withCurrent([leadOpt].concat(values), current)) {
       const o = h('option', { value: opt }, opt);
       if (opt === current) o.selected = true;
       sel.append(o);
@@ -671,7 +674,7 @@
   // groomer again. The worker-model select has no such option — hold is a grooming-axis choice.
   const GROOMER_HOLD = 'none';
   const GROOMER_HOLD_OPT = 'On hold';
-  function groomerOptions(leadOpt) { return modelOptions(leadOpt).concat([GROOMER_HOLD_OPT]); }
+  function groomerOptions(leadOpt, current) { return modelOptions(leadOpt, current === GROOMER_HOLD_OPT ? undefined : current).concat([GROOMER_HOLD_OPT]); }
   function groomerSelectValue(groomer, leadOpt) { return groomer === GROOMER_HOLD ? GROOMER_HOLD_OPT : (groomer || leadOpt); }
   function normGroomerValue(v, leadOpt) { return v === GROOMER_HOLD_OPT ? GROOMER_HOLD : normModelValue(v, leadOpt); }
 
@@ -1048,7 +1051,7 @@
   // A composer select whose options are plain values after the `default (...)` lead option.
   function plainComposerSelect(label, value, leadOpt, values, onchange) {
     const sel = h('select', { class: 'model-select', 'aria-label': label });
-    for (const opt of [leadOpt].concat(values)) {
+    for (const opt of withCurrent([leadOpt].concat(values), value || leadOpt)) {
       const o = h('option', { value: opt }, opt);
       if (opt === (value || leadOpt)) o.selected = true;
       sel.append(o);
@@ -1069,7 +1072,7 @@
     const modelSelect = (label, value, defOpt, onchange, isGroomer) => {
       const sel = h('select', { class: 'model-select', 'aria-label': label });
       const selectedOpt = isGroomer ? groomerSelectValue(value, defOpt) : (value || defOpt);
-      for (const opt of (isGroomer ? groomerOptions(defOpt) : modelOptions(defOpt))) {
+      for (const opt of (isGroomer ? groomerOptions(defOpt, selectedOpt) : modelOptions(defOpt, selectedOpt))) {
         const o = h('option', { value: opt }, opt);
         if (opt === selectedOpt) o.selected = true;
         sel.append(o);
@@ -1558,7 +1561,7 @@
     const groomDefOpt = groomerDefaultOpt();
     const groomVal = groomerSelectValue(t.groomer, groomDefOpt);
     const groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with', 'data-field': 'groomer' });
-    for (const opt of groomerOptions(groomDefOpt)) {
+    for (const opt of groomerOptions(groomDefOpt, groomVal)) {
       const o = h('option', { value: opt }, opt);
       if (opt === groomVal) o.selected = true;
       groomSel.append(o);
@@ -1570,7 +1573,7 @@
     const workDefOpt = workerDefaultOpt();
     const workVal = t.model || workDefOpt;
     const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with', 'data-field': 'model' });
-    for (const opt of modelOptions(workDefOpt)) {
+    for (const opt of modelOptions(workDefOpt, workVal)) {
       const o = h('option', { value: opt }, opt);
       if (opt === workVal) o.selected = true;
       workSel.append(o);
@@ -2037,7 +2040,7 @@
     const workDefOpt = workerDefaultOpt();
     const workVal = t.model || workDefOpt;
     const workSel = h('select', { class: 'model-select', 'aria-label': 'Work with', 'data-field': 'model' });
-    for (const opt of modelOptions(workDefOpt)) {
+    for (const opt of modelOptions(workDefOpt, workVal)) {
       const o = h('option', { value: opt }, opt);
       if (opt === workVal) o.selected = true;
       workSel.append(o);
@@ -2048,7 +2051,7 @@
       const groomDefOpt = groomerDefaultOpt();
       const groomVal = groomerSelectValue(t.groomer, groomDefOpt);
       groomSel = h('select', { class: 'model-select', 'aria-label': 'Groom with', 'data-field': 'groomer' });
-      for (const opt of groomerOptions(groomDefOpt)) {
+      for (const opt of groomerOptions(groomDefOpt, groomVal)) {
         const o = h('option', { value: opt }, opt);
         if (opt === groomVal) o.selected = true;
         groomSel.append(o);

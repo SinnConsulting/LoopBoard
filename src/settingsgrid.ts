@@ -83,6 +83,11 @@ const ROLE_EFFORT_KEY: Partial<Record<GridRole, string>> = {
 export function modelKey(model: Model, field: 'enabled' | 'modelId' | 'minEffort' | 'maxEffort'): string {
   return `${SETTINGS_PREFIX}models.${model}.${field}`;
 }
+// The old per-slot `--model` string that `readModelsConfig` still reads as the model id until it is
+// migrated or retired.
+export function legacyModelKey(model: Model): string {
+  return `${SETTINGS_PREFIX}models.${model}.model`;
+}
 export function enabledKey(model: Model): string {
   return modelKey(model, 'enabled');
 }
@@ -167,10 +172,17 @@ function modelPatch(row: ModelRow, field: GridField, raw: unknown): GridPatchRes
     }
     case 'modelId': {
       const value = String(raw ?? '').trim();
-      // Empty RESETS the key, so the CLI's own alias applies again; a legal edit, not a refusal.
-      if (value === '') return { ok: true, patches: [{ key: modelKey(row.id, 'modelId'), value: undefined }] };
-      if (!isValidModelString(value)) return { ok: false, reason: `“${value}” is not a valid model id, so ${row.id} would keep its own.` };
-      return { ok: true, patches: [{ key: modelKey(row.id, 'modelId'), value }] };
+      if (value !== '' && !isValidModelString(value)) return { ok: false, reason: `“${value}” is not a valid model id, so ${row.id} would keep its own.` };
+      // Every edit also retires the pre-t-0e99 `models.<id>.model` string: readModelsConfig reads it
+      // back as the id while `modelId` is unset, so a cleared field would otherwise silently return
+      // to the legacy value (t-0e99 FB10). Empty RESETS the key, so the CLI's own alias applies.
+      return {
+        ok: true,
+        patches: [
+          { key: modelKey(row.id, 'modelId'), value: value === '' ? undefined : value },
+          { key: legacyModelKey(row.id), value: undefined },
+        ],
+      };
     }
     case 'minEffort':
     case 'maxEffort': {

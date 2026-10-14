@@ -159,13 +159,13 @@ test('appliesTo swallows an action that no longer matches the loop state', () =>
   assert.strictEqual(appliesTo('stop', true), true);
 });
 
-// ---- the busy set and the afterTask edge, re-keyed to the one orchestrator (t-0e99) ----
+// ---- the busy set, re-keyed to the one orchestrator (t-0e99) ----
 
 test('busyLoops: ANY task In Progress makes the orchestrator busy, whatever the task model', () => {
   const { busyLoops } = require('../out-test/schedule.js');
   assert.deepStrictEqual(busyLoops([], []), []);
   assert.deepStrictEqual(busyLoops([{ phase: 'backlog' }, { phase: 'review' }], []), []);
-  for (const model of [undefined, 'opus', 'sonnet', 'fable', 'haiku', 'auto']) {
+  for (const model of [undefined, 'opus', 'sonnet', 'fable', 'haiku']) {
     assert.deepStrictEqual(busyLoops([{ phase: 'inprogress', model }], []), ['orchestrator'], String(model));
   }
 });
@@ -176,29 +176,20 @@ test('busyLoops: a live subagent alone makes the loop busy, and the union never 
   assert.deepStrictEqual(busyLoops([{ phase: 'inprogress' }], ['orchestrator']), ['orchestrator']);
 });
 
-test('inProgressEnded: the afterTask edge is the board-wide In-Progress count dropping to 0', () => {
-  const { inProgressEnded } = require('../out-test/schedule.js');
-  assert.strictEqual(inProgressEnded([{ phase: 'inprogress' }], [{ phase: 'review' }]), true);
-  assert.strictEqual(inProgressEnded([{ phase: 'inprogress' }], [{ phase: 'feedback' }, { phase: 'backlog' }]), true);
-  // Still something In Progress (the next task was claimed in the same write): no edge.
-  assert.strictEqual(inProgressEnded([{ phase: 'inprogress' }], [{ phase: 'review' }, { phase: 'inprogress' }]), false);
-  assert.strictEqual(inProgressEnded([{ phase: 'backlog' }], [{ phase: 'review' }]), false, 'nothing was In Progress before');
-  assert.strictEqual(inProgressEnded([], []), false);
+// t-0e99 FB13: the after-task recycle/clear is gone. Nothing restarts or clears the loop because a
+// task left In Progress any more; the context trip, idle stop, schedules and ♻ are the only paths.
+// src/controller.ts touches vscode, so this pins its source text (the test/idle.test.js technique).
+test('no after-task recycle/clear remains in the controller or the schedule module', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'controller.ts'), 'utf8');
+  for (const gone of ['maybeAutoRecycle', 'maybeClearSession', 'afterTaskPending', 'flushAfterTask', 'readAfterTask', 'inProgressEnded']) {
+    assert.ok(!src.includes(gone), gone);
+  }
+  assert.equal(require('../out-test/schedule.js').inProgressEnded, undefined);
+  // The paths that stay still restart or clear the loop.
+  assert.match(src, /private fireContextRestart\(/);
+  assert.match(src, /private flushPendingRestarts\(/);
+  assert.match(src, /private stopLoop\(/);
 });
 
-// The controller's afterTask paths act on a board-wide edge since t-0e99, and `terminals.recycle`
-// on a stopped loop is a plain start, so both paths check the loop runs first. src/controller.ts
-// touches vscode, so this pins its source text (the test/idle.test.js technique).
-test('afterTask never starts or clears a loop that is not running (t-0e99)', () => {
-  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'controller.ts'), 'utf8');
-  for (const name of ['maybeAutoRecycle', 'maybeClearSession']) {
-    const start = src.indexOf(`  private ${name}(`);
-    assert.ok(start > 0, name);
-    const body = src.slice(start, src.indexOf('\n  }\n', start));
-    const guard = body.indexOf('if (!this.isRunning(loop))');
-    assert.ok(guard > 0, `${name} checks the loop runs`);
-    const act = Math.max(body.indexOf('this.terminals.recycle('), body.indexOf('this.terminals.clearSession('));
-    assert.ok(act > guard, `${name} checks before it acts`);
-    assert.match(body, /'aftertask-skip'/, `${name} logs the skip`);
-  }
-});

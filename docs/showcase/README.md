@@ -162,7 +162,7 @@ Loops never commit to `main` and never merge. Merging is your call.
 
 ```sh
 claude --permission-mode auto --model 'haiku' --effort medium --name loopboard-orchestrator-<id> \
-  '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus, sonnet, fable, …'
+  '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus low-xhigh, haiku. …'
 ```
 
 The Orchestrator never edits code: every groom, implementation and review is a subagent on the
@@ -199,7 +199,9 @@ sessions in them are simulated (VS Code can't read a terminal).
 
 The sidebar's **Settings** link opens LoopBoard's settings page. The **Roles** table picks, from
 dropdowns, the model and effort of the **Orchestrator** (plus its grooming cap) and the defaults for
-the **groomer**, **worker** and **reviewer** (`none` = no review). The **Models** table turns each
+the **groomer**, **worker** and **reviewer** (`none` = no review). Out of the box: Orchestrator on
+Haiku, groomer, worker and reviewer on Opus, every effort `medium`; Opus and Haiku on, Sonnet and
+Fable off (turn them on to offer them), Opus capped at `xhigh`. The **Models** table turns each
 model on or off, can point its alias at a specific **model id**, and sets its **lowest** and
 **highest effort**: every spawn on that model is clamped into that range. Other settings follow.
 
@@ -367,7 +369,8 @@ is a subagent with its own `model` and `effort`, passed per spawn, which needs *
   on it, whether the effort came from the task or a default.
 - **Complexity.** The groomer and the implementer each record the task's complexity in its task file
   (`complexity-groomer:` / `complexity-worker:`, e.g. `high (D)`), for calibration only.
-- **Review.** `Review with` (default `none`) runs a review subagent at the task's worker effort.
+- **Review.** `Review with` (default `opus`; `none` = no review) runs a review subagent at the task's
+  worker effort.
 - **Sidebar names.** Agents rows read `<groom|work|review> <model>-<effort>-<task id>: <title>`, and
   so does each subagent's name in Claude Code.
 - **Check effort in the transcript, never by asking.** A subagent asked for its effort makes one

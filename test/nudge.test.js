@@ -32,10 +32,10 @@ const q = (text, answer = '') => ({ text, answer, suggestions: [] });
 // ---- routeEntry: the Rules 14/15 work split, one target (t-0e99) ----
 
 test('New/DRAFT is grooming work, everything from Backlog on is worker work, whatever the models', () => {
-  for (const groomer of [undefined, 'fable', 'haiku', 'auto']) {
+  for (const groomer of [undefined, 'opus', 'sonnet', 'fable', 'haiku']) {
     assert.deepStrictEqual(routeEntry(entry({ phase: 'new', isDraft: true, groomer, model: 'opus' })), 'groom', String(groomer));
   }
-  for (const model of [undefined, 'opus', 'haiku', 'auto']) {
+  for (const model of [undefined, 'opus', 'sonnet', 'fable', 'haiku']) {
     assert.deepStrictEqual(routeEntry(entry({ phase: 'backlog', groomer: 'fable', model })), 'backlog', String(model));
   }
 });
@@ -183,7 +183,7 @@ test('every change reaches the one orchestrator once, in board order, whatever i
   const a = entry({ phase: 'feedback', model: 'opus', questions: [q('a', 'yes')] });
   const b = entry({ phase: 'review', model: 'haiku', feedback: ['fix it'] });
   const c = entry({ phase: 'new', groomer: 'fable', feedback: ['fold this in'] });
-  const d = entry({ isDraft: true, groomer: 'auto', model: 'auto' });
+  const d = entry({ isDraft: true, groomer: 'sonnet', model: 'fable' });
   const prev = [a, b, c, d];
   const next = [{ ...a, raw: 'moved' }, { ...b, raw: 'moved' }, { ...c, raw: 'moved' }, { ...d, raw: 'moved' }];
   const items = computeNudges(prev, next);
@@ -259,7 +259,7 @@ test('index fields are named, and enum values (phase and the routing keys) appea
   assert.deepStrictEqual(describeChanges(before, { ...before, model: undefined }), ['model → default']);
   // t-0e99: the three new routing keys are named the same way.
   assert.deepStrictEqual(describeChanges(before, { ...before, effort: 'high' }), ['effort → high']);
-  assert.deepStrictEqual(describeChanges(before, { ...before, groomerEffort: 'auto' }), ['groomer-effort → auto']);
+  assert.deepStrictEqual(describeChanges(before, { ...before, groomerEffort: 'xhigh' }), ['groomer-effort → xhigh']);
   assert.deepStrictEqual(describeChanges(before, { ...before, reviewer: 'none' }), ['reviewer → none']);
   assert.deepStrictEqual(describeChanges({ ...before, reviewer: 'haiku' }, before), ['reviewer → default']);
   assert.deepStrictEqual(describeChanges(before, { ...before, checked: true }), ['ticked']);

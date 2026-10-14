@@ -79,7 +79,7 @@
     if (!msg) return;
     if (msg.type === 'settings') {
       errors = {};
-      apply({ form: msg.form, grid: msg.grid, extensionId: msg.extensionId, problem: msg.problem });
+      apply({ form: msg.form, grid: msg.grid, migrations: msg.migrations || 0, extensionId: msg.extensionId, problem: msg.problem });
       return;
     }
     if (msg.type === 'settingsMigration') {
@@ -393,7 +393,7 @@
     // row's own button already is the whole action. Neither conflicts nor sweeps are in the count —
     // `plan.writes` holds only the writes that are certainly writes.
     const writes = (plan.writes || []).length;
-    return h('div', { class: 'migrate' },
+    return h('div', { class: 'migrate pending' },
       h('div', { class: 'mig-head' },
         h('strong', {}, 'Review — nothing is written until you press a button'),
         close),
@@ -452,11 +452,15 @@
       h('h1', {}, 'LoopBoard Settings'),
       // Next to the escape hatch, and deliberately BEFORE it: both are about settings that this
       // page cannot show you — one because the key is stale, one because you want the raw JSON.
+      // Warning-coloured with a count while stale keys exist (t-0e99 FB11), so a pending migration is
+      // seen without opening the panel.
       h('button', {
-        class: 'btn', type: 'button',
-        title: 'Look for loopBoard.* keys in your user settings that were renamed, deprecated or dropped — shows what it would do before changing anything',
+        class: 'btn' + (state.migrations ? ' warn' : ''), type: 'button',
+        title: state.migrations
+          ? state.migrations + ' setting' + (state.migrations === 1 ? '' : 's') + ' in your user settings can be migrated; shows what it would do before changing anything'
+          : 'Look for loopBoard.* keys in your user settings that were renamed, deprecated or dropped; shows what it would do before changing anything',
         onclick: () => { migration = null; vscode.postMessage({ type: 'settingsScanStale' }); },
-      }, 'Migrate Config'),
+      }, state.migrations ? 'Migrate Config (' + state.migrations + ')' : 'Migrate Config'),
       // The one per-WORKSPACE action on a page of global settings (t-4dce): it runs the manual
       // preview → modal confirm → sync flow on this window's `.loopboard/`, whether
       // `loopBoard.autoSyncTemplates` is on or off.
@@ -474,6 +478,11 @@
       'All LoopBoard settings are global (user) settings — they are not configurable per repository.'));
 
     if (state.problem) wrap.append(h('div', { class: 'banner' }, state.problem));
+    if (state.migrations && !migration) {
+      wrap.append(h('div', { class: 'banner warn' },
+        state.migrations + ' LoopBoard setting' + (state.migrations === 1 ? ' is' : 's are') + ' out of date in your user settings. ',
+        h('button', { class: 'btn warn', type: 'button', onclick: () => vscode.postMessage({ type: 'settingsScanStale' }) }, 'Review migration')));
+    }
     const migrateBox = migrationPanel();
     if (migrateBox) wrap.append(migrateBox);
 

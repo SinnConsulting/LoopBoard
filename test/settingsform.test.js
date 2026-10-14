@@ -215,7 +215,7 @@ test('the real manifest renders as the three agreed sections', () => {
   assert.deepEqual(
     form.sections.find((s) => s.title === 'Agent Setup').controls.map((c) => c.key),
     [
-      'loopBoard.permissionMode', 'loopBoard.loopInterval', 'loopBoard.afterTask',
+      'loopBoard.permissionMode', 'loopBoard.loopInterval',
       'loopBoard.contextLimit.percent', 'loopBoard.contextLimit.action', 'loopBoard.nudgeLoops',
       'loopBoard.idleStop.enabled', 'loopBoard.idleStop.minutes',
     ]
@@ -357,7 +357,14 @@ test('every section carries a unique, title-derived anchor slug', () => {
 test('formKeys lists every declared key, grid and deprecated included', () => {
   const keys = formKeys(manifest.contributes.configuration);
   assert.ok(keys.includes('loopBoard.orchestrator.effort'));
-  assert.ok(keys.includes('loopBoard.autoRecycle'));
+  assert.ok(keys.includes('loopBoard.models.haiku.maxEffort'), 'a grid key');
+  // The shipped manifest carries no deprecated key since t-0e99 FB13 retired the last pair, so the
+  // deprecated half is checked on a synthetic manifest.
+  const synthetic = formKeys([{ title: 'LoopBoard: X', order: 1, properties: {
+    'loopBoard.live': { type: 'boolean', default: false, markdownDescription: 'x' },
+    'loopBoard.old': { type: 'boolean', default: false, markdownDescription: 'x', markdownDeprecationMessage: 'gone' },
+  } }]);
+  assert.deepEqual(synthetic, ['loopBoard.live', 'loopBoard.old']);
   assert.equal(new Set(keys).size, keys.length, 'a key is declared twice');
 });
 

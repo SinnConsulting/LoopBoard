@@ -8,7 +8,7 @@ import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
   Board, LoopId, LOOP_IDS, isLoopId, resolveModels, readModelsConfig, SetLookup, resolveOrchestrator,
-  resolveTaskDefaults, AfterTask, resolveAfterTask, resolveHeldAfterTask,
+  resolveTaskDefaults,
 } from './model';
 import {
   ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
@@ -21,7 +21,7 @@ import { tagColorToast } from './tags';
 import { BuildStamp, WEBVIEW_ASSETS, describeStamp, stampsDiffer } from './buildstamp';
 import {
   RestartSchedule, LoopAction, armSchedule, delayUntilFire, mayFire, deferSchedule, afterFire,
-  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo, MAX_DELAY_MS, busyLoops, inProgressEnded,
+  describeSchedule, parseMinutes, isLoopAction, supportsForce, appliesTo, MAX_DELAY_MS, busyLoops,
 } from './schedule';
 import {
   IdleState, IdleFireContext, IDLE_WARN_MS, resetIdle, observeIdle, idleWarnAt, markWarned, keepRunning,
@@ -46,19 +46,6 @@ import {
 // poll whose transcript has not grown, so this is cheap; it only has to be fast enough that the
 // row's number tracks a conversation, not every token.
 const CONTEXT_POLL_MS = 30000;
-
-// `loopBoard.afterTask` (t-1f1e) with a read-both fallback to the deprecated boolean pair. The
-// default in package.json is 'none', so `get()` alone could never tell "unset" from "explicitly
-// none" — hence `inspect()`, which reports only values a user actually set.
-function readAfterTask(c: vscode.WorkspaceConfiguration): AfterTask {
-  const i = c.inspect<string>('afterTask');
-  const set = i?.workspaceFolderValue ?? i?.workspaceValue ?? i?.globalValue;
-  return resolveAfterTask(
-    set,
-    c.get<boolean>('autoRecycle', false),
-    c.get<boolean>('clearSessionAfterTask', false),
-  );
-}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -144,8 +131,7 @@ export class Controller {
   // SECOND busy signal next to the tracker's In-Progress task: a loop whose session still has an
   // Agent-tool subagent working is not idle, however idle `.loopboard/` looks (grooming never sets
   // `phase: inprogress`). `agentRows` is what the sidebar's Agents section draws and what the debug
-  // log names a held-back restart with. `afterTaskPending` is the afterTask recycle/clear held at
-  // the idle edge because a subagent was still running — the same shape as `contextPending`.
+  // log names a held-back restart with.
   private agentBusy = new Set<LoopId>();
   private agentRows = new Map<LoopId, AgentRow[]>();
   // t-aglg: `agentRows` holds `[]` both for "read fine, nothing live" and for "could not read", so
@@ -154,7 +140,6 @@ export class Controller {
   // never against `agentRows`, which a failed read clears to keep the sidebar honest.
   private agentsUnreadable = new Set<LoopId>();
   private agentBaseline = new Map<LoopId, AgentRow[]>();
-  private afterTaskPending = new Set<LoopId>();
   // Idle stop (t-2dd4) — session-only, like everything above. `idleStates` holds a slot's clock
   // only while it runs (feature on, loop running, slot out of `busyLoops`); `idleTimers` is that
   // slot's ONE timer — the warning while the clock runs, the stop while the warning is up.
@@ -277,7 +262,6 @@ export class Controller {
       // read-both fallback to the pre-orchestrator keys until the settings migration is applied.
       defaults: resolveTaskDefaults(explicitLookup(c)),
       orchestrator: resolveOrchestrator(explicitLookup(c)),
-      afterTask: readAfterTask(c),
       maxAttachmentSizeMB: c.get<number>('maxAttachmentSizeMB', 10),
       autoSyncTemplates: c.get<boolean>('autoSyncTemplates', true),
       sidebarMarquee: c.get<boolean>('sidebarMarquee', false),
@@ -350,16 +334,13 @@ export class Controller {
   async refresh(trigger = 'message'): Promise<void> {
     this.store.debugLog('verbose', 'refresh', trigger);
     const board = await this.store.load();
-    this.maybeAutoRecycle(this.lastBoard, board);
-    this.maybeClearSession(this.lastBoard, board);
     this.maybeNudge(this.lastBoard, board);
     this.lastBoard = board;
-    // A deferred restart fires on the same idle signal auto-recycle uses — the freshly loaded board
-    // is the only place "is this model busy?" is knowable (terminal output can never be read).
+    // A deferred restart fires on the idle signal: the freshly loaded board is the only place "is
+    // this loop busy?" is knowable (terminal output can never be read).
     this.flushPendingRestarts(board);
     this.flushPendingContext(board);
-    this.flushAfterTask(board);
-    // Idle stop (t-2dd4): after the afterTask checks, on the same freshly loaded board. A
+    // Idle stop (t-2dd4): after the deferral flushes, on the same freshly loaded board. A
     // `config-change` refresh that finds the feature off drops every clock here.
     this.observeIdleClocks(board);
     this.evaluateAutoPromotes(board);
@@ -416,109 +397,6 @@ export class Controller {
     else this.store.debugLog('verbose', 'nudge-hold', `${loop}: no terminal, ${this.pendingNudges.length} task(s) held for next spawn`);
   }
 
-  // Auto-recycle: when the board's last In-Progress task leaves In Progress, recycle the loop.
-  private maybeAutoRecycle(prev: Board | undefined, next: Board): void {
-    if (!prev || this.config().afterTask !== 'recycle' || !inProgressEnded(prev.tasks, next.tasks)) return;
-    const busy = this.busyLoops(next);
-    for (const loop of LOOP_IDS) {
-      // `terminals.recycle` on a stopped loop is a plain START, and the edge is board-wide now (a
-      // hand edit or a leftover per-model loop can produce it), so a stopped loop is left alone.
-      if (!this.isRunning(loop)) {
-        this.store.debugLog('info', 'aftertask-skip', `${loop}: loop is not running, nothing to restart`);
-        continue;
-      }
-      // The task is done but the session may not be (t-sbag): a subagent it spawned can still be
-      // mid-edit, and recycling now kills it. Hold exactly like a deferred schedule does.
-      if (busy.includes(loop)) {
-        this.holdAfterTask(loop, next);
-        continue;
-      }
-      // Automatic lifecycle recycle: never steal focus from whatever the user is doing on the
-      // board (e.g. typing in an answer field).
-      this.store.debugLog('info', 'auto-recycle', `${loop}: ${this.describeAgents(loop, true)}`);
-      this.clearContextTrip(loop, 'auto-recycle');
-      this.resetIdleClock(loop, 'auto-recycle');
-      this.terminals.recycle(loop, true);
-    }
-  }
-
-  // Clear-after-task: when the board's last In-Progress task leaves In Progress, send /clear to the
-  // loop to reset the conversation context (terminal stays open). Runs after store.load() has
-  // re-read the just-written TODO.md, so the tracker is persisted before we clear. The 'recycle'
-  // mode never reaches here: the modes are exclusive by construction.
-  private maybeClearSession(prev: Board | undefined, next: Board): void {
-    if (!prev || this.config().afterTask !== 'clear' || !inProgressEnded(prev.tasks, next.tasks)) return;
-    const busy = this.busyLoops(next);
-    for (const loop of LOOP_IDS) {
-      // `clearSession` on a stopped loop does nothing; say so instead of logging a clear.
-      if (!this.isRunning(loop)) {
-        this.store.debugLog('info', 'aftertask-skip', `${loop}: loop is not running, nothing to clear`);
-        continue;
-      }
-      // Same hold as auto-recycle (t-sbag): `/clear` throws away the context a live subagent's
-      // parent session is still working in.
-      if (busy.includes(loop)) {
-        this.holdAfterTask(loop, next);
-        continue;
-      }
-      this.store.debugLog('info', 'clear-session', `${loop}: ${this.describeAgents(loop, true)}`);
-      this.clearContextTrip(loop, 'clear-session');
-      this.terminals.clearSession(loop);
-    }
-  }
-
-  private isRunning(loop: LoopId): boolean {
-    return this.terminals.status().some((l) => l.id === loop && l.running);
-  }
-
-  // ---- afterTask held by a live subagent (t-sbag) ----
-
-  // Records the hold. Idempotent: at most one afterTask action is ever pending per loop, exactly
-  // like a deferred schedule, and it waits indefinitely.
-  private holdAfterTask(loop: LoopId, board: Board): void {
-    this.afterTaskPending.add(loop);
-    this.store.debugLog('info', 'aftertask-defer', `${loop}: ${this.describeBusy(loop, board)}, waiting for idle`);
-  }
-
-  // Drops a hold that something else has already satisfied. Logged (at info) whenever there really
-  // was one: a hold that silently disappears is as hard to explain as one that silently fires.
-  private cancelAfterTask(loop: LoopId, reason: string): void {
-    if (!this.afterTaskPending.delete(loop)) return;
-    this.store.debugLog('info', 'aftertask-cancel', `${loop} (${reason})`);
-  }
-
-  // The held recycle/clear fires on the same idle edge deferred schedules watch — which, for a
-  // subagent, is a poll rather than a board write (a finishing subagent touches no `.loopboard/`
-  // file). The MODE is re-read here instead of remembered: what is configured now is what should
-  // happen now, and `none` simply drops the hold.
-  private flushAfterTask(board: Board): void {
-    if (this.afterTaskPending.size === 0) return;
-    const busy = this.busyLoops(board);
-    const mode = this.config().afterTask;
-    for (const loop of [...this.afterTaskPending]) {
-      if (busy.includes(loop)) continue;
-      this.afterTaskPending.delete(loop);
-      // The slot may have been stopped or restarted by hand since the hold was recorded, and
-      // `terminals.recycle` on a stopped slot is a plain START (dispose-if-present, then always
-      // respawn). `resolveHeldAfterTask` is the pure guard against that — see its comment.
-      const running = this.terminals.status().some((l) => l.id === loop && l.running);
-      const held = resolveHeldAfterTask(mode, running);
-      if (held.act === 'skip') {
-        this.store.debugLog('info', 'aftertask-skip', held.reason === 'off'
-          ? `${loop}: afterTask is off now, nothing to do`
-          : `${loop}: loop is not running, nothing to restart`);
-        continue;
-      }
-      this.store.debugLog('info', held.act === 'clear' ? 'clear-session' : 'auto-recycle', `${loop} (held for a live subagent)`);
-      this.clearContextTrip(loop, held.act === 'clear' ? 'clear-session' : 'auto-recycle');
-      if (held.act === 'clear') this.terminals.clearSession(loop);
-      else {
-        this.resetIdleClock(loop, 'auto-recycle');
-        this.terminals.recycle(loop, true);
-      }
-    }
-  }
-
   // ---- context-usage indicator + threshold restart (t-2b89) ----
 
   // Re-measure every running slot, then act on anything that crossed the threshold. Nothing here
@@ -539,7 +417,7 @@ export class Controller {
     let changed = false;
     // A subagent finishing writes nothing to `.loopboard/`, so nothing refreshes the board and the
     // deferral flushes that run there never happen. This poll is the ONLY place that edge is
-    // visible — hence the flush pair (plus the afterTask hold) runs here too whenever the busy set
+    // visible, hence the flush pair runs here too whenever the busy set
     // actually moved (t-sbag).
     let busyChanged = false;
     for (const loop of LOOP_IDS) {
@@ -552,11 +430,6 @@ export class Controller {
         this.rememberEndedSession(loop);
         this.contextTripped.delete(loop);
         this.contextPending.delete(loop);
-        // Drop a held afterTask action for the same reason `contextPending` is dropped here: it was
-        // recorded against a session that no longer exists, and `terminals.recycle` would start a
-        // fresh loop rather than restart one (t-sbag). `flushAfterTask` guards this too; dropping
-        // it at the source means a stopped loop never leaves a live hold behind at all.
-        this.cancelAfterTask(loop, 'loop is not running');
         // A stopped loop's session is gone, and with it every subagent it owned.
         if (this.forgetAgents(loop)) {
           changed = true;
@@ -622,7 +495,6 @@ export class Controller {
     if (busyChanged && this.lastBoard) {
       this.flushPendingRestarts(this.lastBoard);
       this.flushPendingContext(this.lastBoard);
-      this.flushAfterTask(this.lastBoard);
     }
     // Idle stop (t-2dd4): the busy set moved (`busyChanged`) — a subagent finishing or starting is
     // visible ONLY here, since it writes no `.loopboard/` file — so observe the clocks against it.
@@ -693,9 +565,6 @@ export class Controller {
 
   private fireContextRestart(loop: LoopId, action: ContextAction): void {
     this.contextPending.delete(loop);
-    // This path does not go through `clearContextTrip`, so it cancels the held afterTask action
-    // itself — same rule: one restart, not two (t-sbag).
-    this.cancelAfterTask(loop, `context ${action}`);
     // The measurement belongs to the session we are about to end; the next poll measures the new
     // one. Its id is kept as the stale-session guard (t-c7a2) — this is the path the observed
     // restart storm took, and for `action: 'clear'` there is no terminal close/open event to route
@@ -720,16 +589,9 @@ export class Controller {
     }
   }
 
-  // Any restart of a loop — timed, manual ♻, stop, afterTask — invalidates a pending context trip
-  // and its hysteresis marker: both were measured against a session that no longer exists.
+  // Any restart of a loop (timed, manual ♻, stop) invalidates a pending context trip and its
+  // hysteresis marker: both were measured against a session that no longer exists.
   private clearContextTrip(loop: LoopId, reason: string): void {
-    // A held afterTask action goes with it (t-sbag). Whatever restarted this loop — the normal
-    // idle edge, a manual ♻, a ■, a timed action — has already given the slot the fresh session
-    // the hold was waiting to give it, and firing the hold on top would be a SECOND restart:
-    // `terminals.recycle` disposes and respawns 400 ms later, so a duplicate lands inside that
-    // window and tears down the terminal the first one just created. Placed above the early return
-    // below, which only guards the context-trip half.
-    this.cancelAfterTask(loop, reason);
     // Remember-then-drop runs UNCONDITIONALLY (t-c7a2); only the log line is conditional on there
     // having been a trip. The old early return skipped a loop that never tripped — but ending its
     // session still leaves a stale bar (threshold 50, loop at 41%, ♻ → the row keeps showing 41%
@@ -860,8 +722,8 @@ export class Controller {
       this.store.debugLog('info', 'restart-fire', `${loop} ${schedule.action}${schedule.force ? ' (forced: a task may be mid-flight)' : ''}; ${this.describeAgents(loop, schedule.action !== 'start')}`);
       this.clearContextTrip(loop, `timed ${schedule.action}`);
       this.resetIdleClock(loop, `timed ${schedule.action}`);
-      // preserveFocus: an automatic action must never steal focus from whatever the user is doing —
-      // same reasoning as the auto-recycle call above. (stop takes no focus argument.)
+      // preserveFocus: an automatic action must never steal focus from whatever the user is doing.
+      // (stop takes no focus argument.)
       if (schedule.action === 'start') this.terminals.spawn(loop, true);
       else if (schedule.action === 'stop') this.terminals.stop(loop);
       else this.terminals.recycle(loop, true);
@@ -890,7 +752,7 @@ export class Controller {
   // ---- ■, shared (t-2dd4 decision 4) ----
 
   // The one stop path. The ■ button and the idle stop both call this, so an idle stop is a ■ by
-  // construction: drop the context trip (and with it any held afterTask action), cancel an armed
+  // construction: drop the context trip, cancel an armed
   // schedule — a repeating restart included, since restarting a terminal that was just stopped
   // would be the opposite of what stopping meant — reset the idle clock, dispose the terminal.
   // `note` becomes the `loop-stop` line's detail and is what tells a manual ■ from an idle stop in
@@ -1465,10 +1327,15 @@ export class Controller {
     }
     this.store.debugLog('verbose', 'settings-render', `${sections.length} section(s), ${Object.keys(values).length} key(s)`);
     const grid = this.currentGrid();
+    // How many stale keys the migration panel would list (t-0e99 FB11), so the page can flag the
+    // Migrate Config button before anyone opens it. Findings only: a sweep is no evidence.
+    const migrations = this.stalePlan().findings;
+    this.store.debugLog('verbose', 'settings-migrate-count', `${migrations} stale key(s)`);
     SettingsPanel.current.post({
       type: 'settings',
       form: buildSettingsForm(sections, values),
       grid,
+      migrations,
       extensionId: EXTENSION_ID,
       // Only ever set if the extension could not read its own manifest — the page then has nothing
       // to draw and must say so rather than render as an empty, working-looking form.

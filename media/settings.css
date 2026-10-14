@@ -139,6 +139,17 @@ td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBo
   color: var(--vscode-foreground, #cccccc);
 }
 .banner[hidden] { display: none; }
+/* A pending settings migration (t-0e99 FB11): the theme's warning colours, never an error red. */
+.banner.warn {
+  background: var(--vscode-inputValidation-warningBackground, #352a05);
+  border-color: var(--vscode-inputValidation-warningBorder, #b89500);
+  display: flex; align-items: center; gap: 10px;
+}
+.btn.warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border-color: var(--vscode-inputValidation-warningBorder, #b89500);
+}
+.migrate.pending { border: 1px solid var(--vscode-inputValidation-warningBorder, #b89500); }
 
 /* ---- stale-settings migration panel ----
    Sits under the header, above the sections, and only while it is open. Neutral chrome on purpose:

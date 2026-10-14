@@ -25,8 +25,12 @@ function block(text, marker) {
 }
 
 test('every model select offers the enabled models only, never auto; Groom with adds On hold last', () => {
-  assert.match(board, /function modelOptions\(leadOpt\) \{ return \[leadOpt\]\.concat\(\(board && board\.models\) \|\| \[\]\); \}/);
-  assert.match(board, /function groomerOptions\(leadOpt\) \{ return modelOptions\(leadOpt\)\.concat\(\[GROOMER_HOLD_OPT\]\); \}/);
+  assert.match(board, /function modelOptions\(leadOpt, current\) \{ return withCurrent\(\[leadOpt\]\.concat\(\(board && board\.models\) \|\| \[\]\), current\); \}/);
+  assert.match(board, /function groomerOptions\(leadOpt, current\) \{ return modelOptions\(leadOpt, current === GROOMER_HOLD_OPT \? undefined : current\)\.concat\(\[GROOMER_HOLD_OPT\]\); \}/);
+  // A model switched off (Sonnet and Fable ship off) stays selectable on a task that already names it.
+  assert.match(board, /function withCurrent\(opts, current\) \{ return current && opts\.indexOf\(current\) === -1 \? opts\.concat\(\[current\]\) : opts; \}/);
+  assert.equal((board.match(/modelOptions\(workDefOpt, workVal\)/g) || []).length, 2, 'both Work with selects pass the task value');
+  assert.equal((board.match(/groomerOptions\(groomDefOpt, groomVal\)/g) || []).length, 2, 'both Groom with selects pass the task value');
   assert.ok(!/\bAUTO\b/.test(board), 'no auto option anywhere on the board (owner decision 2026-10-14)');
 });
 

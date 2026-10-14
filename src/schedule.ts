@@ -117,13 +117,6 @@ export function busyLoops(tasks: readonly { phase: string }[], withLiveAgents: I
   return [...busy];
 }
 
-// The idle edge `loopBoard.afterTask` acts on (t-0e99): the board's In-Progress count dropped to 0.
-// Whose task it was no longer matters, since one loop did all of them.
-export function inProgressEnded(prev: readonly { phase: string }[], next: readonly { phase: string }[]): boolean {
-  const count = (tasks: readonly { phase: string }[]) => tasks.filter((t) => t.phase === 'inprogress').length;
-  return count(prev) > 0 && count(next) === 0;
-}
-
 // Marks a schedule as waiting for its loop to go idle. Idempotent: at most one restart is ever
 // pending per loop, so a repeating schedule cannot stack deferred fires.
 export function deferSchedule(schedule: RestartSchedule): RestartSchedule {

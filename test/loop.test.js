@@ -39,7 +39,7 @@ test('buildLoopCommand: the orchestrator prompt names the role, interval, cap, t
   assert.ok(cmd.includes('You are the LoopBoard orchestrator'), 'names the orchestrator role');
   assert.ok(cmd.includes('grooming cap 3.'), 'names the grooming cap');
   assert.ok(cmd.includes('Models: opus, sonnet, fable, haiku.'), 'names the enabled task models, no range when none is narrowed');
-  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer none.'), 'names the five defaults (owner decision 2026-10-14)');
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), 'names the five defaults (owner decision 2026-10-14)');
   assert.ok(!/\bauto\b/.test(cmd), 'no auto anywhere in the prompt');
   assert.ok(cmd.includes('.loopboard/LOOP.md'), 'points at LOOP.md');
   assert.ok(cmd.includes('Automation section'), 'directs the worker to the Automation section');
@@ -88,7 +88,7 @@ test('buildLoopCommand: hostile models or defaults never reach the line; they fa
     defaults: { groomer: "o'pus", groomerEffort: 'auto', worker: 'none', workerEffort: '; ls', reviewer: 'everyone' },
   });
   assert.ok(hostile.includes('Models: opus.'), hostile);
-  assert.ok(hostile.includes('Defaults: groomer opus medium, worker opus medium, reviewer none.'), hostile);
+  assert.ok(hostile.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), hostile);
   assert.ok(!hostile.includes('rm -rf') && !hostile.includes("'") && !hostile.includes('; ls'), hostile);
 });
 
