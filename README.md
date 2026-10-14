@@ -163,7 +163,7 @@ Loops never commit to `main` and never merge. Merging is your call.
 **▶** opens ONE VS Code terminal, `Claude Orchestrator`, running one command:
 
 ```sh
-claude --permission-mode auto --model 'haiku' --effort medium --name loopboard-orchestrator-<id> \
+claude --permission-mode auto --model 'opus' --effort low --name loopboard-orchestrator-<id> \
   '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus low-xhigh, haiku. …'
 ```
 
@@ -202,7 +202,7 @@ sessions in them are simulated (VS Code can't read a terminal).
 The sidebar's **Settings** link opens LoopBoard's settings page. The **Roles** table picks, from
 dropdowns, the model and effort of the **Orchestrator** (plus its grooming cap) and the defaults for
 the **groomer**, **worker** and **reviewer** (`none` = no review). Out of the box: Orchestrator on
-Haiku, groomer, worker and reviewer on Opus, every effort `medium`; Opus and Haiku on, Sonnet and
+Opus at effort `low`, groomer, worker and reviewer on Opus at `medium`; Opus and Haiku on, Sonnet and
 Fable off (turn them on to offer them), Opus capped at `xhigh`. The **Models** table turns each
 model on or off, can point its alias at a specific **model id**, and sets its **lowest** and
 **highest effort**: every spawn on that model is clamped into that range. Other settings follow.
@@ -484,9 +484,9 @@ Haiku?" are answered in [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blo
 ### Orchestrator and models
 
 - `loopBoard.orchestrator.model`: the Orchestrator's `claude --model`, one of the enabled models
-  (default `haiku`).
+  (default `opus`).
 - `loopBoard.orchestrator.effort`: `claude --effort` for the loop session itself (`low`…`max`,
-  default `medium`); subagents get theirs per spawn (see
+  default `low`); subagents get theirs per spawn (see
   [Subagent model and effort](#subagent-model-and-effort)).
 - `loopBoard.orchestrator.groomConcurrency`: grooming subagents per pass (default `3`, minimum
   `1`). Extra tasks wait for a later pass.
@@ -516,7 +516,7 @@ up on its next **▶** or **♻**. The board's selects and new drafts use a chan
   `loopBoard.models.<model>.modelId`; the other slot keys and `loopBoard.delegateWork` are dropped
   (delegation is always on); `loopBoard.delegateReview: true` becomes
   `loopBoard.defaultReviewerModel: opus` (`false` becomes `none`). New defaults: the Orchestrator runs
-  on Haiku, the groomer, worker and reviewer on Opus, every effort `medium`; Sonnet and Fable are off
+  on Opus at effort `low`, the groomer, worker and reviewer on Opus at `medium`; Sonnet and Fable are off
   (a task that already names one keeps running on it; turn it on to offer it again) and Opus is
   capped at `xhigh`.
 - **After task removed.** `loopBoard.afterTask` and its deprecated pair `loopBoard.autoRecycle` /
@@ -555,8 +555,8 @@ show them.
 
 | Setting | Default | Description |
 |---|---|---|
-| `loopBoard.orchestrator.model` | `haiku` | The model the one Orchestrator loop session runs on (`claude --model`). It only routes the board: every groom, implementation and review is a subagent on the task's own model and effort, else the role default below. To point the alias at a specific model id (e.g. a 1M-context build), set that model's `loopBoard.models.<model>.modelId`. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.orchestrator.effort` | `medium` | Reasoning effort the Orchestrator loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, from the task's `effort:` / `groomer-effort:`, else the role default (Claude Code 2.1.292+). `max` is not recommended: at max effort a session tends to over-split review work into many subagents and time out. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.orchestrator.model` | `opus` | The model the one Orchestrator loop session runs on (`claude --model`). It only routes the board: every groom, implementation and review is a subagent on the task's own model and effort, else the role default below. To point the alias at a specific model id (e.g. a 1M-context build), set that model's `loopBoard.models.<model>.modelId`. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.orchestrator.effort` | `low` | Reasoning effort the Orchestrator loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, from the task's `effort:` / `groomer-effort:`, else the role default (Claude Code 2.1.292+). `max` is not recommended: at max effort a session tends to over-split review work into many subagents and time out. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.orchestrator.groomConcurrency` | `3` | Cap on how many grooming subagents the Orchestrator may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass: nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.defaultGroomerModel` | `opus` | The model that grooms tasks and drafts with no `groomer:` field of their own. LoopBoard never picks a model for you: a spawn runs on the task's field, else this. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 | `loopBoard.defaultGroomerEffort` | `medium` | Reasoning effort for grooming tasks and drafts with no `groomer-effort:` field, clamped into the groomer model's lowest and highest effort. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |

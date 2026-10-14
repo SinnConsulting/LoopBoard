@@ -230,7 +230,7 @@ export interface OrchestratorConfig {
 
 // Haiku by default (owner decision 2026-10-14, gated on the CLI accepting every permission mode for
 // a Haiku session: decisions/loops.md).
-export const ORCHESTRATOR_DEFAULTS: OrchestratorConfig = { model: 'haiku', effort: 'medium', groomConcurrency: DEFAULT_GROOM_CONCURRENCY };
+export const ORCHESTRATOR_DEFAULTS: OrchestratorConfig = { model: 'opus', effort: 'low', groomConcurrency: DEFAULT_GROOM_CONCURRENCY };
 
 // The old Opus slot's `.effort|.groomConcurrency` still carry over until migrated (the Sonnet/Fable
 // slot keys carry nothing). Its `.model` string is no longer an orchestrator value: it is read as the

@@ -93,7 +93,7 @@
               "haiku"
             ],
             "order": 10,
-            "default": "haiku",
+            "default": "opus",
             "loopBoardApplies": "restart",
             "markdownDescription": "The model the one Orchestrator loop session runs on (`claude --model`). It only routes the board: every groom, implementation and review is a subagent on the task's own model and effort, else the role default below. To point the alias at a specific model id (e.g. a 1M-context build), set that model's `loopBoard.models.<model>.modelId`. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
@@ -108,7 +108,7 @@
               "max"
             ],
             "order": 20,
-            "default": "medium",
+            "default": "low",
             "loopBoardApplies": "restart",
             "markdownDescription": "Reasoning effort the Orchestrator loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, from the task's `effort:` / `groomer-effort:`, else the role default (Claude Code 2.1.292+). `max` is not recommended: at max effort a session tends to over-split review work into many subagents and time out. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },

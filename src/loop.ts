@@ -47,11 +47,11 @@ export function sanitizeLoopInterval(v: number | string): string {
 //
 // `effort` (t-cffc) is `loopBoard.orchestrator.effort`, passed as `--effort <level>` on EVERY
 // spawn, the loop session's reasoning effort only; each subagent gets its effort per spawn.
-// Spliced unquoted, so it is validated against EFFORT_LEVELS here (invalid/absent -> 'medium'),
+// Spliced unquoted, so it is validated against EFFORT_LEVELS here (invalid/absent -> 'low'),
 // the same hardening as permissionMode — a raw config value never reaches the shell line.
 export function buildClaudeBase(permissionMode: string, modelString: string, sessionName?: string, effort?: string): string {
   const name = sessionName ? ` --name ${sessionName}` : '';
-  const level = typeof effort === 'string' && isValidEffort(effort) ? effort : 'medium';
+  const level = typeof effort === 'string' && isValidEffort(effort) ? effort : 'low';
   return `claude --permission-mode ${sanitizePermissionMode(permissionMode)} --model '${modelString}' --effort ${level}${name}`;
 }
 

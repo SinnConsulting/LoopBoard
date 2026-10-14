@@ -161,7 +161,7 @@ Loops never commit to `main` and never merge. Merging is your call.
 **▶** opens ONE VS Code terminal, `Claude Orchestrator`, running one command:
 
 ```sh
-claude --permission-mode auto --model 'haiku' --effort medium --name loopboard-orchestrator-<id> \
+claude --permission-mode auto --model 'opus' --effort low --name loopboard-orchestrator-<id> \
   '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus low-xhigh, haiku. …'
 ```
 
@@ -200,7 +200,7 @@ sessions in them are simulated (VS Code can't read a terminal).
 The sidebar's **Settings** link opens LoopBoard's settings page. The **Roles** table picks, from
 dropdowns, the model and effort of the **Orchestrator** (plus its grooming cap) and the defaults for
 the **groomer**, **worker** and **reviewer** (`none` = no review). Out of the box: Orchestrator on
-Haiku, groomer, worker and reviewer on Opus, every effort `medium`; Opus and Haiku on, Sonnet and
+Opus at effort `low`, groomer, worker and reviewer on Opus at `medium`; Opus and Haiku on, Sonnet and
 Fable off (turn them on to offer them), Opus capped at `xhigh`. The **Models** table turns each
 model on or off, can point its alias at a specific **model id**, and sets its **lowest** and
 **highest effort**: every spawn on that model is clamped into that range. Other settings follow.

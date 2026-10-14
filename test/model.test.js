@@ -153,21 +153,21 @@ test('until migrated, an old per-slot --model string is read as that model id; t
 
 // ---- the orchestrator's own settings (t-0e99), with the read-both fallback ----
 
-test('resolveOrchestrator defaults: haiku, medium, groom cap 3 (owner decision 2026-10-14)', () => {
-  assert.deepEqual(resolveOrchestrator(lookup({})), { model: 'haiku', effort: 'medium', groomConcurrency: 3 });
+test('resolveOrchestrator defaults: opus, low, groom cap 3 (owner decision 2026-10-14, t-0e99 feedback)', () => {
+  assert.deepEqual(resolveOrchestrator(lookup({})), { model: 'opus', effort: 'low', groomConcurrency: 3 });
 });
 
-test('the orchestrator model is one of the four aliases; anything else falls back to haiku', () => {
-  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': 'opus' })).model, 'opus');
+test('the orchestrator model is one of the four aliases; anything else falls back to opus', () => {
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': 'haiku' })).model, 'haiku');
   for (const bad of ['opus[1m]', 'sonnet; rm -rf /', '   ', 'auto', 3]) {
-    assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': bad })).model, 'haiku', String(bad));
+    assert.equal(resolveOrchestrator(lookup({ 'orchestrator.model': bad })).model, 'opus', String(bad));
   }
 });
 
-test('a valid orchestrator effort REPLACES the default; invalid falls back to medium', () => {
+test('a valid orchestrator effort REPLACES the default; invalid falls back to low', () => {
   assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'xhigh' })).effort, 'xhigh');
   assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'max' })).effort, 'max', 'max stays a session level');
-  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'extreme' })).effort, 'medium');
+  assert.equal(resolveOrchestrator(lookup({ 'orchestrator.effort': 'extreme' })).effort, 'low');
 });
 
 test('a valid orchestrator groomConcurrency REPLACES the default; invalid falls back to 3', () => {
@@ -179,9 +179,9 @@ test('a valid orchestrator groomConcurrency REPLACES the default; invalid falls 
 
 test('until migrated, the old Opus slot effort and cap still steer the orchestrator; its model string and the Sonnet/Fable keys never do', () => {
   const legacy = { 'models.opus.model': 'opus[1m]', 'models.opus.effort': 'high', 'models.opus.groomConcurrency': 5 };
-  assert.deepEqual(resolveOrchestrator(lookup(legacy)), { model: 'haiku', effort: 'high', groomConcurrency: 5 });
+  assert.deepEqual(resolveOrchestrator(lookup(legacy)), { model: 'opus', effort: 'high', groomConcurrency: 5 });
   const others = { 'models.sonnet.model': 'sonnet[1m]', 'models.fable.effort': 'xhigh', 'models.sonnet.groomConcurrency': 9 };
-  assert.deepEqual(resolveOrchestrator(lookup(others)), { model: 'haiku', effort: 'medium', groomConcurrency: 3 });
+  assert.deepEqual(resolveOrchestrator(lookup(others)), { model: 'opus', effort: 'low', groomConcurrency: 3 });
 });
 
 test('a set orchestrator key always wins over the legacy Opus slot key', () => {

@@ -131,9 +131,9 @@ test('t-0e99 declares the orchestrator, the five defaults and per model its togg
   const models = ['opus', 'sonnet', 'fable', 'haiku'];
   const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
   assert.deepEqual(all['loopBoard.orchestrator.model'].enum, models, 'a select over the aliases (FB3)');
-  assert.equal(all['loopBoard.orchestrator.model'].default, 'haiku');
+  assert.equal(all['loopBoard.orchestrator.model'].default, 'opus');
   assert.deepEqual(all['loopBoard.orchestrator.effort'].enum, efforts);
-  assert.equal(all['loopBoard.orchestrator.effort'].default, 'medium');
+  assert.equal(all['loopBoard.orchestrator.effort'].default, 'low');
   assert.equal(all['loopBoard.orchestrator.groomConcurrency'].default, 3);
   assert.equal(all['loopBoard.orchestrator.groomConcurrency'].minimum, 1);
   assert.deepEqual(all['loopBoard.defaultGroomerModel'].enum, models);
@@ -427,15 +427,15 @@ test('the grid may speak for its keys: the classification it claims is the real 
 });
 
 // t-cffc: the effort default is stated twice: the manifest (what the settings page and the native
-// editor show as the default) and the `'medium'` fallbacks in src/model.ts / src/loop.ts (what a
+// editor show as the default) and the `'low'` fallbacks in src/model.ts / src/loop.ts (what a
 // spawn actually passes to `--effort` when the key is unset). Pin both to the same level.
-test('the orchestrator effort defaults to medium, matching the resolveOrchestrator / buildClaudeBase fallback', () => {
+test('the orchestrator effort defaults to low, matching the resolveOrchestrator / buildClaudeBase fallback', () => {
   const all = Object.fromEntries(entries().map((e) => [e.key, e.prop]));
   const { resolveOrchestrator } = require('../out-test/model.js');
   const { buildClaudeBase } = require('../out-test/loop.js');
-  assert.equal(all['loopBoard.orchestrator.effort'].default, 'medium');
-  assert.equal(resolveOrchestrator(() => undefined).effort, 'medium', 'resolveOrchestrator fallback');
-  assert.ok(buildClaudeBase('auto', 'opus').includes(' --effort medium'), 'buildClaudeBase fallback');
+  assert.equal(all['loopBoard.orchestrator.effort'].default, 'low');
+  assert.equal(resolveOrchestrator(() => undefined).effort, 'low', 'resolveOrchestrator fallback');
+  assert.ok(buildClaudeBase('auto', 'opus').includes(' --effort low'), 'buildClaudeBase fallback');
 });
 
 test('every key the code reads is still declared in the manifest', () => {

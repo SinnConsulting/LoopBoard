@@ -31,10 +31,10 @@ test('the Roles table: orchestrator, groomer, worker, reviewer, each a model sel
   assert.deepEqual(g.roles.map((r) => r.id), GRID_ROLES);
   assert.deepEqual(GRID_ROLES, ['orchestrator', 'groomer', 'worker', 'reviewer']);
   assert.deepEqual(g.roles.map((r) => r.label), ['Orchestrator', 'Groomer', 'Worker', 'Reviewer']);
-  assert.deepEqual(g.roles.map((r) => r.model), ['haiku', 'opus', 'opus', 'opus'], 'the shipped role defaults (owner decision 2026-10-14)');
+  assert.deepEqual(g.roles.map((r) => r.model), ['opus', 'opus', 'opus', 'opus'], 'the shipped role defaults (owner decision 2026-10-14)');
   for (const id of ['orchestrator', 'groomer', 'worker']) assert.deepEqual(role(g, id).models, ['opus', 'sonnet', 'haiku'], id + ': Fable is off');
   assert.deepEqual(role(g, 'reviewer').models, ['opus', 'sonnet', 'haiku', 'none'], 'none is a reviewer value only');
-  assert.deepEqual(g.roles.map((r) => r.effort), ['medium', 'medium', 'medium', null], 'the reviewer runs at the worker effort');
+  assert.deepEqual(g.roles.map((r) => r.effort), ['low', 'medium', 'medium', null], 'the reviewer runs at the worker effort');
   assert.equal(role(g, 'orchestrator').groomConcurrency, 3);
   assert.equal(role(g, 'groomer').groomConcurrency, undefined);
   assert.deepEqual([...g.efforts], ['low', 'medium', 'high', 'xhigh', 'max'], 'every role effort may be max');
@@ -52,8 +52,8 @@ test('the Models table: the four models with on switch, model id and effort floo
   assert.deepEqual(g.models.map((m) => m.enabled), [true, true, false, true]);
   assert.deepEqual([model(g, 'opus').modelId, model(g, 'opus').minEffort, model(g, 'opus').maxEffort], ['claude-opus-5-5[1m]', 'medium', 'xhigh']);
   assert.deepEqual([model(g, 'sonnet').modelId, model(g, 'sonnet').minEffort, model(g, 'sonnet').maxEffort], ['', 'low', 'max']);
-  assert.deepEqual(model(g, 'opus').usedBy, ['groomer', 'worker', 'reviewer']);
-  assert.deepEqual(model(g, 'haiku').usedBy, ['orchestrator']);
+  assert.deepEqual(model(g, 'opus').usedBy, ['orchestrator', 'groomer', 'worker', 'reviewer']);
+  assert.deepEqual(model(g, 'haiku').usedBy, []);
   assert.deepEqual(model(g, 'sonnet').usedBy, []);
 });
 
@@ -99,7 +99,7 @@ test('switching off a model that a role uses is REFUSED, the orchestrator includ
   // Decided (t-sgrp, kept by t-0e99): a disabled model is hidden from the board's selects and the
   // bootstrap prompt, so a disabled default would send work to a model the user can no longer see;
   // silently moving the default elsewhere would change which model runs the work without asking.
-  const g = grid({}, { groomer: 'opus', worker: 'sonnet', reviewer: 'opus' });
+  const g = grid({}, { groomer: 'opus', worker: 'sonnet', reviewer: 'opus' }, { model: 'haiku' });
   for (const [m, r] of [['opus', 'groomer'], ['sonnet', 'worker'], ['haiku', 'orchestrator']]) {
     const res = gridPatch(g, m, 'enabled', false);
     assert.equal(res.ok, false, m);
