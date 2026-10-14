@@ -13,17 +13,25 @@ const { NAMES } = require('./host');
 
 const LOOP_TEXT = fs.readFileSync(path.join(ROOT, 'media', 'template-loop.md'), 'utf8');
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const SUFFIX = { opus: 'k3f9', sonnet: 'q7d2', fable: 'm1x8' };
+const SUFFIX = { opus: 'k3f9', sonnet: 'q7d2', fable: 'm1x8', orchestrator: 'h4c2' };
 
-function spawnLine(model) {
+// `host` (optional) = the orchestrator's spawn as terminals.spawn builds it from the host's settings.
+function spawnLine(model, host) {
+  if (model === 'orchestrator' && host) {
+    const orch = host.orchestratorCfg();
+    const base = buildClaudeBase('auto', orch.model, `loopboard-orchestrator-${SUFFIX.orchestrator}`, orch.effort);
+    const cmd = buildLoopCommand(LOOP_TEXT, '5m', { groomConcurrency: orch.groomConcurrency, models: host.taskModels().filter((m) => m.enabled), defaults: host.defaults() });
+    return { base, cmd, shell: `${base} '${cmd}'` };
+  }
   const base = buildClaudeBase('auto', model, `loopboard-${model}-${SUFFIX[model]}`, 'medium');
   const cmd = buildLoopCommand(LOOP_TEXT, '5m', { groomConcurrency: 3, models: ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id })), defaults: TASK_DEFAULTS });
   return { base, cmd, shell: `${base} '${cmd}'` };
 }
 
 class Terminals {
-  constructor(rec) {
+  constructor(rec, host) {
     this.rec = rec;
+    this.host = host;
     this.tabs = []; // { id, label, lines, status, busy }
     this.active = null;
   }
@@ -33,7 +41,7 @@ class Terminals {
   open(model) {
     let t = this.find(model);
     if (!t) {
-      const { shell } = spawnLine(model);
+      const { shell } = spawnLine(model, this.host);
       t = { id: model, label: `Claude ${NAMES[model]}`, lines: [], status: null, busy: false, input: '' };
       t.lines.push(`<span class="t-prompt">acme-api</span> <span class="t-dim">$</span> <span class="t-cmd">${esc(shell)}</span>`);
       this.tabs.push(t);
@@ -45,7 +53,7 @@ class Terminals {
   // What the session shows once the TUI has booted and the seeded /loop prompt was submitted.
   boot(model) {
     const t = this.find(model);
-    const { cmd } = spawnLine(model);
+    const { cmd } = spawnLine(model, this.host);
     t.lines.push('');
     t.lines.push('<span class="t-box">╭─────────────────────────────────╮</span>');
     t.lines.push('<span class="t-box">│</span> <span class="t-accent">✻</span> <span class="t-bold">Welcome to Claude Code!</span>        <span class="t-box">│</span>');
