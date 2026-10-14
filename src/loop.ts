@@ -18,15 +18,15 @@ export function sanitizePermissionMode(s: string): string {
 }
 
 // The loop interval rides into the `/loop <interval> …` bootstrap prompt (buildLoopCommand). Restrict
-// it to a plain <digits><unit> token so a settings-supplied value can't smuggle anything else onto the
-// line. Units s/m/h/d match the /loop skill; a bare number means minutes; an invalid value falls back to '1m'.
-const LOOP_INTERVAL_RE = /^\d+[smhd]?$/;
+// it to a plain positive minute count so a settings-supplied value can't smuggle anything else onto the
+// line. Minutes only (no s/h/d, owner decision); a bare number means minutes; an invalid value falls back to '1m'.
+const LOOP_INTERVAL_RE = /^[1-9]\d*m?$/;
 export function isValidLoopInterval(s: string): boolean {
   return LOOP_INTERVAL_RE.test(s);
 }
 export function sanitizeLoopInterval(s: string): string {
   if (!isValidLoopInterval(s)) return '1m';
-  return /[smhd]$/.test(s) ? s : `${s}m`;
+  return s.endsWith('m') ? s : `${s}m`;
 }
 
 // Build the `claude …` invocation prefix (everything before the /loop prompt argv). The `--model`
