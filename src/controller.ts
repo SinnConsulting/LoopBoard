@@ -480,7 +480,7 @@ export class Controller {
       // the forbidden one.
       if (!this.lastBoard || this.busyLoops(this.lastBoard).includes(loop)) {
         // NEVER forced: killing a worker mid-task would leave its task `phase: inprogress` with
-        // nobody on it, which Rule 2 turns into a board-wide block. A live subagent holds it the
+        // nobody on it, a board-wide block (Rule 2) until the next pass resumes it. A live subagent holds it the
         // same way (t-sbag) — restarting would kill the agent mid-edit. Wait for the idle edge.
         this.contextPending.add(loop);
         const why = this.lastBoard ? this.describeBusy(loop, this.lastBoard) : 'board not loaded yet';
@@ -1003,9 +1003,8 @@ export class Controller {
 
   // Native modal naming the real consequence of a forced restart or stop: the extension never edits
   // a task's `phase:` (the loop writes it), so killing a worker mid-task leaves the task
-  // `inprogress` in `.loopboard/TODO.md` with nobody on it — and LOOP.md Rule 2's global
-  // single-task limit means that stale entry then blocks EVERY loop from claiming work until a
-  // human fixes it. Only reachable for the two actions that can kill a working terminal.
+  // `inprogress` with nobody on it, and LOOP.md Rule 2's global single-task limit blocks every
+  // claim until the next pass's recovery step (0) resumes it. Only reachable for the two actions that can kill a working terminal.
   private async confirmForcedRestart(loop: LoopId, action: LoopAction): Promise<boolean> {
     const verb = action === 'stop' ? 'stop' : 'restart';
     const message = `Force-${verb} the ${loop} loop even while it is working on a task?`;
@@ -1015,7 +1014,7 @@ export class Controller {
       message,
       {
         modal: true,
-        detail: `A forced ${verb} kills the session mid-task. The task stays \`phase: inprogress\` in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Any subagents the session still has running are killed with it, mid-edit. Confirming now also covers the ${verb} itself — it fires later without asking again.`,
+        detail: `A forced ${verb} kills the session mid-task. The task stays \`phase: inprogress\` with no worker attached, so under LOOP.md Rule 2 no loop claims new work until the next loop pass resumes it. Any subagents the session still has running are killed with it, mid-edit. Confirming now also covers the ${verb} itself: it fires later without asking again.`,
       },
       confirmLabel
     );

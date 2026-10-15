@@ -31,6 +31,8 @@ test('Rule 16 names delivered.md as the implementer\'s only .loopboard/ write', 
   const rule = text.slice(start, text.indexOf('**Subagents**', start)).replace(/\s+/g, ' ');
   assert.ok(rule.includes('`.loopboard/tasks/<id>/delivered.md`'));
   assert.ok(rule.includes('never TODO.md, the task file or a phase'));
+  assert.ok(rule.includes("anything under `.loopboard/` except delivered.md (below)"));
+  assert.ok(rule.indexOf('no option letter.') < rule.indexOf('an implementer\'s LAST action'), 'exception follows the groom paragraph');
 });
 
 test('Automation runs a recovery step (0) for delivered.md and orphaned In Progress tasks', () => {
@@ -44,5 +46,6 @@ test('Automation runs a recovery step (0) for delivered.md and orphaned In Progr
 
 test('Rule 2 resumes an orphaned In Progress task and Meta lists `worker:`', () => {
   assert.ok(text.replace(/\s+/g, ' ').includes('is orphaned: the orchestrator RESUMES it (not a parallel start)'));
+  assert.ok(text.replace(/\s+/g, ' ').includes('(none recorded counts as none live)'));
   assert.ok(text.includes('- complexity-worker: <level> (<signals>)\n- worker: <agent-id> @ <timestamp>'));
 });

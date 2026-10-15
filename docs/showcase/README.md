@@ -226,7 +226,7 @@ model on or off, can point its alias at a specific **model id**, and sets its **
         <li><b>Right-click</b> ▶, ♻ or ■ to schedule a start, restart or stop: 15 minutes to 4 hours, a custom delay, and <b>Repeat</b>. Left-click still acts immediately.</li>
         <li>One schedule per loop, shown under its row. Arming another replaces it.</li>
         <li>A restart or stop <b>waits</b> while the loop is working on the In Progress task or still has a subagent running, then fires.</li>
-        <li><b>Force</b> skips the wait. A modal asks once, when you arm it: a forced restart or stop leaves the task In Progress with nobody on it.</li>
+        <li><b>Force</b> skips the wait. A modal asks once, when you arm it: a forced restart or stop leaves the task In Progress with nobody on it until the next loop pass resumes it.</li>
         <li>Schedules last until VS Code reloads.</li>
       </ul>
     </td>
