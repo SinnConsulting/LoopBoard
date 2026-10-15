@@ -309,13 +309,20 @@ export interface AgentLabel {
   // The whole row text: `<head> <title>` for a titled spawn, else `<agentType> · <description>`
   // (just the description for `general-purpose`).
   label: string;
-  // A titled spawn's `[<groom|work|review> ]<model>-<effort>-<task id>:`; otherwise the spawn's model
-  // alias ('' when its meta named none). The sidebar's fixed left column.
+  // The sidebar row's grey lead: `workerHead` of the spawn's model and effort (e.g. `Opus Medium`),
+  // just the model for an untitled spawn ('' when its meta named none).
   head: string;
-  title: string; // what follows the head: the task's index title when known
+  title: string; // what follows the head: `<task id>: <index title>` for a titled spawn
+
   titled: boolean; // the description followed the LOOP.md title rule
   model: string;    // the spawn's model as its meta recorded it, e.g. 'sonnet'; '' when none
   duration: string; // how long it has been running, e.g. '2m'
+}
+
+// The grey lead of a sidebar row, In Progress and Agents alike (t-0e99): `opus`, `medium` ->
+// `Opus Medium`.
+export function workerHead(model: string, effort = ''): string {
+  return [model, effort].filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 
 // The Agent `description` LOOP.md mandates (t-0e99): `<groom|work|review> <model>-<effort>-<task
@@ -338,11 +345,11 @@ export function describeAgent(row: AgentRow, now: number, titleOf?: (taskId: str
     const spawnModel = (named || alias).toLowerCase();
     const head = `${mode ? `${mode.toLowerCase()} ` : ''}${spawnModel ? `${spawnModel}-` : ''}${effort.toLowerCase()}-${taskId}:`;
     const title = titleOf?.(taskId) || text;
-    return { id: row.id, label: `${head} ${title}`.trim(), head, title, titled: true, model, duration };
+    return { id: row.id, label: `${head} ${title}`.trim(), head: workerHead(spawnModel, effort), title: `${taskId}: ${title}`, titled: true, model, duration };
   }
   let label = row.agentType;
   if (row.description) label = row.agentType === 'general-purpose' ? row.description : `${row.agentType} · ${row.description}`;
-  return { id: row.id, label, head: alias, title: label, titled: false, model, duration };
+  return { id: row.id, label, head: workerHead(alias), title: label, titled: false, model, duration };
 }
 
 // Empty when the start is unknown — an agent whose first transcript line could not be read still

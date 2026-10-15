@@ -1938,3 +1938,8 @@ and likewise cannot be verified headless.
       `DRAFT:` entry in TODO.md on disk → after the refresh the expanded draft card shows the Open
       questions panel with that question; filling and saving the answer writes it to the index;
       the collapsed draft shows no panel.
+    - Sidebar row shape (untested in Docker; `test/board-routing.test.js` pins the source only):
+      with a task In Progress and a live subagent, the In Progress and Agents rows look alike, no
+      dot and no fixed model column: grey `Opus Medium` (worker model + effort), a space, then
+      `t-xxxx: Task Title` in the normal foreground; an untitled subagent shows grey `Opus` then
+      its description. The Agents row keeps its duration on the right.

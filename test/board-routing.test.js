@@ -79,9 +79,10 @@ test('the sidebar talks to the host in loop ids, never in model ids', () => {
   assert.match(sidebar, /vscode\.postMessage\(\{ type: message, loop: l\.id \}\)/, 'the ▶ ♻ ■ buttons');
 });
 
-test('In Progress and Agents rows are named <model>-<effort>-<task id>: <title>, Agents led by groom/work/review (t-0e99 FB1/FB2/FB5)', () => {
-  assert.match(sidebar, /const head = t\.model \+ '-' \+ t\.effort \+ '-' \+ t\.id \+ ':';/);
-  assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, head\),\s*marquee\(h\('span', \{ class: 'marquee-text' \}, t\.title \|\| t\.id\)\)\)/);
+test('In Progress and Agents rows share one shape: grey `Opus Medium` head, then `<task id>: <title>` (t-0e99)', () => {
+  assert.match(sidebar, /const text = t\.id \+ ': ' \+ \(t\.title \|\| t\.id\);/);
+  assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, t\.head\),\s*marquee\(h\('span', \{ class: 'marquee-text' \}, text\)\)\)/);
+  assert.ok(!sidebar.includes('agent-dot'), 'Agents rows drop the dot to match the In Progress rows');
   assert.match(sidebar, /h\('span', \{ class: 'agent-model' \}, a\.head\),\s*marquee\(h\('span', \{ class: 'marquee-text' \}, a\.title\)\)/);
   assert.ok(!sidebar.includes('a.model || l.name'), 'no model column of its own: the model lives in the name');
   // A loop is "working" whenever any task is In Progress: one orchestrator does all of them.

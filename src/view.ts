@@ -1,3 +1,4 @@
+import { workerHead } from './subagents';
 // Board -> lean webview payload, plus attention/badge computation. No vscode imports
 // (takes primitives) so it stays easy to reason about.
 import {
@@ -152,7 +153,7 @@ export interface WebBoard {
 export interface ConcurrencyStatus {
   // Tasks currently phase: inprogress, each with its worker model and effort as the orchestrator
   // spawns them (t-0e99: the defaults for an absent field, clamped into the model's effort range).
-  inProgress: { id: string; title: string; model: Model; effort: Effort }[];
+  inProgress: { id: string; title: string; model: Model; effort: Effort; head: string }[];
   skipped: { id: string; title: string }[]; // Backlog tasks a loop would start but the limit blocks
   breached: boolean; // more than one task In Progress at once — the limit is being violated
   message: string | null; // "Active Queue: <id> ($MODEL), ..." — only when >1 relevant task (Rule 2)
@@ -323,7 +324,10 @@ export function computeConcurrency(
   const defaults = { worker: defaultModel, workerEffort: defaultEffort };
   const inProgress = board.tasks
     .filter((t) => t.phase === 'inprogress')
-    .map((t) => ({ id: t.id, title: t.title, ...resolveWorker(t, defaults, models) }));
+    .map((t) => {
+      const w = resolveWorker(t, defaults, models);
+      return { id: t.id, title: t.title, ...w, head: workerHead(w.model, w.effort) };
+    });
   // Prepared work a loop would pick up next: claimable Backlog tasks. Only "skipped" while
   // something is already In Progress (otherwise a loop is free to start them).
   const skipped =

@@ -140,7 +140,7 @@ test('computeConcurrency: one In Progress + a Backlog task → Active Queue name
   };
   const c = computeConcurrency(board, 'opus');
   // Each row carries the task's worker model AND effort (t-0e99), defaults filled in.
-  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet', effort: 'medium' }]);
+  assert.deepEqual(c.inProgress, [{ id: 't-run', title: 'Running', model: 'sonnet', effort: 'medium', head: 'Sonnet Medium' }]);
   assert.deepEqual(c.skipped, [{ id: 't-prep', title: 'Prepared' }]);
   assert.equal(c.breached, false);
   assert.equal(c.message, 'Active Queue: t-run (sonnet)');
@@ -381,7 +381,7 @@ test('the In Progress rows show the worker model and effort, resolved against th
     tasks: [task({ id: 't-1', title: 'A', phase: 'inprogress', effort: 'xhigh' })],
   };
   const web = toWebviewBoard(board, 'ws', { ...D, worker: 'sonnet', workerEffort: 'medium' }, []);
-  assert.deepEqual(web.concurrency.inProgress, [{ id: 't-1', title: 'A', model: 'sonnet', effort: 'xhigh' }]);
+  assert.deepEqual(web.concurrency.inProgress, [{ id: 't-1', title: 'A', model: 'sonnet', effort: 'xhigh', head: 'Sonnet Xhigh' }]);
 });
 
 test('the In Progress effort is clamped into the worker model range, as the orchestrator spawns it (FB7)', () => {
