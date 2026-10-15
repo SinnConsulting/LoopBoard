@@ -23,3 +23,26 @@ test('Rule 14 tells the groomer how to assign tags', () => {
   assert.ok(rule.includes('the loop appends it as a bare `- <name>` line to `.loopboard/tags.md`'));
   assert.ok(rule.includes('never editing or removing an existing line there'));
 });
+
+// t-0e99: an implementer that finished but whose orchestrator reset before finishing must not
+// strand the task on `phase: inprogress`.
+test('Rule 16 names delivered.md as the implementer\'s only .loopboard/ write', () => {
+  const start = text.indexOf('16. Subagents are board-blind');
+  const rule = text.slice(start, text.indexOf('**Subagents**', start)).replace(/\s+/g, ' ');
+  assert.ok(rule.includes('`.loopboard/tasks/<id>/delivered.md`'));
+  assert.ok(rule.includes('never TODO.md, the task file or a phase'));
+});
+
+test('Automation runs a recovery step (0) for delivered.md and orphaned In Progress tasks', () => {
+  const auto = text.slice(text.indexOf('## Automation'));
+  assert.ok(auto.includes('(0) RECOVERY, before (1)'));
+  assert.ok(auto.includes('delete delivered.md only after that'));
+  assert.ok(auto.includes('SendMessage that worker first'));
+  assert.ok(auto.includes('record `worker: <agent-id> @ <timestamp>`'));
+  assert.ok(!auto.includes('leaves the task `phase: inprogress` with no worker'));
+});
+
+test('Rule 2 resumes an orphaned In Progress task and Meta lists `worker:`', () => {
+  assert.ok(text.replace(/\s+/g, ' ').includes('is orphaned: the orchestrator RESUMES it (not a parallel start)'));
+  assert.ok(text.includes('- complexity-worker: <level> (<signals>)\n- worker: <agent-id> @ <timestamp>'));
+});

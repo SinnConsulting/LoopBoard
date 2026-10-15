@@ -350,6 +350,8 @@ export interface TaskDetail {
   // the groomer's and the implementer's reports. A record only: nothing routes by them.
   complexityGroomer?: string;
   complexityWorker?: string;
+  // `<agent-id> @ <timestamp>` of the last delegated implementer, so a pass can check liveness.
+  worker?: string;
   // Groomer-owned bookends around the story (t-2191): `problem` is why the task exists (short and
   // factual), `goals` is what "done" means (a bullet list the reviewer judges `delivered` against).
   // Both free markdown like `description`, both optional — existing task files simply have neither.

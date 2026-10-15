@@ -283,3 +283,19 @@ test('complexity: `complexity-groomer:` / `complexity-worker:` parse, write afte
   assert.equal(none.complexityGroomer, undefined);
   assert.ok(!serializeTaskFile(none, 'S', 't-c002').includes('complexity'));
 });
+
+// t-0e99: `worker:` records the last delegated implementer so a pass can tell an orphaned
+// In Progress task (no live worker) from a running one.
+test('worker: `worker:` parses, writes last in Meta and round-trips unflagged', () => {
+  const src = [
+    '# Story (t-c003)', '', '## Meta',
+    '- worker: a1b2c3 @ 2026-10-15T10:00Z', '- added: 2026-10-14', '- complexity-worker: low (-)', '',
+  ].join('\n');
+  const d = parseTaskFile(src);
+  assert.equal(d.worker, 'a1b2c3 @ 2026-10-15T10:00Z');
+  assert.deepEqual(d.unknownLines, []);
+  const out = serializeTaskFile(d, 'Story', 't-c003');
+  assert.ok(out.includes('- complexity-worker: low (-)\n- worker: a1b2c3 @ 2026-10-15T10:00Z'), out);
+  assert.equal(serializeTaskFile(parseTaskFile(out), 'Story', 't-c003'), out, 'fixpoint');
+  assert.ok(!serializeTaskFile(parseTaskFile('# S (t-c004)\n\n## Meta\n- added: 2026-10-14\n'), 'S', 't-c004').includes('worker:'));
+});

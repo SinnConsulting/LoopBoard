@@ -100,7 +100,7 @@ test('template: the GROOM/WORK limits of the old agent bodies appear once, and e
   assert.equal(count(/A GROOM subagent returns its report: title, `## Problem`, `## Description`, `## Goals`, and every human decision with its concrete options \(max 3, recommended first\) and the reason for the recommendation/g), 1, 'GROOM return report once');
   assert.equal(count(/commits only its own files by explicit path/g), 1, 'WORK staging once');
   assert.equal(count(/a per-goal account, deviations, anything unverified and its `complexity:` line/g), 1, 'WORK return report once');
-  assert.equal(count(/Neither the implementer nor the review subagent reads or writes any `\.loopboard\/` file \(Rule 16\)/g), 1, 'WORK neither reads nor writes .loopboard/');
+  assert.equal(count(/Beyond that one file, neither the implementer nor the review subagent reads or writes any `\.loopboard\/` file \(Rule 16\)/g), 1, 'WORK neither reads nor writes .loopboard/');
   assert.doesNotMatch(all, /Interval \(`loopBoard\.loopInterval`\), effort,/, 'the old "effort rides the spawn command" note is gone');
   assert.match(all, /your own `--model`\/`--effort`, grooming cap, task models with effort ranges, defaults and model ids ride the spawn/);
 });

@@ -14,7 +14,7 @@
 
 import { TaskDetail, normalizeTags } from './model';
 
-const META_KEYS = ['added', 'started', 'promoted', 'completed', 'link', 'depends on', 'tags', 'complexity-groomer', 'complexity-worker'];
+const META_KEYS = ['added', 'started', 'promoted', 'completed', 'link', 'depends on', 'tags', 'complexity-groomer', 'complexity-worker', 'worker'];
 // Removed key (t-33cb): a stale `- owner:` line from a pre-removal task file is recognized and
 // silently dropped on parse, never landing in unknownLines/re-emitted — so it can't reintroduce
 // the flagged "unparsed line" chip or get relocated to the bottom of the file.
@@ -113,6 +113,7 @@ export function parseTaskFile(text: string): TaskDetail {
               case 'tags': detail.tags = normalizeTags(splitList(v)); break;
               case 'complexity-groomer': if (v) detail.complexityGroomer = v; break;
               case 'complexity-worker': if (v) detail.complexityWorker = v; break;
+              case 'worker': if (v) detail.worker = v; break;
             }
           } else {
             detail.unknownLines.push(line);
@@ -181,6 +182,7 @@ export function serializeTaskFile(detail: TaskDetail, title: string, id: string)
   if (detail.tags.length) meta.push(`- tags: ${detail.tags.join(', ')}`);
   if (detail.complexityGroomer) meta.push(`- complexity-groomer: ${detail.complexityGroomer}`);
   if (detail.complexityWorker) meta.push(`- complexity-worker: ${detail.complexityWorker}`);
+  if (detail.worker) meta.push(`- worker: ${detail.worker}`);
   if (meta.length) blocks.push(['## Meta', ...meta].join('\n'));
 
   // Canonical order (t-2191): Problem frames the story, Description tells it, Goals close it.
