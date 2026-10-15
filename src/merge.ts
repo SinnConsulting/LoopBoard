@@ -4,11 +4,13 @@
 // v2 routes patches by destination file: index fields patch `.loopboard/TODO.md`, detail fields
 // patch `.loopboard/tasks/<id>.md`. Both keep today's base/conflict semantics (disk wins).
 
-import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS, normalizeTags } from './model';
+import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, ReviewerValue, TaskEffort, isModel, isGroomerValue, isReviewerValue, isTaskEffort, normalizeTags } from './model';
 
 // Feedback (t-ae10) has no whole-set field: `feedbackAdd` appends one item with no base compare, and
 // `feedbackItem` edits or deletes ONE item addressed by `itemIndex` plus that item's own base text.
-export type IndexField = 'title' | 'model' | 'groomer' | 'answer' | 'answers' | 'feedbackAdd' | 'feedbackItem';
+export type IndexField =
+  | 'title' | 'model' | 'effort' | 'groomer' | 'groomerEffort' | 'reviewer'
+  | 'answer' | 'answers' | 'feedbackAdd' | 'feedbackItem';
 // The three free-markdown story sections of `tasks/<id>.md` (t-2191). All three patch the SAME
 // file through the same generic path — a patch names one section and touches only that one.
 // `tags` (t-0b10) rides the same path: its value is the Meta list, comma-joined.
@@ -41,8 +43,9 @@ export interface DetailMergeResult {
   status: 'applied' | 'conflict' | 'unsupported';
 }
 
-const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
-const INDEX_FIELDS: IndexField[] = ['title', 'model', 'groomer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem'];
+const INDEX_FIELDS: IndexField[] = [
+  'title', 'model', 'effort', 'groomer', 'groomerEffort', 'reviewer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem',
+];
 const DETAIL_FIELDS: DetailField[] = ['description', 'problem', 'goals', 'tags'];
 
 // Which file a field patch targets. An unrecognised field falls through to `detail`, where
@@ -51,16 +54,29 @@ export function patchTarget(field: PatchField): 'index' | 'detail' {
   return (INDEX_FIELDS as string[]).includes(field) ? 'index' : 'detail';
 }
 
+// Each routing field validates against its OWN role's values (t-0e99): a value off that list, such
+// as '', 'default (opus)', `none` on the worker or `max` as an effort, clears the field back to the
+// default rather than writing something the parser would flag.
 export function normalizeModel(value: string): Model | undefined {
   const v = value.trim();
-  if (KNOWN_MODELS.includes(v as Model)) return v as Model;
-  return undefined; // '', 'default (opus)', 'default' -> no model field
+  return isModel(v) ? v : undefined;
 }
 
-// The groomer field additionally accepts the on-hold sentinel (t-65a2); everything else
-// normalizes exactly like a model value, so '' / 'default (opus)' still clears the field.
+// The groomer field additionally accepts the on-hold sentinel (t-65a2).
 export function normalizeGroomer(value: string): GroomerValue | undefined {
-  return value.trim() === GROOMER_HOLD ? GROOMER_HOLD : normalizeModel(value);
+  const v = value.trim();
+  return isGroomerValue(v) ? v : undefined;
+}
+
+// `none` on the reviewer = no review subagent.
+export function normalizeReviewer(value: string): ReviewerValue | undefined {
+  const v = value.trim();
+  return isReviewerValue(v) ? v : undefined;
+}
+
+export function normalizeEffort(value: string): TaskEffort | undefined {
+  const v = value.trim();
+  return isTaskEffort(v) ? v : undefined;
 }
 
 // Current on-disk value of an index field, as a plain string (matches what the webview renders).
@@ -70,8 +86,14 @@ export function currentFieldValue(entry: IndexEntry, field: IndexField, question
       return entry.title;
     case 'model':
       return entry.model ?? '';
+    case 'effort':
+      return entry.effort ?? '';
     case 'groomer':
       return entry.groomer ?? '';
+    case 'groomerEffort':
+      return entry.groomerEffort ?? '';
+    case 'reviewer':
+      return entry.reviewer ?? '';
     case 'answer':
       return questionIndex !== undefined && entry.questions[questionIndex]
         ? entry.questions[questionIndex].answer
@@ -120,8 +142,17 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
     case 'model':
       entry.model = normalizeModel(value);
       break;
+    case 'effort':
+      entry.effort = normalizeEffort(value);
+      break;
     case 'groomer':
       entry.groomer = normalizeGroomer(value);
+      break;
+    case 'groomerEffort':
+      entry.groomerEffort = normalizeEffort(value);
+      break;
+    case 'reviewer':
+      entry.reviewer = normalizeReviewer(value);
       break;
     case 'answer':
       if (questionIndex !== undefined && entry.questions[questionIndex]) {
@@ -265,8 +296,14 @@ export function fieldLabel(field: string): string {
       return 'title';
     case 'model':
       return 'worker model';
+    case 'effort':
+      return 'worker effort';
     case 'groomer':
       return 'groomer';
+    case 'groomerEffort':
+      return 'groomer effort';
+    case 'reviewer':
+      return 'reviewer';
     case 'answer':
     case 'answers':
       return 'answer';

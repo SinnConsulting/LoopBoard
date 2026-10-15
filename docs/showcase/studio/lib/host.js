@@ -23,13 +23,16 @@ const gates = req('gates.js');
 const { toWebviewBoard } = req('view.js');
 const { buildSettingsForm, formKeys, findControl, toConfigPatch } = req('settingsform.js');
 const { buildModelGrid, gridPatch } = req('settingsgrid.js');
+const { buildMigrationPlan, actionWrites } = req('settingsmigrate.js');
 const { describeContext, describeThreshold } = req('context.js');
+const { describeAgent } = req('subagents.js');
+const { resolveTaskDefaults, resolveOrchestrator, readModelsConfig, resolveModels } = req('model.js');
 const { computeNudges, formatNudge } = req('nudge.js');
 const { parseRegistry, serializeRegistry, registryEntries, applyTagColor } = req('tags.js');
 
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const LOOP_ORDER = ['fable', 'opus', 'sonnet'];
-const NAMES = { opus: 'Opus', sonnet: 'Sonnet', fable: 'Fable' };
+const NAMES = { opus: 'Opus', sonnet: 'Sonnet', fable: 'Fable', orchestrator: 'Orchestrator' };
 
 function emptyDetail() {
   return parseTaskFile('');
@@ -40,8 +43,11 @@ class Host {
     this.today = opts.today || '2026-09-25';
     this.files = new Map(Object.entries(opts.files || {}));
     this.todoMissing = !this.files.has('TODO.md');
+    // Scenes recorded before t-0e99 still draw one row per model; `orchestrator: true` draws the
+    // single Orchestrator row the extension ships today.
+    this.orchestrator = !!opts.orchestrator;
     this.loops = {};
-    for (const id of LOOP_ORDER) this.loops[id] = { running: false, context: null, agents: [], restart: null };
+    for (const id of [...LOOP_ORDER, 'orchestrator']) this.loops[id] = { running: false, context: null, agents: [], restart: null };
     this.settings = {}; // loopBoard.* user values (globalValue)
     this.frames = {};
     this.handlers = {};
@@ -114,6 +120,16 @@ class Host {
   setting(key, dflt) {
     return key in this.settings ? this.settings[key] : dflt;
   }
+  explicit(key) { return this.settings[key]; }
+  defaults() { return resolveTaskDefaults((k) => this.explicit(k)); }
+  orchestratorCfg() { return resolveOrchestrator((k) => this.explicit(k)); }
+  taskModels() {
+    return resolveModels(readModelsConfig((k, d) => this.setting(k, d), (k) => this.explicit(k)));
+  }
+  grid() {
+    const set = (k) => this.explicit(k);
+    return buildModelGrid(readModelsConfig((k, d) => this.setting(k, d), set), resolveOrchestrator(set), this.defaults());
+  }
   modelsCfg() {
     const cfg = {};
     for (const id of LOOP_ORDER) {
@@ -128,6 +144,7 @@ class Host {
   }
 
   webBoard() {
+    if (this.orchestrator) return this.orchestratorBoard();
     const board = this.load();
     const models = this.modelsCfg();
     const enabled = LOOP_ORDER.filter((id) => models[id].enabled);
@@ -146,15 +163,40 @@ class Host {
         agents: l.running ? l.agents : [],
       };
     });
-    const worker = this.setting('defaultWorkerModel', 'sonnet');
-    const groomer = this.setting('defaultGroomerModel', 'opus');
-    const web = toWebviewBoard(board, 'acme-api', worker, loops, enabled, groomer, this.autoPromote);
+    const web = toWebviewBoard(board, 'acme-api', this.defaults(), loops, enabled, this.autoPromote);
     web.todoMissing = this.todoMissing;
     web.helpUrl = 'https://github.com/SinnConsulting/LoopBoard#get-started';
     web.maxAttachmentSizeMB = 10;
     web.sidebarMarquee = false;
     return web;
   }
+
+  // controller.buildWebBoard + terminals.status since t-0e99.
+  orchestratorBoard() {
+    const models = this.taskModels();
+    const orch = this.orchestratorCfg();
+    const l = this.loops.orchestrator;
+    const titleOf = (id) => this.load().tasks.find((t) => t.id === id)?.title;
+    const loop = {
+      id: 'orchestrator', name: 'Orchestrator', running: l.running, hint: `${orch.model} · ${orch.effort}`,
+      restart: l.restart,
+      context: l.running && l.context ? {
+        used: l.context.used, window: l.context.window, percent: Math.round((l.context.used / l.context.window) * 100),
+        pending: false, label: describeContext(l.context.used, l.context.window, false),
+        threshold: this.setting('contextLimit.percent', 35),
+        thresholdLabel: describeThreshold(this.setting('contextLimit.percent', 35), this.setting('contextLimit.action', 'recycle')),
+      } : null,
+      agents: l.running ? l.agents.map((r) => describeAgent(r, this.now(), titleOf)) : [],
+    };
+    const enabled = models.filter((m) => m.enabled).map((m) => m.id);
+    const web = toWebviewBoard(this.load(), 'acme-api', this.defaults(), [loop], enabled, this.autoPromote, models);
+    web.todoMissing = this.todoMissing;
+    web.helpUrl = 'https://github.com/SinnConsulting/LoopBoard#get-started';
+    web.maxAttachmentSizeMB = 10;
+    web.sidebarMarquee = false;
+    return web;
+  }
+  now() { return this.clock || Date.parse('2026-09-25T10:00:00'); }
 
   async post(page, msg) {
     const frame = this.frames[page];
@@ -166,9 +208,10 @@ class Host {
     // Steering nudges exactly as the controller computes them (computeNudges on the previous vs
     // the fresh board, formatNudge for the pasted line); scenes print them into loop terminals.
     const tasks = this.load().tasks;
-    for (const route of computeNudges(this.lastTasks, tasks, { worker: this.setting('defaultWorkerModel', 'sonnet'), groomer: this.setting('defaultGroomerModel', 'opus') })) {
-      this.nudges[route.model] = formatNudge(route.items);
-    }
+    // One target since t-0e99. The recorded scenes still draw per-model terminals until they are
+    // re-recorded (a follow-up), so the line is offered under those ids too.
+    const items = computeNudges(this.lastTasks, tasks);
+    if (items.length) for (const id of ['orchestrator', ...LOOP_ORDER]) this.nudges[id] = formatNudge(items);
     this.lastTasks = tasks;
     const web = this.webBoard();
     await this.post('board', { type: 'board', board: web });
@@ -194,8 +237,19 @@ class Host {
       const prop = sections.flatMap((s) => Object.entries(s.properties || {})).find(([k]) => k === key);
       values[key] = { defaultValue: prop ? prop[1].default : undefined, globalValue: short in this.settings ? this.settings[short] : undefined };
     }
-    const grid = buildModelGrid(this.modelsCfg(), this.setting('defaultWorkerModel', 'sonnet'), this.setting('defaultGroomerModel', 'opus'));
-    await this.post('settings', { type: 'settings', form: buildSettingsForm(sections, values), grid, extensionId: 'SinnConsulting.loopboard-todo' });
+    const grid = this.grid();
+    await this.post('settings', { type: 'settings', form: buildSettingsForm(sections, values), grid, migrations: this.stalePlan().findings, extensionId: 'SinnConsulting.loopboard-todo' });
+  }
+  // controller.stalePlan: the user values as settings.json holds them.
+  stalePlan() {
+    const values = {};
+    for (const [k, v] of Object.entries(this.settings)) values[`loopBoard.${k}`] = v;
+    return buildMigrationPlan(formKeys(this.settingsSections()), values);
+  }
+  async applyWrites(writes) {
+    for (const p of writes) this.applyConfigPatch(p);
+    await this.postSettings();
+    await this.refresh();
   }
   applyConfigPatch(patch) {
     const short = patch.key.replace(/^loopBoard\./, '');
@@ -240,7 +294,7 @@ class Host {
         return this.refresh();
       }
       case 'createDraft':
-        this.createDraft(msg.text, msg.groomer || this.setting('defaultGroomerModel', 'opus'), msg.model || this.setting('defaultWorkerModel', 'sonnet'));
+        this.createDraft(msg.text, msg.groomer || this.defaults().groomer, msg.model || this.defaults().worker);
         await this.toast('info', 'Draft saved — the loop will groom it into a story.');
         return this.refresh();
       case 'reveal':
@@ -252,9 +306,21 @@ class Host {
         await this.postSettings();
         return this.refresh();
       }
+      case 'settingsScanStale':
+        return this.post('settings', { type: 'settingsMigration', plan: this.stalePlan() });
+      case 'settingsMigrate': {
+        const plan = this.stalePlan();
+        await this.applyWrites(plan.writes);
+        return this.post('settings', { type: 'settingsMigration', plan: this.stalePlan(), done: true, applied: plan.writes.length, failures: [] });
+      }
+      case 'settingsMigrateKey': {
+        const action = this.stalePlan().actions.find((a) => a.key === msg.key);
+        if (!action) return undefined;
+        await this.applyWrites(actionWrites(action));
+        return this.post('settings', { type: 'settingsMigration', plan: this.stalePlan(), applied: 1, failures: [], did: `Done: ${msg.key}.`, didKind: action.kind });
+      }
       case 'gridPatch': {
-        const grid = buildModelGrid(this.modelsCfg(), this.setting('defaultWorkerModel', 'sonnet'), this.setting('defaultGroomerModel', 'opus'));
-        const r = gridPatch(grid, msg.slot, msg.field, msg.value);
+        const r = gridPatch(this.grid(), msg.slot, msg.field, msg.value);
         if (r.ok) for (const p of r.patches) this.applyConfigPatch(p);
         await this.postSettings();
         return this.refresh();

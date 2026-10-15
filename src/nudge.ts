@@ -1,13 +1,14 @@
-// Loop steering (t-068e): work out which loop — if any — a board change gives something to do,
-// so the extension can nudge that one loop immediately instead of leaving the change to sit until
-// the loop happens to re-read the board.
+// Loop steering (t-068e): work out whether a board change gives the loop something to do, so the
+// extension can nudge it immediately instead of leaving the change to sit until the loop happens to
+// re-read the board. Since t-0e99 there is one target, the orchestrator: the reasons and the
+// suppressions below decide WHETHER to nudge, never WHICH loop.
 //
 // Pure module: no vscode, no store, no IO. Delivery (pasting the line into a terminal) lives in
 // terminals.ts; the decision of what to send where lives here and is unit-tested.
 //
 // A nudge is a HINT, never a work order. Loops re-read LOOP.md + TODO.md every pass regardless and
 // follow the same rules; a missed nudge costs nothing and changes no correctness property.
-import { IndexEntry, Task, Model, GROOMER_HOLD } from './model';
+import { IndexEntry, Task, GROOMER_HOLD } from './model';
 
 // Why a loop was nudged. Mirrors the Rules the loop will apply once it looks:
 //   groom    — a DRAFT waiting to be expanded into a story (Rule 14)
@@ -27,50 +28,37 @@ export interface NudgeItem {
   changes: string[]; // content-free field descriptors, see describeChanges
 }
 
-export interface NudgeRoute {
-  model: Model;
-  items: NudgeItem[];
-}
-
-export interface NudgeDefaults {
-  worker: Model;  // the loop that owns a task with no `model:`
-  groomer: Model; // the loop that grooms a task with no `groomer:`
-}
-
-// Which loop owns this entry right now, and what it would do with it — or null when the entry
-// gives no loop anything to do (nothing pending, on hold, or already being worked).
+// What the orchestrator would do with this entry right now, or null when the entry gives it
+// nothing to do (nothing pending, on hold, or already being worked).
 //
-// The split is the one Rules 14/15 draw: New/DRAFT is GROOMING work routed by `groomer:`;
-// everything from Backlog onward is WORKER work routed by `model:`. Steering never edits either
-// field — routing reads them, only a human moves work between loops.
-export function routeEntry(entry: IndexEntry, defaults: NudgeDefaults): { model: Model; reason: NudgeReason } | null {
+// The split is the one Rules 14/15 draw: New/DRAFT is GROOMING work, everything from Backlog onward
+// is WORKER work. Steering never edits a routing field; it only reads `groomer:` for the hold.
+export function routeEntry(entry: IndexEntry): NudgeReason | null {
   const answered = (q: { answer: string }) => q.answer.trim().length > 0;
 
   if (entry.isDraft || entry.phase === 'new') {
     // `groomer: none` = ON HOLD: the task belongs to NO loop until a human changes it (Rule 14),
     // so it is never nudged, whatever else changed on it.
     if (entry.groomer === GROOMER_HOLD) return null;
-    const model = (entry.groomer as Model | undefined) ?? defaults.groomer;
     // Feedback on a New/DRAFT is folded into the story by the groomer (Rules 13/14).
-    if (entry.feedback.length > 0) return { model, reason: 'feedback' };
+    if (entry.feedback.length > 0) return 'feedback';
     // Questions must be FULLY answered before the change is pushed into a loop: one blank answer
     // means the human is still filling the form in, and a re-groom on a half-answered story would
     // fold in half a decision and re-ask the rest. Mirrors the Rule 10 gate Feedback already uses.
-    if (entry.questions.length > 0 && entry.questions.every(answered)) return { model, reason: 'regroom' };
-    if (entry.isDraft) return { model, reason: 'groom' };
+    if (entry.questions.length > 0 && entry.questions.every(answered)) return 'regroom';
+    if (entry.isDraft) return 'groom';
     // A groomed New task with open questions is waiting on the HUMAN, not on a loop.
     return null;
   }
 
-  const model = entry.model ?? defaults.worker;
   // Feedback outranks the phase-specific reasons in every phase: it is an explicit human
   // instruction (Rule 13 — Review reopens; code-touching feedback on Backlog/Feedback takes an
   // In Progress round trip; anything else applies it in place).
-  if (entry.feedback.length > 0) return { model, reason: 'feedback' };
-  if (entry.phase === 'backlog') return { model, reason: 'backlog' };
+  if (entry.feedback.length > 0) return 'feedback';
+  if (entry.phase === 'backlog') return 'backlog';
   if (entry.phase === 'feedback') {
     // Rule 10: resume only when EVERY question has an answer. One blank answer = still parked.
-    if (entry.questions.length > 0 && entry.questions.every(answered)) return { model, reason: 'answers' };
+    if (entry.questions.length > 0 && entry.questions.every(answered)) return 'answers';
     return null;
   }
   // In Progress without feedback belongs to a worker that is already on it; Review with no feedback
@@ -106,7 +94,7 @@ const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : `$
 
 // What moved on this task, as short descriptors carrying NO task text (t-f8bd). Free text is never
 // echoed — title, question, answer, feedback, problem, description, goals, worklog,
-// delivered. Metadata ENUM values (`phase`/`model`/`groomer`) are board state, not task content,
+// delivered. Metadata ENUM values (`phase` and the five routing keys) are board state, not task content,
 // and ARE named verbatim so the loop is saved a lookup; counts and 1-based question positions
 // carry no text either.
 //
@@ -119,7 +107,10 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
   if (prev.title !== next.title) out.push('title edited');
   if (prev.phase !== next.phase) out.push(`phase → ${next.phase}`);
   if (prev.model !== next.model) out.push(`model → ${next.model ?? 'default'}`);
+  if (prev.effort !== next.effort) out.push(`effort → ${next.effort ?? 'default'}`);
   if (prev.groomer !== next.groomer) out.push(`groomer → ${next.groomer ?? 'default'}`);
+  if (prev.groomerEffort !== next.groomerEffort) out.push(`groomer-effort → ${next.groomerEffort ?? 'default'}`);
+  if (prev.reviewer !== next.reviewer) out.push(`reviewer → ${next.reviewer ?? 'default'}`);
   if (prev.checked !== next.checked) out.push(next.checked ? 'ticked' : 'unticked');
 
   const pq = prev.questions;
@@ -162,8 +153,8 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
   return out.length ? out : ['changed'];
 }
 
-// Fold newly routed items into the ones held for a downed terminal, de-duped by task id: the newest
-// reason wins, but the change descriptors UNION so nothing a loop missed while it was down is lost.
+// Fold newly routed items into the ones held while the loop's terminal is down, de-duped by task id:
+// the newest reason wins, but the change descriptors UNION so nothing the loop missed is lost.
 export function mergeNudgeItems(held: NudgeItem[], incoming: NudgeItem[]): NudgeItem[] {
   const out = held.map((h) => ({ ...h, changes: [...h.changes] }));
   for (const item of incoming) {
@@ -178,46 +169,39 @@ export function mergeNudgeItems(held: NudgeItem[], incoming: NudgeItem[]): Nudge
   return out;
 }
 
-// Route every CHANGED entry to the one loop that now has something to do, grouped per loop.
+// Every CHANGED entry that now gives the orchestrator something to do, in board order.
 //
 // `prev === undefined` (the first board load of a session) yields nothing: everything would look
-// new and every loop would be nudged about a board it is about to read anyway.
+// new and the loop would be nudged about a board it is about to read anyway.
 //
 // `skipped` is an optional OUT array: every item a suppression dropped is pushed into it so the
 // caller can log the decision (t-6cbf). The module stays logger-free — the debug line is written at
 // the controller/store boundary.
-export function computeNudges(
-  prev: Task[] | undefined,
-  next: Task[],
-  defaults: NudgeDefaults,
-  skipped?: NudgeItem[],
-): NudgeRoute[] {
+export function computeNudges(prev: Task[] | undefined, next: Task[], skipped?: NudgeItem[]): NudgeItem[] {
   if (!prev) return [];
   const before = new Map(prev.map((e) => [e.id, e]));
-  // Rule 2's GLOBAL SINGLE-TASK LIMIT: while any task is In Progress board-wide, no loop may claim
-  // a Backlog task, so a "claim this" nudge would be an instruction to do nothing. Grooming and
+  // Rule 2's GLOBAL SINGLE-TASK LIMIT: while any task is In Progress board-wide, no Backlog task may
+  // be claimed, so a "claim this" nudge would be an instruction to do nothing. Grooming and
   // feedback still route — feedback that touches no code (or sits on an In Progress task) is
   // applied in place, and a Review reopen or a Backlog/Feedback code round trip is gated by Rule 2
   // on the loop's side anyway; only the loop can tell code-touching feedback from the rest.
   const busy = next.some((e) => e.phase === 'inprogress');
-  const routes = new Map<Model, NudgeItem[]>();
+  const items: NudgeItem[] = [];
 
   for (const entry of next) {
     const was = before.get(entry.id);
     if (was && !changed(was, entry)) continue;
-    const route = routeEntry(entry, defaults);
-    if (!route) continue;
-    if (route.reason === 'backlog' && busy) continue;
+    const reason = routeEntry(entry);
+    if (!reason) continue;
+    if (reason === 'backlog' && busy) continue;
     if (was && detailOnlyGrooming(was, entry)) {
-      skipped?.push({ taskId: entry.id, reason: route.reason, changes: describeChanges(was, entry) });
+      skipped?.push({ taskId: entry.id, reason, changes: describeChanges(was, entry) });
       continue;
     }
-    const items = routes.get(route.model) ?? [];
-    items.push({ taskId: entry.id, reason: route.reason, changes: describeChanges(was, entry) });
-    routes.set(route.model, items);
+    items.push({ taskId: entry.id, reason, changes: describeChanges(was, entry) });
   }
 
-  return [...routes.entries()].map(([model, items]) => ({ model, items }));
+  return items;
 }
 
 const REASON_TEXT: Record<NudgeReason, string> = {

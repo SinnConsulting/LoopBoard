@@ -2,8 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { routeEntry, computeNudges, formatNudge, describeChanges, mergeNudgeItems } = require('../out-test/nudge');
 
-const DEFAULTS = { worker: 'opus', groomer: 'sonnet' };
-
 let seq = 0;
 // A minimal composed Task (index entry + detail), the shape computeNudges diffs. Change detection
 // is a TEXT fingerprint of both halves (t-f1b0): `raw` is the index block, `detailRaw` the
@@ -31,108 +29,105 @@ function entry(over = {}) {
 
 const q = (text, answer = '') => ({ text, answer, suggestions: [] });
 
-// ---- routeEntry: the Rules 14/15 ownership split ----
+// ---- routeEntry: the Rules 14/15 work split, one target (t-0e99) ----
 
-test('New/DRAFT is routed by groomer:, everything from Backlog on by model:', () => {
-  assert.deepStrictEqual(
-    routeEntry(entry({ phase: 'new', isDraft: true, groomer: 'fable', model: 'opus' }), DEFAULTS),
-    { model: 'fable', reason: 'groom' },
-  );
-  assert.deepStrictEqual(
-    routeEntry(entry({ phase: 'backlog', groomer: 'fable', model: 'opus' }), DEFAULTS),
-    { model: 'opus', reason: 'backlog' },
-  );
+test('New/DRAFT is grooming work, everything from Backlog on is worker work, whatever the models', () => {
+  for (const groomer of [undefined, 'opus', 'sonnet', 'fable', 'haiku']) {
+    assert.deepStrictEqual(routeEntry(entry({ phase: 'new', isDraft: true, groomer, model: 'opus' })), 'groom', String(groomer));
+  }
+  for (const model of [undefined, 'opus', 'sonnet', 'fable', 'haiku']) {
+    assert.deepStrictEqual(routeEntry(entry({ phase: 'backlog', groomer: 'fable', model })), 'backlog', String(model));
+  }
 });
 
-test('an absent field falls back to the matching default model', () => {
-  assert.deepStrictEqual(routeEntry(entry({ isDraft: true }), DEFAULTS), { model: 'sonnet', reason: 'groom' });
-  assert.deepStrictEqual(routeEntry(entry({ phase: 'backlog' }), DEFAULTS), { model: 'opus', reason: 'backlog' });
+test('an absent routing field changes nothing: every reason goes to the orchestrator', () => {
+  assert.deepStrictEqual(routeEntry(entry({ isDraft: true })), 'groom');
+  assert.deepStrictEqual(routeEntry(entry({ phase: 'backlog' })), 'backlog');
 });
 
 test('groomer: none is ON HOLD — never nudged, whatever changed on it', () => {
-  assert.strictEqual(routeEntry(entry({ isDraft: true, groomer: 'none' }), DEFAULTS), null);
-  assert.strictEqual(routeEntry(entry({ phase: 'new', groomer: 'none', feedback: ['do the thing'] }), DEFAULTS), null);
+  assert.strictEqual(routeEntry(entry({ isDraft: true, groomer: 'none' })), null);
+  assert.strictEqual(routeEntry(entry({ phase: 'new', groomer: 'none', feedback: ['do the thing'] })), null);
   assert.strictEqual(
-    routeEntry(entry({ phase: 'new', groomer: 'none', questions: [q('pick one', 'this one')] }), DEFAULTS),
+    routeEntry(entry({ phase: 'new', groomer: 'none', questions: [q('pick one', 'this one')] })),
     null,
   );
 });
 
-test('a New task whose questions are ALL answered routes to its groomer as a re-groom', () => {
+test('a New task whose questions are ALL answered routes as a re-groom', () => {
   const e = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one'), q('and this', 'that')] });
-  assert.deepStrictEqual(routeEntry(e, DEFAULTS), { model: 'fable', reason: 'regroom' });
+  assert.deepStrictEqual(routeEntry(e), 'regroom');
 });
 
 test('a New task answered only in part is NOT pushed into a loop — one blank answer parks it', () => {
   const e = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one'), q('and this')] });
-  assert.strictEqual(routeEntry(e, DEFAULTS), null);
+  assert.strictEqual(routeEntry(e), null);
 });
 
 test('a DRAFT with a half-answered question stays a groom, never a partial re-groom', () => {
   const e = entry({ phase: 'new', isDraft: true, groomer: 'fable', questions: [q('pick one', 'this one'), q('and this')] });
-  assert.deepStrictEqual(routeEntry(e, DEFAULTS), { model: 'fable', reason: 'groom' });
+  assert.deepStrictEqual(routeEntry(e), 'groom');
 });
 
 test('a groomed New task with only blank answers is waiting on the human, not a loop', () => {
   const e = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one'), q('and this')] });
-  assert.strictEqual(routeEntry(e, DEFAULTS), null);
+  assert.strictEqual(routeEntry(e), null);
 });
 
 test('feedback routes in EVERY phase with one reason, outranking the phase reason (Rule 13, t-ae10)', () => {
-  // Backlog onward: the `model:` loop (default worker when absent), whatever the phase.
+  // Backlog onward, whatever the phase and whatever the `model:`.
   for (const phase of ['backlog', 'inprogress', 'feedback', 'review']) {
     assert.deepStrictEqual(
-      routeEntry(entry({ phase, model: 'fable', feedback: ['do this'], questions: [q('a')] }), DEFAULTS),
-      { model: 'fable', reason: 'feedback' },
+      routeEntry(entry({ phase, model: 'fable', feedback: ['do this'], questions: [q('a')] })),
+      'feedback',
       phase,
     );
-    assert.deepStrictEqual(routeEntry(entry({ phase, feedback: ['do this'] }), DEFAULTS), { model: 'opus', reason: 'feedback' }, phase + ' default');
+    assert.deepStrictEqual(routeEntry(entry({ phase, feedback: ['do this'] })), 'feedback', phase + ' default');
   }
-  // New and DRAFT: the groomer (default groomer when absent), outranking regroom/groom.
+  // New and DRAFT: grooming work, outranking regroom/groom.
   assert.deepStrictEqual(
-    routeEntry(entry({ phase: 'new', groomer: 'fable', model: 'opus', feedback: ['retitle this'], questions: [q('a', 'yes')] }), DEFAULTS),
-    { model: 'fable', reason: 'feedback' },
+    routeEntry(entry({ phase: 'new', groomer: 'fable', model: 'opus', feedback: ['retitle this'], questions: [q('a', 'yes')] })),
+    'feedback',
   );
   assert.deepStrictEqual(
-    routeEntry(entry({ isDraft: true, feedback: ['fold this in'] }), DEFAULTS),
-    { model: 'sonnet', reason: 'feedback' },
+    routeEntry(entry({ isDraft: true, feedback: ['fold this in'] })),
+    'feedback',
   );
   // …and never on hold.
-  assert.strictEqual(routeEntry(entry({ isDraft: true, groomer: 'none', feedback: ['x'] }), DEFAULTS), null);
+  assert.strictEqual(routeEntry(entry({ isDraft: true, groomer: 'none', feedback: ['x'] })), null);
 });
 
 test('Feedback routes only when EVERY question is answered (Rule 10)', () => {
   const all = entry({ phase: 'feedback', model: 'fable', questions: [q('a', 'yes'), q('b', 'no')] });
-  assert.deepStrictEqual(routeEntry(all, DEFAULTS), { model: 'fable', reason: 'answers' });
+  assert.deepStrictEqual(routeEntry(all), 'answers');
   const partial = entry({ phase: 'feedback', model: 'fable', questions: [q('a', 'yes'), q('b')] });
-  assert.strictEqual(routeEntry(partial, DEFAULTS), null);
+  assert.strictEqual(routeEntry(partial), null);
   const none = entry({ phase: 'feedback', model: 'fable', questions: [] });
-  assert.strictEqual(routeEntry(none, DEFAULTS), null);
+  assert.strictEqual(routeEntry(none), null);
 });
 
 test('Review routes only with unaddressed feedback (Rule 13); In Progress without feedback never routes', () => {
   assert.deepStrictEqual(
-    routeEntry(entry({ phase: 'review', model: 'opus', feedback: ['make it blue'] }), DEFAULTS),
-    { model: 'opus', reason: 'feedback' },
+    routeEntry(entry({ phase: 'review', model: 'opus', feedback: ['make it blue'] })),
+    'feedback',
   );
-  assert.strictEqual(routeEntry(entry({ phase: 'review', model: 'opus' }), DEFAULTS), null);
-  assert.strictEqual(routeEntry(entry({ phase: 'inprogress', model: 'opus' }), DEFAULTS), null);
+  assert.strictEqual(routeEntry(entry({ phase: 'review', model: 'opus' })), null);
+  assert.strictEqual(routeEntry(entry({ phase: 'inprogress', model: 'opus' })), null);
 });
 
 // ---- computeNudges: only CHANGED entries, one loop each ----
 
 test('the first board of a session nudges nobody', () => {
   const next = [entry({ phase: 'backlog', model: 'opus' })];
-  assert.deepStrictEqual(computeNudges(undefined, next, DEFAULTS), []);
+  assert.deepStrictEqual(computeNudges(undefined, next), []);
 });
 
 test('an unchanged entry is not nudged again, a changed one is', () => {
   const before = entry({ phase: 'backlog', model: 'opus', raw: 'one' });
-  assert.deepStrictEqual(computeNudges([before], [{ ...before }], DEFAULTS), []);
-  const routes = computeNudges([before], [{ ...before, raw: 'two' }], DEFAULTS);
-  assert.strictEqual(routes.length, 1);
-  assert.strictEqual(routes[0].model, 'opus');
-  assert.strictEqual(routes[0].items[0].reason, 'backlog');
+  assert.deepStrictEqual(computeNudges([before], [{ ...before }]), []);
+  const items = computeNudges([before], [{ ...before, raw: 'two' }]);
+  assert.strictEqual(items.length, 1);
+  assert.strictEqual(items[0].reason, 'backlog');
 });
 
 // The capability the removed `rev:` marker existed for (t-f1b0): a human edits the Description or
@@ -142,61 +137,59 @@ test('an edit confined to the task file still nudges — the fingerprint covers 
   const before = entry({ phase: 'backlog', model: 'opus', description: 'old', raw: 'unchanged index block' });
   const next = { ...before, description: 'new', detailRaw: '# t\n\n## Description\n\nnew\n' };
   assert.strictEqual(before.raw, next.raw, 'the index block is byte-identical — only the detail moved');
-  const routes = computeNudges([before], [next], DEFAULTS);
-  assert.strictEqual(routes.length, 1);
-  assert.strictEqual(routes[0].model, 'opus');
-  assert.deepStrictEqual(routes[0].items[0].changes, ['description edited']);
+  const items = computeNudges([before], [next]);
+  assert.strictEqual(items.length, 1);
+  assert.deepStrictEqual(items[0].changes, ['description edited']);
   // An appended worklog line is the same shape and must behave the same way.
   const appended = { ...before, worklog: ['2026-09-18'], detailRaw: '# t\n\n## Worklog\n\n- 2026-09-18\n' };
-  assert.deepStrictEqual(computeNudges([before], [appended], DEFAULTS)[0].items[0].changes, ['worklog appended']);
+  assert.deepStrictEqual(computeNudges([before], [appended])[0].changes, ['worklog appended']);
   // …and the signal is the TEXT, not the parsed detail fields: with EVERY other field byte-identical
   // and only `detailRaw` moved (a reordered Meta block, a heading reflow), the nudge still fires.
   // Pins the detail side the way the `raw: 'canonicalized'` case pins the index side — an
   // implementation diffing parsed detail fields instead of the text would fail here and only here.
   const reflowed = { ...before, detailRaw: before.detailRaw + '\n' };
-  assert.deepStrictEqual(computeNudges([before], [reflowed], DEFAULTS)[0].items[0].changes, ['changed']);
+  assert.deepStrictEqual(computeNudges([before], [reflowed])[0].changes, ['changed']);
   // t-2191: a re-groom that only rewrote Problem or Goals is the same index-silent shape.
   const regroomed = { ...before, problem: 'why', goals: '- done when', detailRaw: '# t\n\n## Problem\n\nwhy\n' };
-  assert.deepStrictEqual(computeNudges([before], [regroomed], DEFAULTS)[0].items[0].changes, ['problem edited', 'goals edited']);
+  assert.deepStrictEqual(computeNudges([before], [regroomed])[0].changes, ['problem edited', 'goals edited']);
 });
 
 test('a brand-new entry is a change', () => {
   const fresh = entry({ phase: 'backlog', model: 'opus' });
-  const routes = computeNudges([], [fresh], DEFAULTS);
-  assert.strictEqual(routes.length, 1);
-  assert.strictEqual(routes[0].items[0].taskId, fresh.id);
+  const items = computeNudges([], [fresh]);
+  assert.strictEqual(items.length, 1);
+  assert.strictEqual(items[0].taskId, fresh.id);
 });
 
 test('changes that give no loop work nudge nobody', () => {
   const before = entry({ phase: 'review', model: 'opus' });
-  assert.deepStrictEqual(computeNudges([before], [{ ...before, raw: 'moved' }], DEFAULTS), []);
+  assert.deepStrictEqual(computeNudges([before], [{ ...before, raw: 'moved' }]), []);
 });
 
 test('a Backlog nudge is suppressed while any task is In Progress (Rule 2)', () => {
   const backlog = entry({ phase: 'backlog', model: 'opus' });
   const busy = entry({ phase: 'inprogress', model: 'fable' });
   const next = [{ ...backlog, raw: 'moved' }, busy];
-  assert.deepStrictEqual(computeNudges([backlog, busy], next, DEFAULTS), []);
+  assert.deepStrictEqual(computeNudges([backlog, busy], next), []);
   // …but grooming and feedback are not Backlog claims, so they still route.
   const draft = entry({ isDraft: true, groomer: 'fable' });
-  const routes = computeNudges([backlog, busy, draft], [{ ...backlog, raw: 'moved' }, busy, { ...draft, raw: 'moved' }], DEFAULTS);
-  assert.strictEqual(routes.length, 1);
-  assert.strictEqual(routes[0].model, 'fable');
-  assert.strictEqual(routes[0].items[0].reason, 'groom');
+  const items = computeNudges([backlog, busy, draft], [{ ...backlog, raw: 'moved' }, busy, { ...draft, raw: 'moved' }]);
+  assert.strictEqual(items.length, 1);
+  assert.strictEqual(items[0].taskId, draft.id);
+  assert.strictEqual(items[0].reason, 'groom');
 });
 
-test('changes are grouped per loop, and each change reaches exactly one loop', () => {
+test('every change reaches the one orchestrator once, in board order, whatever its models (t-0e99)', () => {
   const a = entry({ phase: 'feedback', model: 'opus', questions: [q('a', 'yes')] });
-  const b = entry({ phase: 'review', model: 'opus', feedback: ['fix it'] });
+  const b = entry({ phase: 'review', model: 'haiku', feedback: ['fix it'] });
   const c = entry({ phase: 'new', groomer: 'fable', feedback: ['fold this in'] });
-  const prev = [a, b, c];
-  const next = [{ ...a, raw: 'moved' }, { ...b, raw: 'moved' }, { ...c, raw: 'moved' }];
-  const routes = computeNudges(prev, next, DEFAULTS);
-  assert.strictEqual(routes.length, 2);
-  const byModel = Object.fromEntries(routes.map((r) => [r.model, r.items]));
-  assert.deepStrictEqual(byModel.opus.map((i) => i.reason), ['answers', 'feedback']);
-  assert.deepStrictEqual(byModel.fable.map((i) => i.reason), ['feedback']);
-  assert.strictEqual(routes.reduce((n, r) => n + r.items.length, 0), 3);
+  const d = entry({ isDraft: true, groomer: 'sonnet', model: 'fable' });
+  const prev = [a, b, c, d];
+  const next = [{ ...a, raw: 'moved' }, { ...b, raw: 'moved' }, { ...c, raw: 'moved' }, { ...d, raw: 'moved' }];
+  const items = computeNudges(prev, next);
+  assert.deepStrictEqual(items.map((i) => i.taskId), [a.id, b.id, c.id, d.id]);
+  assert.deepStrictEqual(items.map((i) => i.reason), ['answers', 'feedback', 'feedback', 'groom']);
+  assert.ok(items.every((i) => !('model' in i)), 'an item names no loop or model: there is one target');
 });
 
 // ---- the New/DRAFT detail-only carve-out (t-6cbf) ----
@@ -208,11 +201,11 @@ test('a DRAFT whose change is confined to the task file nudges nobody (t-6cbf)',
   const before = entry({ isDraft: true, groomer: 'fable', raw: '- [ ] DRAFT: t-1 — do a thing' });
   const next = { ...before, problem: 'why', goals: '- done when', detailRaw: '# t\n\n## Problem\n\nwhy\n' };
   assert.strictEqual(before.raw, next.raw, 'the index block is byte-identical — only the detail moved');
-  assert.deepStrictEqual(computeNudges([before], [next], DEFAULTS), []);
+  assert.deepStrictEqual(computeNudges([before], [next]), []);
   // The suppression is surfaced for the controller's verbose debug line: task id + the reason it
   // WOULD have carried.
   const skipped = [];
-  computeNudges([before], [next], DEFAULTS, skipped);
+  computeNudges([before], [next], skipped);
   assert.strictEqual(skipped.length, 1);
   assert.strictEqual(skipped[0].taskId, before.id);
   assert.strictEqual(skipped[0].reason, 'groom');
@@ -220,11 +213,11 @@ test('a DRAFT whose change is confined to the task file nudges nobody (t-6cbf)',
 
 test('the re-groom shape is suppressed the same way — all answers filled, detail-only change (t-6cbf)', () => {
   const before = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one', 'this one')], raw: 'index block' });
-  assert.deepStrictEqual(routeEntry(before, DEFAULTS), { model: 'fable', reason: 'regroom' });
+  assert.deepStrictEqual(routeEntry(before), 'regroom');
   const next = { ...before, worklog: ['2026-09-21'], detailRaw: '# t\n\n## Worklog\n\n- 2026-09-21\n' };
-  assert.deepStrictEqual(computeNudges([before], [next], DEFAULTS), []);
+  assert.deepStrictEqual(computeNudges([before], [next]), []);
   const skipped = [];
-  computeNudges([before], [next], DEFAULTS, skipped);
+  computeNudges([before], [next], skipped);
   assert.deepStrictEqual(skipped.map((i) => [i.taskId, i.reason]), [[before.id, 'regroom']]);
 });
 
@@ -232,26 +225,23 @@ test('the carve-out is New/DRAFT only — a Backlog task-file-only change still 
   const before = entry({ phase: 'backlog', model: 'opus', description: 'old', raw: 'index block' });
   const next = { ...before, description: 'new', detailRaw: '# t\n\n## Description\n\nnew\n' };
   const skipped = [];
-  const routes = computeNudges([before], [next], DEFAULTS, skipped);
+  const items = computeNudges([before], [next], skipped);
   assert.deepStrictEqual(skipped, []);
-  assert.strictEqual(routes.length, 1);
-  assert.strictEqual(routes[0].model, 'opus');
-  assert.deepStrictEqual(routes[0].items.map((i) => i.reason), ['backlog']);
+  assert.deepStrictEqual(items.map((i) => i.reason), ['backlog']);
 });
 
 test('an INDEX-side edit on a New/DRAFT task still nudges its groomer (t-6cbf)', () => {
   const draft = entry({ isDraft: true, groomer: 'fable', raw: '- [ ] DRAFT: t-1 — do a thing' });
   const edited = { ...draft, title: 'do a different thing', raw: '- [ ] DRAFT: t-1 — do a different thing' };
-  assert.deepStrictEqual(computeNudges([draft], [edited], DEFAULTS)[0].items.map((i) => i.reason), ['groom']);
+  assert.deepStrictEqual(computeNudges([draft], [edited]).map((i) => i.reason), ['groom']);
   // A `feedback:` added to the entry, with the detail file moving in the same refresh.
   const noted = { ...draft, feedback: ['retitle this'], raw: draft.raw + '\n  - feedback: retitle this', detailRaw: 'detail 2' };
-  assert.deepStrictEqual(computeNudges([draft], [noted], DEFAULTS)[0].items.map((i) => i.reason), ['feedback']);
+  assert.deepStrictEqual(computeNudges([draft], [noted]).map((i) => i.reason), ['feedback']);
   // The human filling the last blank answer on a groomed New task — the real re-groom trigger.
   const asked = entry({ phase: 'new', groomer: 'fable', questions: [q('pick one')], raw: 'index block' });
   const answered = { ...asked, questions: [q('pick one', 'this one')], raw: 'index block + answer' };
-  const routes = computeNudges([asked], [answered], DEFAULTS);
-  assert.strictEqual(routes[0].model, 'fable');
-  assert.deepStrictEqual(routes[0].items.map((i) => i.reason), ['regroom']);
+  const items = computeNudges([asked], [answered]);
+  assert.deepStrictEqual(items.map((i) => i.reason), ['regroom']);
 });
 
 // ---- describeChanges: which FIELD moved, never its text (t-f8bd) ----
@@ -260,13 +250,18 @@ test('a task the previous board did not have is a new entry', () => {
   assert.deepStrictEqual(describeChanges(undefined, entry()), ['new entry']);
 });
 
-test('index fields are named, and enum values (phase/model/groomer) appear verbatim', () => {
+test('index fields are named, and enum values (phase and the routing keys) appear verbatim', () => {
   const before = entry({ phase: 'new', model: 'opus', groomer: 'opus', title: 'Old title' });
   assert.deepStrictEqual(describeChanges(before, { ...before, title: 'New title' }), ['title edited']);
   assert.deepStrictEqual(describeChanges(before, { ...before, phase: 'backlog' }), ['phase → backlog']);
   assert.deepStrictEqual(describeChanges(before, { ...before, model: 'sonnet' }), ['model → sonnet']);
   assert.deepStrictEqual(describeChanges(before, { ...before, groomer: 'none' }), ['groomer → none']);
   assert.deepStrictEqual(describeChanges(before, { ...before, model: undefined }), ['model → default']);
+  // t-0e99: the three new routing keys are named the same way.
+  assert.deepStrictEqual(describeChanges(before, { ...before, effort: 'high' }), ['effort → high']);
+  assert.deepStrictEqual(describeChanges(before, { ...before, groomerEffort: 'xhigh' }), ['groomer-effort → xhigh']);
+  assert.deepStrictEqual(describeChanges(before, { ...before, reviewer: 'none' }), ['reviewer → none']);
+  assert.deepStrictEqual(describeChanges({ ...before, reviewer: 'haiku' }, before), ['reviewer → default']);
   assert.deepStrictEqual(describeChanges(before, { ...before, checked: true }), ['ticked']);
   assert.deepStrictEqual(describeChanges({ ...before, checked: true }, before), ['unticked']);
 });
@@ -355,13 +350,13 @@ test('a text change with no visible field delta still yields a descriptor', () =
   const before = entry({ phase: 'backlog', model: 'opus' });
   assert.deepStrictEqual(describeChanges(before, { ...before, raw: 'canonicalized' }), ['changed']);
   // …and it still produces a nudge, never a dropped one.
-  const routes = computeNudges([before], [{ ...before, raw: 'canonicalized' }], DEFAULTS);
-  assert.deepStrictEqual(routes[0].items[0].changes, ['changed']);
+  const items = computeNudges([before], [{ ...before, raw: 'canonicalized' }]);
+  assert.deepStrictEqual(items[0].changes, ['changed']);
   // A question TEXT edit is the same case: the fingerprint sees it, the descriptors only count
   // questions, so the ['changed'] fallback is what keeps it reachable.
   const asked = entry({ phase: 'backlog', model: 'opus', questions: [q('old text')] });
   const reworded = { ...asked, questions: [q('new text')], raw: 'reworded' };
-  assert.deepStrictEqual(computeNudges([asked], [reworded], DEFAULTS)[0].items[0].changes, ['changed']);
+  assert.deepStrictEqual(computeNudges([asked], [reworded])[0].changes, ['changed']);
 });
 
 // ---- mergeNudgeItems: a task held for a downed terminal unions its descriptors ----
@@ -435,9 +430,8 @@ test('no task text of any kind reaches the nudge line, in any reason branch', ()
   const seen = new Set();
   for (const [reason, next] of cases) {
     const prev = { ...entry({ id: next.id }), raw: 'before' };
-    const routes = computeNudges([prev], [{ ...next, raw: 'after' }], DEFAULTS);
-    assert.strictEqual(routes.length, 1, reason + ' should route somewhere');
-    const items = routes[0].items;
+    const items = computeNudges([prev], [{ ...next, raw: 'after' }]);
+    assert.strictEqual(items.length, 1, reason + ' should route somewhere');
     assert.strictEqual(items[0].reason, reason);
     seen.add(reason);
     const line = formatNudge(items);
@@ -455,4 +449,31 @@ test('a long list is capped and summarised', () => {
   const line = formatNudge(items);
   assert.ok(line.includes('and 4 more'), line);
   assert.ok(!line.includes('\n'));
+});
+
+// ---- t-0e99: no routing carve-out once nothing writes routing picks (owner decision 2026-10-14) ----
+
+test('a routing re-pick on a New/DRAFT task nudges its groomer: the orchestrator never writes routing lines', () => {
+  const before = entry({ isDraft: true, groomer: 'sonnet', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: sonnet' });
+  const next = { ...before, groomer: 'opus', groomerEffort: 'high', raw: '- [ ] DRAFT: t-1, do it\n  - id: t-1\n  - groomer: opus\n  - groomer-effort: high' };
+  const skipped = [];
+  const items = computeNudges([before], [next], skipped);
+  assert.deepStrictEqual(items.map((i) => [i.taskId, i.reason]), [[before.id, 'groom']]);
+  assert.deepStrictEqual(items[0].changes, ['groomer → opus', 'groomer-effort → high']);
+  assert.deepStrictEqual(skipped, []);
+});
+
+test('taking a draft OFF hold still nudges, and a routing change plus real work still nudges', () => {
+  const held = entry({ isDraft: true, groomer: 'none', raw: '- [ ] DRAFT: x\n  - groomer: none' });
+  const released = { ...held, groomer: 'opus', raw: '- [ ] DRAFT: x\n  - groomer: opus' };
+  assert.deepStrictEqual(computeNudges([held], [released]).map((i) => i.reason), ['groom']);
+  const draft = entry({ isDraft: true, raw: '- [ ] DRAFT: x' });
+  const withFeedback = { ...draft, model: 'haiku', feedback: ['also this'], raw: '- [ ] DRAFT: x\n  - model: haiku\n  - feedback: also this' };
+  assert.deepStrictEqual(computeNudges([draft], [withFeedback]).map((i) => i.reason), ['feedback']);
+});
+
+test('a Backlog re-pick still nudges the claim', () => {
+  const backlog = entry({ phase: 'backlog', model: 'sonnet', raw: '- [ ] B\n  - phase: backlog\n  - model: sonnet' });
+  const repicked = { ...backlog, model: 'haiku', raw: '- [ ] B\n  - phase: backlog\n  - model: haiku' };
+  assert.deepStrictEqual(computeNudges([backlog], [repicked]).map((i) => i.reason), ['backlog']);
 });

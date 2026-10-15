@@ -13,6 +13,9 @@ const { Recorder } = require('./lib/recorder');
 const W = 1320;
 const H = 848; // 800 of VS Code window + the 48px caption band
 const SCENES = path.join(__dirname, 'scenes');
+// Scenes recorded for a release article (each names its own `out`), kept apart from the showcase,
+// whose every scene must appear on docs/showcase/README.md.
+const ARTICLES = path.join(__dirname, 'articles');
 const GIFS = path.join(__dirname, '..', 'gifs');
 const WORK = path.join(__dirname, '.frames');
 
@@ -65,7 +68,12 @@ function encode(frames, out, crop) {
 async function main() {
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const stillOnly = process.argv.includes('--still');
-  const all = fs.readdirSync(SCENES).filter((f) => f.endsWith('.js')).map((f) => f.replace(/\.js$/, '')).sort();
+  const dirOf = {};
+  for (const dir of [SCENES, ARTICLES]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) if (f.endsWith('.js')) dirOf[f.replace(/\.js$/, '')] = dir;
+  }
+  const all = Object.keys(dirOf).sort();
   const names = wanted.length ? all.filter((n) => wanted.some((w) => n.startsWith(w))) : all;
   fs.mkdirSync(GIFS, { recursive: true });
   const server = await start();
@@ -73,7 +81,7 @@ async function main() {
   const browser = await chromium.launch({ args: ['--no-sandbox', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] });
   try {
     for (const name of names) {
-      const scene = require(path.join(SCENES, name));
+      const scene = require(path.join(dirOf[name], name));
       const t0 = Date.now();
       const { context, page, host } = await mount(browser, base, scene);
       const rec = new Recorder(page, host, path.join(WORK, name));
@@ -83,7 +91,10 @@ async function main() {
       } else {
         await scene.run(rec, { page, host, board: page.frameLocator('#frame-board'), sidebar: page.frameLocator('#frame-sidebar'), settings: page.frameLocator('#frame-settings') });
         const total = rec.frames.reduce((s, f) => s + f.ms, 0);
-        const size = encode(rec.frames, path.join(GIFS, `${name}.gif`), scene.crop);
+        // `out` = a gif kept outside the showcase (e.g. next to a release article), relative to here.
+        const out = scene.out ? path.resolve(__dirname, scene.out) : path.join(GIFS, `${name}.gif`);
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+        const size = encode(rec.frames, out, scene.crop);
         console.log(`${name}: ${rec.frames.length} frames, ${(total / 1000).toFixed(1)}s, ${(size / 1024).toFixed(0)} KB (${((Date.now() - t0) / 1000).toFixed(0)}s wall)`);
       }
       await context.close();

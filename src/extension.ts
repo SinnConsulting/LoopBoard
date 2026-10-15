@@ -2,9 +2,12 @@ import * as vscode from 'vscode';
 import { Store, DebugLevel } from './store';
 import { TerminalManager } from './terminals';
 import { SidebarProvider } from './sidebar';
-import { Controller } from './controller';
+import { Controller, explicitLookup } from './controller';
 import { ContextReader } from './contextreader';
-import { Model, resolveModels, readModelsConfig } from './model';
+import { isLoopId, resolveModels, readModelsConfig, resolveOrchestrator, resolveTaskDefaults, aliasEnv } from './model';
+
+// How long after activation the legacy per-model loop terminals are looked for (t-0e99).
+const LEGACY_LOOP_CHECK_MS = 5000;
 
 // Held for deactivate() so the debug sink's buffered tail is flushed on a clean shutdown (t-2901).
 let activeStore: Store | undefined;
@@ -23,13 +26,18 @@ export function activate(context: vscode.ExtensionContext): void {
     () => store.loopText,
     () => {
       const c = vscode.workspace.getConfiguration('loopBoard');
+      const set = explicitLookup(c);
+      const models = resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d), set));
       return {
         permissionMode: c.get<string>('permissionMode', 'auto'),
-        interval: c.get<string>('loopInterval', '1m'),
-        models: resolveModels(readModelsConfig(<T>(k: string, d: T) => c.get<T>(k, d))),
-        // t-e3c3: both flags are frozen into the bootstrap prompt at spawn (like the interval).
-        delegateWork: c.get<boolean>('delegateWork', true),
-        delegateReview: c.get<boolean>('delegateReview', false),
+        interval: c.get<number | string>('loopInterval', 5),
+        // t-0e99: the orchestrator's own flags plus the enabled task models (with their effort
+        // ranges), the five defaults and the alias overrides, all frozen into the spawn (like the
+        // interval).
+        orchestrator: resolveOrchestrator(set),
+        models: models.filter((m) => m.enabled),
+        defaults: resolveTaskDefaults(set),
+        env: aliasEnv(models),
       };
     },
     (level, event, detail) => store.debugLog(level, event, detail)
@@ -53,7 +61,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewId, sidebar),
     vscode.commands.registerCommand('loopBoard.openBoard', () => controller.openBoard()),
     vscode.commands.registerCommand('loopBoard.refresh', () => controller.refresh()),
-    vscode.commands.registerCommand('loopBoard.spawnLoop', (model: Model) => terminals.spawn(model)),
+    // From the command palette there is no argument: it starts the orchestrator, the only loop.
+    vscode.commands.registerCommand('loopBoard.spawnLoop', (loop?: unknown) => terminals.spawn(isLoopId(loop) ? loop : 'orchestrator')),
     vscode.commands.registerCommand('loopboard.init', () => controller.onCreateFiles()),
     vscode.commands.registerCommand('loopBoard.whatsNew', () => controller.showWhatsNew('command')),
     vscode.commands.registerCommand('loopBoard.showLove', () => controller.showLove())
@@ -61,7 +70,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   store.debugLog('info', 'activate', folder.name);
   store.startWatching();
-  void controller.autoHeal().then(() => controller.autoSyncTemplates()).then(() => controller.refresh());
+  void controller.autoMigrateSettings()
+    .then(() => controller.autoHeal())
+    .then(() => controller.autoSyncTemplates())
+    .then(() => controller.refresh());
+  // Delayed: VSCode reconnects revived terminals during startup, after activation may already have
+  // run, so an immediate look could miss a legacy loop terminal that is about to reappear.
+  const legacyCheck = setTimeout(() => void controller.maybeStopLegacyLoops(), LEGACY_LOOP_CHECK_MS);
+  context.subscriptions.push({ dispose: () => clearTimeout(legacyCheck) });
   void controller.maybeShowGettingStarted();
   void controller.maybeShowWhatsNew();
 }

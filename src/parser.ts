@@ -13,8 +13,11 @@
 //   - [ ] <Title — single line>
 //     - id: t-3f9a               (assigned on write if missing; identity anchor)
 //     - phase: new | backlog | inprogress | feedback | review   (omitted for DRAFTs = new)
-//     - model: opus | sonnet | fable        (optional)
-//     - groomer: opus | sonnet | fable | none  (optional; `none` = on hold, no groomer)
+//     - model: opus | sonnet | fable | haiku           (optional; worker model)
+//     - effort: low | medium | high | xhigh            (optional; worker effort)
+//     - groomer: opus | sonnet | fable | haiku | none  (optional; `none` = on hold)
+//     - groomer-effort: low | medium | high | xhigh    (optional)
+//     - reviewer: opus | sonnet | fable | haiku | none (optional; `none` = no review)
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
@@ -23,15 +26,15 @@
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
 //   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
 //   `rev:` was removed from the grammar (t-f1b0) and is recognized only to be DROPPED, see below.
-//   `completed:` is canonical in DONE.md entries only.
+//   `completed:` is canonical in DONE.md entries only; `effort:`, `groomer-effort:` and
+//   `reviewer:` in TODO.md only (DONE.md keeps id/model/groomer/completed, t-0e99).
 // ========================================================================================
 
-import { IndexDoc, IndexEntry, Phase, Question, Model, GroomerValue, GROOMER_HOLD, BUILTIN_MODEL_IDS } from './model';
+import { IndexDoc, IndexEntry, Phase, Question, isModel, isGroomerValue, isReviewerValue, isTaskEffort } from './model';
 
 const TASKS_HEADING_RE = /^##\s+Tasks\b/i;
 const TASK_RE = /^- \[([ xX])\]\s?(.*)$/;
 
-const KNOWN_MODELS: Model[] = BUILTIN_MODEL_IDS;
 const KNOWN_PHASES: Phase[] = ['new', 'inprogress', 'feedback', 'backlog', 'review', 'done'];
 
 export const EDITABLE_PHASES: Phase[] = ['new', 'inprogress', 'feedback', 'backlog', 'review'];
@@ -71,16 +74,30 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
           return true;
         }
         return false;
+      // An off-list value of any of the five routing keys returns false and lands in
+      // unknownLines (flagged), reading as "absent" without voiding the entry's other keys.
       case 'model':
-        if (KNOWN_MODELS.includes(v as Model)) entry.model = v as Model;
-        else return false;
+        if (!isModel(v)) return false;
+        entry.model = v;
         return true;
       case 'groomer':
         // `none` is the explicit on-hold sentinel (t-65a2) and must be recognized here: an
         // unrecognized value falls through to unknownLines, which reads as "absent" = DEFAULT
         // groomer — the exact opposite of hold.
-        if (v === GROOMER_HOLD || KNOWN_MODELS.includes(v as Model)) entry.groomer = v as GroomerValue;
-        else return false;
+        if (!isGroomerValue(v)) return false;
+        entry.groomer = v;
+        return true;
+      case 'effort':
+        if (allowCompleted || !isTaskEffort(v)) return false;
+        entry.effort = v;
+        return true;
+      case 'groomer-effort':
+        if (allowCompleted || !isTaskEffort(v)) return false;
+        entry.groomerEffort = v;
+        return true;
+      case 'reviewer':
+        if (allowCompleted || !isReviewerValue(v)) return false;
+        entry.reviewer = v;
         return true;
       // Removed key (t-f1b0): the writer-managed change marker is gone from the grammar, but every
       // existing tracker still carries `- rev: <n>` lines. Recognize and silently DISCARD them —
@@ -139,7 +156,7 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
     // Regular sub-bullet: "  - <key>: <value>"
     const bulletMatch = line.match(/^ {1,}- (.*)$/);
     if (bulletMatch) {
-      const kv = bulletMatch[1].match(/^([A-Za-z][A-Za-z ]*?):\s?([\s\S]*)$/);
+      const kv = bulletMatch[1].match(/^([A-Za-z][A-Za-z -]*?):\s?([\s\S]*)$/);
       if (kv && applySegment(kv[1], kv[2])) continue;
       entry.unknownLines.push(line);
       continue;

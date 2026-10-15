@@ -1,154 +1,145 @@
 'use strict';
-// The model grid's own logic (t-sgrp, src/settingsgrid.ts) — the one hand-built block on the
-// settings page. Its read side is `resolveModels`, already covered by test/model.test.js; what is
-// new here is the WRITE side: which cell edits become which config patches, and which are refused.
+// The settings page's hand-built block (t-sgrp, rebuilt by t-0e99, src/settingsgrid.ts): the Roles
+// table (orchestrator, groomer, worker, reviewer: model and effort selects) and the Models table (on
+// switch, model id, effort floor and ceiling). Its read side is `resolveOrchestrator` /
+// `resolveTaskDefaults` / `resolveModels`, covered by test/model.test.js; what is tested here is the
+// WRITE side: which cell edits become which config patches, and which are refused.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  buildModelGrid, gridPatch, clampGroomConcurrency, isKnownSlot, isGridField, slotKey,
-  GRID_APPLY_NOTE, GRID_FIELDS,
+  buildModelGrid, gridPatch, clampGroomConcurrency, isKnownSlot, isGridField, enabledKey, modelKey,
+  GRID_APPLY_NOTE, GRID_FIELDS, GRID_ROLES,
 } = require('../out-test/settingsgrid.js');
-const { MAX_GROOM_CONCURRENCY } = require('../out-test/model.js');
+const { MAX_GROOM_CONCURRENCY, TASK_DEFAULTS, ORCHESTRATOR_DEFAULTS } = require('../out-test/model.js');
 const { APPLIES_RESTART_TAIL } = require('../out-test/settingsform.js');
 
-const cfg = (over = {}) => ({
-  opus: { enabled: true, model: 'opus[1m]', effort: 'high', groomConcurrency: 3 },
-  sonnet: { enabled: true, model: '', effort: 'high', groomConcurrency: 3 },
-  fable: { enabled: false, model: '', effort: 'medium', groomConcurrency: 2 },
+const models = (over = {}) => ({
+  opus: { enabled: true },
+  sonnet: { enabled: true },
+  fable: { enabled: false },
+  haiku: { enabled: true },
   ...over,
 });
-const grid = (over, worker = 'sonnet', groomer = 'opus') => buildModelGrid(cfg(over), worker, groomer);
+const grid = (over, defaults = {}, orchestrator = {}) =>
+  buildModelGrid(models(over), { ...ORCHESTRATOR_DEFAULTS, ...orchestrator }, { ...TASK_DEFAULTS, ...defaults });
+const role = (g, id) => g.roles.find((r) => r.id === id);
+const model = (g, id) => g.models.find((m) => m.id === id);
 
-test('the grid is the resolved 3 x 6 matrix, in BUILTIN_MODELS order', () => {
+test('the Roles table: orchestrator, groomer, worker, reviewer, each a model select over the enabled models', () => {
   const g = grid();
-  assert.deepEqual(g.rows.map((r) => r.id), ['opus', 'sonnet', 'fable']);
-  assert.deepEqual(g.rows.map((r) => r.label), ['Opus', 'Sonnet', 'Fable']);
-  assert.deepEqual(g.rows.map((r) => r.enabled), [true, true, false]);
-  assert.deepEqual(g.rows.map((r) => r.worker), [false, true, false]);
-  assert.deepEqual(g.rows.map((r) => r.groomer), [true, false, false]);
-  assert.deepEqual(g.rows.map((r) => r.effort), ['high', 'high', 'medium']);
-  assert.deepEqual(g.rows.map((r) => r.groomConcurrency), [3, 3, 2]);
-  assert.equal(g.defaultWorker, 'sonnet');
-  assert.equal(g.defaultGroomer, 'opus');
+  assert.deepEqual(g.roles.map((r) => r.id), GRID_ROLES);
+  assert.deepEqual(GRID_ROLES, ['orchestrator', 'groomer', 'worker', 'reviewer']);
+  assert.deepEqual(g.roles.map((r) => r.label), ['Orchestrator', 'Groomer', 'Worker', 'Reviewer']);
+  assert.deepEqual(g.roles.map((r) => r.model), ['opus', 'opus', 'opus', 'opus'], 'the shipped role defaults (owner decision 2026-10-14)');
+  for (const id of ['orchestrator', 'groomer', 'worker']) assert.deepEqual(role(g, id).models, ['opus', 'sonnet', 'haiku'], id + ': Fable is off');
+  assert.deepEqual(role(g, 'reviewer').models, ['opus', 'sonnet', 'haiku', 'none'], 'none is a reviewer value only');
+  assert.deepEqual(g.roles.map((r) => r.effort), ['low', 'medium', 'medium', null], 'the reviewer runs at the worker effort');
+  assert.equal(role(g, 'orchestrator').groomConcurrency, 3);
+  assert.equal(role(g, 'groomer').groomConcurrency, undefined);
+  assert.deepEqual([...g.efforts], ['low', 'medium', 'high', 'xhigh', 'max'], 'every role effort may be max');
+  for (const r of g.roles) assert.ok(!r.models.includes('auto'), 'no auto option (owner decision 2026-10-14)');
 });
 
-test('the --model cell shows the RAW override, and the row shows what is actually spawned', () => {
-  const g = grid();
-  // Opus has an override: the field shows it and the slot spawns it.
-  assert.equal(g.rows[0].model, 'opus[1m]');
-  assert.equal(g.rows[0].spawned, 'opus[1m]');
-  // Sonnet has none: the field is EMPTY (so it can read as "default" and be cleared back to it),
-  // while the row still reports the built-in string the loop would be started with.
-  assert.equal(g.rows[1].model, '');
-  assert.equal(g.rows[1].spawned, 'sonnet');
+test('a role still on a model that is off keeps it as an option, so the select shows the truth', () => {
+  const g = grid({}, { worker: 'fable' });
+  assert.deepEqual(role(g, 'worker').models, ['opus', 'sonnet', 'haiku', 'fable']);
 });
 
-test('an invalid stored --model string is rejected exactly the way resolveModels rejects it', () => {
-  const g = grid({ opus: { enabled: true, model: 'opus; rm -rf /', effort: 'high', groomConcurrency: 3 } });
-  assert.equal(g.rows[0].model, 'opus; rm -rf /', 'the field still shows what is stored');
-  assert.equal(g.rows[0].spawned, 'opus', 'but the built-in default is what would reach the shell line');
+test('the Models table: the four models with on switch, model id and effort floor/ceiling, and which roles use each', () => {
+  const g = grid({ opus: { enabled: true, modelId: 'claude-opus-5-5[1m]', minEffort: 'medium', maxEffort: 'xhigh' } });
+  assert.deepEqual(g.models.map((m) => m.id), ['opus', 'sonnet', 'fable', 'haiku']);
+  assert.deepEqual(g.models.map((m) => m.enabled), [true, true, false, true]);
+  assert.deepEqual([model(g, 'opus').modelId, model(g, 'opus').minEffort, model(g, 'opus').maxEffort], ['claude-opus-5-5[1m]', 'medium', 'xhigh']);
+  assert.deepEqual([model(g, 'sonnet').modelId, model(g, 'sonnet').minEffort, model(g, 'sonnet').maxEffort], ['', 'low', 'max']);
+  assert.deepEqual(model(g, 'opus').usedBy, ['orchestrator', 'groomer', 'worker', 'reviewer']);
+  assert.deepEqual(model(g, 'haiku').usedBy, []);
+  assert.deepEqual(model(g, 'sonnet').usedBy, []);
 });
 
-test('the grid states when a change actually lands', () => {
-  // model/effort/groomers are frozen into the spawn command, so the surface must say so instead of
-  // implying the change is live.
+test('the grid states when a change actually lands, in the page wording', () => {
   assert.equal(grid().note, GRID_APPLY_NOTE);
-  // And it says it in the page's ONE wording (src/settingsform.ts), so the grid and a marked row
-  // cannot state the same fact in two voices.
   assert.ok(GRID_APPLY_NOTE.endsWith(APPLIES_RESTART_TAIL), GRID_APPLY_NOTE);
-  assert.ok(GRID_APPLY_NOTE.startsWith('model · effort · groomers'), 'the note must name the columns it covers');
+  assert.ok(GRID_APPLY_NOTE.startsWith('orchestrator · models · defaults'), 'the note must name what it covers');
 });
 
-test('a slot toggle round-trips', () => {
-  const off = gridPatch(grid(), 'opus', 'enabled', false);
-  // Opus is the default GROOMER in the fixture, so turning it off is refused — use a free slot.
-  assert.equal(off.ok, false);
-  const free = grid({}, 'sonnet', 'sonnet');
-  assert.deepEqual(
-    gridPatch(free, 'opus', 'enabled', false),
-    { ok: true, patches: [{ key: 'loopBoard.models.opus.enabled', value: false }] }
-  );
-  assert.deepEqual(
-    gridPatch(free, 'fable', 'enabled', true),
-    { ok: true, patches: [{ key: 'loopBoard.models.fable.enabled', value: true }] }
-  );
-  // Anything non-boolean from the webview is coerced to `false`, never written through raw.
-  assert.deepEqual(
-    gridPatch(free, 'fable', 'enabled', 'yes'),
-    { ok: true, patches: [{ key: 'loopBoard.models.fable.enabled', value: false }] }
-  );
+test('the role model selects write the four model keys; none only for the reviewer; an OFF model is refused', () => {
+  const g = grid();
+  assert.deepEqual(gridPatch(g, 'orchestrator', 'model', 'opus'), { ok: true, patches: [{ key: 'loopBoard.orchestrator.model', value: 'opus' }] });
+  assert.deepEqual(gridPatch(g, 'groomer', 'model', 'haiku'), { ok: true, patches: [{ key: 'loopBoard.defaultGroomerModel', value: 'haiku' }] });
+  assert.deepEqual(gridPatch(g, 'worker', 'model', 'sonnet'), { ok: true, patches: [{ key: 'loopBoard.defaultWorkerModel', value: 'sonnet' }] });
+  assert.deepEqual(gridPatch(g, 'reviewer', 'model', 'none'), { ok: true, patches: [{ key: 'loopBoard.defaultReviewerModel', value: 'none' }] });
+  assert.deepEqual(gridPatch(g, 'reviewer', 'model', 'opus'), { ok: true, patches: [{ key: 'loopBoard.defaultReviewerModel', value: 'opus' }] });
+  for (const r of ['orchestrator', 'groomer', 'worker']) {
+    assert.equal(gridPatch(g, r, 'model', 'none').ok, false, r + ': none');
+    assert.equal(gridPatch(g, r, 'model', 'auto').ok, false, r + ': auto');
+    assert.equal(gridPatch(g, r, 'model', 'opus[1m]').ok, false, r + ': a free string is no model');
+  }
+  for (const r of GRID_ROLES) {
+    const off = gridPatch(g, r, 'model', 'fable');
+    assert.equal(off.ok, false, r);
+    assert.match(off.reason, /Fable is off/);
+  }
 });
 
-test('disabling the slot that is the default worker or groomer is REFUSED, not auto-reassigned', () => {
-  // The decided case. A disabled slot is hidden from the Loops overview and the board's model
-  // selects, so a disabled default would route every unlabelled task to a slot the user can no
-  // longer see or start; silently moving the default elsewhere would change which model runs the
-  // work without asking. The radio column is in the same row, so the fix is one click.
-  const worker = gridPatch(grid({}, 'sonnet', 'opus'), 'sonnet', 'enabled', false);
-  assert.equal(worker.ok, false);
-  assert.match(worker.reason, /default worker/);
-
-  const groomer = gridPatch(grid({}, 'sonnet', 'opus'), 'opus', 'enabled', false);
-  assert.equal(groomer.ok, false);
-  assert.match(groomer.reason, /default groomer/);
-
-  // Re-ENABLING is never refused, whatever the slot's role.
-  assert.equal(gridPatch(grid({}, 'sonnet', 'opus'), 'sonnet', 'enabled', true).ok, true);
+test('the role effort selects write the three effort keys, max included; the reviewer has none', () => {
+  const g = grid();
+  assert.deepEqual(gridPatch(g, 'orchestrator', 'effort', 'max'), { ok: true, patches: [{ key: 'loopBoard.orchestrator.effort', value: 'max' }] });
+  assert.deepEqual(gridPatch(g, 'groomer', 'effort', 'xhigh'), { ok: true, patches: [{ key: 'loopBoard.defaultGroomerEffort', value: 'xhigh' }] });
+  assert.deepEqual(gridPatch(g, 'worker', 'effort', 'max'), { ok: true, patches: [{ key: 'loopBoard.defaultWorkerEffort', value: 'max' }] });
+  for (const bad of ['auto', 'ludicrous']) {
+    const r = gridPatch(g, 'worker', 'effort', bad);
+    assert.equal(r.ok, false, bad);
+    assert.match(r.reason, /low, medium, high, xhigh, max/);
+  }
+  assert.equal(gridPatch(g, 'reviewer', 'effort', 'high').ok, false);
 });
 
-test('the worker/groomer radios are single-choice writes to the two default keys', () => {
-  assert.deepEqual(
-    gridPatch(grid(), 'opus', 'worker', true),
-    { ok: true, patches: [{ key: 'loopBoard.defaultWorkerModel', value: 'opus' }] }
-  );
-  assert.deepEqual(
-    gridPatch(grid(), 'sonnet', 'groomer', true),
-    { ok: true, patches: [{ key: 'loopBoard.defaultGroomerModel', value: 'sonnet' }] }
-  );
+test('switching off a model that a role uses is REFUSED, the orchestrator included', () => {
+  // Decided (t-sgrp, kept by t-0e99): a disabled model is hidden from the board's selects and the
+  // bootstrap prompt, so a disabled default would send work to a model the user can no longer see;
+  // silently moving the default elsewhere would change which model runs the work without asking.
+  const g = grid({}, { groomer: 'opus', worker: 'sonnet', reviewer: 'opus' }, { model: 'haiku' });
+  for (const [m, r] of [['opus', 'groomer'], ['sonnet', 'worker'], ['haiku', 'orchestrator']]) {
+    const res = gridPatch(g, m, 'enabled', false);
+    assert.equal(res.ok, false, m);
+    assert.match(res.reason, new RegExp(`the ${r} model`), m);
+  }
+  assert.equal(gridPatch(g, 'sonnet', 'enabled', true).ok, true, 're-enabling is never refused');
+  const free = grid({}, { groomer: 'sonnet', worker: 'sonnet', reviewer: 'none' }, { model: 'sonnet' });
+  assert.deepEqual(gridPatch(free, 'opus', 'enabled', false), { ok: true, patches: [{ key: 'loopBoard.models.opus.enabled', value: false }] });
+  assert.deepEqual(gridPatch(free, 'haiku', 'enabled', 'yes'), { ok: true, patches: [{ key: 'loopBoard.models.haiku.enabled', value: false }] }, 'non-boolean is false');
 });
 
-test('a slot that is OFF cannot be made the default worker or groomer', () => {
-  // The same invariant read from the other side, so the pair can never disagree.
-  const w = gridPatch(grid(), 'fable', 'worker', true);
-  assert.equal(w.ok, false);
-  assert.match(w.reason, /Fable is off/);
-  const g = gridPatch(grid(), 'fable', 'groomer', true);
-  assert.equal(g.ok, false);
-  assert.match(g.reason, /default groomer/);
+test('a model id is validated like any spawn value; empty RESETS it to the CLI alias; both retire the legacy key (FB4, FB10)', () => {
+  const g = grid();
+  assert.deepEqual(gridPatch(g, 'opus', 'modelId', ' claude-opus-5-5[1m] '), { ok: true, patches: [
+    { key: 'loopBoard.models.opus.modelId', value: 'claude-opus-5-5[1m]' },
+    { key: 'loopBoard.models.opus.model', value: undefined },
+  ] });
+  assert.deepEqual(gridPatch(g, 'opus', 'modelId', '   '), { ok: true, patches: [
+    { key: 'loopBoard.models.opus.modelId', value: undefined },
+    { key: 'loopBoard.models.opus.model', value: undefined },
+  ] });
+  for (const bad of ['opus; rm -rf /', 'claude 5', '$(x)']) {
+    const r = gridPatch(g, 'opus', 'modelId', bad);
+    assert.equal(r.ok, false, bad);
+    assert.match(r.reason, /not a valid model id/);
+  }
 });
 
-test('an invalid --model string is refused with the reason shown, a valid one writes through', () => {
-  assert.deepEqual(
-    gridPatch(grid(), 'sonnet', 'model', 'sonnet[1m]'),
-    { ok: true, patches: [{ key: 'loopBoard.models.sonnet.model', value: 'sonnet[1m]' }] }
-  );
-  const bad = gridPatch(grid(), 'sonnet', 'model', 'sonnet; rm -rf /');
-  assert.equal(bad.ok, false);
-  assert.match(bad.reason, /not a valid --model string/);
-  assert.match(bad.reason, /sonnet/, 'the reason must name what would be spawned instead');
-  // A space alone is enough to fail the allowlist — nothing unvalidated ever reaches the shell line.
-  assert.equal(gridPatch(grid(), 'sonnet', 'model', 'claude 5').ok, false);
+test('the effort floor and ceiling write per model and are refused when they would cross (FB7)', () => {
+  const g = grid({ haiku: { enabled: true, minEffort: 'medium', maxEffort: 'high' } });
+  assert.deepEqual(gridPatch(g, 'haiku', 'minEffort', 'high'), { ok: true, patches: [{ key: 'loopBoard.models.haiku.minEffort', value: 'high' }] });
+  assert.deepEqual(gridPatch(g, 'haiku', 'maxEffort', 'max'), { ok: true, patches: [{ key: 'loopBoard.models.haiku.maxEffort', value: 'max' }] });
+  const up = gridPatch(g, 'haiku', 'minEffort', 'xhigh');
+  assert.equal(up.ok, false);
+  assert.match(up.reason, /cannot be above the highest/);
+  assert.equal(gridPatch(g, 'haiku', 'maxEffort', 'low').ok, false);
+  assert.equal(gridPatch(g, 'haiku', 'maxEffort', 'auto').ok, false);
 });
 
-test('an empty --model CLEARS the override rather than being rejected', () => {
-  assert.deepEqual(
-    gridPatch(grid(), 'opus', 'model', '   '),
-    { ok: true, patches: [{ key: 'loopBoard.models.opus.model', value: '' }] }
-  );
-});
-
-test('effort is checked against the declared effort levels', () => {
-  assert.deepEqual(
-    gridPatch(grid(), 'fable', 'effort', 'max'),
-    { ok: true, patches: [{ key: 'loopBoard.models.fable.effort', value: 'max' }] }
-  );
-  const bad = gridPatch(grid(), 'fable', 'effort', 'ludicrous');
-  assert.equal(bad.ok, false);
-  assert.match(bad.reason, /low, medium, high, xhigh, max/);
-});
-
-test('groomConcurrency is CLAMPED to its minimum of 1, not refused', () => {
+test('groomConcurrency is CLAMPED to its minimum of 1, not refused, and only on the orchestrator row', () => {
   assert.equal(clampGroomConcurrency(0), 1);
   assert.equal(clampGroomConcurrency(-7), 1);
   assert.equal(clampGroomConcurrency(1), 1);
@@ -157,39 +148,55 @@ test('groomConcurrency is CLAMPED to its minimum of 1, not refused', () => {
   assert.equal(clampGroomConcurrency(MAX_GROOM_CONCURRENCY + 100), MAX_GROOM_CONCURRENCY);
   assert.equal(clampGroomConcurrency('6'), 6);
   assert.equal(clampGroomConcurrency('lots'), null);
-  assert.deepEqual(
-    gridPatch(grid(), 'opus', 'groomConcurrency', 0),
-    { ok: true, patches: [{ key: 'loopBoard.models.opus.groomConcurrency', value: 1 }] }
-  );
-  const bad = gridPatch(grid(), 'opus', 'groomConcurrency', 'lots');
+  assert.deepEqual(gridPatch(grid(), 'orchestrator', 'groomConcurrency', 0), { ok: true, patches: [{ key: 'loopBoard.orchestrator.groomConcurrency', value: 1 }] });
+  const bad = gridPatch(grid(), 'orchestrator', 'groomConcurrency', 'lots');
   assert.equal(bad.ok, false);
   assert.match(bad.reason, /whole number/);
+  assert.equal(gridPatch(grid(), 'groomer', 'groomConcurrency', 2).ok, false);
 });
 
-test('an unknown slot or field is refused — the webview is never trusted', () => {
-  assert.equal(gridPatch(grid(), 'haiku', 'enabled', true).ok, false);
+test('an unknown row or field is refused: the webview is never trusted', () => {
+  assert.equal(gridPatch(grid(), 'gpt', 'enabled', true).ok, false);
+  assert.equal(gridPatch(grid(), 'auto', 'enabled', true).ok, false);
   assert.equal(gridPatch(grid(), 'opus', 'nonsense', true).ok, false);
-  assert.equal(isKnownSlot('opus'), true);
-  assert.equal(isKnownSlot('haiku'), false);
-  assert.equal(isKnownSlot(7), false);
+  assert.equal(gridPatch(grid(), 'opus', 'model', 'opus').ok, false, 'a model row has no model cell');
+  assert.equal(gridPatch(grid(), 'orchestrator', 'enabled', true).ok, false);
+  for (const id of ['opus', 'sonnet', 'fable', 'haiku', 'orchestrator', 'groomer', 'worker', 'reviewer']) assert.equal(isKnownSlot(id), true, id);
+  for (const id of ['gpt', 'auto', 'none', 'defaults', 7]) assert.equal(isKnownSlot(id), false, String(id));
   assert.equal(isGridField('model'), true);
   assert.equal(isGridField('__proto__'), false);
 });
 
-test('the six columns are exactly the six editable attributes', () => {
-  assert.deepEqual(GRID_FIELDS, ['enabled', 'worker', 'groomer', 'model', 'effort', 'groomConcurrency']);
+test('the editable attributes are exactly the grid fields', () => {
+  assert.deepEqual(GRID_FIELDS, ['model', 'effort', 'groomConcurrency', 'enabled', 'modelId', 'minEffort', 'maxEffort']);
 });
 
-test('slotKey builds the flattened manifest keys, not a legacy nested object path', () => {
-  assert.equal(slotKey('opus', 'groomConcurrency'), 'loopBoard.models.opus.groomConcurrency');
-  assert.equal(slotKey('fable', 'enabled'), 'loopBoard.models.fable.enabled');
+test('enabledKey and modelKey build the flattened manifest keys', () => {
+  assert.equal(enabledKey('haiku'), 'loopBoard.models.haiku.enabled');
+  assert.equal(modelKey('opus', 'maxEffort'), 'loopBoard.models.opus.maxEffort');
 });
 
-test('the legacy bare-string slot config still renders a row', () => {
-  // `"sonnet": "sonnet[1m]"` is an accepted shorthand for the --model override (src/model.ts).
-  const g = buildModelGrid({ sonnet: 'sonnet[1m]' }, 'sonnet', 'opus');
-  const row = g.rows.find((r) => r.id === 'sonnet');
-  assert.equal(row.model, 'sonnet[1m]');
-  assert.equal(row.spawned, 'sonnet[1m]');
-  assert.equal(row.enabled, true);
+// t-0e99 FB10: the owner's user settings still held `"loopBoard.models.sonnet.model":
+// "claude-haiku-5-5"`; clearing the Sonnet id deleted only `modelId`, the read-both fallback read the
+// legacy string back, and Sonnet subagents kept running on Haiku. Replays the grid's writes against a
+// settings map and re-reads it the way the host does.
+test('clearing (or setting) a model id sticks even with the legacy per-slot --model string still in user settings', () => {
+  const { readModelsConfig, resolveModels, aliasEnv } = require('../out-test/model.js');
+  const settings = { 'loopBoard.models.sonnet.model': 'claude-haiku-5-5' };
+  const get = (k, d) => (`loopBoard.${k}` in settings ? settings[`loopBoard.${k}`] : d);
+  const set = (k) => settings[`loopBoard.${k}`];
+  const read = () => resolveModels(readModelsConfig(get, set));
+  const sonnet = () => read().find((m) => m.id === 'sonnet').modelId;
+  const apply = (r) => { assert.equal(r.ok, true); for (const p of r.patches) { if (p.value === undefined) delete settings[p.key]; else settings[p.key] = p.value; } };
+  assert.equal(sonnet(), 'claude-haiku-5-5', 'precondition: the legacy string is read as the id');
+  const g = buildModelGrid(readModelsConfig(get, set), ORCHESTRATOR_DEFAULTS, TASK_DEFAULTS);
+  assert.equal(g.models.find((m) => m.id === 'sonnet').modelId, 'claude-haiku-5-5', 'the field shows it');
+  apply(gridPatch(g, 'sonnet', 'modelId', ''));
+  assert.equal(sonnet(), '', 'cleared: the CLI alias applies');
+  assert.deepEqual(aliasEnv(read()), {}, 'no env override is sent');
+  assert.ok(!('loopBoard.models.sonnet.model' in settings), 'the legacy key is retired');
+  settings['loopBoard.models.sonnet.model'] = 'claude-haiku-5-5';
+  apply(gridPatch(g, 'sonnet', 'modelId', 'claude-sonnet-5-5[1m]'));
+  assert.equal(sonnet(), 'claude-sonnet-5-5[1m]');
+  assert.ok(!('loopBoard.models.sonnet.model' in settings), 'setting an id retires the legacy key too');
 });

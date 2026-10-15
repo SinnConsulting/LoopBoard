@@ -58,7 +58,7 @@
   const PRESET_MINUTES = [15, 30, 60, 120, 240];
   // Popover draft state, kept OUTSIDE render() because render() rebuilds every wired node (the
   // popover's included) on every board message — without this the popover would vanish mid-edit on any refresh.
-  // null = closed; otherwise { model, action, minutes, custom, repeat, force, error }.
+  // null = closed; otherwise { loop, action, minutes, custom, repeat, force, error }.
   let restartDraft = null;
 
   // Wording per scheduled action. `force` only exists for the two that can kill a working
@@ -74,7 +74,7 @@
     // one schedule exists per loop, so opening a different action starts from defaults.
     const armed = loop.restart && loop.restart.action === action ? loop.restart : null;
     restartDraft = {
-      model: loop.id,
+      loop: loop.id,
       action: action,
       // Re-opening a loop that already has a schedule shows its current settings (the story's
       // "re-opening the popover shows its current settings and offers to clear it").
@@ -91,7 +91,7 @@
     on(btn, 'contextmenu', (e) => {
       // Suppress the host's own menu so the popover is the only thing that opens.
       e.preventDefault();
-      const open = restartDraft && restartDraft.model === loop.id && restartDraft.action === action;
+      const open = restartDraft && restartDraft.loop === loop.id && restartDraft.action === action;
       if (open) closeRestartPopover(); else openRestartPopover(loop, action);
     });
   }
@@ -146,14 +146,14 @@
           render();
           return;
         }
-        vscode.postMessage({ type: 'armRestart', model: d.model, action: d.action, minutes: String(minutes), repeat: d.repeat, force: copy.force ? d.force : false });
+        vscode.postMessage({ type: 'armRestart', loop: d.loop, action: d.action, minutes: String(minutes), repeat: d.repeat, force: copy.force ? d.force : false });
         closeRestartPopover();
       },
     }, loop.restart && loop.restart.action === d.action ? 'Update' : copy.arm));
     if (loop.restart) {
       actions.append(h('button', {
         class: 'btn-sm secondary', type: 'button',
-        onclick: () => { vscode.postMessage({ type: 'clearRestart', model: d.model }); closeRestartPopover(); },
+        onclick: () => { vscode.postMessage({ type: 'clearRestart', loop: d.loop }); closeRestartPopover(); },
       }, 'Clear'));
     }
     actions.append(h('button', { class: 'btn-sm secondary', type: 'button', onclick: closeRestartPopover }, 'Cancel'));
@@ -247,9 +247,9 @@
       const loops = h('div', { class: 'sb-section' });
       loops.append(h('div', { class: 'sb-label' }, 'Loops'));
       for (const l of board.loops) {
-        // Actively working = this loop is running AND owns the single In-Progress task (LOOP.md
-        // Rule 2's GLOBAL SINGLE-TASK LIMIT), derived from board.concurrency.inProgress by model.
-        const owns = !!(board.concurrency && board.concurrency.inProgress.some((t) => t.model === l.id));
+        // Actively working = this loop is running AND a task is In Progress (LOOP.md Rule 2's GLOBAL
+        // SINGLE-TASK LIMIT): the one orchestrator works every task through its subagents (t-0e99).
+        const owns = !!(board.concurrency && board.concurrency.inProgress.length);
         const working = l.running && owns;
         const dotClass = 'loop-dot ' + (l.running ? 'on' : 'off') + (working ? ' working pulse' : '');
         // Play is disabled while running (the row body handles focusing it instead) — its label
@@ -258,7 +258,7 @@
         // Only a running loop's row body reveals+focuses its terminal on click; a stopped loop's row
         // stays inert (starting one is the play button's job, not a body click).
         const bodyProps = l.running
-          ? { class: 'loop-body click', role: 'button', tabindex: '0', 'aria-label': 'Reveal ' + l.name + ' terminal', onclick: () => vscode.postMessage({ type: 'revealTerminal', model: l.id }) }
+          ? { class: 'loop-body click', role: 'button', tabindex: '0', 'aria-label': 'Reveal ' + l.name + ' terminal', onclick: () => vscode.postMessage({ type: 'revealTerminal', loop: l.id }) }
           : { class: 'loop-body' };
         const body = h('span', bodyProps,
           h('span', { class: dotClass }),
@@ -266,7 +266,7 @@
           h('span', { class: 'loop-hint' }, l.hint));
         if (l.running) {
           on(body, 'keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', model: l.id }); }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vscode.postMessage({ type: 'revealTerminal', loop: l.id }); }
           });
         }
         // Each of the three buttons keeps its original LEFT-click meaning — act now (t-77d1
@@ -293,7 +293,7 @@
             class: 'icon-btn' + (armedFor(action) ? ' armed' : '') + (enabled ? '' : ' off'),
             type: 'button', 'aria-label': label, title: label,
             'aria-disabled': enabled ? null : 'true',
-            onclick: enabled ? () => vscode.postMessage({ type: message, model: l.id }) : null,
+            onclick: enabled ? () => vscode.postMessage({ type: message, loop: l.id }) : null,
           }, icon(glyph));
           bindScheduleMenu(btn, l, action);
           return btn;
@@ -345,7 +345,7 @@
         if (l.idle) {
           wrap.append(h('div', { class: 'restart-indicator idle-indicator' + (l.idle.stopping ? ' pending' : '') }, l.idle.label));
         }
-        if (restartDraft && restartDraft.model === l.id) wrap.append(renderRestartPopover(l));
+        if (restartDraft && restartDraft.loop === l.id) wrap.append(renderRestartPopover(l));
         loops.append(wrap);
       }
       sb.append(loops);
@@ -365,17 +365,17 @@
             c.breached ? 'In Progress — limit breached' : 'In Progress'));
         const revealLabel = 'Open the in-progress task on the board';
         for (const t of c.inProgress) {
-          // `t.model` is already resolved host-side (the default model when the entry carries no
-          // `model:` line), so the raw id only ever shows for a slot that no longer exists.
-          const slot = board.loops.find((l) => l.id === t.model);
-          // A long title truncates with `…` by default, the `(<id>)` pinned and never cut; with
-          // `loopBoard.sidebarMarquee` on, the whole `<title> (<id>)` marquee-scrolls instead (see
+          // Same shape as an Agents row (t-0e99): grey `Opus Medium`, then `<task id>: <title>`, the
+          // worker model and effort already resolved host-side (the defaults when the entry carries no
+          // `model:`/`effort:` line, clamped into the model's effort range). A long title truncates
+          // with `…` by default; with `loopBoard.sidebarMarquee` on it marquee-scrolls instead (see
           // setupMarquees). The native tooltip carries the full text either way (t-9a29) — the
           // aria-label keeps saying what a click does.
-          const full = (t.title || t.id) + ' (' + t.id + ')';
+          const text = t.id + ': ' + (t.title || t.id);
+          const full = t.head + ' ' + text;
           const ipRow = h('button', { class: 'sb-row agent click', type: 'button', title: full + '\nClick to open on the board', 'aria-label': revealLabel, onclick: () => vscode.postMessage({ type: 'reveal', taskId: t.id, phase: 'inprogress' }) },
-            h('span', { class: 'agent-model' }, slot ? slot.name : t.model),
-            marquee(h('span', { class: 'marquee-text' }, t.title || t.id), h('span', { class: 'marquee-id' }, '\u00a0(' + t.id + ')')));
+            h('span', { class: 'agent-model' }, t.head),
+            marquee(h('span', { class: 'marquee-text' }, text)));
           // Its click reads only `t.id`, which its title shows, so an unchanged row survives a
           // repaint (tooltip, hover pause and marquee intact) instead of being rebuilt (see paint).
           keep.add(ipRow);
@@ -387,10 +387,12 @@
         sb.append(inProgress);
       }
 
-      // Agents (t-sbag): one group per loop slot, one row per LIVE subagent — never a finished
-      // one. The section exists to explain why an automatic restart is being held back, so an
-      // empty one is hidden entirely and a workspace without subagents sees no new chrome.
-      // Read-only: a subagent can be neither opened nor stopped from out here.
+      // Agents (t-sbag): one group (the orchestrator's, t-0e99), one row per LIVE subagent, never
+      // a finished one, laid out like an In Progress row (t-0e99): grey `a.head` (`Opus Medium`), then
+      // `<task id>: <title>` when the spawn followed LOOP.md's title rule, else just its model (src/subagents.ts). The section exists to explain why
+      // an automatic restart is being held back, so an empty one is hidden entirely and a workspace
+      // without subagents sees no new chrome. Read-only: a subagent can be neither opened nor
+      // stopped from out here.
       const agentsSection = h('div', { class: 'sb-section' }, h('div', { class: 'sb-label' }, 'Agents'));
       let anyAgents = false;
       for (const l of board.loops) {
@@ -399,10 +401,9 @@
           // Same marquee as the In-Progress title above (incl. its reduced-motion opt-out and its
           // default-off truncation): the label is long and the sidebar is narrow, and there is only
           // ever ONE marquee in here. The row's title already carries the full label.
-          agentsSection.append(h('div', { class: 'sb-row agent', title: l.name + ' · ' + a.label },
-            h('span', { class: 'agent-model' }, l.name),
-            h('span', { class: 'agent-dot pulse' }),
-            marquee(h('span', { class: 'marquee-text' }, a.label)),
+          agentsSection.append(h('div', { class: 'sb-row agent', title: a.head ? a.head + ' ' + a.title : a.label },
+            h('span', { class: 'agent-model' }, a.head),
+            marquee(h('span', { class: 'marquee-text' }, a.title)),
             h('span', { class: 'agent-duration' }, a.duration)));
         }
       }

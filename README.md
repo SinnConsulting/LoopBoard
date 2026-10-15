@@ -80,7 +80,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
     </td>
     <td width="33%" valign="top">
       <b>6 · Loop terminals</b><br>
-      <sub>One Claude Code terminal per model.</sub><br>
+      <sub>One Orchestrator terminal, every task on its own model.</sub><br>
       <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/06-loops.gif" width="100%" alt="Starting loops, watching context usage and scheduling a restart" /></a>
     </td>
   </tr>
@@ -92,7 +92,7 @@ delivers it to **Review**. You **approve** it into `DONE.md`. Two clicks; the lo
     </td>
     <td width="33%" valign="top">
       <b>8 · Settings</b><br>
-      <sub>Every model in one grid.</sub><br>
+      <sub>The Orchestrator and every model in one place.</sub><br>
       <a href="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif"><img src="https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/docs/showcase/gifs/08-settings.gif" width="100%" alt="The settings page: model-slot grid, custom --model, effort, switching a slot off" /></a>
     </td>
     <td width="33%" valign="middle" align="center">
@@ -160,23 +160,27 @@ Loops never commit to `main` and never merge. Merging is your call.
 <details>
 <summary><b>6 · Loop terminals</b></summary>
 
-Each **▶** opens a VS Code terminal named `Claude <Model>` running one command:
+**▶** opens ONE VS Code terminal, `Claude Orchestrator`, running one command:
 
 ```sh
-claude --permission-mode auto --model 'opus' --effort medium --name loopboard-opus-<id> \
-  '/loop 5m You are running as model opus with a grooming concurrency cap of 3. Open .loopboard/LOOP.md, …'
+claude --permission-mode auto --model 'opus' --effort low --name loopboard-orchestrator-<id> \
+  '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus low-xhigh, haiku. …'
 ```
 
-The prompt only points at the **Automation** section of `.loopboard/LOOP.md`, which the loop
-re-reads every pass — edit your rules there and running loops follow.
+The Orchestrator never edits code: every groom, implementation and review is a subagent on the
+task's own model and effort (**Groom with**, **Work with** and **Review with** on each card), else
+the role default; it never picks one for you. The prompt names the defaults and points at the **Automation** section of
+`.loopboard/LOOP.md`, which the loop re-reads every pass: edit your rules there and it follows.
 
-- **Context bar** — a session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
-  (default 35%, `0` = off). A loop holding the In Progress task is never interrupted; the restart
+- **Context bar**: the session restarts (or `/clear`s) at the `loopBoard.contextLimit.percent` mark
+  (default 35%, `0` = off). It never interrupts a task In Progress or a live subagent; the restart
   waits.
-- **♻ / ■** — restart with a fresh context, or stop. **Right-click** ▶ ♻ ■ to schedule it.
+- **♻ / ■**: restart with a fresh context, or stop. **Right-click** ▶ ♻ ■ to schedule it.
+- **Coming from per-model loops?** Old `Claude Opus`/`Sonnet`/`Fable` terminals that survive the
+  update get one prompt to stop them, and once `LOOP.md` is synced a leftover one stands down.
 
-The Claude sessions in these recordings are simulated (VS Code can't read a terminal); the spawn
-line is the real one.
+These recordings still show the per-model loops LoopBoard ran before the Orchestrator; the Claude
+sessions in them are simulated (VS Code can't read a terminal).
 
 </details>
 
@@ -195,13 +199,18 @@ line is the real one.
 <details>
 <summary><b>8 · Settings</b></summary>
 
-The sidebar's **Settings** link opens LoopBoard's settings page. One grid covers every model:
-**on**, **default worker**, **default groomer**, **`--model`**, **effort**, **groomers**. Other
-settings are grouped below.
+The sidebar's **Settings** link opens LoopBoard's settings page. The **Roles** table picks, from
+dropdowns, the model and effort of the **Orchestrator** (plus its grooming cap) and the defaults for
+the **groomer**, **worker** and **reviewer** (`none` = no review). Out of the box: Orchestrator on
+Opus at effort `low`, groomer, worker and reviewer on Opus at `medium`; Opus and Haiku on, Sonnet and
+Fable off (turn them on to offer them), Opus capped at `xhigh`. The **Models** table turns each
+model on or off, can point its alias at a specific **model id**, and sets its **lowest** and
+**highest effort**: every spawn on that model is clamped into that range. Other settings follow.
 
 - These are **VS Code user settings**; a cloned repo can never change how much authority your agent
   gets.
-- Spawn-time settings (`--model`, effort, interval, permission mode, …) apply on the next ▶ or ♻.
+- Spawn-time settings (`--model`, effort, defaults, interval, permission mode, …) apply on the next
+  ▶ or ♻; the board's selects and new drafts use a changed default at once.
 
 </details>
 
@@ -219,7 +228,7 @@ settings are grouped below.
         <li><b>Right-click</b> ▶, ♻ or ■ to schedule a start, restart or stop: 15 minutes to 4 hours, a custom delay, and <b>Repeat</b>. Left-click still acts immediately.</li>
         <li>One schedule per loop, shown under its row. Arming another replaces it.</li>
         <li>A restart or stop <b>waits</b> while the loop is working on the In Progress task or still has a subagent running, then fires.</li>
-        <li><b>Force</b> skips the wait. A modal asks once, when you arm it: a forced restart or stop leaves the task In Progress with nobody on it.</li>
+        <li><b>Force</b> skips the wait. A modal asks once, when you arm it: a forced restart or stop leaves the task In Progress with nobody on it until the next loop pass resumes it.</li>
         <li>Schedules last until VS Code reloads.</li>
       </ul>
     </td>
@@ -279,14 +288,14 @@ settings are grouped below.
 2. Run **LoopBoard: Initialize Workspace**.
 3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
    `echo '.loopboard/' >> .gitignore`
-4. Write a story, then press **▶** on a loop in the sidebar.
+4. Write a story, then press **▶** on the **Orchestrator** row in the sidebar.
 
 Commands:
 
 - **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
 - **LoopBoard: Open Board** — open the board.
 - **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
-- **LoopBoard: Start Loop** — start a loop terminal, like ▶ in the sidebar.
+- **LoopBoard: Start Loop**: start the Orchestrator loop terminal, like ▶ in the sidebar.
 - **LoopBoard: What's New** — open the release notes for the version you're running, like
   **What's new?** in the sidebar.
 - **LoopBoard: Show Some Love** — show the sidebar's thank-you card with links to star LoopBoard on
@@ -303,7 +312,7 @@ all state lives in `.loopboard/`.
 
 ```
 .loopboard/
-  TODO.md          task index — one entry per active task (id, phase, model, groomer, Q&A)
+  TODO.md          task index: one entry per active task (id, phase, model/effort/groomer/reviewer, Q&A)
   DONE.md          approved tasks, newest first (created on the first approval)
   LOOP.md          workflow rules + the loop instructions, re-read every pass
   tasks/<id>.md    per task: meta, problem, description, goals, worklog, delivered
@@ -350,14 +359,22 @@ section.
 
 ## Subagent model and effort
 
-Every subagent a loop spawns — groomer, implementer, reviewer, helper — gets its `model` and
-`effort` per spawn, which needs **Claude Code 2.1.292+** (an older CLI most likely drops the effort
-silently). `LOOP.md`'s Subagents rule picks the effort from four signals in the story: subsystems,
-numbers to pin down, a reversed decision, an open approach. `medium` is the default, `high` or
-`xhigh` only when the story shows it, `low` only for exact, fully specified edits. The model stays
-the loop's own; only small mechanical helpers run on Haiku. A slot's `.effort` sets the loop
-session itself.
+ONE Orchestrator loop does all the work through subagents: every groom, implementation and review
+is a subagent with its own `model` and `effort`, passed per spawn, which needs **Claude Code
+2.1.292+** (an older CLI most likely drops the effort silently). The Orchestrator never edits code.
 
+- **Per task.** `Groom with`, `Work with` and `Review with` on each card (and in the composer) pick
+  the subagent models: Opus, Sonnet, Fable, Haiku, or `none` for grooming (on hold) and review (no
+  review). An effort select sits beside **Groom with** and **Work with** (`low`…`xhigh`). Unset
+  fields use the role defaults on the settings page. LoopBoard never picks a model or effort for you.
+- **Effort range per model.** A model's lowest and highest effort (settings page) clamp every spawn
+  on it, whether the effort came from the task or a default.
+- **Complexity.** The groomer and the implementer each record the task's complexity in its task file
+  (`complexity-groomer:` / `complexity-worker:`, e.g. `high (D)`), for calibration only.
+- **Review.** `Review with` (default `opus`; `none` = no review) runs a review subagent at the task's
+  worker effort.
+- **Sidebar names.** Agents rows read `<groom|work|review> <model>-<effort>-<task id>: <title>`, and
+  so does each subagent's name in Claude Code.
 - **Check effort in the transcript, never by asking.** A subagent asked for its effort makes one
   up; the `"effort"` field in its JSONL under `~/.claude/projects/` is the truth.
 
@@ -458,31 +475,58 @@ either is stale.
 
 ## Settings
 
-The sidebar's **Settings** link opens LoopBoard's settings page: four sections, the model slots as
-one grid, a reset per setting, **Synchronise Templates**, and **Open in VSCode Settings**
-(`@ext:SinnConsulting.loopboard-todo`) for search and JSON. They're ordinary user settings — see
-[Security model](#security-model) for why they're user-only. Questions like "why no Haiku slot?"
-are answered in [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md).
+The sidebar's **Settings** link opens LoopBoard's settings page: the Orchestrator and the task
+models as one block, a reset per setting, **Synchronise Templates**, and **Open in VSCode Settings**
+(`@ext:SinnConsulting.loopboard-todo`) for search and JSON. They're ordinary user settings; see
+[Security model](#security-model) for why they're user-only. Questions like "can tasks run on
+Haiku?" are answered in [FAQ.md](https://github.com/SinnConsulting/LoopBoard/blob/main/FAQ.md).
 
-### Model slots (`loopBoard.models.<slot>`)
+### Orchestrator and models
 
-The slots `opus`, `sonnet` and `fable` are what tasks name (`model:` / `groomer:`) and what the
-sidebar's **Loops** rows start. Each has four keys:
+- `loopBoard.orchestrator.model`: the Orchestrator's `claude --model`, one of the enabled models
+  (default `opus`).
+- `loopBoard.orchestrator.effort`: `claude --effort` for the loop session itself (`low`…`max`,
+  default `low`); subagents get theirs per spawn (see
+  [Subagent model and effort](#subagent-model-and-effort)).
+- `loopBoard.orchestrator.groomConcurrency`: grooming subagents per pass (default `3`, minimum
+  `1`). Extra tasks wait for a later pass.
+- `loopBoard.models.<model>.enabled`: offer Opus, Sonnet, Fable or Haiku on the board and in the
+  Orchestrator's prompt. A model a role uses cannot be turned off.
+- `loopBoard.models.<model>.modelId`: the model id the alias resolves to for the Orchestrator and
+  every subagent on it (sent as `ANTHROPIC_DEFAULT_<MODEL>_MODEL`); anything outside
+  `[A-Za-z0-9._\[\]-]` is ignored. `minEffort` / `maxEffort`: the range every spawn on it is clamped
+  into.
+- `loopBoard.defaultGroomerModel` / `defaultWorkerModel` / `defaultReviewerModel` and
+  `defaultGroomerEffort` / `defaultWorkerEffort`: what a task gets when it names none of its own.
 
-- `.enabled` — show or hide the slot.
-- `.model` — the string passed as `claude --model` (e.g. `opus[1m]`). Empty = the slot name;
-  anything outside `[A-Za-z0-9._\[\]-]` is rejected.
-- `.effort` — `claude --effort` for the loop session itself (`low`…`max`, default `medium`);
-  subagents get their effort per spawn (see [Subagent model and effort](#subagent-model-and-effort)).
-- `.groomConcurrency` — grooming subagents per pass (default `3`, minimum `1`). Extra tasks wait
-  for a later pass.
-
-These, like `loopBoard.loopInterval`, `loopBoard.delegateWork` and `loopBoard.delegateReview`, apply
-on the slot's next **▶** or **♻**; a running loop keeps what it started with.
+All of these ride the spawn command, like `loopBoard.loopInterval`: the Orchestrator picks a change
+up on its next **▶** or **♻**. The board's selects and new drafts use a changed default at once.
 
 <details>
 <summary><b>Migration notes</b></summary>
 
+- **One Orchestrator loop replaces the per-model loops (breaking).** ▶ now opens one `Claude
+  Orchestrator` terminal that delegates every groom, implementation and review to a subagent on the
+  task's model. Existing `model:`/`groomer:` fields keep their meaning (now the subagent model),
+  absent fields use the defaults, and `model: haiku` lines that used to show as unparsed are valid.
+  `LOOP.md` gets the new rules through Sync; a custom rule that talks about per-model loops needs a
+  hand edit. Old `Claude Opus`/`Sonnet`/`Fable` terminals get one prompt to stop them.
+- **Settings moved.** `loopBoard.models.opus.effort|groomConcurrency` become
+  `loopBoard.orchestrator.*`; each slot's `loopBoard.models.<model>.model` string becomes
+  `loopBoard.models.<model>.modelId`; the other slot keys and `loopBoard.delegateWork` are dropped
+  (delegation is always on); `loopBoard.delegateReview: true` becomes
+  `loopBoard.defaultReviewerModel: opus` (`false` becomes `none`). New defaults: the Orchestrator runs
+  on Opus at effort `low`, the groomer, worker and reviewer on Opus at `medium`; Sonnet and Fable are off
+  (a task that already names one keeps running on it; turn it on to offer it again) and Opus is
+  capped at `xhigh`.
+- **After task removed.** `loopBoard.afterTask` and its deprecated pair `loopBoard.autoRecycle` /
+  `loopBoard.clearSessionAfterTask` are gone: nothing recycles or clears the Orchestrator because a
+  task left In Progress. ♻, the context limit, the idle stop and schedules stay. Migrate Config
+  removes the old keys. With `loopBoard.autoMigrateSettings` on (the default), each activation
+  applies the bulk moves and removals automatically; a conflict (old and new key both set) or a
+  blind removal of an unreadable key still waits in the Migrate Config panel for your click. Turn
+  the setting off to migrate only by hand: the panel offers every move, and until you apply it the
+  old keys still take effect.
 - **Workspace settings are ignored.** A `loopBoard.*` value in `.vscode/settings.json` or a
   `.code-workspace` file no longer applies; move it to your user settings. Repos can no longer
   ship team defaults — deliberately.
@@ -507,41 +551,46 @@ show them.
 
 <!-- loopboard:settings:begin -->
 
-### LoopBoard: Models & Slots
+### LoopBoard: Orchestrator & Models
 
 | Setting | Default | Description |
 |---|---|---|
-| `loopBoard.defaultWorkerModel` | `sonnet` | The model that owns (works) tasks with no explicit `model:` field. |
-| `loopBoard.defaultGroomerModel` | `opus` | The model that grooms tasks/drafts with no explicit `groomer:` field. |
-| `loopBoard.models.opus.enabled` | `true` | **Opus slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
-| `loopBoard.models.opus.model` | `""` | Custom `--model` string spawned for the Opus slot (e.g. `opus[1m]`). Empty = `opus`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.opus.effort` | `medium` | Reasoning effort the Opus slot's loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, picked by the effort rubric in `LOOP.md` (Claude Code 2.1.292+). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.opus.groomConcurrency` | `3` | Cap on how many grooming subagents the Opus slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.sonnet.enabled` | `true` | **Sonnet slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
-| `loopBoard.models.sonnet.model` | `""` | Custom `--model` string spawned for the Sonnet slot (e.g. `sonnet[1m]`). Empty = `sonnet`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.sonnet.effort` | `medium` | Reasoning effort the Sonnet slot's loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, picked by the effort rubric in `LOOP.md` (Claude Code 2.1.292+). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.sonnet.groomConcurrency` | `3` | Cap on how many grooming subagents the Sonnet slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.fable.enabled` | `true` | **Fable slot.** Show it in the Loops overview and the board's model selects. The two settings below apply to this slot. |
-| `loopBoard.models.fable.model` | `""` | Custom `--model` string spawned for the Fable slot. Empty = `fable`. Invalid strings are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.fable.effort` | `medium` | Reasoning effort the Fable slot's loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, picked by the effort rubric in `LOOP.md` (Claude Code 2.1.292+). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.models.fable.groomConcurrency` | `3` | Cap on how many grooming subagents the Fable slot's loop may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass — nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.orchestrator.model` | `opus` | The model the one Orchestrator loop session runs on (`claude --model`). It only routes the board: every groom, implementation and review is a subagent on the task's own model and effort, else the role default below. To point the alias at a specific model id (e.g. a 1M-context build), set that model's `loopBoard.models.<model>.modelId`. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.orchestrator.effort` | `low` | Reasoning effort the Orchestrator loop session is started with, passed as `claude --effort`. It sets the loop session itself only; subagents get their effort per spawn, from the task's `effort:` / `groomer-effort:`, else the role default (Claude Code 2.1.292+). `max` is not recommended: at max effort a session tends to over-split review work into many subagents and time out. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.orchestrator.groomConcurrency` | `3` | Cap on how many grooming subagents the Orchestrator may run in parallel during one pass (Rule 14 in `LOOP.md`). Eligible tasks over the cap are left in place, taken in index order top down, and picked up on a later pass: nothing is queued or dropped. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.defaultGroomerModel` | `opus` | The model that grooms tasks and drafts with no `groomer:` field of their own. LoopBoard never picks a model for you: a spawn runs on the task's field, else this. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.defaultGroomerEffort` | `medium` | Reasoning effort for grooming tasks and drafts with no `groomer-effort:` field, clamped into the groomer model's lowest and highest effort. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.defaultWorkerModel` | `opus` | The model the implementer subagent runs on for tasks with no `model:` field of their own. LoopBoard never picks a model for you: a spawn runs on the task's field, else this. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.defaultWorkerEffort` | `medium` | Reasoning effort for implementing tasks with no `effort:` field, clamped into the worker model's lowest and highest effort. A review runs at the same effort. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.defaultReviewerModel` | `opus` | The model the review subagent runs on for tasks with no `reviewer:` field. `none`: no review subagent, the implementer's PR goes to Review directly. Any model (default `opus`): the review runs on it, at the task's worker effort (clamped into the reviewer model's range). A pass takes the task to Review with its PR still open; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. The loop never merges a PR. Replaces `loopBoard.delegateReview` (`true` became `opus`, `false` became `none`). The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.opus.enabled` | `true` | **Opus.** Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.opus.modelId` | `""` | **Opus.** The model id the `opus` alias resolves to, for the Orchestrator session and every subagent spawned on `opus` (e.g. a pinned or 1M-context build such as `claude-opus-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_OPUS_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.opus.minEffort` | `low` | **Opus.** The lowest effort any subagent on Opus runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.opus.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.opus.maxEffort` | `xhigh` | **Opus.** Default `xhigh`. The highest effort any subagent on Opus runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.sonnet.enabled` | `false` | **Sonnet.** Off by default. Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.sonnet.modelId` | `""` | **Sonnet.** The model id the `sonnet` alias resolves to, for the Orchestrator session and every subagent spawned on `sonnet` (e.g. a pinned or 1M-context build such as `claude-sonnet-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_SONNET_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.sonnet.minEffort` | `low` | **Sonnet.** The lowest effort any subagent on Sonnet runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.sonnet.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.sonnet.maxEffort` | `max` | **Sonnet.** The highest effort any subagent on Sonnet runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.fable.enabled` | `false` | **Fable.** Off by default. Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.fable.modelId` | `""` | **Fable.** The model id the `fable` alias resolves to, for the Orchestrator session and every subagent spawned on `fable` (e.g. a pinned or 1M-context build such as `claude-fable-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_FABLE_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.fable.minEffort` | `low` | **Fable.** The lowest effort any subagent on Fable runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.fable.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.fable.maxEffort` | `max` | **Fable.** The highest effort any subagent on Fable runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.haiku.enabled` | `true` | **Haiku.** Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.haiku.modelId` | `""` | **Haiku.** The model id the `haiku` alias resolves to, for the Orchestrator session and every subagent spawned on `haiku` (e.g. a pinned or 1M-context build such as `claude-haiku-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_HAIKU_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.haiku.minEffort` | `low` | **Haiku.** The lowest effort any subagent on Haiku runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.haiku.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.models.haiku.maxEffort` | `max` | **Haiku.** The highest effort any subagent on Haiku runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
 
 ### LoopBoard: Agent Setup
 
 | Setting | Default | Description |
 |---|---|---|
 | `loopBoard.permissionMode` | `auto` | `--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** — a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.loopInterval` | `5m` | Interval passed to `/loop` (e.g. `1m`, `5m`). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.afterTask` | `none` | What to do with a model's loop terminal once it finishes a task. Replaces the old `loopBoard.autoRecycle` / `loopBoard.clearSessionAfterTask` pair — if you still have either of those set and have not set this one, it is honoured (on → `recycle`, clear → `clear`). Whatever this is set to, the ♻ button still recycles a loop by hand at any time. |
-| `loopBoard.contextLimit.percent` | `35` | Automatically restart a loop once its Claude session fills this percentage of its context window. `35` (default) restarts it at 35%; `0` turns the feature off, so no loop is ever restarted for its context size — the usage bar under each running loop row still shows either way. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `35` on a 1M slot is the 350k mark and on a 200k fallback window the 70k mark. A loop that owns the In Progress task is **never** interrupted: the restart waits for it to go idle. |
-| `loopBoard.contextLimit.action` | `recycle` | What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. Independent of `loopBoard.afterTask`, which reacts to a finished task rather than to context size. |
-| `loopBoard.nudgeLoops` | `true` | When a board change gives one loop something to do — feedback on any card, a story whose questions are now FULLY answered, a task promoted to Backlog — paste a line naming that task into that model's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No terminal for that model: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before. |
-| `loopBoard.delegateWork` | `true` | On (default): each loop grooms through a subagent (Rule 14 in `LOOP.md`) and also delegates every code-editing step — the Backlog claim, a Feedback resume, Review-feedback rework, code-touching feedback in another phase — to an implementer subagent on the loop's own slot model, at the effort `LOOP.md`'s rubric picks for the task; the subagent branches, commits and opens the PR, while the loop keeps all `.loopboard/` bookkeeping. With `loopBoard.delegateReview` on (off by default) a second, sequential review subagent gates that PR before the loop sets Review. Off: the loop still grooms through a subagent but implements tasks inline in its own session. Either way the loop never merges: a delivered task sits in Review with its PR still open, waiting for you to tick it and merge. The behaviour itself lives in the Automation section of `LOOP.md`; only the mode rides the loop's bootstrap prompt. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
-| `loopBoard.delegateReview` | `false` | Only applies while `loopBoard.delegateWork` is on. Off (default): no review subagent runs — the implementer's PR goes to Review directly, exactly like the non-delegated flow. On: after the implementer subagent returns its PR, a review subagent (same slot model, at the implementer's final effort) reviews it; a pass takes the task straight to Review with the PR open, awaiting your tick; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. Either way the loop never merges a PR: merging is always yours. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.loopInterval` | `5` | Minutes between the loop's passes, passed to `/loop`; `5` (default). An invalid value falls back to 1. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with. |
+| `loopBoard.contextLimit.percent` | `35` | Automatically restart the loop once its Claude session fills this percentage of its context window. `35` (default) restarts it at 35%; `0` turns the feature off, so the loop is never restarted for its context size; the usage bar under the running loop row still shows either way. The window is taken from the model that actually ran, as recorded in the session transcript (the 5-series models are 1,000,000 tokens natively; a `[1m]` suffix also means 1,000,000; anything unrecognised falls back to 200,000), so `35` on a 1M window is the 350k mark and on a 200k fallback window the 70k mark. A loop with a task In Progress or a live subagent is **never** interrupted: the restart waits for it to go idle. |
+| `loopBoard.contextLimit.action` | `recycle` | What to do with a loop terminal when `loopBoard.contextLimit.percent` trips. |
+| `loopBoard.nudgeLoops` | `true` | When a board change gives the loop something to do (feedback on any card, a story whose questions are now FULLY answered, a task promoted to Backlog), paste a line naming that task into the Orchestrator's running loop terminal, so it acts on the change now instead of on its next scheduled pass. The text only seeds the REPL input, so it never interrupts work in flight, and it only ever supplements the loop's own board re-read. No running terminal: the nudge is held for its next start. Off disables the nudges entirely; loops keep working exactly as before. |
 | `loopBoard.idleStop.enabled` | `false` | Off (default): a loop runs until you stop it. On: stop a loop that has been idle for `loopBoard.idleStop.minutes` — idle meaning it owns no In Progress task and its session has no live subagent, the same busy test the context-limit restart waits on. A warning counts down the 30 seconds before the stop; its **Cancel** button keeps the loop running (restarts the idle clock), and with no click the stop goes ahead. The warning closes itself once the loop stops, turns busy or is stopped or restarted by hand. The stop is exactly the ■ button: the terminal closes and any scheduled start/restart/stop for that loop is cancelled. A busy loop is never stopped, and a loop that turns busy during the 30 seconds keeps running. Start it again with ▶. |
 | `loopBoard.idleStop.minutes` | `60` | Only applies while `loopBoard.idleStop.enabled` is on. How many minutes a loop must be idle before it is stopped; `60` (default). The warning appears 30 seconds before that mark, and the stop behaves exactly like the ■ button. An invalid value falls back to 60. |
-| `loopBoard.autoRecycle` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `recycle`); set that instead and clear this. |
-| `loopBoard.clearSessionAfterTask` | `false` | **Deprecated.** Replaced by `loopBoard.afterTask`. Still honoured while `loopBoard.afterTask` is unset (on → `clear`); set that instead and clear this. |
 
 ### LoopBoard: Board & Workspace
 
@@ -553,6 +602,7 @@ show them.
 | `loopBoard.cardsStartCollapsed` | `true` | Start board cards collapsed in every phase tab (New, Backlog, In Progress, Feedback, Review). On (default) starts them collapsed; off starts them expanded. A tab you set with **Collapse all** / **Expand all** keeps its state until this setting changes; changing it resets every tab to the new value. Story sections stay folded either way. |
 | `loopBoard.debug` | `off` | Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it. |
 | `loopBoard.showWhatsNew` | `true` | After LoopBoard updates, open a **What's New** tab once, on the first window load with a LoopBoard workspace. It names the version you updated to and links to its release notes on GitHub (the releases list when you skipped versions); LoopBoard fetches nothing. A first install or a downgrade opens nothing. The tab's **Don't show this again** tick turns this setting off. |
+| `loopBoard.autoMigrateSettings` | `true` | Migrate renamed and deprecated `loopBoard.*` keys in your user settings automatically, once when the window loads or the extension updates. It applies exactly what **Apply** in **Migrate Config** would: each old value moves to its new key and the old key is removed. A conflict (old and new key both set by you) and a blind removal of a key VSCode cannot read are never touched; they stay in **Migrate Config** for you to decide. A pass that changes something shows a popup with the count. Off: nothing migrates by itself; **Migrate Config** at the top of the LoopBoard settings page still shows and applies the plan. |
 
 <!-- loopboard:settings:end -->
 

@@ -154,7 +154,7 @@ module.exports = {
     await rec.click(sidebar.locator('.restart-actions .btn-sm.primary'), { ms: 420 });
     const modal = {
       message: 'Force-stop opus even while it is working on a task?',
-      detail: 'A forced stop kills the session mid-task. The task stays <code>phase: inprogress</code> in the tracker with no worker attached, and under LOOP.md Rule 2 that blocks every loop from claiming new work until you fix it by hand. Any subagents the session still has running are killed with it, mid-edit. Confirming now also covers the stop itself — it fires later without asking again.',
+      detail: 'A forced stop kills the session mid-task. The task stays <code>phase: inprogress</code> with no worker attached, so under LOOP.md Rule 2 no loop claims new work until the next loop pass resumes it. Any subagents the session still has running are killed with it, mid-edit. Confirming now also covers the stop itself: it fires later without asking again.',
       buttons: ['Arm forced stop', 'Cancel'],
       left: 440, top: 460,
     };

@@ -264,3 +264,38 @@ test('tags: a file without the key parses to no tags and serializes without a `t
   assert.doesNotMatch(serializeTaskFile(d, 'T', 't-1'), /tags:/);
   assert.deepEqual(parseTaskFile('').tags, []);
 });
+
+// t-0e99 (owner decision 2026-10-14): the groomer's and the implementer's complexity estimates are
+// recorded in Meta, never routed by. Round-tripped, never flagged, in the fixed order after tags.
+test('complexity: `complexity-groomer:` / `complexity-worker:` parse, write after tags and round-trip unflagged', () => {
+  const src = [
+    '# Story (t-c001)', '', '## Meta',
+    '- complexity-worker: medium (-)', '- added: 2026-10-14', '- complexity-groomer: high (D)', '- tags: ui', '',
+  ].join('\n');
+  const d = parseTaskFile(src);
+  assert.equal(d.complexityGroomer, 'high (D)');
+  assert.equal(d.complexityWorker, 'medium (-)');
+  assert.deepEqual(d.unknownLines, []);
+  const out = serializeTaskFile(d, 'Story', 't-c001');
+  assert.ok(out.includes('- added: 2026-10-14\n- tags: ui\n- complexity-groomer: high (D)\n- complexity-worker: medium (-)'), out);
+  assert.equal(serializeTaskFile(parseTaskFile(out), 'Story', 't-c001'), out, 'fixpoint');
+  const none = parseTaskFile('# S (t-c002)\n\n## Meta\n- added: 2026-10-14\n');
+  assert.equal(none.complexityGroomer, undefined);
+  assert.ok(!serializeTaskFile(none, 'S', 't-c002').includes('complexity'));
+});
+
+// t-0e99: `worker:` records the last delegated implementer so a pass can tell an orphaned
+// In Progress task (no live worker) from a running one.
+test('worker: `worker:` parses, writes last in Meta and round-trips unflagged', () => {
+  const src = [
+    '# Story (t-c003)', '', '## Meta',
+    '- worker: a1b2c3 @ 2026-10-15T10:00Z', '- added: 2026-10-14', '- complexity-worker: low (-)', '',
+  ].join('\n');
+  const d = parseTaskFile(src);
+  assert.equal(d.worker, 'a1b2c3 @ 2026-10-15T10:00Z');
+  assert.deepEqual(d.unknownLines, []);
+  const out = serializeTaskFile(d, 'Story', 't-c003');
+  assert.ok(out.includes('- complexity-worker: low (-)\n- worker: a1b2c3 @ 2026-10-15T10:00Z'), out);
+  assert.equal(serializeTaskFile(parseTaskFile(out), 'Story', 't-c003'), out, 'fixpoint');
+  assert.ok(!serializeTaskFile(parseTaskFile('# S (t-c004)\n\n## Meta\n- added: 2026-10-14\n'), 'S', 't-c004').includes('worker:'));
+});

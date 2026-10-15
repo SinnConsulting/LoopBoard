@@ -134,8 +134,10 @@ questions, an HTML-comment template) and `index-unknown.md`:
   key in `test/manifest-settings.test.js`. The live board is item 64 (untested).
 
 ### Loop command — `test/loop.test.js`
-- `buildLoopCommand` from the shipped `template-loop.md` names model+interval, points at
-  `.loopboard/LOOP.md`, is a single apostrophe-free line < 300 chars.
+- `buildLoopCommand` from the shipped `template-loop.md` names the orchestrator role, the interval,
+  the grooming cap, the enabled task models and the five defaults (t-0e99), never "running as
+  model" or a delegate phrase, points at `.loopboard/LOOP.md`, and is a single apostrophe-free line
+  < 300 chars even with the longest realistic values; hostile models or defaults never reach it.
 - Returns `undefined` with no `## Automation` section or no fence in it; an **earlier fence**
   (before `## Automation`) is not mis-picked. `template-todo.md` scaffold parses to zero entries
   and is a fixpoint.
@@ -150,16 +152,59 @@ questions, an HTML-comment template) and `index-unknown.md`:
   `effort: <level> (<signals>)` brief line, the `<effort>-<task id>:` / `haiku-<task id>:` titles,
   the S/N/D/U signals with their defining phrases, the `high`/`xhigh`/`low` rows and the
   unclear-is-absent tie-break, and the four Haiku-helper conditions (doubt keeps the task model;
-  Haiku never grooms, implements or reviews). The GROOM/WORK limits appear once; the Notes no
-  longer say effort rides the spawn command for subagents.
+  the helper never commits). Since t-0e99 the `model` and `effort` are the task's own fields, else
+  the prompt default, never picked by the loop (owner decision 2026-10-14: the `auto` table, the
+  rubric as an effort picker, the Haiku raise and the re-spawn rule are pinned ABSENT); the four
+  signals survive as the complexity RECORD (`complexity-groomer:`/`complexity-worker:`); the
+  `<mode> <model>-<effort>-<task id>: <task title>` title and the per-model effort range clamp are
+  pinned, and "Haiku never grooms" is pinned ABSENT. The GROOM/WORK limits
+  appear once; the Notes no longer say effort rides the spawn command for subagents.
 - README.md and `docs/showcase/README.md` name the 2.1.292 minimum and carry no loop-agent
-  reference; no slot `.effort` description in `package.json` claims subagents share the loop
-  effort. Whether loops really agree on a level is manual (item 68, untested).
+  reference; the orchestrator `.effort` description in `package.json` says subagents get their
+  effort per spawn and states the max-effort caveat. Whether loops really agree on a level is
+  manual (item 68, untested).
 - Rule 16 (board-blind subagents): the rule sits in the rules sync markers; its key phrases (ONLY
   writer, no subagent reads or writes `.loopboard/`, the GROOM report fields, the
   `/tmp/loopboard/<workspace>/<id>/groom.md` path, the newer-than recovery with "recovered", the
   complete-answer `suggestion:`) and the Rule 14 / Automation-fence hand-offs are pinned; what a
   live loop does with them is item 69 (untested).
+
+### Orchestrator loop and per-task routing (t-0e99)
+- `test/loop.test.js`: no rule or Automation step routes or claims by a loop's own model; the legacy
+  guard opens the fence and the prompt never trips it; no `auto` value or pick is left anywhere; a
+  Feedback/Review task whose answers or feedback change the story is re-groomed before an
+  implementer continues (FB9); delegation is always on, the review runs on the resolved reviewer
+  (`none` = no review); the intro and Notes describe one orchestrator.
+- `test/parser.test.js` + `test/fixtures/index-routing.md`: every value of `model:`, `effort:`,
+  `groomer:`, `groomer-effort:` and `reviewer:` parses (a DRAFT included), the fixture round-trips
+  byte for byte, the writer emits the fixed order, off-list values are flagged without voiding
+  other keys, and DONE.md keeps the new keys as unknown lines. `test/merge.test.js`: per-role
+  validation, patching and the fixed write order.
+- `test/nudge.test.js`: every reason goes to the one orchestrator whatever the task models;
+  `groomer: none` is never nudged; the new keys are named in the change list; a routing re-pick on
+  a New/DRAFT nudges its groomer (the pre-spawn carve-out left with `auto`).
+- `test/taskfile.test.js`: `complexity-groomer:`/`complexity-worker:` round-trip in Meta, unflagged.
+  `test/schedule.test.js`, `test/idle.test.js`: busy = any In-Progress task or a live subagent
+  (`busyLoops`), schedules and the idle clock are keyed by `orchestrator`; no after-task
+  recycle/clear path remains (FB13).
+- `test/model.test.js`, `test/settingsmigrate.test.js`, `test/settingsgrid.test.js`,
+  `test/manifest-settings.test.js`: the orchestrator and default settings resolve with their
+  read-both fallbacks (old Opus slot effort/cap, each slot `--model` string as that model id,
+  `delegateReview: true` = reviewer `opus`, legacy `defaultModel`); the per-model id override
+  (`aliasEnv`) and effort range (`clampEffort`); the migration panel's moves and removals; the
+  Roles/Models grid's writes and refusals (a model-id edit also retires the legacy `.model` string,
+  FB10); the manifest declares the new keys, no `auto`, no `afterTask` pair, and the owner's
+  defaults (FB12; every role default on a model that ships on); the migration replayed end to end
+  re-scans clean, and the leftover `loopBoard.models` object is a lossless blind removal (FB11).
+- `test/settingsmigrate.test.js`, `test/manifest-settings.test.js`, `test/settingsform.test.js`:
+  `loopBoard.autoMigrateSettings` is a live boolean, default on, rendered in Board & Workspace;
+  `decideAutoMigrate` applies exactly the bulk writes when on, nothing when off or for an empty
+  plan, never a conflict or a sweep, and the re-scan leaves only the conflicts; activation runs it
+  once before the template passes and logs skipped/applied/failed plus its popups.
+- `test/subagents.test.js`, `test/view.test.js`, `test/board-routing.test.js`: agent rows are named
+  `<groom|work|review> <model>-<effort>-<task id>: <title>` (the index title when known), In
+  Progress rows `<model>-<effort>-<task id>: <title>` with the effort clamped into the model range;
+  the payload carries the five defaults and each task's routing keys.
 
 ### Story tags — `test/tags.test.js`, `test/view.test.js`, `test/board-tags.test.js` (t-0b10)
 - `normalizeTags` trims, lower-cases, folds inner whitespace/comma/colon to `-`, de-duplicates and
@@ -181,15 +226,15 @@ questions, an HTML-comment template) and `index-unknown.md`:
   `restart`/`stop` only while running — so a restart armed for a since-stopped loop is swallowed
   rather than silently starting it.
 - `supportsForce` is false for `start` only; `armSchedule` coerces a start's `force` to false even
-  when asked for it, and `mayFire` lets a start fire while its own model is In Progress (there is
-  no worker to cut off) while a stop defers exactly like a restart.
+  when asked for it, and `mayFire` lets a start fire while its own loop is busy (there is no
+  worker to cut off) while a stop defers exactly like a restart.
 - `describeSchedule` names the scheduled action (`start in 60m`, `stop in 60m · force`,
   `stop waiting for task · every 15m`).
 - `parseMinutes` accepts a plain positive integer and rejects empty/`0`/negative/signed/decimal/
   unit-suffixed (`90m`, `2h`)/hex/exponent input, plus anything overflowing `setTimeout`'s
   signed-32-bit delay — so a value can never be silently reinterpreted or fire instantly.
-- `mayFire` defers only while the schedule's OWN model is In Progress (another model being busy is
-  irrelevant) and ignores In Progress entirely when `force` is on.
+- `mayFire` defers only while the schedule's OWN loop is busy (another loop being busy is
+  irrelevant) and ignores the busy set entirely when `force` is on (t-0e99: keyed by loop id).
 - `deferSchedule` is idempotent — at most one restart is ever pending per model, so a repeating
   schedule cannot stack deferred fires.
 - `afterFire` disarms a one-shot and re-arms a repeating schedule from the moment it ACTUALLY fired,
@@ -509,7 +554,8 @@ New v2 checklist (from REFACTORING.md Phase 8):
     carries the empty custom section (it rides in the template, outside every sync marker), while
     Sync in an existing workspace without the section never adds it.
 
-27. **Restructured settings (t-1f1e):** open Settings → Extensions → LoopBoard. **Models** reads as
+27. **Restructured settings (t-1f1e; the After Task half is SUPERSEDED by t-0e99 FB13, which removed
+    `loopBoard.afterTask` and its pair, see item 71):** open Settings → Extensions → LoopBoard. **Models** reads as
     two defaults then three slot blocks (Opus/Sonnet/Fable, each *enabled → custom model → effort*);
     **Loop Behavior** reads interval, After Task, permission mode, pulse, custom rules, debug, max
     attachment size — no separate "Permissions" group, and no two rows fighting over the same
@@ -707,7 +753,9 @@ and likewise cannot be verified headless.
     the new draft carries both. Sidebar — right-click ▶/♻/■, click presets and toggle
     Repeat/Force → each reflects immediately.
 
-35. **Delegated-work mode rides the spawn prompt (t-e3c3):** `buildLoopCommand` and the template
+35. **Delegated-work mode rides the spawn prompt (t-e3c3):** SUPERSEDED by t-0e99 (item 71):
+    delegation is always on and no phrase rides the prompt; the steps below describe the removed
+    `loopBoard.delegateWork` / `loopBoard.delegateReview` settings. `buildLoopCommand` and the template
     clause are unit-tested; what only F5 can show is the real terminal line. With both delegation
     settings UNSET (their t-2047 defaults: delegate work on, review off), start a loop
     → the pasted `/loop` line reads `… running as model <slot> with a grooming concurrency cap of
@@ -739,7 +787,10 @@ and likewise cannot be verified headless.
     before this fix) is still resolved — its `loopboard-<slot>-<word>-<word>` name matches the same
     prefix, so its bar renders.
 
-37. **LoopBoard's own settings page (t-sgrp):** the manifest→form model, the grid's validation and
+37. **LoopBoard's own settings page (t-sgrp):** t-0e99 changed this page: the first section is
+    *Orchestrator & Models* and its grid is the Orchestrator block plus the Models table (item 71);
+    the delegation rows, the six-column slot grid and the `delegateWork.review` rename steps below
+    describe settings that no longer exist. The manifest→form model, the grid's validation and
     the manifest invariants are unit-tested (`test/settingsform.test.js`,
     `test/settingsgrid.test.js`, `test/manifest-settings.test.js`); what only F5 can show is the
     page itself, the config writes and the live listener.
@@ -850,7 +901,7 @@ and likewise cannot be verified headless.
     Settings*) → a panel says **Nothing to migrate**, and `settings.json` is byte-identical
     afterwards. No dialog, no empty list, no write.
 
-    *Deprecated pair:* put `"loopBoard.autoRecycle": true` and `"loopBoard.clearSessionAfterTask":
+    *Deprecated pair (SUPERSEDED by t-0e99 FB13: the three keys are now plain removals, item 71):* put `"loopBoard.autoRecycle": true` and `"loopBoard.clearSessionAfterTask":
     true` in user settings, remove `loopBoard.afterTask`, click **Migrate Config** → the panel lists
     exactly two lines: `MIGRATE loopBoard.autoRecycle = true — set loopBoard.afterTask to "recycle",
     then remove this key.` and `REMOVE loopBoard.clearSessionAfterTask = true — … loopBoard.
@@ -1806,3 +1857,89 @@ and likewise cannot be verified headless.
       reload; clicking a phase tab leaves the overview tab in place, unselected.
     - A groomer that coins a tag appends `- <name>` to `.loopboard/tags.md`; the board picks it up
       on the next refresh with a neutral chip.
+71. **One Orchestrator loop, per-task model/effort/reviewer, Haiku, no `auto` (t-0e99): UNTESTED in
+    the live window and a live loop.** The pure parts are pinned by the suites above; what the
+    webviews draw, what the host does with VS Code and what a real orchestrator does need F5.
+    - ▶ on the sidebar's ONE `Orchestrator` row (hint `<model> · <effort>`, e.g. `opus · low`)
+      opens exactly one terminal, `Claude Orchestrator`, whose command line reads `claude
+      --permission-mode <mode> --model '<orchestrator.model>' --effort <orchestrator.effort> --name
+      loopboard-orchestrator-<hex> '/loop <interval> You are the LoopBoard orchestrator, grooming cap
+      ...'` and submits itself. No `Claude Opus|Sonnet|Fable` terminal appears from any button or
+      command; **LoopBoard: Start Loop** from the palette starts the orchestrator.
+    - With `loopBoard.models.opus.modelId` set, the terminal's environment carries
+      `ANTHROPIC_DEFAULT_OPUS_MODEL=<id>` (check with `echo` in that terminal, or the spawn's `info`
+      `loop-spawn` line naming the env); an Opus subagent reports that id.
+    - Change a role model/effort, the groomers cap, a model toggle, id or effort range on the
+      settings page: the row hint and the next ▶/♻ use it; a running loop keeps its old values.
+    - Legacy terminals: with a `Claude Opus` terminal revived across a reload (or opened by hand
+      with that name), activation shows ONE warning offering **Stop**; Stop disposes it, dismissing
+      leaves it. `.loopboard/debug.log` at `info` shows the `popup` line and the `popup-choice`
+      line (`legacy-loops -> stop (1 terminal(s) disposed)` or `-> dismissed`).
+    - A leftover per-model loop that keeps running after Sync reads the new `LOOP.md` and only
+      reports that it is obsolete (the legacy guard).
+    - Schedules (right-click ▶ ♻ ■), the context bar and its threshold restart, the idle stop and
+      `loopBoard.afterTask` all act on the one row; with any task In Progress, or a subagent live,
+      an automatic restart waits (row says so).
+    - Sidebar: In Progress rows read `<model>-<effort>-<task id>: <title>` (e.g. `opus-medium-t-5afa:
+      Space no longer…`), the effort clamped into the model's range; the Agents section is one group
+      whose rows read `● <groom|work|review> <model>-<effort>-<task id>: <title>  <duration>`, the
+      head never truncated, the title from the index. In Claude Code's own agent list, each
+      subagent's name shows that full prefix before the story title.
+    - Board: card and composer selects offer the enabled models (no `auto`) for Groom with, Work
+      with and Review with (On hold / `none` for groom and review), with an effort select
+      (`low`…`xhigh`) beside Groom with and Work with; Review with shows on non-draft cards and in
+      the composer, not on the draft card. Each pick writes the matching index line in the fixed
+      order; picking `default (…)` removes it. A draft saved from the composer carries all five
+      routing lines (the picks, else the defaults; a `max` default leaves its effort line out).
+    - Settings page (dense, dropdowns): the Roles table (Orchestrator, Groomer, Worker, Reviewer:
+      model select over the enabled models, effort select `low`…`max`, the reviewer's effort reads
+      "the worker's", groomers per pass on the Orchestrator row) and the Models table (`on` switch,
+      model id text with inline validation, lowest/highest effort selects). Turning off a model a
+      role uses, picking an off model for a role, or a lowest effort above the highest is refused
+      with the reason under the tables.
+    - Defaults (FB12): on a fresh profile the settings page shows Orchestrator opus/low, cap 3,
+      groomer/worker/reviewer opus/medium (reviewer "the worker's"), Opus and Haiku on, Sonnet and
+      Fable off, Opus low..xhigh, the others low..max, empty model ids. A card already on
+      `model: sonnet` still shows `sonnet` selected with Sonnet off.
+    - Model id (FB10): with `"loopBoard.models.sonnet.model": "claude-haiku-5-5"` in user settings
+      the Sonnet id field shows it; clearing it removes BOTH keys and the field stays empty after a
+      reload.
+    - Pending migration (FB11): with any stale key in user settings the Migrate Config button reads
+      `Migrate Config (N)` in the warning colour and a yellow banner offers **Review migration**;
+      both disappear once applied. A leftover `"loopBoard.models": {}` is offered only inside the
+      collapsed "Legacy keys" disclosure.
+    - After task removed (FB13): the Agent Setup section has no After task row; a task leaving In
+      Progress neither recycles nor clears the Orchestrator; ♻, context limit, idle stop and
+      schedules still work; Migrate Config lists `afterTask`/`autoRecycle`/`clearSessionAfterTask`
+      as removals.
+    - Migration panel: with `loopBoard.models.opus.model: "claude-opus-5-5[1m]"`,
+      `models.opus.effort`, `models.sonnet.effort`, `delegateWork` and `delegateReview: true` in
+      user settings, **Scan** lists the model-id move to `models.opus.modelId`, the effort move to
+      `orchestrator.effort`, the removals and `defaultReviewerModel: opus`.
+    - A live orchestrator: a groomed story lands with `complexity-groomer:` in its Meta, a delivered
+      one with `complexity-worker:`; nothing writes a model or effort onto the index; a Feedback task
+      whose answers change its Goals is re-groomed (story rewritten, pairs deleted) before the
+      implementer continues; a task with `model: haiku` is implemented by a Haiku subagent; with
+      `reviewer: opus` the review runs on Opus at the task's worker effort, with `none` there is no
+      review.
+    - Auto-migrate settings: with `loopBoard.autoMigrateSettings` on (default), put a
+      pre-orchestrator user settings.json in place (`models.opus.effort`, `models.sonnet.model`,
+      `delegateReview: true`, `afterTask`, plus `orchestrator.effort` AND `models.opus.effort` both
+      set) and reload the window as after an update → one info popup names the change count;
+      settings.json now holds the new keys and no renamed or deprecated key except the conflicting
+      `models.opus.effort`, and the Migrate Config button reads `Migrate Config (1)` with only that
+      conflict listed. `loopBoard.debug: info` shows `settings-automigrate applied - N change(s)`
+      and the `popup` line. A second reload writes nothing (`skipped - nothing to migrate`).
+      Toggle the setting off, restore the old keys and reload → nothing is written
+      (`skipped - setting off`), and Migrate Config still lists and applies them. The other
+      Migrate Config items above need the setting off to keep their stale keys past a reload.
+    - Questions on a DRAFT (untested in Docker; `test/board-draft-questions.test.js` pins the
+      payload and the source only): add `- question: X?` with a blank `- answer:` under a
+      `DRAFT:` entry in TODO.md on disk → after the refresh the expanded draft card shows the Open
+      questions panel with that question; filling and saving the answer writes it to the index;
+      the collapsed draft shows no panel.
+    - Sidebar row shape (untested in Docker; `test/board-routing.test.js` pins the source only):
+      with a task In Progress and a live subagent, the In Progress and Agents rows look alike, no
+      dot and no fixed model column: grey `Opus Medium` (worker model + effort), a space, then
+      `t-xxxx: Task Title` in the normal foreground; an untitled subagent shows grey `Opus` then
+      its description. The Agents row keeps its duration on the right.

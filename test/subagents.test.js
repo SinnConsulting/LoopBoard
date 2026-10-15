@@ -278,7 +278,8 @@ test('scanMarkers skips unparseable and irrelevant lines without throwing', () =
 test('foldAgents keeps an agent with no finish marker', () => {
   const { rows, stale } = foldAgents([entry()], [], NOW);
   assert.deepStrictEqual(stale, []);
-  assert.deepStrictEqual(rows, [{ id: 'a111', agentType: 'general-purpose', description: 'Implement corpse whirl fix', startedAt: NOW - 2 * MINUTE }]);
+  // The row carries the spawn's model from its meta (t-0e99): the Agents section and the log name it.
+  assert.deepStrictEqual(rows, [{ id: 'a111', agentType: 'general-purpose', description: 'Implement corpse whirl fix', model: 'opus', startedAt: NOW - 2 * MINUTE }]);
 });
 
 test('foldAgents drops an agent the human stopped', () => {
@@ -335,9 +336,14 @@ test('an empty subagents directory folds to no rows', () => {
 // ---- rendering ----
 
 test('describeAgent renders `agentType · description` plus a duration', () => {
-  assert.deepStrictEqual(describeAgent({ id: 'a111', agentType: 'story-groom', description: 'Fold monster speed answers', startedAt: NOW - MINUTE }, NOW), {
-    id: 'a111', label: 'story-groom · Fold monster speed answers', duration: '1m',
+  // A description that does not follow the LOOP.md title rule: the row keeps the type and leads
+  // with the spawn's model alias.
+  assert.deepStrictEqual(describeAgent({ id: 'a111', agentType: 'story-groom', description: 'Fold monster speed answers', model: 'haiku', startedAt: NOW - MINUTE }, NOW), {
+    id: 'a111', label: 'story-groom · Fold monster speed answers', head: 'Haiku', title: 'story-groom · Fold monster speed answers',
+    titled: false, model: 'haiku', duration: '1m',
   });
+  // A row built without a model (an older meta) renders an empty model, never `undefined`.
+  assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW }, NOW).model, '');
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'general-purpose', description: '', startedAt: NOW - 20000 }, NOW).label, 'general-purpose');
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW - 20000 }, NOW).duration, '20s');
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'x', description: 'y', startedAt: NOW - 125 * MINUTE }, NOW).duration, '2h 5m');
@@ -350,8 +356,22 @@ test('describeAgent drops the `general-purpose` prefix when there is a descripti
   // LOOP.md spawns every groomer/implementer/reviewer as `general-purpose` with an
   // `<effort>-<task id>: <headline>` title, so the type would only repeat on every row.
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'general-purpose', description: 'high-t-4589: Swing sheet', startedAt: NOW - MINUTE }, NOW).label, 'high-t-4589: Swing sheet');
-  // Any other type keeps it — a read-only Haiku helper is `Explore`.
+  // Any other type keeps it: a description off the title rule is shown as given.
   assert.strictEqual(describeAgent({ id: 'a', agentType: 'Explore', description: 'haiku-t-4589: Find old paths', startedAt: NOW - MINUTE }, NOW).label, 'Explore · haiku-t-4589: Find old paths');
+});
+
+test('describeAgent names a titled spawn `<mode> <model>-<effort>-<task id>: <task title>` (t-0e99 FB1/FB5)', () => {
+  const titled = describeAgent({ id: 'a', agentType: 'loop', description: 'work opus-medium-t-0bae: Stone island boss', model: 'opus', startedAt: NOW - MINUTE }, NOW);
+  assert.deepStrictEqual([titled.head, titled.title, titled.label, titled.titled], ['Opus Medium', 't-0bae: Stone island boss', 'work opus-medium-t-0bae: Stone island boss', true]);
+  // The t-716f shape (no model, no mode) takes the model from the spawn record; the agent type is
+  // dropped either way, and a full id in the record still reads as its alias.
+  const old = describeAgent({ id: 'a', agentType: 'loop', description: 'medium-t-0bae: Stone island', model: 'claude-sonnet-5-5', startedAt: NOW }, NOW);
+  assert.deepStrictEqual([old.head, old.title], ['Sonnet Medium', 't-0bae: Stone island']);
+  // The task index title wins over an abbreviated one, so the row names the story.
+  const full = describeAgent({ id: 'a', agentType: 'general-purpose', description: 'groom haiku-low-t-1: Short', startedAt: NOW }, NOW, (id) => (id === 't-1' ? 'The whole story title' : undefined));
+  assert.deepStrictEqual([full.head, full.title], ['Haiku Low', 't-1: The whole story title']);
+  const review = describeAgent({ id: 'a', agentType: 'general-purpose', description: 'review fable-xhigh-t-9: Check it', startedAt: NOW }, NOW, () => undefined);
+  assert.equal(review.label, 'review fable-xhigh-t-9: Check it');
 });
 
 // ---- lifecycle edges + the agent side of a restart (t-aglg) ----
@@ -416,6 +436,16 @@ test('describeAgentEdge renders a start and a departure with label, id and durat
   assert.ok(!/finished/.test(describeAgentEdge('gone', a, NOW)));
 });
 
+test('describeAgentEdge names the spawn model when the meta carried one (t-0e99)', () => {
+  // Every agent belongs to the one orchestrator loop, so the model is what tells them apart.
+  const a = row('a1', { description: 'Groom it', model: 'haiku', startedAt: NOW - MINUTE });
+  assert.strictEqual(describeAgentEdge('start', a, NOW), 'story-groom · Groom it · haiku (agent a1)');
+  assert.ok(describeAgentEdge('gone', a, NOW).startsWith('story-groom · Groom it · haiku (agent a1)'));
+  // A titled label already leads with its model, so it is not repeated.
+  const t = row('a2', { description: 'groom haiku-high-t-1: Groom it', model: 'haiku', startedAt: NOW - MINUTE });
+  assert.strictEqual(describeAgentEdge('start', t, NOW), 'groom haiku-high-t-1: Groom it (agent a2)');
+});
+
 test('describeAgentEdge: a departing row with no startedAt still reads cleanly', () => {
   const a = row('a1', { startedAt: undefined });
   assert.strictEqual(describeAgentEdge('gone', a, NOW), 'story-groom · Groom a1 (agent a1) — no longer live');
@@ -447,4 +477,12 @@ test('rowsForEdges: a read of the session a restart just ENDED counts as failed 
   // A different session, or no ended session on record, passes the rows through.
   assert.deepStrictEqual(rowsForEdges({ sessionId: 's-new', rows: [a] }, 's-old'), [a]);
   assert.deepStrictEqual(rowsForEdges({ sessionId: 's-new', rows: [] }, undefined), []);
+});
+
+test('workerHead title-cases model and effort for the sidebar rows (t-0e99)', () => {
+  const { workerHead } = require('../out-test/subagents.js');
+  assert.equal(workerHead('opus', 'medium'), 'Opus Medium');
+  assert.equal(workerHead('fable', 'xhigh'), 'Fable Xhigh');
+  assert.equal(workerHead('opus'), 'Opus');
+  assert.equal(workerHead(''), '');
 });

@@ -1,6 +1,6 @@
 'use strict';
-// Idle stop (t-2dd4): the pure idle clock in src/idle.ts. Idle = the slot is NOT in the
-// controller's `busyModels` (In-Progress owners ∪ slots with a live subagent), and nothing else.
+// Idle stop (t-2dd4): the pure idle clock in src/idle.ts. Idle = the loop is NOT in the
+// controller's `busyLoops` (any In-Progress task ∪ a live subagent, t-0e99), and nothing else.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,35 +15,45 @@ const NOW = 10_000_000;
 const MIN = 60000;
 
 test('the clock starts when the slot is not busy and no clock is running', () => {
-  assert.deepEqual(observeIdle(resetIdle(), 'opus', [], NOW), { idleSince: NOW, warnedAt: undefined });
+  assert.deepEqual(observeIdle(resetIdle(), 'orchestrator', [], NOW), { idleSince: NOW, warnedAt: undefined });
 });
 
 test('the clock clears when the slot is busy — a task in progress or a live subagent alike', () => {
-  // `busy` is `busyModels`, which already unions both signals; the module only sees the set.
+  // `busy` is `busyLoops`, which already unions both signals; the module only sees the set.
   const running = { idleSince: NOW, warnedAt: undefined };
-  assert.deepEqual(observeIdle(running, 'opus', ['opus'], NOW + MIN), resetIdle());
+  assert.deepEqual(observeIdle(running, 'orchestrator', ['orchestrator'], NOW + MIN), resetIdle());
   // An open warning is cleared too: a slot that turns busy during the 30 s is not stopped.
   const warned = { idleSince: NOW, warnedAt: NOW + 59 * MIN };
-  assert.deepEqual(observeIdle(warned, 'opus', ['opus'], NOW + 59 * MIN + 1000), resetIdle());
+  assert.deepEqual(observeIdle(warned, 'orchestrator', ['orchestrator'], NOW + 59 * MIN + 1000), resetIdle());
   // Busy with no clock stays no clock — never a clock started while busy.
-  assert.deepEqual(observeIdle(resetIdle(), 'opus', ['opus', 'sonnet'], NOW), resetIdle());
+  assert.deepEqual(observeIdle(resetIdle(), 'orchestrator', ['orchestrator', 'another-loop'], NOW), resetIdle());
 });
 
 test('repeated idle observations leave the clock unchanged (a /loop tick does not restart it)', () => {
-  const first = observeIdle(resetIdle(), 'opus', [], NOW);
-  const second = observeIdle(first, 'opus', [], NOW + 5 * MIN);
-  const third = observeIdle(second, 'opus', [], NOW + 30 * MIN);
+  const first = observeIdle(resetIdle(), 'orchestrator', [], NOW);
+  const second = observeIdle(first, 'orchestrator', [], NOW + 5 * MIN);
+  const third = observeIdle(second, 'orchestrator', [], NOW + 30 * MIN);
   assert.equal(third.idleSince, NOW);
   assert.equal(third, first, 'an unchanged state is returned as is');
   // An open warning survives an idle observation as well.
   const warned = markWarned(first, NOW + 59 * MIN + 30000);
-  assert.equal(observeIdle(warned, 'opus', [], NOW + 59 * MIN + 40000), warned);
+  assert.equal(observeIdle(warned, 'orchestrator', [], NOW + 59 * MIN + 40000), warned);
 });
 
-test('another model in the busy set does not affect this slot\'s clock', () => {
-  const running = observeIdle(resetIdle(), 'opus', ['sonnet'], NOW);
-  assert.equal(running.idleSince, NOW, 'sonnet busy does not hold opus');
-  assert.equal(observeIdle(running, 'opus', ['sonnet', 'fable'], NOW + MIN).idleSince, NOW);
+test('another loop in the busy set does not affect this loop\'s clock', () => {
+  const running = observeIdle(resetIdle(), 'orchestrator', ['another-loop'], NOW);
+  assert.equal(running.idleSince, NOW, 'another loop being busy does not hold the orchestrator');
+  assert.equal(observeIdle(running, 'orchestrator', ['another-loop', 'a-third'], NOW + MIN).idleSince, NOW);
+});
+
+test('with one orchestrator, ANY In-Progress task holds its clock (t-0e99): busyLoops feeds observeIdle', () => {
+  const { busyLoops } = require('../out-test/schedule');
+  const running = observeIdle(resetIdle(), 'orchestrator', busyLoops([{ phase: 'backlog' }], []), NOW);
+  assert.equal(running.idleSince, NOW, 'nothing In Progress, no subagent: the clock runs');
+  for (const model of ['opus', 'sonnet', 'fable', 'haiku', undefined]) {
+    assert.deepEqual(observeIdle(running, 'orchestrator', busyLoops([{ phase: 'inprogress', model }], []), NOW + MIN), resetIdle(), String(model));
+  }
+  assert.deepEqual(observeIdle(running, 'orchestrator', busyLoops([], ['orchestrator']), NOW + MIN), resetIdle(), 'a live subagent alone');
 });
 
 test('idleWarnAt is 30 s before `minutes`, idleStopAt is 30 s after the warning', () => {
@@ -146,21 +156,21 @@ test('the ■ button and the idle stop call the same stopLoop, which cancels, cl
   for (const at of order) assert.ok(at > 0, body);
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'trip, schedule, clock, then the terminal');
   const handler = controller.slice(controller.indexOf("case 'stopLoop':"), controller.indexOf("case 'armRestart':"));
-  assert.match(handler, /this\.stopLoop\(msg\.model,/);
+  assert.match(handler, /this\.stopLoop\(msg\.loop,/);
   assert.ok(!handler.includes('terminals.stop('), 'the ■ handler must not stop the terminal on its own');
-  assert.match(methodBody('onIdleStopDue'), /this\.stopLoop\(model, 'idle stop'/);
+  assert.match(methodBody('onIdleStopDue'), /this\.stopLoop\(loop, 'idle stop'/);
   // No other path disposes a terminal on its own except the scheduled stop (t-77d1), which stays.
   assert.equal([...controller.matchAll(/this\.terminals\.stop\(/g)].length, 2);
 });
 
-test('idle is busyModels: the observation, both fire-time checks and the poll all read it', () => {
-  assert.match(methodBody('observeIdleClocks'), /this\.busyModels\(board\)/);
-  assert.match(methodBody('idleFireContext'), /this\.busyModels\(this\.lastBoard\)/);
+test('idle is busyLoops: the observation, both fire-time checks and the poll all read it', () => {
+  assert.match(methodBody('observeIdleClocks'), /this\.busyLoops\(board\)/);
+  assert.match(methodBody('idleFireContext'), /this\.busyLoops\(this\.lastBoard\)/);
   // A hold during the warning is logged with describeBusy's reason.
   assert.match(methodBody('observeIdleClocks'), /'idle-hold'/);
-  assert.match(methodBody('observeIdleClocks'), /this\.describeBusy\(model, board\)/);
-  assert.match(methodBody('onIdleStopDue'), /'idle-hold', `\$\{model\} — \$\{this\.idleBusyReason\(model\)\}/);
-  assert.match(methodBody('idleBusyReason'), /this\.describeBusy\(model, this\.lastBoard\)/);
+  assert.match(methodBody('observeIdleClocks'), /this\.describeBusy\(loop, board\)/);
+  assert.match(methodBody('onIdleStopDue'), /'idle-hold', `\$\{loop\}: \$\{this\.idleBusyReason\(loop\)\}/);
+  assert.match(methodBody('idleBusyReason'), /this\.describeBusy\(loop, this\.lastBoard\)/);
   // The context poll observes after the busyChanged flushes, with no .loopboard/ write involved.
   const poll = methodBody('pollContextOnce');
   const flushes = poll.indexOf('if (busyChanged && this.lastBoard)');
@@ -170,9 +180,9 @@ test('idle is busyModels: the observation, both fire-time checks and the poll al
 });
 
 test('the idle-stop line names the fail-open, and the feature off leaves no state behind', () => {
-  assert.match(methodBody('onIdleStopDue'), /describeIdleStop\(.*this\.agentsUnreadable\.has\(model\)\)/);
+  assert.match(methodBody('onIdleStopDue'), /describeIdleStop\(.*this\.agentsUnreadable\.has\(loop\)\)/);
   const observe = methodBody('observeIdleClocks');
-  assert.ok(observe.indexOf('if (!cfg.idleStopEnabled)') < observe.indexOf('this.busyModels('), 'the off check comes first');
+  assert.ok(observe.indexOf('if (!cfg.idleStopEnabled)') < observe.indexOf('this.busyLoops('), 'the off check comes first');
   assert.match(controller, /l\.idle = idleLabel \?/);
   assert.match(controller, /const idle = cfg\.idleStopEnabled && l\.running \?/);
   assert.match(controller.slice(controller.indexOf('  dispose(): void {'), controller.indexOf('  private config()')), /clearIdleTimer/);
@@ -188,21 +198,21 @@ test('the idle warning is a cancellable progress notification, never a warning m
   assert.ok(!controller.includes("'stop-now'") && !controller.includes('-> dismissed`'), 'no stop-now / dismissed outcome is left');
   // The progress task returns the promise whose resolver the warning entry keeps.
   assert.match(body, /const closed = new Promise<void>\(\(resolve\) => \{ close = resolve; \}\);/);
-  assert.match(body, /this\.idleWarnings\.set\(model, warning\)/);
+  assert.match(body, /this\.idleWarnings\.set\(loop, warning\)/);
   assert.match(body, /return closed;\n    \}\);/);
 });
 
 test('settleIdleWarning closes the open popup on every outcome: clears the countdown, calls the resolver', () => {
   const body = methodBody('settleIdleWarning');
-  assert.match(body, /this\.idleWarnings\.delete\(model\);/);
+  assert.match(body, /this\.idleWarnings\.delete\(loop\);/);
   assert.match(body, /if \(warning\.countdown !== undefined\) clearInterval\(warning\.countdown\);/);
   assert.match(body, /warning\.close\(\);/);
   assert.ok(!/answered/.test(body), 'no outcome skips the close or the log');
   // Every outcome goes through it: superseded (■, ♻, spawn, busy, disabled, not running), the
   // timeout stop, and keep.
-  assert.match(methodBody('resetIdleClock'), /this\.settleIdleWarning\(model, 'superseded'\)/);
-  assert.match(methodBody('onIdleStopDue'), /this\.settleIdleWarning\(model, 'timeout'\)/);
-  assert.match(methodBody('onIdleKeep'), /this\.settleIdleWarning\(model, 'keep'\)/);
+  assert.match(methodBody('resetIdleClock'), /this\.settleIdleWarning\(loop, 'superseded'\)/);
+  assert.match(methodBody('onIdleStopDue'), /this\.settleIdleWarning\(loop, 'timeout'\)/);
+  assert.match(methodBody('onIdleKeep'), /this\.settleIdleWarning\(loop, 'keep'\)/);
   assert.ok(!/idleWarnings\.delete/.test(methodBody('onIdleKeep')), 'keep closes the popup through settleIdleWarning, not a bare delete');
   // settleIdleWarning is the only place an entry leaves idleWarnings.
   assert.equal([...controller.matchAll(/this\.idleWarnings\.delete\(/g)].length, 1);
@@ -213,21 +223,21 @@ test('the warning counts down through progress.report with describeIdle, once a 
   assert.match(body, /progress\.report\(\{ message: describeIdle\(warned, minutes, Date\.now\(\)\) \}\)/);
   assert.match(body, /warning\.countdown = setInterval\(report, 1000\);/);
   // A warning settled before its task ran starts no countdown.
-  assert.ok(body.indexOf('if (this.idleWarnings.get(model) !== warning) return closed;') < body.indexOf('setInterval('));
+  assert.ok(body.indexOf('if (this.idleWarnings.get(loop) !== warning) return closed;') < body.indexOf('setInterval('));
 });
 
 test('Cancel = Keep running, through the stamp check: a late or stale cancel does nothing', () => {
-  assert.match(methodBody('showIdleWarning'), /token\.onCancellationRequested\(\(\) => this\.onIdleKeep\(model, stamp\)\)/);
+  assert.match(methodBody('showIdleWarning'), /token\.onCancellationRequested\(\(\) => this\.onIdleKeep\(loop, stamp\)\)/);
   const keep = methodBody('onIdleKeep');
   const check = keep.indexOf('if (!warning || warning.stamp !== stamp) return;');
   assert.ok(check > 0, keep);
-  for (const step of ["this.settleIdleWarning(model, 'keep')", 'keepRunning(', 'this.armIdleTimer(']) {
+  for (const step of ["this.settleIdleWarning(loop, 'keep')", 'keepRunning(', 'this.armIdleTimer(']) {
     assert.ok(keep.indexOf(step) > check, `${step} must come after the stamp check`);
   }
 });
 
 test('dispose() settles every open idle warning and still clears the idle timers', () => {
   const body = controller.slice(controller.indexOf('  dispose(): void {'), controller.indexOf('  private config()'));
-  assert.match(body, /for \(const model of \[\.\.\.this\.idleTimers\.keys\(\)\]\) this\.clearIdleTimer\(model\);/);
-  assert.match(body, /for \(const model of \[\.\.\.this\.idleWarnings\.keys\(\)\]\) this\.settleIdleWarning\(model, 'superseded'\);/);
+  assert.match(body, /for \(const loop of \[\.\.\.this\.idleTimers\.keys\(\)\]\) this\.clearIdleTimer\(loop\);/);
+  assert.match(body, /for \(const loop of \[\.\.\.this\.idleWarnings\.keys\(\)\]\) this\.settleIdleWarning\(loop, 'superseded'\);/);
 });

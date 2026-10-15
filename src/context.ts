@@ -11,17 +11,17 @@
 // here BY OBSERVATION only (macOS, CLI 2.1.260) — every read is guarded and a miss must degrade to
 // "no indicator, no restart", never to an error.
 
-import { Model } from './model';
+import { LoopId } from './model';
 
 // The `--name` given to every loop terminal's `claude` invocation, and the value we then look for
-// in the session JSON. Slot ids are a fixed set ('opus' | 'sonnet' | 'fable'), so the result is
-// always shell-safe.
-export function sessionName(model: Model): string {
-  return `loopboard-${model}`;
+// in the session JSON. Loop ids are a fixed set (`orchestrator`, t-0e99), so the result is always
+// shell-safe.
+export function sessionName(loop: LoopId): string {
+  return `loopboard-${loop}`;
 }
 
-// The name a terminal is actually SPAWNED with (t-x1t1): `loopboard-<slot>-<suffix>`, unique per
-// spawn. The bare `sessionName(model)` above stays the PREFIX both this and `matchesSlot` build on,
+// The name a terminal is actually SPAWNED with (t-x1t1): `loopboard-<loop>-<suffix>`, unique per
+// spawn. The bare `sessionName(loop)` above stays the PREFIX both this and `matchesSlot` build on,
 // so it must never grow a suffix of its own.
 //
 // Why a suffix at all: the `--name` registry is global to `~/.claude/sessions/`, not per workspace,
@@ -29,8 +29,8 @@ export function sessionName(model: Model): string {
 // this window's session is registered as `<name>-<word>-<word>` with `nameSource: "collision"` for
 // its whole life — the bar then never resolves. A recycle respawning while the old process still
 // holds the name does the same. A globally unique name removes both causes at once.
-export function spawnSessionName(model: Model, suffix: string): string {
-  return `${sessionName(model)}-${suffix}`;
+export function spawnSessionName(loop: LoopId, suffix: string): string {
+  return `${sessionName(loop)}-${suffix}`;
 }
 
 // Four hex characters from an injected random value in [0, 1) — `Math.random()` at the call site,
@@ -68,7 +68,9 @@ export const LARGE_WINDOW = 1000000;
 // A model missing from this list falls back to 200k, which is the conservative direction for the
 // INDICATOR but the eager one for the threshold — hence the list is kept explicit and is checked
 // against the CLI whenever a new model ships.
-const LARGE_WINDOW_MODELS = ['opus-5', 'sonnet-5', 'fable-5', 'opus-4-6', 'opus-4-7', 'opus-4-8', 'sonnet-4-6'];
+// `haiku-5` (t-0e99): Claude Haiku 5.5 carries a 1M window (Anthropic model table, 2026-10-06), and
+// the orchestrator's `--model` may name it.
+const LARGE_WINDOW_MODELS = ['opus-5', 'sonnet-5', 'fable-5', 'haiku-5', 'opus-4-6', 'opus-4-7', 'opus-4-8', 'sonnet-4-6'];
 
 // `transcriptModel` is the model id of the line we actually measured (`message.model`) and is
 // preferred when present: it is what ran, whereas the configured `--model` string may be an alias
@@ -77,8 +79,8 @@ export function windowSizeFor(modelString: string, transcriptModel?: string): nu
   const id = (transcriptModel || modelString || '').toLowerCase();
   if (/\[1m\]/i.test(modelString) || /\[1m\]/i.test(id)) return LARGE_WINDOW;
   // A bare alias resolves through the same list: `sonnet` alone is today's Sonnet 5 (1M), and the
-  // slot ids LoopBoard spawns (`opus`/`sonnet`/`fable`) are exactly those aliases.
-  const alias = { opus: 'opus-5', sonnet: 'sonnet-5', fable: 'fable-5' }[id];
+  // task model ids (`opus`/`sonnet`/`fable`/`haiku`) are exactly those aliases.
+  const alias = ({ opus: 'opus-5', sonnet: 'sonnet-5', fable: 'fable-5', haiku: 'haiku-5' } as Record<string, string>)[id];
   const needle = alias || id;
   return LARGE_WINDOW_MODELS.some((m) => needle.includes(m)) ? LARGE_WINDOW : DEFAULT_WINDOW;
 }
@@ -135,11 +137,11 @@ export function newestPointer(pointers: SessionPointer[]): SessionPointer | unde
 //     while the old process is still shutting down, is the secondary one. An exact match lost the
 //     bar for the rest of such a session, so the prefix is kept as the rescue for them.
 //
-// Slot names never nest (`loopboard-opus` vs `loopboard-sonnet`), so the prefix is only ambiguous
-// against a `-`-separated suffix — exactly the shape of both cases above.
-export function matchesSlot(pointer: SessionPointer, workspaceCwd: string, model: Model): boolean {
+// Loop names never nest, so the prefix is only ambiguous against a `-`-separated suffix, exactly
+// the shape of both cases above. A legacy per-model session (`loopboard-opus-…`) never matches.
+export function matchesSlot(pointer: SessionPointer, workspaceCwd: string, loop: LoopId): boolean {
   if (pointer.cwd !== workspaceCwd) return false;
-  const name = sessionName(model);
+  const name = sessionName(loop);
   return pointer.name === name || pointer.name.startsWith(name + '-');
 }
 
@@ -201,9 +203,8 @@ export function describeThreshold(threshold: number, action: ContextAction): str
   return `${action === 'clear' ? '/clear' : 'restart'} at ${threshold}%`;
 }
 
-// What to do with a loop whose context crossed the threshold — the same two verbs
-// `loopBoard.afterTask` exposes. A hard `stop` is deliberately not offered: an automatic action
-// must never leave a slot silently dead.
+// What to do with a loop whose context crossed the threshold: a soft `/clear` or a hard restart. A
+// hard `stop` is deliberately not offered: an automatic action must never leave a slot silently dead.
 export type ContextAction = 'clear' | 'recycle';
 export const CONTEXT_ACTIONS: ContextAction[] = ['clear', 'recycle'];
 export function sanitizeContextAction(value: unknown): ContextAction {

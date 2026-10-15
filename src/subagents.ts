@@ -247,6 +247,7 @@ export interface AgentRow {
   id: string;
   agentType: string;
   description: string;
+  model: string; // the `model` the spawn passed, as its meta records it (t-0e99); '' when absent
   // Start of the CURRENT working stretch, which is not the same thing as the spawn: a resumed
   // agent keeps its id and appends to the same transcript, so its first line still says when it
   // was originally spawned. `foldAgents` substitutes the latest resume instant when there is one.
@@ -294,6 +295,7 @@ export function foldAgents(metas: readonly AgentEntry[], events: readonly Marker
       id: entry.id,
       agentType: entry.agentType,
       description: entry.description,
+      model: entry.model,
       startedAt: resumedAt ?? entry.startedAt,
     });
   }
@@ -304,23 +306,50 @@ export function foldAgents(metas: readonly AgentEntry[], events: readonly Marker
 
 export interface AgentLabel {
   id: string;
-  label: string;    // `<agentType> · <description>`, or just the description for `general-purpose`
+  // The whole row text: `<head> <title>` for a titled spawn, else `<agentType> · <description>`
+  // (just the description for `general-purpose`).
+  label: string;
+  // The sidebar row's grey lead: `workerHead` of the spawn's model and effort (e.g. `Opus Medium`),
+  // just the model for an untitled spawn ('' when its meta named none).
+  head: string;
+  title: string; // what follows the head: `<task id>: <index title>` for a titled spawn
+
+  titled: boolean; // the description followed the LOOP.md title rule
+  model: string;    // the spawn's model as its meta recorded it, e.g. 'sonnet'; '' when none
   duration: string; // how long it has been running, e.g. '2m'
 }
 
+// The grey lead of a sidebar row, In Progress and Agents alike (t-0e99): `opus`, `medium` ->
+// `Opus Medium`.
+export function workerHead(model: string, effort = ''): string {
+  return [model, effort].filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+// The Agent `description` LOOP.md mandates (t-0e99): `<groom|work|review> <model>-<effort>-<task
+// id>: <task title>`. The t-716f shape (`<effort>-<task id>: <headline>`) still parses, with the
+// model taken from the spawn record and no mode.
+const TITLE_RE = /^(?:(groom|work|review)\s+)?(?:(opus|sonnet|fable|haiku)-)?(low|medium|high|xhigh|max)-(t-[0-9a-z]+):\s*(.*)$/i;
+const ALIAS_RE = /opus|sonnet|fable|haiku/i;
+
 // The sidebar row's text, and the wording the debug log names a held-back restart with. Kept here
 // (like describeSchedule/describeContext) so it is unit-tested and the webview stays a renderer.
-// Recomputed per repaint from `startedAt`, so the duration ticks between polls. `general-purpose` is
-// the type every LOOP.md groomer/implementer/reviewer spawns as, and its title already carries the
-// effort and task id (t-716f), so the prefix is noise on every row.
-export function describeAgent(row: AgentRow, now: number): AgentLabel {
+// Recomputed per repaint from `startedAt`, so the duration ticks between polls. `titleOf` maps a
+// task id to its index title, so a row names the story even when the spawn abbreviated it.
+export function describeAgent(row: AgentRow, now: number, titleOf?: (taskId: string) => string | undefined): AgentLabel {
+  const model = row.model ?? '';
+  const alias = (ALIAS_RE.exec(model)?.[0] ?? '').toLowerCase();
+  const duration = formatDuration(row.startedAt, now);
+  const m = TITLE_RE.exec(row.description.trim());
+  if (m) {
+    const [, mode, named, effort, taskId, text] = m;
+    const spawnModel = (named || alias).toLowerCase();
+    const head = `${mode ? `${mode.toLowerCase()} ` : ''}${spawnModel ? `${spawnModel}-` : ''}${effort.toLowerCase()}-${taskId}:`;
+    const title = titleOf?.(taskId) || text;
+    return { id: row.id, label: `${head} ${title}`.trim(), head: workerHead(spawnModel, effort), title: `${taskId}: ${title}`, titled: true, model, duration };
+  }
   let label = row.agentType;
   if (row.description) label = row.agentType === 'general-purpose' ? row.description : `${row.agentType} · ${row.description}`;
-  return {
-    id: row.id,
-    label,
-    duration: formatDuration(row.startedAt, now),
-  };
+  return { id: row.id, label, head: workerHead(alias), title: label, titled: false, model, duration };
 }
 
 // Empty when the start is unknown — an agent whose first transcript line could not be read still
@@ -385,8 +414,10 @@ export function rowsForEdges(read: SubagentRead | undefined, endedSession: strin
 // session going away all look the same from a snapshot. An unknown start drops the `after …` tail
 // rather than leaving it dangling.
 export function describeAgentEdge(kind: 'start' | 'gone', row: AgentRow, now: number): string {
-  const { id, label, duration } = describeAgent(row, now);
-  const head = `${label} (agent ${id})`;
+  const { id, label, model, duration, titled } = describeAgent(row, now);
+  // Every agent belongs to the one orchestrator loop now (t-0e99), so the model is what tells them
+  // apart in the log; a titled label already leads with it.
+  const head = `${label}${model && !titled ? ` · ${model}` : ''} (agent ${id})`;
   if (kind === 'start') return head;
   return `${head} — no longer live${duration ? ` after ${duration}` : ''}`;
 }

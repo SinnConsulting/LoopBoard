@@ -32,7 +32,7 @@ h1 { font-size: 20px; font-weight: 600; color: var(--vscode-foreground, #ffffff)
 h2 {
   font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
   color: var(--vscode-descriptionForeground, #9d9d9d);
-  margin: 34px 0 10px; padding-bottom: 6px;
+  margin: 24px 0 6px; padding-bottom: 5px;
   border-bottom: 1px solid var(--vscode-widget-border, #454545);
   display: flex; align-items: center; gap: 8px;
 }
@@ -43,10 +43,12 @@ h2 {
 }
 
 /* ---- generic setting row ---- */
-.row { display: grid; grid-template-columns: 1fr 240px; gap: 18px; padding: 12px 10px; border-radius: 5px; align-items: start; }
+/* Dense (t-0e99 owner feedback): a row is a line of reading, not a card. */
+.row { display: grid; grid-template-columns: 1fr 200px; gap: 14px; padding: 6px 10px; border-radius: 5px; align-items: start; }
 .row:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
 .row .key { color: var(--vscode-foreground, #ffffff); font-weight: 500; display: flex; align-items: center; gap: 7px; }
-.row .desc { color: var(--vscode-descriptionForeground, #9d9d9d); margin-top: 3px; max-width: 66ch; }
+.row .desc { color: var(--vscode-descriptionForeground, #9d9d9d); margin-top: 1px; max-width: 66ch; }
+.row .desc p { margin: 2px 0; }
 .row .desc code {
   background: var(--vscode-textCodeBlock-background, #2a2a2a); border-radius: 3px; padding: 0 4px;
 }
@@ -111,31 +113,19 @@ input[type="number"] { width: 80px; }
 table { width: 100%; border-collapse: collapse; }
 th {
   font-size: 11px; font-weight: 500; color: var(--vscode-descriptionForeground, #9d9d9d);
-  text-align: center; padding: 0 8px 8px; white-space: nowrap; line-height: 1.35;
+  text-align: center; padding: 0 8px 5px; white-space: nowrap; line-height: 1.35;
   vertical-align: bottom;
 }
-/* The "default" half of a two-line role header (`default` over `worker`). A block of its own so the
-   column stays as narrow as the role word alone, and a size down so it reads as a qualifier on the
-   word below rather than as a column name in its own right. Same colour as the rest of the header —
-   dimming description-coloured text again would fall below contrast in the light theme. */
-.th-q { display: block; font-size: 10px; }
 th.left, td.left { text-align: left; }
 td {
-  padding: 9px 8px; border-top: 1px solid var(--vscode-widget-border, #3c3c3c);
+  padding: 4px 8px; border-top: 1px solid var(--vscode-widget-border, #3c3c3c);
   text-align: center; vertical-align: middle;
 }
 tbody tr:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
 .slot { display: flex; align-items: center; gap: 9px; font-weight: 500; color: var(--vscode-foreground, #ffffff); }
 tr.disabled td:not(.always) { opacity: .38; }
-.radio {
-  width: 15px; height: 15px; border-radius: 50%; cursor: pointer; padding: 0; display: inline-block;
-  border: 1px solid var(--vscode-widget-border, #3c3c3c); background: transparent;
-}
-.radio[aria-checked="true"] {
-  border-color: var(--vscode-button-background, #0078d4);
-  box-shadow: inset 0 0 0 3px var(--vscode-button-background, #0078d4);
-}
-.radio:focus-visible, .sw:focus-visible { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 2px; }
+table.grid select { width: auto; min-width: 96px; }
+table.roles { margin-bottom: 14px; }
 td.model input { width: 150px; font-family: var(--vscode-editor-font-family, Menlo, Consolas, monospace); }
 td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c); outline-offset: -1px; }
 
@@ -149,6 +139,17 @@ td.model input.invalid { outline: 1px solid var(--vscode-inputValidation-errorBo
   color: var(--vscode-foreground, #cccccc);
 }
 .banner[hidden] { display: none; }
+/* A pending settings migration (t-0e99 FB11): the theme's warning colours, never an error red. */
+.banner.warn {
+  background: var(--vscode-inputValidation-warningBackground, #352a05);
+  border-color: var(--vscode-inputValidation-warningBorder, #b89500);
+  display: flex; align-items: center; gap: 10px;
+}
+.btn.warn {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border-color: var(--vscode-inputValidation-warningBorder, #b89500);
+}
+.migrate.pending { border: 1px solid var(--vscode-inputValidation-warningBorder, #b89500); }
 
 /* ---- stale-settings migration panel ----
    Sits under the header, above the sections, and only while it is open. Neutral chrome on purpose:
