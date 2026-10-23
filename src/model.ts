@@ -269,13 +269,13 @@ export const TASK_DEFAULTS: TaskDefaults = {
 };
 
 export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
-  // The pre-split `loopBoard.defaultModel` still steers both default models while neither new key
-  // is set (decisions/loops.md); an off-list value is ignored rather than spawned.
+  // The pre-split `loopBoard.defaultModel` steers only the worker while its new key is unset; the
+  // groomer default is independent (t-403e, decisions/loops.md). Off-list values are never spawned.
   const legacy = set('defaultModel');
-  const model = (key: string, dflt: Model): Model => {
+  const model = (key: string, dflt: Model, fallback?: unknown): Model => {
     const v = set(key);
     if (v !== undefined) return isModel(v) ? v : dflt;
-    return isModel(legacy) ? legacy : dflt;
+    return isModel(fallback) ? fallback : dflt;
   };
   const effort = (key: string, dflt: Effort): Effort => {
     const v = set(key);
@@ -292,7 +292,7 @@ export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
   return {
     groomer: model('defaultGroomerModel', TASK_DEFAULTS.groomer),
     groomerEffort: effort('defaultGroomerEffort', TASK_DEFAULTS.groomerEffort),
-    worker: model('defaultWorkerModel', TASK_DEFAULTS.worker),
+    worker: model('defaultWorkerModel', TASK_DEFAULTS.worker, legacy),
     workerEffort: effort('defaultWorkerEffort', TASK_DEFAULTS.workerEffort),
     reviewer,
   };

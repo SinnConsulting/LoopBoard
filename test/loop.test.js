@@ -13,7 +13,7 @@ const {
 } = require('../out-test/loop.js');
 const { parseTodo } = require('../out-test/parser.js');
 const { serializeTodo } = require('../out-test/writer.js');
-const { TASK_DEFAULTS } = require('../out-test/model.js');
+const { TASK_DEFAULTS, resolveTaskDefaults } = require('../out-test/model.js');
 
 // What the host hands the prompt builder with nothing configured (t-0e99).
 const ALL_MODELS = ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id }));
@@ -512,3 +512,9 @@ test('src/terminals.ts names every terminal it creates through loopTerminalName,
   assert.ok(!src.includes('BUILTIN_MODEL_IDS'), 'terminals are never keyed by task models');
 });
 
+
+test('the Defaults line keeps groomer opus medium when only the legacy defaultModel is set (t-403e)', () => {
+  const defaults = resolveTaskDefaults((k) => ({ defaultModel: 'fable' })[k]);
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), '5m', cfg({ defaults }));
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker fable medium, reviewer opus.'), cmd);
+});

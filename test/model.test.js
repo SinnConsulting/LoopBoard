@@ -224,11 +224,22 @@ test('set defaults are used; haiku is a valid model and max a valid role effort;
   assert.deepEqual(bad, TASK_DEFAULTS);
 });
 
-test('the pre-split loopBoard.defaultModel still steers both default models while neither is set', () => {
+test('the pre-split loopBoard.defaultModel steers only the worker, never the groomer (t-403e)', () => {
   const d = resolveTaskDefaults(lookup({ defaultModel: 'fable' }));
-  assert.equal(d.groomer, 'fable');
+  assert.equal(d.groomer, 'opus');
   assert.equal(d.worker, 'fable');
   assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultWorkerModel: 'opus' })).worker, 'opus');
+});
+
+test('worker keys never steer the groomer default (t-403e)', () => {
+  const d = resolveTaskDefaults(lookup({ defaultWorkerModel: 'sonnet', defaultWorkerEffort: 'high' }));
+  assert.equal(d.groomer, 'opus');
+  assert.equal(d.groomerEffort, 'medium');
+});
+
+test('an explicit defaultGroomerModel wins; an invalid one falls back to TASK_DEFAULTS, not defaultModel (t-403e)', () => {
+  assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultGroomerModel: 'sonnet' })).groomer, 'sonnet');
+  assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultGroomerModel: 'gpt' })).groomer, TASK_DEFAULTS.groomer);
 });
 
 test('until migrated, delegateReview: true reads as reviewer opus, an explicit false as none, unset as the default; a set reviewer wins', () => {
