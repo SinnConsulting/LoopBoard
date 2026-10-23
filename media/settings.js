@@ -221,9 +221,7 @@
     // select offers only the models switched on below.
     const roleBody = h('tbody', {});
     for (const r of grid.roles) {
-      const effort = r.effort === null
-        ? h('span', { class: 'subtle' }, 'the worker’s')
-        : gridSelect(grid.efforts, r.effort, r.label + ' effort', (v) => gridEdit(r.id, 'effort', v));
+      const effort = gridSelect(grid.efforts, r.effort, r.label + ' effort', (v) => gridEdit(r.id, 'effort', v));
       let groomers = null;
       if (r.groomConcurrency !== undefined) {
         groomers = h('input', {

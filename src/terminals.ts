@@ -164,7 +164,7 @@ export class TerminalManager {
       'loop-spawn',
       `${loop} -> --model ${modelString} (effort ${cfg.orchestrator.effort}, groom cap ${cfg.orchestrator.groomConcurrency}, ` +
         `task models ${models.join(',') || 'none'}, defaults groomer ${d.groomer}/${d.groomerEffort} ` +
-        `worker ${d.worker}/${d.workerEffort} reviewer ${d.reviewer}${envNote ? `, env ${envNote}` : ''})`
+        `worker ${d.worker}/${d.workerEffort} reviewer ${d.reviewer}/${d.reviewerEffort}${envNote ? `, env ${envNote}` : ''})`
     );
     if (cmd) {
       // One command line: the bootstrap prompt rides as claude's initial-prompt argv (see the

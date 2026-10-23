@@ -295,6 +295,21 @@ test('[routing] off-list values land in flagged unknown lines and never void the
   assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint with the flagged lines kept');
 });
 
+test('[routing] reviewer-effort parses, writes right after reviewer:, rejects max and auto as flagged lines (t-403e)', () => {
+  const src = ['# TODO', '', '## Tasks', '', '- [ ] Review effort', '  - id: t-re01', '  - reviewer-effort: high', '  - phase: backlog',
+    '  - reviewer: sonnet', '', '- [ ] Off-list', '  - id: t-re02', '  - phase: backlog', '  - reviewer-effort: max', '', '- [ ] Auto',
+    '  - id: t-re03', '  - phase: backlog', '  - reviewer-effort: auto'].join('\n');
+  const [a, b, c] = parseTodo(src).entries;
+  assert.equal(a.reviewerEffort, 'high');
+  assert.deepEqual(a.unknownLines, []);
+  assert.equal(b.reviewerEffort, undefined, '`max` is never a per-task effort');
+  assert.deepEqual(b.unknownLines, ['  - reviewer-effort: max']);
+  assert.deepEqual(c.unknownLines, ['  - reviewer-effort: auto']);
+  const out = serializeTodo(parseTodo(src));
+  assert.ok(out.includes('  - id: t-re01\n  - phase: backlog\n  - reviewer: sonnet\n  - reviewer-effort: high'), out);
+  assert.equal(serializeTodo(parseTodo(out)), out, 'fixpoint');
+});
+
 test('[routing] DONE.md keeps id/model/groomer/completed only: the new keys stay unknown lines there', () => {
   const src = ['## Tasks', '', '- [x] Accepted', '  - id: t-dn01', '  - model: fable', '  - effort: high', '  - groomer: haiku',
     '  - reviewer: none', '  - completed: 2026-10-13'].join('\n');

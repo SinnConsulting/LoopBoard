@@ -130,6 +130,7 @@
   let composerGroomerEffort = saved.composerGroomerEffort || '';
   let composerEffort = saved.composerEffort || '';
   let composerReviewer = saved.composerReviewer || '';
+  let composerReviewerEffort = saved.composerReviewerEffort || '';
   let composerNeedsFocus = false;
   let composerCaret = null; // caret offset to restore into the composer textarea after a repaint
   // Pending composer attachments (t-att1 rework): a brand-new story has no id to stage bytes
@@ -264,7 +265,7 @@
     return ui[id];
   }
   function saveState() {
-    vscode.setState({ phase, overviewTag, overviewSelected, lastTag, tagGroups, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, composerGroomerEffort, composerEffort, composerReviewer, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
+    vscode.setState({ phase, overviewTag, overviewSelected, lastTag, tagGroups, collapsedDefault, collapsed, appliedCardsCollapsed, sections, composerOpen, composerText, composerGroomer, composerModel, composerGroomerEffort, composerEffort, composerReviewer, composerReviewerEffort, userQuery, viewQuery, heldAnswers, rescuedAnswers, rescuedFeedback });
   }
 
   // ---- single-line index values (t-c4d1) ----
@@ -668,6 +669,12 @@
   function groomEffortSelect(t) { return routingSelect(t, 'groomerEffort', 'Groom effort', effortDefaultOpt(board && board.defaultGroomerEffort), EFFORT_VALUES); }
   function workEffortSelect(t) { return routingSelect(t, 'effort', 'Work effort', effortDefaultOpt(board && board.defaultWorkerEffort), EFFORT_VALUES); }
   function reviewSelect(t) { return routingSelect(t, 'reviewer', 'Review with', reviewerDefaultOpt(), reviewerValues()); }
+  function reviewsNothing(reviewer) { return (reviewer || (board && board.defaultReviewerModel)) === NO_REVIEW; }
+  function reviewEffortSelect(t) {
+    const sel = routingSelect(t, 'reviewerEffort', 'Review effort', effortDefaultOpt(board && board.defaultReviewerEffort), EFFORT_VALUES);
+    sel.disabled = reviewsNothing(t.reviewer);
+    return sel;
+  }
 
   // "Groom with" additionally offers an explicit On hold option (t-65a2) stored as `groomer: none`:
   // a held New/DRAFT task belongs to no loop and is never groomed until the human picks a real
@@ -1043,10 +1050,10 @@
 
   // The composer's routing picks as the draft message carries them ('' = the host's default).
   function composerRouting() {
-    return { groomer: composerGroomer, groomerEffort: composerGroomerEffort, model: composerModel, effort: composerEffort, reviewer: composerReviewer };
+    return { groomer: composerGroomer, groomerEffort: composerGroomerEffort, model: composerModel, effort: composerEffort, reviewer: composerReviewer, reviewerEffort: composerReviewerEffort };
   }
   function resetComposerRouting() {
-    composerGroomer = ''; composerModel = ''; composerGroomerEffort = ''; composerEffort = ''; composerReviewer = '';
+    composerGroomer = ''; composerModel = ''; composerGroomerEffort = ''; composerEffort = ''; composerReviewer = ''; composerReviewerEffort = '';
   }
   // A composer select whose options are plain values after the `default (...)` lead option.
   function plainComposerSelect(label, value, leadOpt, values, onchange) {
@@ -1176,6 +1183,8 @@
         input.click();
       },
     }, '＋ Attach');
+    const reviewEffortSpan = plainComposerSelect('Review effort', composerReviewerEffort, effortDefaultOpt(board && board.defaultReviewerEffort), EFFORT_VALUES, (v) => { composerReviewerEffort = v; saveState(); });
+    reviewEffortSpan.querySelector('select').disabled = reviewsNothing(composerReviewer);
     return h('div', {},
       h('div', { class: 'composer-header' }, 'New story'),
       h('div', { class: 'pane-explainer' }, 'Describe the story in your own words — an agent structures it for you.'),
@@ -1189,7 +1198,11 @@
         plainComposerSelect('Groom effort', composerGroomerEffort, effortDefaultOpt(board && board.defaultGroomerEffort), EFFORT_VALUES, (v) => { composerGroomerEffort = v; saveState(); }),
         modelSelect('Work with', composerModel, workerDefaultOpt(), (v) => { composerModel = v; saveState(); }),
         plainComposerSelect('Work effort', composerEffort, effortDefaultOpt(board && board.defaultWorkerEffort), EFFORT_VALUES, (v) => { composerEffort = v; saveState(); }),
-        plainComposerSelect('Review with', composerReviewer, reviewerDefaultOpt(), reviewerValues(), (v) => { composerReviewer = v; saveState(); }),
+        plainComposerSelect('Review with', composerReviewer, reviewerDefaultOpt(), reviewerValues(), (v) => {
+          composerReviewer = v; saveState();
+          reviewEffortSpan.querySelector('select').disabled = reviewsNothing(v);
+        }),
+        reviewEffortSpan,
         h('span', { class: 'muted-11' }, 'Saved into the New column as a draft. No formatting needed. ⌘V pastes screenshots.'))
     );
   }
@@ -2068,7 +2081,8 @@
       workSel,
       workEffortSelect(t),
       h('span', { class: 'muted-11' }, 'Review with'),
-      reviewSelect(t));
+      reviewSelect(t),
+      reviewEffortSelect(t));
     if (variant === 'new') {
       // Committing on pointerdown (not click) beats a mid-gesture board refresh that tears the
       // button down via render()'s `root.textContent = ''` — waiting for `click` risks it being

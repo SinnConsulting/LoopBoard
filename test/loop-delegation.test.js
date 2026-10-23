@@ -36,7 +36,7 @@ test('template: every spawn passes model and effort, as general-purpose, on Clau
   // t-0e99: every groom, implementation and review is a subagent on the TASK's own model and effort,
   // else the configured default (owner decision 2026-10-14: nothing picks one on the user's behalf).
   assert.match(r, /You never edit code: EVERY groom, implementation and review is a `general-purpose` subagent/);
-  assert.match(r, /`model` = the task's `groomer:`\/`model:`\/`reviewer:`, effort = its `groomer-effort:`\/`effort:` \(a review: the task's worker effort\); an absent field = the default your bootstrap prompt names/);
+  assert.match(r, /`model` = the task's `groomer:`\/`model:`\/`reviewer:`, effort = its `groomer-effort:`\/`effort:`\/`reviewer-effort:`; an absent field = the default your bootstrap prompt names/);
   assert.match(r, /A model it lists as `<model> <min>-<max>` clamps that effort into the range/, 'the per-model floor and ceiling (FB7)');
   assert.match(r, /2\.1\.292\+/);
   assert.match(r, /Your own `--effort` governs only you/, 'the orchestrator effort governs only the loop itself');

@@ -29,6 +29,7 @@ const {
   resolveOrchestrator,
   resolveTaskDefaults,
   resolveWorker,
+  draftRoutingFor,
   TASK_DEFAULTS,
 } = require('../out-test/model.js');
 
@@ -206,7 +207,7 @@ test('sanitizeGroomConcurrency rejects everything that is not a plain in-range i
 
 test('resolveTaskDefaults with nothing set: groomer, worker and reviewer opus, efforts medium (owner decision 2026-10-14)', () => {
   assert.deepEqual(resolveTaskDefaults(lookup({})), TASK_DEFAULTS);
-  assert.deepEqual(TASK_DEFAULTS, { groomer: 'opus', groomerEffort: 'medium', worker: 'opus', workerEffort: 'medium', reviewer: 'opus' });
+  assert.deepEqual(TASK_DEFAULTS, { groomer: 'opus', groomerEffort: 'medium', worker: 'opus', workerEffort: 'medium', reviewer: 'opus', reviewerEffort: 'medium' });
   // Every role default sits on a model that ships on.
   const on = resolveModels(undefined).filter((m) => m.enabled).map((m) => m.id);
   for (const m of [TASK_DEFAULTS.groomer, TASK_DEFAULTS.worker, TASK_DEFAULTS.reviewer, resolveOrchestrator(lookup({})).model]) assert.ok(on.includes(m), m);
@@ -215,11 +216,11 @@ test('resolveTaskDefaults with nothing set: groomer, worker and reviewer opus, e
 test('set defaults are used; haiku is a valid model and max a valid role effort; auto and off-list values fall back', () => {
   const d = resolveTaskDefaults(lookup({
     defaultGroomerModel: 'fable', defaultGroomerEffort: 'xhigh', defaultWorkerModel: 'haiku',
-    defaultWorkerEffort: 'max', defaultReviewerModel: 'fable',
+    defaultWorkerEffort: 'max', defaultReviewerModel: 'fable', defaultReviewerEffort: 'high',
   }));
-  assert.deepEqual(d, { groomer: 'fable', groomerEffort: 'xhigh', worker: 'haiku', workerEffort: 'max', reviewer: 'fable' });
+  assert.deepEqual(d, { groomer: 'fable', groomerEffort: 'xhigh', worker: 'haiku', workerEffort: 'max', reviewer: 'fable', reviewerEffort: 'high' });
   const bad = resolveTaskDefaults(lookup({
-    defaultGroomerModel: 'auto', defaultGroomerEffort: 'auto', defaultWorkerModel: 'gpt', defaultWorkerEffort: 'extreme', defaultReviewerModel: 'auto',
+    defaultGroomerModel: 'auto', defaultGroomerEffort: 'auto', defaultWorkerModel: 'gpt', defaultWorkerEffort: 'extreme', defaultReviewerModel: 'auto', defaultReviewerEffort: 'auto',
   }));
   assert.deepEqual(bad, TASK_DEFAULTS);
 });
@@ -240,6 +241,23 @@ test('worker keys never steer the groomer default (t-403e)', () => {
 test('an explicit defaultGroomerModel wins; an invalid one falls back to TASK_DEFAULTS, not defaultModel (t-403e)', () => {
   assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultGroomerModel: 'sonnet' })).groomer, 'sonnet');
   assert.equal(resolveTaskDefaults(lookup({ defaultModel: 'fable', defaultGroomerModel: 'gpt' })).groomer, TASK_DEFAULTS.groomer);
+});
+
+test('reviewer effort: defaults to medium, matching package.json; never taken from the worker effort (t-403e)', () => {
+  const pkg = require('../package.json');
+  const props = [].concat(pkg.contributes.configuration).reduce((a, c) => ({ ...a, ...c.properties }), {});
+  assert.equal(TASK_DEFAULTS.reviewerEffort, 'medium');
+  assert.equal(props['loopBoard.defaultReviewerEffort'].default, TASK_DEFAULTS.reviewerEffort);
+  assert.equal(resolveTaskDefaults(lookup({ defaultReviewerEffort: 'xhigh' })).reviewerEffort, 'xhigh');
+  assert.equal(resolveTaskDefaults(lookup({ defaultWorkerEffort: 'high' })).reviewerEffort, 'medium');
+  assert.equal(resolveTaskDefaults(lookup({ defaultReviewerEffort: 'ludicrous' })).reviewerEffort, 'medium');
+});
+
+test('draftRoutingFor: every role from the defaults, a composer pick wins, reviewerEffort included (t-403e)', () => {
+  const d = { ...TASK_DEFAULTS, reviewerEffort: 'high' };
+  assert.deepEqual(draftRoutingFor({}, d), { groomer: 'opus', groomerEffort: 'medium', model: 'opus', effort: 'medium', reviewer: 'opus', reviewerEffort: 'high' });
+  assert.equal(draftRoutingFor({ reviewerEffort: 'low' }, d).reviewerEffort, 'low');
+  assert.equal(draftRoutingFor({ reviewerEffort: '' }, d).reviewerEffort, 'high');
 });
 
 test('until migrated, delegateReview: true reads as reviewer opus, an explicit false as none, unset as the default; a set reviewer wins', () => {

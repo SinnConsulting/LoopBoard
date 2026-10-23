@@ -111,6 +111,7 @@ export function describeChanges(prev: Task | undefined, next: Task): string[] {
   if (prev.groomer !== next.groomer) out.push(`groomer → ${next.groomer ?? 'default'}`);
   if (prev.groomerEffort !== next.groomerEffort) out.push(`groomer-effort → ${next.groomerEffort ?? 'default'}`);
   if (prev.reviewer !== next.reviewer) out.push(`reviewer → ${next.reviewer ?? 'default'}`);
+  if (prev.reviewerEffort !== next.reviewerEffort) out.push(`reviewer-effort → ${next.reviewerEffort ?? 'default'}`);
   if (prev.checked !== next.checked) out.push(next.checked ? 'ticked' : 'unticked');
 
   const pq = prev.questions;

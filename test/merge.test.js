@@ -25,7 +25,7 @@ function readFix(name) {
 }
 
 test('patchTarget routes fields to the right file', () => {
-  for (const f of ['title', 'model', 'effort', 'groomer', 'groomerEffort', 'reviewer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
+  for (const f of ['title', 'model', 'effort', 'groomer', 'groomerEffort', 'reviewer', 'reviewerEffort', 'answer', 'answers', 'feedbackAdd', 'feedbackItem']) assert.equal(patchTarget(f), 'index', f);
   for (const f of ['description', 'problem', 'goals']) assert.equal(patchTarget(f), 'detail', f);
 });
 
@@ -283,6 +283,18 @@ test('a routing patch with a stale base is the disk-wins conflict; the default l
   assert.equal(doc.entries.find((e) => e.id === 't-r004').reviewer, undefined);
   assert.equal(applyPatch(doc, { taskId: 't-r004', field: 'groomerEffort', value: 'max', base: 'medium' }).status, 'applied');
   assert.equal(doc.entries.find((e) => e.id === 't-r004').groomerEffort, undefined, 'an off-list effort clears, never writes max');
+});
+
+test('reviewerEffort patches the index entry right after reviewer:, an off-list value clears (t-403e)', () => {
+  const doc = parseTodo(readFix('index-full.md'));
+  const e = () => doc.entries.find((x) => x.id === 't-dd01');
+  assert.equal(applyPatch(doc, { taskId: 't-dd01', field: 'reviewer', value: 'sonnet', base: currentFieldValue(e(), 'reviewer') }).status, 'applied');
+  assert.equal(applyPatch(doc, { taskId: 't-dd01', field: 'reviewerEffort', value: 'xhigh', base: '' }).status, 'applied');
+  assert.equal(e().reviewerEffort, 'xhigh');
+  assert.ok(serializeTodo(doc).includes('  - reviewer: sonnet\n  - reviewer-effort: xhigh'));
+  assert.equal(applyPatch(doc, { taskId: 't-dd01', field: 'reviewerEffort', value: 'max', base: 'xhigh' }).status, 'applied');
+  assert.equal(e().reviewerEffort, undefined);
+  assert.equal(fieldLabel('reviewerEffort'), 'reviewer effort');
 });
 
 test('the refusal toast names the new fields in words', () => {

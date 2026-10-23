@@ -1,6 +1,6 @@
 // Pure loop-command builder. No vscode imports so it is unit-testable in Docker.
 import {
-  LoopId, LOOPS, Model, TaskDefaults, TASK_DEFAULTS, EffortRange, isModel, isReviewerValue,
+  LoopId, LOOPS, Model, NO_REVIEW, TaskDefaults, TASK_DEFAULTS, EffortRange, isModel, isReviewerValue,
   isValidEffort, sanitizeGroomConcurrency, sanitizeEffortRange, isNarrowed,
 } from './model';
 
@@ -113,10 +113,11 @@ export function buildLoopCommand(loopText: string, interval: number | string, cf
   const worker: Model = pick(d.worker, isModel, TASK_DEFAULTS.worker);
   const workerEffort = pick(d.workerEffort, isValidEffort, TASK_DEFAULTS.workerEffort);
   const reviewer = pick(d.reviewer, isReviewerValue, TASK_DEFAULTS.reviewer);
+  const reviewerEffort = pick(d.reviewerEffort, isValidEffort, TASK_DEFAULTS.reviewerEffort);
   return (
     `/loop ${sanitizeLoopInterval(interval)} You are the LoopBoard orchestrator, grooming cap ${groomCap}. ` +
     `Models: ${models.length ? models.join(', ') : 'none'}. ` +
-    `Defaults: groomer ${groomer} ${groomerEffort}, worker ${worker} ${workerEffort}, reviewer ${reviewer}. ` +
+    `Defaults: groomer ${groomer} ${groomerEffort}, worker ${worker} ${workerEffort}, reviewer ${reviewer === NO_REVIEW ? NO_REVIEW : `${reviewer} ${reviewerEffort}`}. ` +
     `Follow the Automation section of .loopboard/LOOP.md on every pass.`
   );
 }

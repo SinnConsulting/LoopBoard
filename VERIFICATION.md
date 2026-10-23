@@ -206,6 +206,17 @@ questions, an HTML-comment template) and `index-unknown.md`:
   Progress rows `<model>-<effort>-<task id>: <title>` with the effort clamped into the model range;
   the payload carries the five defaults and each task's routing keys.
 
+### Groomer default and reviewer effort (t-403e)
+- `test/model.test.js`: `loopBoard.defaultModel` steers only the worker; worker keys never steer the
+  groomer; an invalid `defaultGroomerModel` falls back to `TASK_DEFAULTS.groomer`; `reviewerEffort`
+  resolves from `defaultReviewerEffort`, else `medium`, never from the worker effort; the pure
+  `draftRoutingFor` fills every role from the defaults and a composer pick wins.
+- `test/parser.test.js`, `test/merge.test.js`: `reviewer-effort:` parses, writes right after
+  `reviewer:`, round-trips, flags `max`/`auto`, and patches the index entry.
+- `test/settingsgrid.test.js`, `test/manifest-settings.test.js`, `test/loop.test.js`: the Reviewer
+  row writes `loopBoard.defaultReviewerEffort` (default `medium` = `TASK_DEFAULTS.reviewerEffort`);
+  the bootstrap line reads `reviewer <m> <effort>`, `reviewer none` with no effort.
+
 ### Story tags — `test/tags.test.js`, `test/view.test.js`, `test/board-tags.test.js` (t-0b10)
 - `normalizeTags` trims, lower-cases, folds inner whitespace/comma/colon to `-`, de-duplicates and
   drops empties; `- tags:` in a task file's Meta parses, serializes after `depends on`, and is a
@@ -1943,3 +1954,13 @@ and likewise cannot be verified headless.
       dot and no fixed model column: grey `Opus Medium` (worker model + effort), a space, then
       `t-xxxx: Task Title` in the normal foreground; an untitled subagent shows grey `Opus` then
       its description. The Agents row keeps its duration on the right.
+
+72. **Reviewer effort on the board and in drafts (t-403e): UNTESTED in the live webview:**
+    - A Review/Backlog card shows a `Review effort` select right after `Review with`, lead option
+      `default (<defaultReviewerEffort>)`; picking a level writes `reviewer-effort:` under
+      `reviewer:` in TODO.md, picking the lead option removes the line. With the resolved reviewer
+      `none` (card value or default) the select is disabled.
+    - The composer shows the same select after `Review with`; it disables when `Review with` is set
+      to `none` (or defaults to it). Saving a draft with no pick writes `reviewer-effort:` from the
+      default; a pick wins (`draftRouting` wiring).
+    - Settings page: the Reviewer row has an effort select bound to `loopBoard.defaultReviewerEffort`.

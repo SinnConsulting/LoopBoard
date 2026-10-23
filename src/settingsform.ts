@@ -153,7 +153,7 @@ export type PatchResult = { ok: true; patch: ConfigPatch } | { ok: false; reason
 export const MODEL_FIELDS = ['enabled', 'modelId', 'minEffort', 'maxEffort'] as const;
 export const MODEL_GRID_KEYS: string[] = [
   ...['model', 'effort', 'groomConcurrency'].map((f) => `${SETTINGS_PREFIX}orchestrator.${f}`),
-  ...['defaultGroomerModel', 'defaultGroomerEffort', 'defaultWorkerModel', 'defaultWorkerEffort', 'defaultReviewerModel']
+  ...['defaultGroomerModel', 'defaultGroomerEffort', 'defaultWorkerModel', 'defaultWorkerEffort', 'defaultReviewerModel', 'defaultReviewerEffort']
     .map((k) => `${SETTINGS_PREFIX}${k}`),
   ...BUILTIN_MODEL_IDS.flatMap((id) => MODEL_FIELDS.map((f) => `${SETTINGS_PREFIX}models.${id}.${f}`)),
 ];

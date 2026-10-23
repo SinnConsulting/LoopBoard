@@ -28,6 +28,7 @@ export interface DraftRouting {
   model?: string;
   effort?: string;
   reviewer?: string;
+  reviewerEffort?: string;
 }
 export type ReorderOutcome = { status: MoveOutcome };
 
@@ -687,6 +688,7 @@ export class Store {
         groomer: normalizeGroomer(routing?.groomer ?? ''), // accepts the on-hold sentinel too (t-65a2)
         groomerEffort: normalizeEffort(routing?.groomerEffort ?? ''),
         reviewer: normalizeReviewer(routing?.reviewer ?? ''),
+        reviewerEffort: normalizeEffort(routing?.reviewerEffort ?? ''),
         questions: [],
         feedback: [],
         unknownLines: [],
@@ -710,7 +712,7 @@ export class Store {
       await this.atomicWrite(this.taskUri(draft.id), serializeTaskFile(skeleton, draft.title, draft.id));
       this.debugLog('info', 'createDraft', `${draft.id} = ${draft.title}`);
       this.debugLog('verbose', 'createDraft-routing', `${draft.id} -> groomer ${draft.groomer ?? '-'}/${draft.groomerEffort ?? '-'}, ` +
-        `worker ${draft.model ?? '-'}/${draft.effort ?? '-'}, reviewer ${draft.reviewer ?? '-'}`);
+        `worker ${draft.model ?? '-'}/${draft.effort ?? '-'}, reviewer ${draft.reviewer ?? '-'}/${draft.reviewerEffort ?? '-'}`);
       this.debugLog('verbose', 'createDraft-description', skeleton.description === undefined
         ? `${draft.id} -> no copy (one line or nothing left once links are stripped)`
         : `${draft.id} -> copied ${skeleton.description.split('\n').length} line(s) into ## Description`);

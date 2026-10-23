@@ -40,7 +40,7 @@ export interface RoleRow {
   label: string;
   model: string;
   models: string[]; // the model select's options: the enabled models (+ `none` for the reviewer)
-  effort: string | null; // null = the reviewer, which runs at the task's worker effort
+  effort: string;
   groomConcurrency?: number; // the orchestrator only
 }
 
@@ -74,10 +74,11 @@ const ROLE_MODEL_KEY: Record<GridRole, string> = {
   reviewer: `${SETTINGS_PREFIX}defaultReviewerModel`,
 };
 
-const ROLE_EFFORT_KEY: Partial<Record<GridRole, string>> = {
+const ROLE_EFFORT_KEY: Record<GridRole, string> = {
   orchestrator: `${SETTINGS_PREFIX}orchestrator.effort`,
   groomer: `${SETTINGS_PREFIX}defaultGroomerEffort`,
   worker: `${SETTINGS_PREFIX}defaultWorkerEffort`,
+  reviewer: `${SETTINGS_PREFIX}defaultReviewerEffort`,
 };
 
 export function modelKey(model: Model, field: 'enabled' | 'modelId' | 'minEffort' | 'maxEffort'): string {
@@ -109,7 +110,7 @@ export function buildModelGrid(models: ModelsConfig, orchestrator: OrchestratorC
       { id: 'orchestrator', label: ROLE_LABEL.orchestrator, model: orchestrator.model, models: options(orchestrator.model), effort: orchestrator.effort, groomConcurrency: orchestrator.groomConcurrency },
       { id: 'groomer', label: ROLE_LABEL.groomer, model: defaults.groomer, models: options(defaults.groomer), effort: defaults.groomerEffort },
       { id: 'worker', label: ROLE_LABEL.worker, model: defaults.worker, models: options(defaults.worker), effort: defaults.workerEffort },
-      { id: 'reviewer', label: ROLE_LABEL.reviewer, model: defaults.reviewer, models: options(defaults.reviewer, [NO_REVIEW]), effort: null },
+      { id: 'reviewer', label: ROLE_LABEL.reviewer, model: defaults.reviewer, models: options(defaults.reviewer, [NO_REVIEW]), effort: defaults.reviewerEffort },
     ],
     models: resolved.map((m) => ({
       id: m.id,
@@ -148,7 +149,6 @@ function rolePatch(grid: ModelGrid, role: RoleRow, field: GridField, raw: unknow
   }
   if (field === 'effort') {
     const key = ROLE_EFFORT_KEY[role.id];
-    if (!key) return { ok: false, reason: 'the reviewer runs at the task’s worker effort.' };
     const value = String(raw ?? '');
     if (!isValidEffort(value)) return { ok: false, reason: `“${value}” is not one of ${EFFORT_LEVELS.join(', ')}.` };
     return { ok: true, patches: [{ key, value }] };

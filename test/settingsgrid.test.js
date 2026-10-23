@@ -34,7 +34,7 @@ test('the Roles table: orchestrator, groomer, worker, reviewer, each a model sel
   assert.deepEqual(g.roles.map((r) => r.model), ['opus', 'opus', 'opus', 'opus'], 'the shipped role defaults (owner decision 2026-10-14)');
   for (const id of ['orchestrator', 'groomer', 'worker']) assert.deepEqual(role(g, id).models, ['opus', 'sonnet', 'haiku'], id + ': Fable is off');
   assert.deepEqual(role(g, 'reviewer').models, ['opus', 'sonnet', 'haiku', 'none'], 'none is a reviewer value only');
-  assert.deepEqual(g.roles.map((r) => r.effort), ['low', 'medium', 'medium', null], 'the reviewer runs at the worker effort');
+  assert.deepEqual(g.roles.map((r) => r.effort), ['low', 'medium', 'medium', 'medium'], 'the reviewer has its own effort (t-403e)');
   assert.equal(role(g, 'orchestrator').groomConcurrency, 3);
   assert.equal(role(g, 'groomer').groomConcurrency, undefined);
   assert.deepEqual([...g.efforts], ['low', 'medium', 'high', 'xhigh', 'max'], 'every role effort may be max');
@@ -82,7 +82,7 @@ test('the role model selects write the four model keys; none only for the review
   }
 });
 
-test('the role effort selects write the three effort keys, max included; the reviewer has none', () => {
+test('the role effort selects write the four effort keys, max included; the reviewer its own (t-403e)', () => {
   const g = grid();
   assert.deepEqual(gridPatch(g, 'orchestrator', 'effort', 'max'), { ok: true, patches: [{ key: 'loopBoard.orchestrator.effort', value: 'max' }] });
   assert.deepEqual(gridPatch(g, 'groomer', 'effort', 'xhigh'), { ok: true, patches: [{ key: 'loopBoard.defaultGroomerEffort', value: 'xhigh' }] });
@@ -92,7 +92,8 @@ test('the role effort selects write the three effort keys, max included; the rev
     assert.equal(r.ok, false, bad);
     assert.match(r.reason, /low, medium, high, xhigh, max/);
   }
-  assert.equal(gridPatch(g, 'reviewer', 'effort', 'high').ok, false);
+  assert.deepEqual(gridPatch(g, 'reviewer', 'effort', 'high'), { ok: true, patches: [{ key: 'loopBoard.defaultReviewerEffort', value: 'high' }] });
+  assert.equal(role(grid(undefined, { reviewerEffort: 'xhigh' }), 'reviewer').effort, 'xhigh');
 });
 
 test('switching off a model that a role uses is REFUSED, the orchestrator included', () => {
