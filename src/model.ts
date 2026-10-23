@@ -42,8 +42,9 @@ export function isReviewerValue(v: unknown): v is ReviewerValue {
   return v === NO_REVIEW || isModel(v);
 }
 
-// Per-task effort (`effort:` / `groomer-effort:`). `max` is deliberately absent (human decision,
-// t-0e99): only the role defaults and the orchestrator's own session may run at `max`.
+// Per-task effort (`effort:` / `groomer-effort:` / `reviewer-effort:`). `max` is deliberately
+// absent (human decision, t-0e99): only the role defaults and the orchestrator's own session may
+// run at `max`.
 export const TASK_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 export type TaskEffort = (typeof TASK_EFFORT_LEVELS)[number];
 export function isTaskEffort(v: unknown): v is TaskEffort {
@@ -258,6 +259,7 @@ export interface TaskDefaults {
   worker: Model;
   workerEffort: Effort;
   reviewer: ReviewerValue;
+  reviewerEffort: Effort;
 }
 
 export const TASK_DEFAULTS: TaskDefaults = {
@@ -266,16 +268,17 @@ export const TASK_DEFAULTS: TaskDefaults = {
   worker: 'opus',
   workerEffort: 'medium',
   reviewer: 'opus',
+  reviewerEffort: 'medium',
 };
 
 export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
-  // The pre-split `loopBoard.defaultModel` still steers both default models while neither new key
-  // is set (decisions/loops.md); an off-list value is ignored rather than spawned.
+  // The pre-split `loopBoard.defaultModel` steers only the worker while its new key is unset; the
+  // groomer default is independent (t-403e, decisions/loops.md). Off-list values are never spawned.
   const legacy = set('defaultModel');
-  const model = (key: string, dflt: Model): Model => {
+  const model = (key: string, dflt: Model, fallback?: unknown): Model => {
     const v = set(key);
     if (v !== undefined) return isModel(v) ? v : dflt;
-    return isModel(legacy) ? legacy : dflt;
+    return isModel(fallback) ? fallback : dflt;
   };
   const effort = (key: string, dflt: Effort): Effort => {
     const v = set(key);
@@ -292,9 +295,27 @@ export function resolveTaskDefaults(set: SetLookup): TaskDefaults {
   return {
     groomer: model('defaultGroomerModel', TASK_DEFAULTS.groomer),
     groomerEffort: effort('defaultGroomerEffort', TASK_DEFAULTS.groomerEffort),
-    worker: model('defaultWorkerModel', TASK_DEFAULTS.worker),
+    worker: model('defaultWorkerModel', TASK_DEFAULTS.worker, legacy),
     workerEffort: effort('defaultWorkerEffort', TASK_DEFAULTS.workerEffort),
     reviewer,
+    reviewerEffort: effort('defaultReviewerEffort', TASK_DEFAULTS.reviewerEffort),
+  };
+}
+
+// A new draft's routing values (t-0e99, t-403e): the composer's picks, else the configured
+// defaults, so the draft carries all six explicitly. Off-list values are dropped by the store.
+export function draftRoutingFor(
+  picks: Record<string, unknown>,
+  d: TaskDefaults,
+): { groomer: string; groomerEffort: string; model: string; effort: string; reviewer: string; reviewerEffort: string } {
+  const pick = (v: unknown, dflt: string): string => (typeof v === 'string' && v !== '' ? v : dflt);
+  return {
+    groomer: pick(picks.groomer, d.groomer),
+    groomerEffort: pick(picks.groomerEffort, d.groomerEffort),
+    model: pick(picks.model, d.worker),
+    effort: pick(picks.effort, d.workerEffort),
+    reviewer: pick(picks.reviewer, d.reviewer),
+    reviewerEffort: pick(picks.reviewerEffort, d.reviewerEffort),
   };
 }
 
@@ -327,6 +348,7 @@ export interface IndexEntry {
   groomer?: GroomerValue; // groomer model (absent = default groomer; 'none' = on hold)
   groomerEffort?: TaskEffort; // `groomer-effort:` (absent = default groomer effort)
   reviewer?: ReviewerValue; // review subagent model (absent = default reviewer; 'none' = no review)
+  reviewerEffort?: TaskEffort; // `reviewer-effort:` (absent = default reviewer effort)
   questions: Question[];
   // Human feedback, one item per `feedback:` line, any phase incl. drafts (Rule 13; t-ae10 folded the
   // old `note:` key in here): index-only, removed once applied or folded.

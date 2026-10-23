@@ -18,6 +18,7 @@ export interface WebTask {
   groomer: GroomerValue | null; // 'none' = on hold (t-65a2): no loop grooms this task
   groomerEffort: TaskEffort | null;
   reviewer: ReviewerValue | null; // 'none' = no review subagent
+  reviewerEffort: TaskEffort | null;
   added: string | null;
   started: string | null;
   completed: string | null;
@@ -133,6 +134,7 @@ export interface WebBoard {
   defaultGroomerModel: Model;
   defaultGroomerEffort: Effort;
   defaultReviewerModel: ReviewerValue;
+  defaultReviewerEffort: Effort;
   models: Model[]; // enabled task model ids, for the board/composer/draft model selects
   phases: Record<Phase, WebTask[]>;
   // Tag catalogue (t-0b10): registry tags plus every tag in use, sorted. `tagsInUse` is the sorted
@@ -187,6 +189,7 @@ function taskToWeb(t: Task, doneIds: Set<string>, armed: ReadonlySet<string>): W
     groomer: t.groomer ?? null,
     groomerEffort: t.groomerEffort ?? null,
     reviewer: t.reviewer ?? null,
+    reviewerEffort: t.reviewerEffort ?? null,
     added: t.added ?? null,
     started: t.started ?? null,
     completed: t.completed ?? null,
@@ -218,6 +221,7 @@ function doneEntryToWeb(e: DoneEntry, doneIds: Set<string>): WebTask {
     groomer: e.groomer ?? null,
     groomerEffort: null,
     reviewer: null,
+    reviewerEffort: null,
     added: null,
     started: null,
     completed: e.completed ?? null,
@@ -380,6 +384,7 @@ export function toWebviewBoard(
     defaultGroomerModel: defaults.groomer,
     defaultGroomerEffort: defaults.groomerEffort,
     defaultReviewerModel: defaults.reviewer,
+    defaultReviewerEffort: defaults.reviewerEffort,
     models,
     phases,
     tags: tagCatalogue(board),

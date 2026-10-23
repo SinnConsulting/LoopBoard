@@ -18,6 +18,7 @@
 //     - groomer: opus | sonnet | fable | haiku | none  (optional; `none` = on hold)
 //     - groomer-effort: low | medium | high | xhigh    (optional)
 //     - reviewer: opus | sonnet | fable | haiku | none (optional; `none` = no review)
+//     - reviewer-effort: low | medium | high | xhigh   (optional)
 //     - question: <text>                     (repeatable)
 //       - answer: <text or blank>
 //       - suggestion: <text>                 (repeatable, up to 3; groomer-proposed answer, Rule 14)
@@ -26,8 +27,8 @@
 //   NOTHING else is canonical. owner/dates/worklog/link/depends on/description/
 //   DELIVERED are NOT valid index keys in v5 — they land in unknownLines (preserved + flagged).
 //   `rev:` was removed from the grammar (t-f1b0) and is recognized only to be DROPPED, see below.
-//   `completed:` is canonical in DONE.md entries only; `effort:`, `groomer-effort:` and
-//   `reviewer:` in TODO.md only (DONE.md keeps id/model/groomer/completed, t-0e99).
+//   `completed:` is canonical in DONE.md entries only; `effort:`, `groomer-effort:`,
+//   `reviewer:` and `reviewer-effort:` in TODO.md only (DONE.md keeps id/model/groomer/completed, t-0e99).
 // ========================================================================================
 
 import { IndexDoc, IndexEntry, Phase, Question, isModel, isGroomerValue, isReviewerValue, isTaskEffort } from './model';
@@ -98,6 +99,10 @@ function parseEntryBlock(lines: string[], phase: Phase, allowCompleted: boolean)
       case 'reviewer':
         if (allowCompleted || !isReviewerValue(v)) return false;
         entry.reviewer = v;
+        return true;
+      case 'reviewer-effort':
+        if (allowCompleted || !isTaskEffort(v)) return false;
+        entry.reviewerEffort = v;
         return true;
       // Removed key (t-f1b0): the writer-managed change marker is gone from the grammar, but every
       // existing tracker still carries `- rev: <n>` lines. Recognize and silently DISCARD them —

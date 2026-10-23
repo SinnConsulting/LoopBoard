@@ -192,12 +192,27 @@
             "order": 80,
             "default": "opus",
             "loopBoardApplies": "restart",
-            "markdownDescription": "The model the review subagent runs on for tasks with no `reviewer:` field. `none`: no review subagent, the implementer's PR goes to Review directly. Any model (default `opus`): the review runs on it, at the task's worker effort (clamped into the reviewer model's range). A pass takes the task to Review with its PR still open; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. The loop never merges a PR. Replaces `loopBoard.delegateReview` (`true` became `opus`, `false` became `none`). The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "The model the review subagent runs on for tasks with no `reviewer:` field. `none`: no review subagent, the implementer's PR goes to Review directly. Any model (default `opus`): the review runs on it, at the task's `reviewer-effort:`, else `loopBoard.defaultReviewerEffort` (clamped into the reviewer model's range). A pass takes the task to Review with its PR still open; a fail is handed back to the implementer once, then parks the task in Feedback with the findings as questions. The loop never merges a PR. Replaces `loopBoard.delegateReview` (`true` became `opus`, `false` became `none`). The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+          },
+          "loopBoard.defaultReviewerEffort": {
+            "type": "string",
+            "scope": "application",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "order": 90,
+            "default": "medium",
+            "loopBoardApplies": "restart",
+            "markdownDescription": "Reasoning effort for reviewing tasks with no `reviewer-effort:` field, clamped into the reviewer model's lowest and highest effort. Never taken from the worker effort; no effect while the reviewer is `none`. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.models.opus.enabled": {
             "type": "boolean",
             "scope": "application",
-            "order": 90,
+            "order": 100,
             "default": true,
             "loopBoardApplies": "restart",
             "markdownDescription": "**Opus.** Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -205,7 +220,7 @@
           "loopBoard.models.opus.modelId": {
             "type": "string",
             "scope": "application",
-            "order": 100,
+            "order": 110,
             "default": "",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Opus.** The model id the `opus` alias resolves to, for the Orchestrator session and every subagent spawned on `opus` (e.g. a pinned or 1M-context build such as `claude-opus-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_OPUS_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -220,7 +235,7 @@
               "xhigh",
               "max"
             ],
-            "order": 110,
+            "order": 120,
             "default": "low",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Opus.** The lowest effort any subagent on Opus runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.opus.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -235,7 +250,7 @@
               "xhigh",
               "max"
             ],
-            "order": 120,
+            "order": 130,
             "default": "xhigh",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Opus.** Default `xhigh`. The highest effort any subagent on Opus runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -243,7 +258,7 @@
           "loopBoard.models.sonnet.enabled": {
             "type": "boolean",
             "scope": "application",
-            "order": 130,
+            "order": 140,
             "default": false,
             "loopBoardApplies": "restart",
             "markdownDescription": "**Sonnet.** Off by default. Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -251,7 +266,7 @@
           "loopBoard.models.sonnet.modelId": {
             "type": "string",
             "scope": "application",
-            "order": 140,
+            "order": 150,
             "default": "",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Sonnet.** The model id the `sonnet` alias resolves to, for the Orchestrator session and every subagent spawned on `sonnet` (e.g. a pinned or 1M-context build such as `claude-sonnet-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_SONNET_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -266,7 +281,7 @@
               "xhigh",
               "max"
             ],
-            "order": 150,
+            "order": 160,
             "default": "low",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Sonnet.** The lowest effort any subagent on Sonnet runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.sonnet.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -281,7 +296,7 @@
               "xhigh",
               "max"
             ],
-            "order": 160,
+            "order": 170,
             "default": "max",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Sonnet.** The highest effort any subagent on Sonnet runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -289,7 +304,7 @@
           "loopBoard.models.fable.enabled": {
             "type": "boolean",
             "scope": "application",
-            "order": 170,
+            "order": 180,
             "default": false,
             "loopBoardApplies": "restart",
             "markdownDescription": "**Fable.** Off by default. Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -297,7 +312,7 @@
           "loopBoard.models.fable.modelId": {
             "type": "string",
             "scope": "application",
-            "order": 180,
+            "order": 190,
             "default": "",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Fable.** The model id the `fable` alias resolves to, for the Orchestrator session and every subagent spawned on `fable` (e.g. a pinned or 1M-context build such as `claude-fable-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_FABLE_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -312,7 +327,7 @@
               "xhigh",
               "max"
             ],
-            "order": 190,
+            "order": 200,
             "default": "low",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Fable.** The lowest effort any subagent on Fable runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.fable.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -327,7 +342,7 @@
               "xhigh",
               "max"
             ],
-            "order": 200,
+            "order": 210,
             "default": "max",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Fable.** The highest effort any subagent on Fable runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -335,7 +350,7 @@
           "loopBoard.models.haiku.enabled": {
             "type": "boolean",
             "scope": "application",
-            "order": 210,
+            "order": 220,
             "default": true,
             "loopBoardApplies": "restart",
             "markdownDescription": "**Haiku.** Offer this task model in the board's selects, the settings page's role selects and the Orchestrator's bootstrap prompt. A model that is the Orchestrator's or a default groomer, worker or reviewer cannot be turned off. The board's selects and new drafts use a change at once. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -343,7 +358,7 @@
           "loopBoard.models.haiku.modelId": {
             "type": "string",
             "scope": "application",
-            "order": 220,
+            "order": 230,
             "default": "",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Haiku.** The model id the `haiku` alias resolves to, for the Orchestrator session and every subagent spawned on `haiku` (e.g. a pinned or 1M-context build such as `claude-haiku-5-5[1m]`). Passed as the `ANTHROPIC_DEFAULT_HAIKU_MODEL` environment variable of the Orchestrator's terminal. Empty (default): the Claude Code CLI's own alias. Invalid ids are ignored. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -358,7 +373,7 @@
               "xhigh",
               "max"
             ],
-            "order": 230,
+            "order": 240,
             "default": "low",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Haiku.** The lowest effort any subagent on Haiku runs at: a lower task or default effort is raised to it. A floor above `loopBoard.models.haiku.maxEffort` is ignored (no clamping). Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
@@ -373,7 +388,7 @@
               "xhigh",
               "max"
             ],
-            "order": 240,
+            "order": 250,
             "default": "max",
             "loopBoardApplies": "restart",
             "markdownDescription": "**Haiku.** The highest effort any subagent on Haiku runs at: a higher task or default effort is lowered to it. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."

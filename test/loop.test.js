@@ -13,7 +13,7 @@ const {
 } = require('../out-test/loop.js');
 const { parseTodo } = require('../out-test/parser.js');
 const { serializeTodo } = require('../out-test/writer.js');
-const { TASK_DEFAULTS } = require('../out-test/model.js');
+const { TASK_DEFAULTS, resolveTaskDefaults } = require('../out-test/model.js');
 
 // What the host hands the prompt builder with nothing configured (t-0e99).
 const ALL_MODELS = ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id }));
@@ -39,7 +39,7 @@ test('buildLoopCommand: the orchestrator prompt names the role, interval, cap, t
   assert.ok(cmd.includes('You are the LoopBoard orchestrator'), 'names the orchestrator role');
   assert.ok(cmd.includes('grooming cap 3.'), 'names the grooming cap');
   assert.ok(cmd.includes('Models: opus, sonnet, fable, haiku.'), 'names the enabled task models, no range when none is narrowed');
-  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), 'names the five defaults (owner decision 2026-10-14)');
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus medium.'), 'names the five defaults (owner decision 2026-10-14)');
   assert.ok(!/\bauto\b/.test(cmd), 'no auto anywhere in the prompt');
   assert.ok(cmd.includes('.loopboard/LOOP.md'), 'points at LOOP.md');
   assert.ok(cmd.includes('Automation section'), 'directs the worker to the Automation section');
@@ -88,7 +88,7 @@ test('buildLoopCommand: hostile models or defaults never reach the line; they fa
     defaults: { groomer: "o'pus", groomerEffort: 'auto', worker: 'none', workerEffort: '; ls', reviewer: 'everyone' },
   });
   assert.ok(hostile.includes('Models: opus.'), hostile);
-  assert.ok(hostile.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), hostile);
+  assert.ok(hostile.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus medium.'), hostile);
   assert.ok(!hostile.includes('rm -rf') && !hostile.includes("'") && !hostile.includes('; ls'), hostile);
 });
 
@@ -144,10 +144,10 @@ test('buildClaudeBase: an invalid effort falls back to low rather than reaching 
 test('buildLoopCommand: the bootstrap prompt carries no effort ceiling (t-cffc); efforts appear only as defaults and ranges', () => {
   const cmd = buildLoopCommand(readMedia('template-loop.md'), '1m', cfg());
   assert.ok(!cmd.includes('effort ceiling'));
-  // The loop session effort is the --effort flag; the only efforts in the prompt are the two
-  // per-task defaults (t-0e99), and a per-model range only when one is narrowed.
+  // The loop session effort is the --effort flag; the only efforts in the prompt are the three
+  // per-task role defaults (t-0e99, reviewer t-403e), and a per-model range only when one is narrowed.
   assert.ok(!/effort/.test(cmd), cmd);
-  assert.equal(cmd.match(/\b(low|medium|high|xhigh|max)\b/g).length, 2, cmd);
+  assert.equal(cmd.match(/\b(low|medium|high|xhigh|max)\b/g).length, 3, cmd);
 });
 
 test('buildClaudeBase single-quotes the --model so glob metachars (haiku[1m]) do not expand', () => {
@@ -318,7 +318,7 @@ test('template Automation block: delegation is always on, the review runs on the
   assert.match(fence, /no git worktree, no --no-verify/, 'implementer inherits the git contract');
   assert.match(fence, /writes any `\.loopboard\/` file/, 'subagents never write the tracker');
   assert.match(fence, /If the task's resolved reviewer is `none`: take the returned PR straight through the finishing order above/);
-  assert.match(fence, /review subagent on the resolved reviewer model at the resolved worker effort of the task, to review the PR/);
+  assert.match(fence, /review subagent on the resolved reviewer model at the resolved reviewer effort of the task, to review the PR/);
   assert.match(fence, /returns its URL, branch, commit shas, a per-goal account, deviations, anything unverified and its `complexity:` line/);
   assert.ok(!fence.includes('gh pr merge'), 'the loop never merges a PR (merging is the human action alone)');
   assert.match(fence, /NEVER merge a PR/, 'the prohibition is stated, not merely implied by absence');
@@ -512,3 +512,15 @@ test('src/terminals.ts names every terminal it creates through loopTerminalName,
   assert.ok(!src.includes('BUILTIN_MODEL_IDS'), 'terminals are never keyed by task models');
 });
 
+
+test('the Defaults line keeps groomer opus medium when only the legacy defaultModel is set (t-403e)', () => {
+  const defaults = resolveTaskDefaults((k) => ({ defaultModel: 'fable' })[k]);
+  const cmd = buildLoopCommand(readMedia('template-loop.md'), '5m', cfg({ defaults }));
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker fable medium, reviewer opus medium.'), cmd);
+});
+
+test('the Defaults line names the reviewer effort, and none with no effort (t-403e)', () => {
+  const tpl = readMedia('template-loop.md');
+  assert.ok(buildLoopCommand(tpl, '5m', cfg({ defaults: { ...TASK_DEFAULTS, reviewer: 'sonnet', reviewerEffort: 'xhigh' } })).includes('reviewer sonnet xhigh.'));
+  assert.ok(buildLoopCommand(tpl, '5m', cfg({ defaults: { ...TASK_DEFAULTS, reviewer: 'none', reviewerEffort: 'xhigh' } })).includes('reviewer none.'));
+});

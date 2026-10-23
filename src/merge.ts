@@ -9,7 +9,7 @@ import { IndexDoc, IndexEntry, TaskDetail, Model, GroomerValue, ReviewerValue, T
 // Feedback (t-ae10) has no whole-set field: `feedbackAdd` appends one item with no base compare, and
 // `feedbackItem` edits or deletes ONE item addressed by `itemIndex` plus that item's own base text.
 export type IndexField =
-  | 'title' | 'model' | 'effort' | 'groomer' | 'groomerEffort' | 'reviewer'
+  | 'title' | 'model' | 'effort' | 'groomer' | 'groomerEffort' | 'reviewer' | 'reviewerEffort'
   | 'answer' | 'answers' | 'feedbackAdd' | 'feedbackItem';
 // The three free-markdown story sections of `tasks/<id>.md` (t-2191). All three patch the SAME
 // file through the same generic path — a patch names one section and touches only that one.
@@ -44,7 +44,7 @@ export interface DetailMergeResult {
 }
 
 const INDEX_FIELDS: IndexField[] = [
-  'title', 'model', 'effort', 'groomer', 'groomerEffort', 'reviewer', 'answer', 'answers', 'feedbackAdd', 'feedbackItem',
+  'title', 'model', 'effort', 'groomer', 'groomerEffort', 'reviewer', 'reviewerEffort', 'answer', 'answers', 'feedbackAdd', 'feedbackItem',
 ];
 const DETAIL_FIELDS: DetailField[] = ['description', 'problem', 'goals', 'tags'];
 
@@ -94,6 +94,8 @@ export function currentFieldValue(entry: IndexEntry, field: IndexField, question
       return entry.groomerEffort ?? '';
     case 'reviewer':
       return entry.reviewer ?? '';
+    case 'reviewerEffort':
+      return entry.reviewerEffort ?? '';
     case 'answer':
       return questionIndex !== undefined && entry.questions[questionIndex]
         ? entry.questions[questionIndex].answer
@@ -153,6 +155,9 @@ function setFieldValue(entry: IndexEntry, field: IndexField, value: string, ques
       break;
     case 'reviewer':
       entry.reviewer = normalizeReviewer(value);
+      break;
+    case 'reviewerEffort':
+      entry.reviewerEffort = normalizeEffort(value);
       break;
     case 'answer':
       if (questionIndex !== undefined && entry.questions[questionIndex]) {
@@ -304,6 +309,8 @@ export function fieldLabel(field: string): string {
       return 'groomer effort';
     case 'reviewer':
       return 'reviewer';
+    case 'reviewerEffort':
+      return 'reviewer effort';
     case 'answer':
     case 'answers':
       return 'answer';

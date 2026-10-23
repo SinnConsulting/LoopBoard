@@ -48,7 +48,7 @@ const RESTART_KEYS = [
   'loopBoard.loopInterval',
   'loopBoard.orchestrator.model', 'loopBoard.orchestrator.effort', 'loopBoard.orchestrator.groomConcurrency',
   'loopBoard.defaultGroomerModel', 'loopBoard.defaultGroomerEffort', 'loopBoard.defaultWorkerModel',
-  'loopBoard.defaultWorkerEffort', 'loopBoard.defaultReviewerModel',
+  'loopBoard.defaultWorkerEffort', 'loopBoard.defaultReviewerModel', 'loopBoard.defaultReviewerEffort',
   ...['opus', 'sonnet', 'fable', 'haiku'].flatMap((m) => ['enabled', 'modelId', 'minEffort', 'maxEffort'].map((f) => `loopBoard.models.${m}.${f}`)),
 ];
 // The one sentence every `restart` description ends with, so the NATIVE settings editor — which
@@ -190,6 +190,7 @@ test('the shipped manifest defaults are exactly the host fallbacks in src/model.
     worker: all['loopBoard.defaultWorkerModel'].default,
     workerEffort: all['loopBoard.defaultWorkerEffort'].default,
     reviewer: all['loopBoard.defaultReviewerModel'].default,
+    reviewerEffort: all['loopBoard.defaultReviewerEffort'].default,
   });
   assert.deepEqual(ORCHESTRATOR_DEFAULTS, {
     model: all['loopBoard.orchestrator.model'].default,
@@ -224,7 +225,7 @@ test('with every setting unset, the spawn names the shipped defaults and a loop 
     models: ['opus', 'sonnet', 'fable', 'haiku'].map((id) => ({ id })),
     defaults: resolveTaskDefaults(unset),
   });
-  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus.'), cmd);
+  assert.ok(cmd.includes('Defaults: groomer opus medium, worker opus medium, reviewer opus medium.'), cmd);
   assert.ok(cmd.includes('grooming cap 3.'), cmd);
   assert.equal(all['loopBoard.loopInterval'].type, 'integer');
   assert.equal(all['loopBoard.loopInterval'].minimum, 1);

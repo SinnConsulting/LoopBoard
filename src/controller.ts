@@ -8,7 +8,7 @@ import { SidebarProvider } from './sidebar';
 import { toWebviewBoard, WebBoard } from './view';
 import {
   Board, LoopId, LOOP_IDS, isLoopId, resolveModels, readModelsConfig, SetLookup, resolveOrchestrator,
-  resolveTaskDefaults,
+  resolveTaskDefaults, draftRoutingFor,
 } from './model';
 import {
   ManifestSection, ValueMap, buildSettingsForm, findControl, formKeys, toConfigPatch, resetPatch,
@@ -1247,18 +1247,8 @@ export class Controller {
     }
   }
 
-  // A new draft's routing values (t-0e99): the composer's picks, else the configured defaults, so
-  // the draft carries all five explicitly. A value off its role's list is dropped by the store.
   private draftRouting(msg: any): DraftRouting {
-    const d = this.config().defaults;
-    const pick = (v: unknown, dflt: string): string => (typeof v === 'string' && v !== '' ? v : dflt);
-    return {
-      groomer: pick(msg.groomer, d.groomer),
-      groomerEffort: pick(msg.groomerEffort, d.groomerEffort),
-      model: pick(msg.model, d.worker),
-      effort: pick(msg.effort, d.workerEffort),
-      reviewer: pick(msg.reviewer, d.reviewer),
-    };
+    return draftRoutingFor(msg ?? {}, this.config().defaults);
   }
 
   // Run once per activation (t-0e99): VSCode can revive terminals across the reload that installed

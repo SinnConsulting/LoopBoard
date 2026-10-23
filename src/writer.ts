@@ -33,6 +33,7 @@ function routingLines(entry: IndexEntry): string[] {
   if (entry.groomer) out.push(`  - groomer: ${entry.groomer}`);
   if (entry.groomerEffort) out.push(`  - groomer-effort: ${entry.groomerEffort}`);
   if (entry.reviewer) out.push(`  - reviewer: ${entry.reviewer}`);
+  if (entry.reviewerEffort) out.push(`  - reviewer-effort: ${entry.reviewerEffort}`);
   return out;
 }
 
