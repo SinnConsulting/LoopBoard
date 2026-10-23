@@ -39,10 +39,10 @@ export function sanitizeLoopInterval(v: number | string): string {
 // permissionMode is spliced unquoted, so it is sanitized to the package.json enum here (invalid ->
 // 'auto'); never trust a raw config value on the shell line.
 //
-// `sessionName` (t-2b89) is `--name loopboard-<loop>-<suffix>`: the ONLY thing that tells this
+// `sessionName` (t-2b89) is `--name loopboard-<project>-<loop>-<suffix>`: the ONLY thing that tells this
 // loop's Claude session from any other in `~/.claude/sessions/*.json` (the session file records no
-// ppid). It is derived from the fixed loop id, never from configuration, so it needs no quoting or
-// escaping. Preferred over pinning `--session-id` because `/clear` starts a NEW session id in the
+// ppid). The caller builds it from the fixed loop id and `sanitizeProject` (shell-safe `[a-z0-9-]`), so it
+// needs no quoting. Preferred over pinning `--session-id` because `/clear` starts a NEW session id in the
 // same process: the name survives, the id does not.
 //
 // `effort` (t-cffc) is `loopBoard.orchestrator.effort`, passed as `--effort <level>` on EVERY

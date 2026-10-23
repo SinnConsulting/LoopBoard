@@ -20,8 +20,8 @@ function assistantLine(usage, extra) {
 }
 
 test('sessionName is the slot-derived --name the spawn line carries', () => {
-  assert.equal(sessionName('opus'), 'loopboard-opus');
-  assert.equal(sessionName('fable'), 'loopboard-fable');
+  assert.equal(sessionName('opus', 'p'), 'loopboard-p-opus');
+  assert.equal(sessionName('fable', 'p'), 'loopboard-p-fable');
 });
 
 // No encodeProjectDir any more: reproducing Claude Code's directory encoding was wrong for every
@@ -58,8 +58,8 @@ test("the transcript's own model id wins over the configured --model string", ()
 });
 
 test('parseSessionPointer keeps identity fields and rejects anything else', () => {
-  const p = parseSessionPointer(JSON.stringify({ pid: 1, sessionId: 's1', cwd: CWD, name: 'loopboard-opus', status: 'busy' }));
-  assert.deepEqual(p, { sessionId: 's1', cwd: CWD, name: 'loopboard-opus', updatedAt: 0 });
+  const p = parseSessionPointer(JSON.stringify({ pid: 1, sessionId: 's1', cwd: CWD, name: 'loopboard-p-opus', status: 'busy' }));
+  assert.deepEqual(p, { sessionId: 's1', cwd: CWD, name: 'loopboard-p-opus', updatedAt: 0 });
   const stamped = parseSessionPointer(JSON.stringify({ sessionId: 's1', cwd: CWD, name: 'n', updatedAt: '2026-09-05T10:00:00Z' }));
   assert.equal(stamped.updatedAt, Date.parse('2026-09-05T10:00:00Z'), 'an ISO updatedAt is parsed');
   assert.equal(parseSessionPointer('not json'), undefined);
@@ -67,18 +67,18 @@ test('parseSessionPointer keeps identity fields and rejects anything else', () =
 });
 
 test('a slot is matched by name AND cwd — cwd alone cannot separate two loops', () => {
-  const base = { sessionId: 's1', cwd: CWD, name: 'loopboard-opus', updatedAt: 0 };
-  assert.equal(matchesSlot(base, CWD, 'opus'), true);
-  assert.equal(matchesSlot(base, CWD, 'sonnet'), false, 'same cwd, different slot');
-  assert.equal(matchesSlot(base, '/other', 'opus'), false, 'another workspace');
-  assert.equal(matchesSlot({ ...base, name: '' }, CWD, 'opus'), false, 'a session spawned without --name');
+  const base = { sessionId: 's1', cwd: CWD, name: 'loopboard-p-opus', updatedAt: 0 };
+  assert.equal(matchesSlot(base, CWD, 'opus', 'p'), true);
+  assert.equal(matchesSlot(base, CWD, 'sonnet', 'p'), false, 'same cwd, different slot');
+  assert.equal(matchesSlot(base, '/other', 'opus', 'p'), false, 'another workspace');
+  assert.equal(matchesSlot({ ...base, name: '' }, CWD, 'opus', 'p'), false, 'a session spawned without --name');
 });
 
 test('a collision-suffixed --name (recycle respawn while the old process still holds it) still matches its slot', () => {
-  const base = { sessionId: 's', cwd: CWD, name: 'loopboard-opus-replicated-crab', updatedAt: 0 };
-  assert.equal(matchesSlot(base, CWD, 'opus'), true);
-  assert.equal(matchesSlot(base, CWD, 'sonnet'), false, 'suffix never crosses slots');
-  assert.equal(matchesSlot({ ...base, name: 'loopboard-opusx' }, CWD, 'opus'), false, 'only a `-` separated suffix counts');
+  const base = { sessionId: 's', cwd: CWD, name: 'loopboard-p-opus-replicated-crab', updatedAt: 0 };
+  assert.equal(matchesSlot(base, CWD, 'opus', 'p'), true);
+  assert.equal(matchesSlot(base, CWD, 'sonnet', 'p'), false, 'suffix never crosses slots');
+  assert.equal(matchesSlot({ ...base, name: 'loopboard-p-opusx' }, CWD, 'opus', 'p'), false, 'only a `-` separated suffix counts');
 });
 
 // t-x1t1: every spawn gets its own `--name` suffix, so the name is globally unique and Claude Code
@@ -95,23 +95,23 @@ test('the spawn suffix is [0-9a-f] only, for every injected random value includi
 });
 
 test('a suffixed spawn name keeps the slot prefix, so matchesSlot accepts it and other slots do not', () => {
-  const name = spawnSessionName('opus', sessionSuffix(0.5));
-  assert.equal(name, 'loopboard-opus-8000');
+  const name = spawnSessionName('opus', 'p', sessionSuffix(0.5));
+  assert.equal(name, 'loopboard-p-opus-8000');
   const pointer = { sessionId: 's', cwd: CWD, name, updatedAt: 0 };
-  assert.equal(matchesSlot(pointer, CWD, 'opus'), true);
-  assert.equal(matchesSlot(pointer, CWD, 'sonnet'), false, 'a suffix never crosses slots');
-  assert.equal(matchesSlot(pointer, '/other', 'opus'), false, 'nor workspaces');
+  assert.equal(matchesSlot(pointer, CWD, 'opus', 'p'), true);
+  assert.equal(matchesSlot(pointer, CWD, 'sonnet', 'p'), false, 'a suffix never crosses slots');
+  assert.equal(matchesSlot(pointer, '/other', 'opus', 'p'), false, 'nor workspaces');
 });
 
 test('sessionName(model) stays the bare prefix — matchesSlot builds its prefix from it', () => {
-  assert.equal(sessionName('opus'), 'loopboard-opus');
-  assert.equal(sessionName('sonnet'), 'loopboard-sonnet');
-  assert.equal(sessionName('fable'), 'loopboard-fable');
+  assert.equal(sessionName('opus', 'p'), 'loopboard-p-opus');
+  assert.equal(sessionName('sonnet', 'p'), 'loopboard-p-sonnet');
+  assert.equal(sessionName('fable', 'p'), 'loopboard-p-fable');
 });
 
 test('buildClaudeBase renders the suffixed name onto the spawn line', () => {
-  const line = buildClaudeBase('auto', 'opus', spawnSessionName('opus', sessionSuffix(0.5)));
-  assert.equal(line, "claude --permission-mode auto --model 'opus' --effort low --name loopboard-opus-8000");
+  const line = buildClaudeBase('auto', 'opus', spawnSessionName('opus', 'p', sessionSuffix(0.5)));
+  assert.equal(line, "claude --permission-mode auto --model 'opus' --effort low --name loopboard-p-opus-8000");
 });
 
 test('usage = the LAST main-chain assistant line, summing the three input counters', () => {
@@ -241,14 +241,17 @@ test('the stale guard is what protects a wiped hysteresis marker, not shouldTrip
 
 // ---- t-0e99: the one orchestrator loop ----
 
-test('the orchestrator spawns as loopboard-orchestrator-<suffix>, and only that name matches it', () => {
-  assert.equal(sessionName('orchestrator'), 'loopboard-orchestrator');
-  assert.equal(spawnSessionName('orchestrator', 'ab12'), 'loopboard-orchestrator-ab12');
-  const mine = { sessionId: 's1', cwd: CWD, name: 'loopboard-orchestrator-ab12', updatedAt: 0 };
-  assert.equal(matchesSlot(mine, CWD, 'orchestrator'), true);
+test('the orchestrator spawns as loopboard-<project>-orchestrator-<suffix>, and only that name matches it', () => {
+  assert.equal(sessionName('orchestrator', 'My App'), 'loopboard-my-app-orchestrator');
+  assert.equal(spawnSessionName('orchestrator', 'My App', 'ab12'), 'loopboard-my-app-orchestrator-ab12');
+  const mine = { sessionId: 's1', cwd: CWD, name: 'loopboard-my-app-orchestrator-ab12', updatedAt: 0 };
+  assert.equal(matchesSlot(mine, CWD, 'orchestrator', 'My App'), true);
+  assert.equal(matchesSlot({ ...mine, cwd: '/elsewhere' }, CWD, 'orchestrator', 'My App'), false);
+  assert.equal(matchesSlot({ ...mine, name: 'loopboard-other-orchestrator-ab12' }, CWD, 'orchestrator', 'My App'), false);
+  assert.equal(matchesSlot({ ...mine, name: 'loopboard-orchestrator-ab12' }, CWD, 'orchestrator', 'My App'), false);
   // A per-model loop left over from before the update never reads as the orchestrator's session.
   for (const legacy of ['loopboard-opus', 'loopboard-opus-1a2b', 'loopboard-sonnet-replicated-crab']) {
-    assert.equal(matchesSlot({ ...mine, name: legacy }, CWD, 'orchestrator'), false, legacy);
+    assert.equal(matchesSlot({ ...mine, name: legacy }, CWD, 'orchestrator', 'My App'), false, legacy);
   }
 });
 
@@ -256,4 +259,17 @@ test('Haiku 5.5 carries the 1M window, by alias and by transcript id; older Haik
   assert.equal(windowSizeFor('haiku'), LARGE_WINDOW);
   assert.equal(windowSizeFor('some-org-alias', 'claude-haiku-5-5'), LARGE_WINDOW);
   assert.equal(windowSizeFor('haiku-4-5'), DEFAULT_WINDOW);
+});
+
+test('sanitizeProject yields a non-empty shell-safe [a-z0-9-] segment', () => {
+  const { sanitizeProject } = require('../out-test/context.js');
+  assert.equal(sanitizeProject('My App'), 'my-app');
+  assert.equal(sanitizeProject("it's $HOME; rm -rf"), 'it-s-home-rm-rf');
+  assert.equal(sanitizeProject('--proj--'), 'proj');
+  assert.equal(sanitizeProject('caf\u00e9 \u65e5\u672c'), 'caf');
+  for (const empty of ['', '   ', '\u65e5\u672c', '---']) assert.equal(sanitizeProject(empty), 'workspace');
+  const long = sanitizeProject('a'.repeat(23) + ' ' + 'b'.repeat(10));
+  assert.equal(long, 'a'.repeat(23));
+  assert.ok(sanitizeProject('x'.repeat(100)).length <= 24);
+  assert.match(sanitizeProject('Wei$rd `name` "q"'), /^[a-z0-9-]+$/);
 });

@@ -499,10 +499,10 @@ test('the only loop terminal is Claude Orchestrator, and the per-model names are
   assert.deepEqual(legacyLoopTerminals([]), []);
 });
 
-test('the spawn line carries the orchestrator --model, --effort and --name loopboard-orchestrator-<suffix>', () => {
+test('the spawn line carries the orchestrator --model, --effort and --name loopboard-<project>-orchestrator-<suffix>', () => {
   const { spawnSessionName, sessionSuffix } = require('../out-test/context.js');
-  const line = buildClaudeBase('auto', 'opus[1m]', spawnSessionName('orchestrator', sessionSuffix(0.5)), 'high');
-  assert.equal(line, "claude --permission-mode auto --model 'opus[1m]' --effort high --name loopboard-orchestrator-8000");
+  const line = buildClaudeBase('auto', 'opus[1m]', spawnSessionName('orchestrator', 'My App', sessionSuffix(0.5)), 'high');
+  assert.equal(line, "claude --permission-mode auto --model 'opus[1m]' --effort high --name loopboard-my-app-orchestrator-8000");
 });
 
 test('src/terminals.ts names every terminal it creates through loopTerminalName, never from a model id', () => {

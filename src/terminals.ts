@@ -40,6 +40,7 @@ export class TerminalManager {
 
   constructor(
     private getCwd: () => vscode.Uri,
+    private getProject: () => string,
     private getLoopText: () => string,
     private getConfig: () => LoopSpawnConfig,
     // Opt-in debug trace (t-2901), routed through the store's single sink; defaults to a no-op so
@@ -143,26 +144,22 @@ export class TerminalManager {
     const terminal = vscode.window.createTerminal({ name: loopTerminalName(loop), cwd: this.getCwd(), env });
     terminal.show(preserveFocus);
     this.revealedLoop = loop;
-    // `--name loopboard-<loop>-<suffix>` is what lets the context indicator (t-2b89) find THIS
+    // `--name loopboard-<project>-<loop>-<suffix>` is what lets the context indicator (t-2b89) find THIS
     // loop's session file among all live claude processes (they all share the workspace cwd). The
     // suffix is fresh per spawn (t-x1t1) and deliberately NOT remembered: the `--name` registry is
     // global to `~/.claude/sessions/`, so without it a second VSCode window on a different folder,
     // or a recycle respawning before the old process let go, would take the bare name first and
     // this session would be renamed `nameSource: "collision"` for its whole life, hiding the bar.
-    // `matchesSlot` reads the bare `loopboard-<loop>` as a prefix, so the reader needs nothing more.
-    const base = buildClaudeBase(
-      cfg.permissionMode,
-      modelString,
-      spawnSessionName(loop, sessionSuffix(Math.random())),
-      cfg.orchestrator.effort
-    );
+    // `matchesSlot` reads the bare `loopboard-<project>-<loop>` as a prefix, so the reader needs nothing more.
+    const name = spawnSessionName(loop, this.getProject(), sessionSuffix(Math.random()));
+    const base = buildClaudeBase(cfg.permissionMode, modelString, name, cfg.orchestrator.effort);
     const d = cfg.defaults;
     const models = cfg.models.map((m) => `${m.id}${isNarrowed(m) ? ` ${m.minEffort}-${m.maxEffort}` : ''}`);
     const envNote = Object.entries(cfg.env).map(([k, v]) => `${k}=${v}`).join(' ');
     this.log(
       'info',
       'loop-spawn',
-      `${loop} -> --model ${modelString} (effort ${cfg.orchestrator.effort}, groom cap ${cfg.orchestrator.groomConcurrency}, ` +
+      `${loop} -> --name ${name} --model ${modelString} (effort ${cfg.orchestrator.effort}, groom cap ${cfg.orchestrator.groomConcurrency}, ` +
         `task models ${models.join(',') || 'none'}, defaults groomer ${d.groomer}/${d.groomerEffort} ` +
         `worker ${d.worker}/${d.workerEffort} reviewer ${d.reviewer}/${d.reviewerEffort}${envNote ? `, env ${envNote}` : ''})`
     );

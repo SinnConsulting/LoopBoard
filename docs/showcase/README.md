@@ -161,7 +161,7 @@ Loops never commit to `main` and never merge. Merging is your call.
 **▶** opens ONE VS Code terminal, `Claude Orchestrator`, running one command:
 
 ```sh
-claude --permission-mode auto --model 'opus' --effort low --name loopboard-orchestrator-<id> \
+claude --permission-mode auto --model 'opus' --effort low --name loopboard-<project>-orchestrator-<id> \
   '/loop 5m You are the LoopBoard orchestrator, grooming cap 3. Models: opus low-xhigh, haiku. …'
 ```
 
