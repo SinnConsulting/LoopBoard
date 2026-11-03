@@ -124,7 +124,7 @@ test('docs name drag reorder as the fourth human action and index order as the l
   const nn5 = read('CLAUDE.md').match(/^5\. [\s\S]*?(?=^## )/m)[0];
   assert.match(nn5, /ONLY four human actions/);
   assert.match(nn5, /pick order; workers never reorder/);
-  const readme = read('README.md');
+  const readme = read('docs/guide.md');
   assert.match(readme, /\*\*Four human actions:\*\* promote, accept, demote, reorder/);
   assert.match(readme, /pick order: they take the top task and never reorder/);
 });

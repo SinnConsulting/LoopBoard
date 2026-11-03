@@ -2,7 +2,7 @@
 
 <img src="../../media/loopboard-icon-128.png" alt="LoopBoard logo" width="96" />
 
-# LoopBoard — Feature Showcase
+# LoopBoard - Feature Showcase
 
 **Claude Code is the engine. LoopBoard is the cockpit. You're still the pilot.**
 
@@ -17,7 +17,7 @@ size.
      (relative links made absolute). Edit it HERE, never in README.md. -->
 <!-- Release visuals (t-7e1a): to show a GIF in the GitHub Release that ships its feature, add the
      trailer `Release-Visual: <file>.gif` (one bare file name under docs/showcase/gifs/, one trailer
-     per GIF) to any commit in that release — squash merges keep it. The release job appends the GIF
+     per GIF) to any commit in that release - squash merges keep it. The release job appends the GIF
      after Features / Bug Fixes, captioned with the alt text of its <img src="gifs/<file>"> on this
      page (no <img> here = skipped), and pinned to the tag. A GIF merely added or re-recorded
      without the trailer is never announced; a GIF-only PR rides the next real release. -->
@@ -113,10 +113,10 @@ if `.loopboard/` already exists. What each file holds: [File structure](#file-st
 Click **New Story**, write it like you'd brief a colleague, and pick who **grooms** and who
 **builds** it. The groomer loop expands it in a subagent (visible under **Agents** in the sidebar):
 
-- **Problem** — why the task exists.
-- **Description** — the groomed story.
-- **Goals** — verifiable outcomes; review judges the delivery against them.
-- **Questions** — decisions that are yours, often with one-click suggested answers.
+- **Problem** - why the task exists.
+- **Description** - the groomed story.
+- **Goals** - verifiable outcomes; review judges the delivery against them.
+- **Questions** - decisions that are yours, often with one-click suggested answers.
 
 Paste, drop or **＋ Attach** screenshots; they're saved under `.loopboard/cache/` and linked from
 the story.
@@ -127,7 +127,7 @@ the story.
 <summary><b>3 · Promote &amp; demote</b></summary>
 
 - **Promote** moves a story from New to **Backlog**, the only place a loop claims work from.
-- **Demote** moves it back to New, nothing lost — refused once a loop has claimed it.
+- **Demote** moves it back to New, nothing lost - refused once a loop has claimed it.
 - Loops never promote or approve, and the board never moves a card before the file says so.
 
 At most one task is **In Progress** across the board; the sidebar shows which.
@@ -139,7 +139,7 @@ At most one task is **In Progress** across the board; the sidebar shows which.
 
 A loop that needs your decision parks the task in **Feedback** and stops. Once every question is
 answered, the loop resumes it. LoopBoard also **nudges** that loop's terminal, so it acts now
-instead of on its next pass — without interrupting work in flight.
+instead of on its next pass - without interrupting work in flight.
 
 </details>
 
@@ -284,19 +284,19 @@ model on or off, can point its alias at a specific **model id**, and sets its **
 
 1. Install LoopBoard. You need VS Code 1.90+ and a logged-in **Claude Code CLI 2.1.292+**.
 2. Run **LoopBoard: Initialize Workspace**.
-3. Add `.loopboard/` to your `.gitignore` (recommended — LoopBoard doesn't add it):
+3. Add `.loopboard/` to your `.gitignore` (recommended - LoopBoard doesn't add it):
    `echo '.loopboard/' >> .gitignore`
 4. Write a story, then press **▶** on the **Orchestrator** row in the sidebar.
 
 Commands:
 
-- **LoopBoard: Initialize Workspace** — create `.loopboard/` (refuses if it exists).
-- **LoopBoard: Open Board** — open the board.
-- **LoopBoard: Refresh** — re-read `.loopboard/` after an edit made outside VS Code.
+- **LoopBoard: Initialize Workspace** - create `.loopboard/` (refuses if it exists).
+- **LoopBoard: Open Board** - open the board.
+- **LoopBoard: Refresh** - re-read `.loopboard/` after an edit made outside VS Code.
 - **LoopBoard: Start Loop**: start the Orchestrator loop terminal, like ▶ in the sidebar.
-- **LoopBoard: What's New** — open the release notes for the version you're running, like
+- **LoopBoard: What's New** - open the release notes for the version you're running, like
   **What's new?** in the sidebar.
-- **LoopBoard: Show Some Love** — show the sidebar's thank-you card with links to star LoopBoard on
+- **LoopBoard: Show Some Love** - show the sidebar's thank-you card with links to star LoopBoard on
   GitHub, rate it on the Marketplace or say hi on r/LoopBoard. The card also appears once by itself
   after your 10th accepted task.
 
@@ -330,14 +330,14 @@ all state lives in `.loopboard/`.
 
 ## Workspace custom rules
 
-Add standing instructions for **this** workspace in `.loopboard/LOOP.md` — free markdown, no
+Add standing instructions for **this** workspace in `.loopboard/LOOP.md` - free markdown, no
 setting. New workspaces ship the empty section; in older ones, add it:
 
 ```markdown
 <!-- loopboard:custom:begin -->
 ## Custom rules (workspace)
 
-Standing instructions for THIS workspace — add yours here as free text, edited directly in this
+Standing instructions for THIS workspace - add yours here as free text, edited directly in this
 file; where they contradict a Rule above, they win in this workspace. Sync never rewrites this
 section.
 
@@ -386,7 +386,7 @@ is a subagent with its own `model` and `effort`, passed per spawn, which needs *
 | **Promote** New → Backlog | Claim the top Backlog task (one In Progress, board-wide) |
 | Answer questions | Resume the parked task |
 | Write review feedback | Rework and deliver again |
-| **Approve** Review → `DONE.md` | Nothing — it's done |
+| **Approve** Review → `DONE.md` | Nothing - it's done |
 | **Demote** Backlog → New | Leave it alone until promoted again |
 
 ---
@@ -396,7 +396,7 @@ is a subagent with its own `model` and `effort`, passed per spawn, which needs *
 
 No mock-ups. Each GIF runs the extension's **real webview code** (`media/board.js`,
 `media/sidebar.js`, `media/settings.js`) in headless Chromium, answered by the **same pure modules
-the extension ships** — so every click rewrites the markdown exactly as the extension would.
+the extension ships** - so every click rewrites the markdown exactly as the extension would.
 Scripted time makes them reproducible:
 
 ```sh

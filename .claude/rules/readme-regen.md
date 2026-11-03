@@ -1,7 +1,8 @@
 ---
-description: README.md is half machine-owned. The settings region is generated from package.json and must never be hand-edited; the feature prose is hand-written and coverage-checked. Both go through the readme-regen skill.
+description: docs/guide.md contains the generated reference. README.md is hand-written. The settings region is generated from package.json and must never be hand-edited; the feature prose is hand-written and coverage-checked. Both go through the readme-regen skill.
 paths:
   - "README.md"
+  - "docs/guide.md"
   - "package.json"
 ---
 
@@ -14,11 +15,11 @@ paths:
   directly in the README is silently discarded on the next run.
 * **Never hand-edit inside the showcase sentinels either.** `<!-- loopboard:showcase:begin/end -->`
   is copied from `docs/showcase/README.md`; edit it there and run `make readme`. The settings
-  tables stay the last section of README.md (asserted in `test/readme-settings.test.js`).
+  tables stay the last section of docs/guide.md (asserted in `test/readme-settings.test.js`).
 * **A `contributes.*` change is a README change.** Adding, removing, renaming or re-describing a
   setting, command or view means running the `readme-regen` skill in the same change. `make test`
   fails otherwise.
-* **The feature prose stays hand-written.** The showcase page and README.md's own sections ("Small
+* **The feature prose stays hand-written.** The showcase page and docs/guide.md's own sections ("Small
   on purpose", "Get started", security, the settings prose) are never machine-generated. The tool only checks coverage and flags drift; a
   failure means write the missing sentence, not loosen the check.
 * **The line budget backstop.** `test/readme-settings.test.js` asserts the settings region is
@@ -26,7 +27,7 @@ paths:
   prose. It runs under `make check`, which must pass before any commit — it binds an editor who
   never reads this rule, which CI cannot: `.github/workflows/build.yml` carries
   `paths-ignore: ['**/*.md']`, so doc-only pushes produce no build.
-* **Docker only.** The generator runs via `docker run node:22`, never host `node`/`npm`
+* **Containers only.** The generator runs via `make readme` with Docker or Apple Container, never host `node`/`npm`
   (CLAUDE.md non-negotiable 1).
 * **Never ships.** The skill and its script live under `.claude/skills/readme-regen/`, excluded by
   `.vscodeignore` and asserted absent from the `.vsix` by `make package`. Do not move them into the
@@ -35,3 +36,5 @@ paths:
   `.loopboard/LOOP.md`, the `Makefile` and `package.json` — not against the README's own earlier
   wording, which is exactly what drifts (it carried "two human gates" for months while the board
   had three).
+
+The short `README.md` is hand-written and links to the guide. Keep it concise; generation must never overwrite it. Run the coverage check after changes to either page.
