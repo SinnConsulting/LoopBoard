@@ -13,9 +13,9 @@ const path = require('node:path');
 
 const tool = require('../.claude/skills/readme-regen/readme-tool.js');
 const root = path.resolve(__dirname, '..');
-const readme = () => fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+const readme = () => fs.readFileSync(path.join(root, 'docs/guide.md'), 'utf8');
 
-test('README.md carries the settings sentinels', () => {
+test('docs/guide.md carries the settings sentinels', () => {
   const text = readme();
   assert.ok(text.includes(tool.BEGIN), `missing ${tool.BEGIN}`);
   assert.ok(text.includes(tool.END), `missing ${tool.END}`);
@@ -27,7 +27,7 @@ test('the settings region is exactly what the generator would write', () => {
   assert.deepEqual(problems, [], 'run the readme-regen skill: docker run --rm -v "$(pwd)":/app -w /app node:22 node .claude/skills/readme-regen/readme-tool.js generate');
 });
 
-test('README.md carries the showcase sentinels, and so does its source page', () => {
+test('docs/guide.md carries the showcase sentinels, and so does its source page', () => {
   for (const [file, text] of [['README.md', readme()], ['docs/showcase/README.md', fs.readFileSync(path.join(root, 'docs/showcase/README.md'), 'utf8')]]) {
     assert.ok(text.indexOf(tool.SHOWCASE_BEGIN) !== -1 && text.indexOf(tool.SHOWCASE_BEGIN) < text.indexOf(tool.SHOWCASE_END), `${file}: showcase sentinels missing or out of order`);
   }
@@ -50,7 +50,7 @@ test('the showcase region is exactly what the generator would copy from docs/sho
   assert.deepEqual(problems, [], 'run `make readme`');
 });
 
-test('regenerating from empty regions reproduces README.md byte for byte (no GIF recording involved)', () => {
+test('regenerating from empty regions reproduces docs/guide.md byte for byte (no GIF recording involved)', () => {
   const os = require('node:os');
   const text = readme();
   const empty = (t, begin, end) => t.slice(0, t.indexOf(begin) + begin.length) + t.slice(t.indexOf(end));
@@ -59,9 +59,12 @@ test('regenerating from empty regions reproduces README.md byte for byte (no GIF
     fs.mkdirSync(path.join(tmp, 'docs', 'showcase'), { recursive: true });
     fs.copyFileSync(path.join(root, 'package.json'), path.join(tmp, 'package.json'));
     fs.copyFileSync(path.join(root, 'docs', 'showcase', 'README.md'), path.join(tmp, 'docs', 'showcase', 'README.md'));
-    fs.writeFileSync(path.join(tmp, 'README.md'), empty(empty(text, tool.BEGIN, tool.END), tool.SHOWCASE_BEGIN, tool.SHOWCASE_END));
+    fs.writeFileSync(path.join(tmp, 'docs/guide.md'), empty(empty(text, tool.BEGIN, tool.END), tool.SHOWCASE_BEGIN, tool.SHOWCASE_END));
+    const landing = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    fs.writeFileSync(path.join(tmp, 'README.md'), landing);
     tool.generate(tmp);
-    assert.equal(fs.readFileSync(path.join(tmp, 'README.md'), 'utf8'), text, 'README.md holds generated content outside its sentinels, or a region is hand-edited');
+    assert.equal(fs.readFileSync(path.join(tmp, 'README.md'), 'utf8'), landing, 'generation must preserve the short Marketplace README');
+    assert.equal(fs.readFileSync(path.join(tmp, 'docs/guide.md'), 'utf8'), text, 'README.md holds generated content outside its sentinels, or a region is hand-edited');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -77,7 +80,7 @@ test('the showcase copy makes relative links absolute and leaves the rest alone'
     `![l](${tool.RAW_BASE}media/x.png) [s](#top) [w](https://example.com/y.png)`);
 });
 
-test('the settings tables are the last section of README.md', () => {
+test('the settings tables are the last section of docs/guide.md', () => {
   const text = readme();
   assert.ok(!/^## /m.test(text.slice(text.indexOf(tool.END))), 'a ## section follows the generated settings');
 });

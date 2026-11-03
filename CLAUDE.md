@@ -12,9 +12,9 @@ Storage: everything under `.loopboard/` — `TODO.md` (slim task index, grammar 
 
 ## Non-negotiable
 
-1. Docker-only toolchain — NEVER install on host (no `npm`/`brew`/`pip`/`apt`; never type
-   `npm`/`npx`/`node` directly). Everything runs via `make` → `docker run node:22`. Host has only
-   Docker, `make`, git, VSCode. Tool missing from node:22 gets its own image.
+1. Container-only toolchain — NEVER install on host (no `npm`/`brew`/`pip`/`apt`; never type
+   `npm`/`npx`/`node` directly). Everything runs via `make` → Node 22 in Docker or Apple Container. Host has only
+   a container runtime, `make`, git, VSCode. Tool missing from node:22 gets its own image.
 2. Zero runtime dependencies. devDependencies = exactly `typescript` + `@types/vscode`. No
    `@types/node`, no bundler, no frameworks; webview = vanilla HTML/CSS/JS.
 3. `.loopboard/` markdown = source of truth. Index (`TODO.md`, grammar v5) carries only

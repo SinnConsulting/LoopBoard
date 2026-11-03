@@ -1,18 +1,18 @@
 ---
 name: readme-regen
-description: Regenerate README.md's machine-owned settings region from package.json's contributes.configuration, then run a feature-coverage check that flags drift between the hand-written feature prose and the extension's real contribution points. Use whenever README.md or a `contributes.*` entry in package.json changes. Never rewrites feature prose — it only reports.
+description: Regenerate docs/guide.md's machine-owned settings region from package.json's contributes.configuration, then run a feature-coverage check that flags drift between the hand-written feature prose and the extension's real contribution points. Use whenever README.md or a `contributes.*` entry in package.json changes. Never rewrites feature prose — it only reports.
 ---
 
 # readme-regen
 
-`README.md` has two halves that need opposite treatment, and this skill is the line between them.
+`docs/guide.md` has two halves that need opposite treatment, and this skill is the line between them.
 
 - The **settings region** is machine-owned. It sits between `<!-- loopboard:settings:begin -->` and
   `<!-- loopboard:settings:end -->`, and is re-derived from `package.json` on every run, so it can
   never drift. Never hand-edit inside the sentinels — the next run overwrites it.
 - The **showcase region** (`<!-- loopboard:showcase:begin/end -->`) is machine-owned too: a copy
   of the same-sentinel slice of `docs/showcase/README.md`, relative links made absolute raw URLs.
-  Edit the showcase page, never README.md's copy. `make readme` regenerates both regions + checks;
+  Edit the showcase page, never docs/guide.md's copy. `make readme` regenerates both regions + checks;
   `make showcase` re-records the GIFs and then runs it.
 - The **feature prose** ("Small on purpose", storage, sidebar, security, the settings prose) is
   hand-written and stays that way. The tool validates its COVERAGE against the real contribution
@@ -20,11 +20,10 @@ description: Regenerate README.md's machine-owned settings region from package.j
 
 ## Run it
 
-Docker only — never `node` on the host (CLAUDE.md non-negotiable 1). From the repo root:
+Containers only: never `node` on the host (CLAUDE.md non-negotiable 1). From the repo root:
 
 ```
-docker run --rm -v "$(pwd)":/app -w /app node:22 node .claude/skills/readme-regen/readme-tool.js generate
-docker run --rm -v "$(pwd)":/app -w /app node:22 node .claude/skills/readme-regen/readme-tool.js check
+make readme
 ```
 
 `generate` is idempotent: running it twice is a no-op, so the README stays fixpoint-stable exactly
@@ -39,7 +38,7 @@ editor who never read this file.
 - Any change to `contributes.configuration` in `package.json` — a setting added, removed, renamed,
   re-defaulted, re-ordered, deprecated, or its `markdownDescription` reworded.
 - Any change to `contributes.commands` or `contributes.views`.
-- Any edit to `README.md`, to confirm you did not break coverage.
+- Any edit to `docs/guide.md`, to confirm you did not break coverage.
 
 ## What `check` enforces
 
@@ -64,3 +63,5 @@ A failure is a prompt to WRITE prose, not a prompt to loosen the check. Only edi
 - Facts stated in the README must be true of the repo. When adding prose, verify against the
   source (`CLAUDE.md`, `.loopboard/LOOP.md`, the `Makefile`, `package.json`) rather than the
   README's own earlier wording, which is what drifts.
+
+The short `README.md` is hand-written and links to the guide. Keep it concise; generation must never overwrite it. Run the coverage check after changes to either page.

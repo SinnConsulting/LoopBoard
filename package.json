@@ -1,7 +1,7 @@
 {
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
-  "description": "Less prompting. No babysitting. More building. — the missing UI for Claude Code loops: your TODO.md as a live board your agents groom, build, and deliver from.",
+  "description": "Turn your backlog into reviewed code with Claude Code. Plan tasks, answer questions, and review results on a Markdown board in VS Code.",
   "version": "4.1.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
@@ -413,7 +413,7 @@
             "order": 10,
             "default": "auto",
             "loopBoardApplies": "restart",
-            "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** — a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
+            "markdownDescription": "`--permission-mode` passed to the `claude` CLI when spawning a loop terminal. This setting is deliberately **user-scoped only** - a cloned repository must never be able to decide how much authority your agent runs with. Applies on the next loop start (▶) or restart (♻): a running loop keeps what it was spawned with."
           },
           "loopBoard.loopInterval": {
             "type": "integer",
@@ -464,7 +464,7 @@
             "order": 90,
             "default": false,
             "loopBoardApplies": "live",
-            "markdownDescription": "Off (default): a loop runs until you stop it. On: stop a loop that has been idle for `loopBoard.idleStop.minutes` — idle meaning it owns no In Progress task and its session has no live subagent, the same busy test the context-limit restart waits on. A warning counts down the 30 seconds before the stop; its **Cancel** button keeps the loop running (restarts the idle clock), and with no click the stop goes ahead. The warning closes itself once the loop stops, turns busy or is stopped or restarted by hand. The stop is exactly the ■ button: the terminal closes and any scheduled start/restart/stop for that loop is cancelled. A busy loop is never stopped, and a loop that turns busy during the 30 seconds keeps running. Start it again with ▶."
+            "markdownDescription": "Off (default): a loop runs until you stop it. On: stop a loop that has been idle for `loopBoard.idleStop.minutes` - idle meaning it owns no In Progress task and its session has no live subagent, the same busy test the context-limit restart waits on. A warning counts down the 30 seconds before the stop; its **Cancel** button keeps the loop running (restarts the idle clock), and with no click the stop goes ahead. The warning closes itself once the loop stops, turns busy or is stopped or restarted by hand. The stop is exactly the ■ button: the terminal closes and any scheduled start/restart/stop for that loop is cancelled. A busy loop is never stopped, and a loop that turns busy during the 30 seconds keeps running. Start it again with ▶."
           },
           "loopBoard.idleStop.minutes": {
             "type": "integer",
@@ -497,7 +497,7 @@
             "order": 20,
             "default": true,
             "loopBoardApplies": "live",
-            "markdownDescription": "Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself — use **Synchronise Templates** at the top of the LoopBoard settings page."
+            "markdownDescription": "Sync `.loopboard/` TODO.md and LOOP.md to the templates this extension ships, automatically, once when the window loads or the extension updates. It updates the extension-owned `loopboard:sync:` blocks and recreates missing files, and does a one-time legacy replacement of an unmarked LOOP.md (the old file is kept as `.loopboard/LOOP.md.bkp`) or an unmarked TODO.md intro. The `loopboard:custom` section and every task entry are never touched. Each auto-sync that writes shows a popup naming what changed. Off: nothing syncs by itself - use **Synchronise Templates** at the top of the LoopBoard settings page."
           },
           "loopBoard.sidebarMarquee": {
             "type": "boolean",
@@ -531,7 +531,7 @@
             "order": 50,
             "default": "off",
             "loopBoardApplies": "live",
-            "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended — LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
+            "markdownDescription": "Opt-in verbose trace. With `info`/`verbose`, LoopBoard appends timestamped lines to `.loopboard/debug.log`. Field **values are logged verbatim** (no eliding), so keep `.loopboard/` in your `.gitignore` (recommended - LoopBoard does not add it) and the log is never committed. The log is tail-capped at 10 MB (oldest lines dropped); there is no separate command to open it."
           },
           "loopBoard.showWhatsNew": {
             "type": "boolean",

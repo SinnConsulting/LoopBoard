@@ -19,7 +19,7 @@ const BEGIN = '<!-- loopboard:settings:begin -->';
 const END = '<!-- loopboard:settings:end -->';
 
 // The feature showcase is hand-written ONCE, in docs/showcase/README.md (next to its GIFs), and
-// copied into README.md between the same sentinels it carries there. Relative links are resolved
+// copied into docs/guide.md between the same sentinels it carries there. Relative links are resolved
 // against docs/showcase/ and made absolute, because README.md also renders on the Marketplace page,
 // where a repo-relative path means nothing.
 const SHOWCASE_SRC = 'docs/showcase/README.md';
@@ -28,7 +28,7 @@ const SHOWCASE_END = '<!-- loopboard:showcase:end -->';
 const RAW_BASE = 'https://raw.githubusercontent.com/SinnConsulting/LoopBoard/main/';
 
 // Behaviours that are documented prose rather than a manifest entry, so coverage cannot be derived
-// from package.json alone. Each is a feature the README must keep describing; the regex is matched
+// from package.json alone. Each is a feature the guide must keep describing; the regex is matched
 // against the whole file, case-insensitively.
 const DOCUMENTED_BEHAVIOURS = [
   ['three human actions (promote / accept / demote)', /promote[\s\S]{0,80}accept[\s\S]{0,80}demote/i],
@@ -64,7 +64,7 @@ function describe(prop) {
 }
 
 function formatDefault(prop) {
-  if (!('default' in prop)) return '—';
+  if (!('default' in prop)) return '-';
   const d = prop.default;
   if (Array.isArray(d)) return `\`${JSON.stringify(d)}\``;
   // Strings render bare (`sonnet`, not `"sonnet"`) — that is how they are typed into settings.json's
@@ -96,7 +96,7 @@ function renderSettings(manifest) {
   return out.join('\n');
 }
 
-function splitReadme(text, begin = BEGIN, end = END, file = 'README.md') {
+function splitReadme(text, begin = BEGIN, end = END, file = 'docs/guide.md') {
   const b = text.indexOf(begin);
   const e = text.indexOf(end);
   if (b === -1 || e === -1) {
@@ -131,7 +131,7 @@ function render(root, current) {
 
 // Idempotent: each region is fully replaced from its source, so running twice is a no-op.
 function generate(root = repoRoot()) {
-  const readmePath = path.join(root, 'README.md');
+  const readmePath = path.join(root, 'docs/guide.md');
   const current = fs.readFileSync(readmePath, 'utf8');
   const next = render(root, current);
   if (next === current) return { changed: false };
@@ -142,7 +142,7 @@ function generate(root = repoRoot()) {
 // Every problem found, as one flat list of human-readable strings. Empty = no drift.
 function check(root = repoRoot()) {
   const manifest = readManifest(root);
-  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  const readme = fs.readFileSync(path.join(root, 'docs/guide.md'), 'utf8');
   const problems = [];
 
   // 1. The machine-owned regions must already equal what generate() would write.
@@ -192,14 +192,14 @@ if (require.main === module) {
   const mode = process.argv[2];
   if (mode === 'generate') {
     const { changed } = generate();
-    console.log(changed ? 'README.md regions regenerated.' : 'README.md regions already up to date.');
+    console.log(changed ? 'docs/guide.md regions regenerated.' : 'docs/guide.md regions already up to date.');
   } else if (mode === 'check') {
     const problems = check();
     if (problems.length === 0) {
-      console.log('README.md: no drift.');
+      console.log('docs/guide.md: no drift.');
     } else {
       for (const p of problems) console.error(`  - ${p}`);
-      console.error(`README.md: ${problems.length} problem(s).`);
+      console.error(`docs/guide.md: ${problems.length} problem(s).`);
       process.exitCode = 1;
     }
   } else {
