@@ -61,6 +61,7 @@ export class ContextReader {
 
   constructor(
     private getCwd: () => string,
+    private getProject: () => string,
     private log: (level: 'info' | 'verbose', event: string, detail?: string) => void = () => {}
   ) {}
 
@@ -96,7 +97,7 @@ export class ContextReader {
         continue;
       }
       const pointer = parseSessionPointer(text);
-      if (pointer && matchesSlot(pointer, this.getCwd(), loop)) matches.push(pointer);
+      if (pointer && matchesSlot(pointer, this.getCwd(), loop, this.getProject())) matches.push(pointer);
     }
     if (matches.length > 1) {
       this.log('verbose', 'context-read', `${loop} -> ${matches.length} session files match; using the newest`);

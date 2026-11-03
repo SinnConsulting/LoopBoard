@@ -334,6 +334,8 @@ one that never fires):
 
 ## Manual — Extension Development Host (F5)
 
+- [ ] Session name per project (t-194f): two VSCode windows on different projects show distinct `loopboard-<project>-orchestrator-*` names in `~/.claude/sessions/*.json`, and the context bar works in both.
+
 **PENDING — not executed in this environment** (headless agent session, no interactive VS Code
 GUI). Run these in a desktop VS Code by opening a folder and pressing **F5**; a headless session
 cannot verify them, so they are not claimed done.

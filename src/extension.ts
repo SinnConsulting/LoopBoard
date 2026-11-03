@@ -23,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
   activeStore = store;
   const terminals = new TerminalManager(
     () => folder.uri,
+    () => folder.name,
     () => store.loopText,
     () => {
       const c = vscode.workspace.getConfiguration('loopBoard');
@@ -48,6 +49,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // terminal's session file to its slot.
   const contextReader = new ContextReader(
     () => folder.uri.fsPath,
+    () => folder.name,
     (level, event, detail) => store.debugLog(level, event, detail)
   );
   controller = new Controller(context.extensionUri, store, terminals, sidebar, context.globalState, contextReader);

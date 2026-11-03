@@ -2,7 +2,7 @@
   "name": "loopboard-todo",
   "displayName": "LoopBoard - TODO",
   "description": "Turn your backlog into reviewed code with Claude Code. Plan tasks, answer questions, and review results on a Markdown board in VS Code.",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "publisher": "SinnConsulting",
   "license": "MIT",
   "icon": "media/loopboard-icon-128.png",

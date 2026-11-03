@@ -13,15 +13,29 @@
 
 import { LoopId } from './model';
 
-// The `--name` given to every loop terminal's `claude` invocation, and the value we then look for
-// in the session JSON. Loop ids are a fixed set (`orchestrator`, t-0e99), so the result is always
-// shell-safe.
-export function sessionName(loop: LoopId): string {
-  return `loopboard-${loop}`;
+const PROJECT_MAX = 24;
+
+// Workspace folder name -> shell-safe `[a-z0-9-]` segment (t-194f). The name is spliced unquoted
+// into the `claude` line, so nothing else may pass; truncated so the session name stays short.
+export function sanitizeProject(raw: string): string {
+  const s = String(raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, PROJECT_MAX)
+    .replace(/-+$/, '');
+  return s || 'workspace';
+}
+
+// The `--name` prefix of a loop terminal's `claude` invocation, and what we look for in the
+// session JSON: `loopboard-<project>-<loop>`. The project segment keeps another workspace's loop
+// from reading as a second orchestrator in Claude Code's cross-session notice (t-194f).
+export function sessionName(loop: LoopId, project: string): string {
+  return `loopboard-${sanitizeProject(project)}-${loop}`;
 }
 
 // The name a terminal is actually SPAWNED with (t-x1t1): `loopboard-<loop>-<suffix>`, unique per
-// spawn. The bare `sessionName(loop)` above stays the PREFIX both this and `matchesSlot` build on,
+// spawn. The bare `sessionName(loop, project)` above stays the PREFIX both this and `matchesSlot` build on,
 // so it must never grow a suffix of its own.
 //
 // Why a suffix at all: the `--name` registry is global to `~/.claude/sessions/`, not per workspace,
@@ -29,8 +43,8 @@ export function sessionName(loop: LoopId): string {
 // this window's session is registered as `<name>-<word>-<word>` with `nameSource: "collision"` for
 // its whole life — the bar then never resolves. A recycle respawning while the old process still
 // holds the name does the same. A globally unique name removes both causes at once.
-export function spawnSessionName(loop: LoopId, suffix: string): string {
-  return `${sessionName(loop)}-${suffix}`;
+export function spawnSessionName(loop: LoopId, project: string, suffix: string): string {
+  return `${sessionName(loop, project)}-${suffix}`;
 }
 
 // Four hex characters from an injected random value in [0, 1) — `Math.random()` at the call site,
@@ -139,9 +153,9 @@ export function newestPointer(pointers: SessionPointer[]): SessionPointer | unde
 //
 // Loop names never nest, so the prefix is only ambiguous against a `-`-separated suffix, exactly
 // the shape of both cases above. A legacy per-model session (`loopboard-opus-…`) never matches.
-export function matchesSlot(pointer: SessionPointer, workspaceCwd: string, loop: LoopId): boolean {
+export function matchesSlot(pointer: SessionPointer, workspaceCwd: string, loop: LoopId, project: string): boolean {
   if (pointer.cwd !== workspaceCwd) return false;
-  const name = sessionName(loop);
+  const name = sessionName(loop, project);
   return pointer.name === name || pointer.name.startsWith(name + '-');
 }
 
